@@ -6,6 +6,13 @@ bin-release/
 
 # Other files and folders
 .settings/
+.env*
+node_modules/
+.agents/
+.claude/
+.firecrawl/
+*.db
+skills-lock.json
 
 # Executables
 *.swf
