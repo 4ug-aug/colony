@@ -1,5 +1,7 @@
 import {
   Agent,
+  MCPServers,
+  MCPServerStreamableHttp,
   type Model,
   type ModelProvider,
   OpenAIProvider,
@@ -18,6 +20,13 @@ export interface AgentRuntimeRequest {
   prompt: string;
   role: "software-engineer";
   model: OpenAICompatibleModel;
+  mcp?: McpSessionBinding;
+}
+
+export interface McpSessionBinding {
+  url: string;
+  token: string;
+  allowedTools?: string[];
 }
 
 export function normalizeModelBaseUrl(baseUrl: string): string {
@@ -31,6 +40,7 @@ export function normalizeModelBaseUrl(baseUrl: string): string {
 function shellEnvironment(): Record<string, string | undefined> {
   const env = { ...Bun.env };
   delete env.SWEAT_MODEL_API_KEY;
+  delete env.SWEAT_MCP_TOKEN;
   delete env.OPENAI_API_KEY;
   return env;
 }
@@ -62,10 +72,25 @@ export async function runAgent(
     throw new Error(`Unknown agent role: ${request.role}`);
   }
 
+  const mcpServers = request.mcp
+    ? await MCPServers.open([
+        new MCPServerStreamableHttp({
+          name: "capabilities",
+          url: request.mcp.url,
+          requestInit: {
+            headers: { Authorization: `Bearer ${request.mcp.token}` },
+          },
+          toolFilter: request.mcp.allowedTools
+            ? { allowedToolNames: request.mcp.allowedTools }
+            : undefined,
+        }),
+      ])
+    : undefined;
   const agent = new Agent({
     name: softwareEngineerRole.id,
     instructions: softwareEngineerRole.instructions,
     model: dependencies.model ?? request.model.model,
+    mcpServers: mcpServers?.active,
     tools: [
       tool({
         name: "shell",
@@ -83,16 +108,20 @@ export async function runAgent(
     ],
   });
 
-  const result = await new Runner({
-    modelProvider:
-      dependencies.modelProvider ??
-      new OpenAIProvider({
-        apiKey: request.model.apiKey,
-        baseURL: normalizeModelBaseUrl(request.model.baseUrl),
-        useResponses: false,
-      }),
-    tracingDisabled: true,
-  }).run(agent, request.prompt);
+  try {
+    const result = await new Runner({
+      modelProvider:
+        dependencies.modelProvider ??
+        new OpenAIProvider({
+          apiKey: request.model.apiKey,
+          baseURL: normalizeModelBaseUrl(request.model.baseUrl),
+          useResponses: false,
+        }),
+      tracingDisabled: true,
+    }).run(agent, request.prompt);
 
-  return result.finalOutput ?? "";
+    return result.finalOutput ?? "";
+  } finally {
+    await mcpServers?.close();
+  }
 }

@@ -6,10 +6,14 @@ import {
   createAppleContainerClient,
   type AppleContainerClient,
 } from "../sdk/src";
-import type { OpenAICompatibleModel } from "../runtime/openai-agents";
+import type {
+  McpSessionBinding,
+  OpenAICompatibleModel,
+} from "../runtime/openai-agents";
 
 export function createSoftwareEngineerRunner(options: {
   model: OpenAICompatibleModel;
+  mcp?: McpSessionBinding;
   container?: AppleContainerClient;
   createId?: () => string;
 }): AgentRunner {
@@ -23,6 +27,7 @@ export function createSoftwareEngineerRunner(options: {
     agent: createOpenAIAgentsRuntime({
       role: softwareEngineerRole,
       model: options.model,
+      mcp: options.mcp,
     }),
   });
 }

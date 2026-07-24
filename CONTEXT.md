@@ -52,6 +52,21 @@ prompt.
 Mounts are optional generic input artifacts, never a required worktree
 convention.
 
+## Run inputs and entrypoints
+
+Agents should not be responsible for acquiring their own required context. A
+run declares **inputs** (the data or workspace the role needs) and optional
+deterministic **entrypoints** (platform-managed preparation steps).
+
+For example, a software-engineer run can request a repository and revision;
+the platform's checkout entrypoint acquires it before the agent starts. The
+agent receives the resulting workspace and task, rather than deciding whether
+or how to clone a repository. Other roles may receive an uploaded artifact,
+database query result, or no input at all.
+
+Entrypoints are invoked by the orchestrator, not exposed as agent tools. They
+are parameterized, auditable, and must complete before the role runtime starts.
+
 ## Sub-agents
 
 SDK handoffs can delegate work within an agent runtime. True isolated
@@ -90,6 +105,10 @@ container is removed.
 The initial tools should remain provider-specific (for example, Linear issue
 tools). Add a cross-provider task-management abstraction only when multiple
 providers create a demonstrated shared need.
+
+A run binds its granted MCP session to the generic runtime. The runtime
+connects to the gateway and exposes only the tools in that session; roles
+request capabilities but never receive a provider endpoint or credential.
 
 An agent that can execute arbitrary shell code effectively has its run's
 granted capabilities. Mitigate this with narrow grants, short expirations,

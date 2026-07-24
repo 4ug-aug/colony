@@ -16,6 +16,13 @@ try {
         apiKey: required("SWEAT_MODEL_API_KEY"),
         model: required("SWEAT_MODEL_NAME"),
       },
+      mcp: Bun.env.SWEAT_MCP_URL && Bun.env.SWEAT_MCP_TOKEN
+        ? {
+            url: Bun.env.SWEAT_MCP_URL,
+            token: Bun.env.SWEAT_MCP_TOKEN,
+            allowedTools: Bun.env.SWEAT_MCP_ALLOWED_TOOLS?.split(","),
+          }
+        : undefined,
     }),
   );
 } catch (error) {

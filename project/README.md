@@ -58,9 +58,11 @@ Run the software engineer from the terminal with any OpenAI-compatible model:
 LLM_BASE_URL=https://api.openai.com/v1 \
 LLM_API_KEY=... \
 LLM_MODEL=... \
+LINEAR_MCP_API_KEY=... \
 bun run agent:software-engineer -- "Investigate this task and report your findings."
 ```
 
 The model key is only given to the runtime process; shell commands launched by
-the agent do not inherit it. Linear MCP access is intentionally not connected
-until the platform MCP gateway can issue a scoped session.
+the agent do not inherit it. `LINEAR_MCP_API_KEY` enables Linear's remote MCP
+server for the software engineer; a future run-scoped gateway session will
+replace this direct binding without changing the role runtime.

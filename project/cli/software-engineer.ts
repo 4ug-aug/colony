@@ -15,6 +15,12 @@ const runner = createSoftwareEngineerRunner({
     apiKey: required("LLM_API_KEY"),
     model: required("LLM_MODEL"),
   },
+  mcp: Bun.env.LINEAR_MCP_API_KEY
+    ? {
+        url: "https://mcp.linear.app/mcp",
+        token: Bun.env.LINEAR_MCP_API_KEY,
+      }
+    : undefined,
 });
 
 const result = await runner.run({
