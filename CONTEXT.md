@@ -30,9 +30,9 @@ configuration, allowed tools/capabilities, image, and execution limits.
 A **run/job** selects an agent definition and supplies its task plus optional
 context.
 
-A **sandbox** is a generic, disposable execution environment. It starts with
-an empty filesystem unless a run deliberately supplies an input artifact. It
-must not assume a repository, GitHub, or a mounted worktree.
+A **sandbox** is a generic, disposable execution environment. It starts in
+`/work`, which is empty unless a run deliberately prepares inputs there. It
+must not assume a repository or GitHub.
 
 ## Runtime and models
 
@@ -50,6 +50,13 @@ should remain OpenAI-compatible and provider-neutral:
 CLI coding agents (such as Codex or Claude Code) are optional runtime adapters,
 not the platform architecture.
 
+The sandbox launch contract is deliberately small: task, agent definition and
+instructions, model configuration, an optional scoped MCP session, and `/work`
+as its current directory. It does not receive Run IDs, repository or provider
+details, or upstream provider credentials. The model API key and MCP session
+token are technical credentials required by the runtime; tool subprocesses
+must not inherit them.
+
 ## Roles and capabilities
 
 Roles declare capabilities rather than relying on implicit host state. A
@@ -57,8 +64,8 @@ software-engineer role may be allowed shell, Git, and GitHub tools, but a run
 prepares required repositories and other inputs before the role starts. Other
 roles may use uploaded artifacts, APIs, databases, or only a prompt.
 
-Mounts are optional generic input artifacts, never a required worktree
-convention.
+`/work` is a runtime convention, not a repository convention: a run may
+prepare a repository, files, or nothing there.
 
 ## Run inputs and entrypoints
 
@@ -74,6 +81,17 @@ database query result, or no input at all.
 
 Entrypoints are invoked by the orchestrator, not exposed as agent tools. They
 are parameterized, auditable, and must complete before the role runtime starts.
+
+Every agent runtime starts in `/work`; entrypoints prepare any filesystem
+inputs directly beneath it. `/work` is disposable staging: an agent may hand
+work back through a granted capability (for example, a pull request), but
+arbitrary files there do not persist after the run. V1 has no generic artifact
+or manifest model; add one only when durable storage or multiple named inputs
+need it.
+
+V1 also has no structured run-output or handoff model. The runtime report and
+the durable effects of granted capabilities are its handoff. Add structured
+outputs only when another run must reliably consume a prior run's result.
 
 ## Software-engineer repository runs
 
