@@ -75,6 +75,15 @@ database query result, or no input at all.
 Entrypoints are invoked by the orchestrator, not exposed as agent tools. They
 are parameterized, auditable, and must complete before the role runtime starts.
 
+## Software-engineer repository runs
+
+A **Git workspace** is the software-engineer role's prepared repository input:
+a Git working directory seeded at the resolved base revision on a
+platform-assigned run branch. The sandbox may inspect, edit, test, and commit
+that branch, but receives no Git provider credential. A GitHub capability
+adapter scoped to the run's repository may publish only that run branch and
+open its pull request.
+
 ## Sub-agents
 
 SDK handoffs can delegate work within an agent runtime. True isolated
@@ -120,5 +129,6 @@ request capabilities but never receive a provider endpoint or credential.
 
 An agent that can execute arbitrary shell code effectively has its run's
 granted capabilities. Mitigate this with narrow grants, short expirations,
-auditing, network egress policy, and approvals for consequential writes; do
-not rely on hiding a tool credential from shell subprocesses.
+auditing, and network egress policy; do not rely on hiding a tool credential
+from shell subprocesses. Consequential writes require no per-call operator
+approval once the platform has issued the run's narrow grant.
