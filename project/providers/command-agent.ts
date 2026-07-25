@@ -1,10 +1,9 @@
-import type { AgentProvider, AgentRequest } from "../agents";
+import type { AgentProvider, RuntimeRequest } from "../agents";
 
 export function createCommandAgentProvider(options: {
-  command(request: AgentRequest): readonly string[];
+  command(request: RuntimeRequest): readonly string[];
 }): AgentProvider {
   return {
-    run: (sandbox, request) =>
-      sandbox.exec({ command: options.command(request) }),
+    run: (sandbox, request) => sandbox.exec({ command: options.command(request) }),
   };
 }

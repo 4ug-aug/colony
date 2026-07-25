@@ -57,8 +57,9 @@ test("the runtime completes an SDK tool loop against an OpenAI-compatible API", 
 
   const result = await runAgent(
     {
-      prompt: "Use the shell tool.",
-      role: "software-engineer",
+      task: "Use the shell tool.",
+      instructions: "Use tools when needed.",
+      agentId: "software-engineer",
       model: {
         baseUrl: "https://models.example/v1",
         apiKey: "test-key",

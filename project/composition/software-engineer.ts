@@ -1,4 +1,9 @@
-import { createAgentRunner, type AgentRunner } from "../agents";
+import {
+  createInMemoryAgentDefinitionResolver,
+  createRunExecutor,
+  type AgentDefinition,
+  type RunExecutor,
+} from "../agents";
 import { createRepositoryWorkspaceProvisioner, type RepositoryCheckoutSource } from "../inputs/repository";
 import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import { createOpenAIAgentsRuntime } from "../providers/openai-agents-runtime";
@@ -7,32 +12,40 @@ import {
   createAppleContainerClient,
   type AppleContainerClient,
 } from "../sdk/src";
-import type {
-  McpSessionBinding,
-  OpenAICompatibleModel,
-} from "../runtime/openai-agents";
+import type { OpenAICompatibleModel } from "../runtime/openai-agents";
 
-export function createSoftwareEngineerRunner(options: {
+const defaultLimits = {
+  maxDurationMs: 30 * 60 * 1000,
+  maxOutputBytes: 1024 * 1024,
+};
+
+export function createSoftwareEngineerExecutor(options: {
   model: OpenAICompatibleModel;
-  mcp?: McpSessionBinding;
+  image?: string;
   repositorySources?: readonly RepositoryCheckoutSource[];
   container?: AppleContainerClient;
   createId?: () => string;
-}): AgentRunner {
+}): RunExecutor {
   const container = options.container ?? createAppleContainerClient();
-
-  return createAgentRunner({
+  const definition: AgentDefinition = {
+    id: softwareEngineerRole.id,
+    instructions: softwareEngineerRole.instructions,
+    requestedCapabilities: softwareEngineerRole.requestedCapabilities,
+    runtime: {
+      image: options.image ?? Bun.env.SWEAT_AGENT_IMAGE ?? "sweat-agent:latest",
+      model: options.model,
+    },
+    executionPolicy: defaultLimits,
+  };
+  return createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
     sandboxes: createAppleContainerSandboxProvider({
       container,
       createId: options.createId,
     }),
-    agent: createOpenAIAgentsRuntime({
-      role: softwareEngineerRole,
-      model: options.model,
-      mcp: options.mcp,
-    }),
+    runtime: createOpenAIAgentsRuntime({}),
     inputs: options.repositorySources
-      ? createRepositoryWorkspaceProvisioner({ sources: options.repositorySources })
+    ? createRepositoryWorkspaceProvisioner({ sources: options.repositorySources })
       : undefined,
   });
 }

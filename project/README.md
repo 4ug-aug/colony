@@ -1,68 +1,42 @@
-# Agent sandboxes
+# Agent runs
 
-Agents depend on two ports:
+Runs use the generic `RunExecutor` API. A composition registers an agent
+definition, then callers start and poll runs by ID.
 
-- `SandboxProvider` creates and owns an isolated execution environment.
-- `AgentProvider` runs an agent inside that environment.
+```ts
+const executor = createLightAgentExecutor();
+const id = executor.startRun({
+  agentDefinitionId: "light-agent",
+  task: "hello",
+});
+```
 
-The application composes them with `createAgentRunner`.
+The executor owns sandbox creation, optional workspace preparation, runtime
+execution, output retention, cancellation, and cleanup.
 
 ## Tests
 
 ```bash
-cd project
 bun test
 ```
 
-The native-container end-to-end test is opt-in. Install Apple's `container`
-CLI and start it first:
+The native-container end-to-end test is opt-in:
 
 ```bash
 container system start
-cd project
-bun run test:e2e
+RUN_CONTAINER_E2E=1 bun test e2e/light-agent.e2e.test.ts
 ```
 
-The light agent is deterministic and credential-free. It proves creation,
-execution, output, and cleanup through a real Apple container.
-
-## Agent providers
-
-`createCommandAgentProvider` supports any agent CLI included in the sandbox
-image:
-
-```ts
-const codex = createCommandAgentProvider({
-  command: ({ prompt }) => ["codex", "exec", prompt],
-});
-
-const claude = createCommandAgentProvider({
-  command: ({ prompt }) => ["claude", "-p", prompt],
-});
-```
-
-The image is responsible for installing and authenticating the selected
-agent CLI.
-
-## Software engineer runtime
-
-Build the generic Bun runtime image once:
+## Software engineer CLI
 
 ```bash
 bun run agent:build
-```
 
-Run the software engineer from the terminal with any OpenAI-compatible model:
-
-```bash
 LLM_BASE_URL=https://api.openai.com/v1 \
 LLM_API_KEY=... \
 LLM_MODEL=... \
-LINEAR_MCP_API_KEY=... \
 bun run agent:software-engineer -- "Investigate this task and report your findings."
 ```
 
-The model key is only given to the runtime process; shell commands launched by
-the agent do not inherit it. `LINEAR_MCP_API_KEY` enables Linear's remote MCP
-server for the software engineer; a future run-scoped gateway session will
-replace this direct binding without changing the role runtime.
+V1 does not bind capability grants or MCP sessions. Repository inputs and
+capability sessions are separate follow-up slices.

@@ -1,13 +1,9 @@
 import { expect, test } from "bun:test";
 import { createOpenAIAgentsRuntime } from "./openai-agents-runtime";
-import { softwareEngineerRole } from "../roles/software-engineer";
 
-test("the OpenAI runtime passes a role and model to its container command", async () => {
+test("the OpenAI runtime passes the definition and task to its container command", async () => {
   let request: unknown;
-  const runtime = createOpenAIAgentsRuntime({
-    role: softwareEngineerRole,
-    model: { baseUrl: "https://models.example/v1", apiKey: "secret", model: "test" },
-  });
+  const runtime = createOpenAIAgentsRuntime();
 
   await runtime.run(
     {
@@ -18,17 +14,32 @@ test("the OpenAI runtime passes a role and model to its container command", asyn
       },
       dispose: async () => {},
     },
-    { prompt: "Fix the test" },
+    {
+      task: "Fix the test",
+      definition: {
+        id: "software-engineer",
+        instructions: "Inspect and verify.",
+        requestedCapabilities: [],
+        runtime: {
+          image: "sweat-agent:latest",
+          model: { baseUrl: "https://models.example/v1", apiKey: "secret", model: "test" },
+        },
+        executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 1000 },
+      },
+      workspace: "/work",
+    },
   );
 
   expect(request).toEqual({
     command: ["bun", "run", "/app/runtime/cli.ts"],
     env: {
-      SWEAT_AGENT_PROMPT: "Fix the test",
-      SWEAT_AGENT_ROLE: "software-engineer",
+      SWEAT_AGENT_TASK: "Fix the test",
+      SWEAT_AGENT_ID: "software-engineer",
+      SWEAT_AGENT_INSTRUCTIONS: "Inspect and verify.",
       SWEAT_MODEL_BASE_URL: "https://models.example/v1",
       SWEAT_MODEL_API_KEY: "secret",
       SWEAT_MODEL_NAME: "test",
     },
+    workdir: "/work",
   });
 });

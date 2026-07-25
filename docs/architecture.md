@@ -34,11 +34,9 @@ removes the sandbox.
 ## Current support
 
 - Apple Container sandbox provider with automatic cleanup.
-- Generic Bun agent image and a terminal software-engineer runner.
+- Generic Bun agent image and an asynchronous software-engineer run executor.
 - OpenAI-compatible model calls, a shell tool, and shell subprocesses without
   model credentials.
-- Direct Linear remote MCP binding with `LINEAR_MCP_API_KEY` for the current
-  software-engineer CLI path.
 - A composable MCP gateway core that issues expiring sessions and filters tools,
   plus a Linear upstream adapter.
 - Repository-workspace provisioning and a GitHub adapter backed by Octokit.
@@ -51,11 +49,10 @@ Run grant         -> allowed tools, resources, and expiry
 MCP session       -> short-lived token presented by the agent container
 ```
 
-The future gateway is the agent-facing MCP server. It keeps the Linear key out
-of agent containers, proxies approved calls to Linear, audits them, and revokes
-the session when a run ends. The direct API-key binding exists only to prove the
-Linear capability end to end; the runtime's MCP session binding lets the
-gateway replace it without changing roles.
+The gateway is the agent-facing MCP server. It keeps the Linear key out of
+agent containers, proxies approved calls to Linear, audits them, and revokes
+the session when a run ends. Capability-session binding is the next execution
+slice; V1 runs without grants or MCP sessions.
 
 ## Deliberately not built yet
 

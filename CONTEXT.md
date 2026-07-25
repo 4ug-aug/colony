@@ -4,6 +4,15 @@ Sweat is an agent orchestration platform that customers can run in their own
 infrastructure. It creates on-demand, isolated agent workers for many roles;
 software engineering is one possible role, not the platform's default shape.
 
+## Language
+
+**Task**: The plain-text assignment supplied by a run to an agent runtime.
+_Avoid_: Prompt
+
+**System instructions**: The role-owned instructions supplied by an agent
+definition.
+_Avoid_: Task prompt
+
 ## Core boundaries
 
 Keep these three concepts separate:

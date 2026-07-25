@@ -4,7 +4,7 @@ import {
   type CommandResult,
   type CommandRunner,
 } from "../sdk/src";
-import { createLightAgentRunner } from "./light-agent";
+import { createLightAgentExecutor } from "./light-agent";
 
 test("the light composition runs an agent in an Apple sandbox", async () => {
   const process: CommandRunner = {
@@ -17,15 +17,16 @@ test("the light composition runs an agent in an Apple sandbox", async () => {
       };
     },
   };
-  const runner = createLightAgentRunner({
+  const executor = createLightAgentExecutor({
     container: createAppleContainerClient(process),
     createId: () => "sandbox-1",
   });
 
-  const result = await runner.run({
-    sandbox: { image: "alpine:latest" },
-    prompt: "hello",
-  });
+  const id = executor.startRun({ agentDefinitionId: "light-agent", task: "hello" });
+  while (executor.getRun(id)?.state === "preparing" || executor.getRun(id)?.state === "running") {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  const result = executor.getRun(id)!;
 
   expect(result.stdout).toBe("light-agent: hello\n");
 });
