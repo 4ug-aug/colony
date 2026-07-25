@@ -1,4 +1,5 @@
 import { createAgentRunner, type AgentRunner } from "../agents";
+import { createRepositoryWorkspaceProvisioner, type RepositoryCheckoutSource } from "../inputs/repository";
 import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import { createOpenAIAgentsRuntime } from "../providers/openai-agents-runtime";
 import { softwareEngineerRole } from "../roles/software-engineer";
@@ -14,6 +15,7 @@ import type {
 export function createSoftwareEngineerRunner(options: {
   model: OpenAICompatibleModel;
   mcp?: McpSessionBinding;
+  repositorySources?: readonly RepositoryCheckoutSource[];
   container?: AppleContainerClient;
   createId?: () => string;
 }): AgentRunner {
@@ -29,5 +31,8 @@ export function createSoftwareEngineerRunner(options: {
       model: options.model,
       mcp: options.mcp,
     }),
+    inputs: options.repositorySources
+      ? createRepositoryWorkspaceProvisioner({ sources: options.repositorySources })
+      : undefined,
   });
 }

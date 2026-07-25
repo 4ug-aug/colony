@@ -5,7 +5,7 @@
       "moduleResolution": "bundler",
       "strict": true,
       "noEmit": true,
-      "types": ["bun"]
+      "types": ["bun", "node"]
     },
-    "include": ["sdk/src/**/*", "sdk/test/**/*"]
+    "include": ["./*"]
   }

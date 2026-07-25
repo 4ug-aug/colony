@@ -64,6 +64,13 @@ async function runShell(command: string): Promise<string> {
   });
 }
 
+function shellCommand(input: unknown): string {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Shell command is required");
+  const command = Object.entries(input).find(([name]) => name === "command")?.[1];
+  if (typeof command !== "string") throw new Error("Shell command is required");
+  return command;
+}
+
 export async function runAgent(
   request: AgentRuntimeRequest,
   dependencies: { model?: Model; modelProvider?: ModelProvider } = {},
@@ -103,7 +110,7 @@ export async function runAgent(
         },
         strict: true,
         execute: async (input) =>
-          runShell((input as { command: string }).command),
+          runShell(shellCommand(input)),
       }),
     ],
   });

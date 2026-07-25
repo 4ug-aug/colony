@@ -11,6 +11,11 @@
     "test:e2e": "RUN_CONTAINER_E2E=1 bun test e2e/light-agent.e2e.test.ts"
   },
   "dependencies": {
-    "@openai/agents": "^0.13.5"
+    "@openai/agents": "^0.13.5",
+    "octokit": "^5.0.5"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.1.1"
   }
 }

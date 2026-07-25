@@ -66,7 +66,7 @@ export class ContainerCommandError extends Error {
   }
 }
 
-export type JsonObject = Record<string, unknown>;
+export type JsonParser<T> = (value: unknown) => T;
 
 export interface RunOptions {
   name?: string;
@@ -96,8 +96,10 @@ export interface ExecOptions {
 
 export interface ContainerOperations {
   run(image: string, options?: RunOptions): Promise<CommandResult>;
-  list<T = JsonObject>(options?: { all?: boolean }): Promise<T[]>;
-  inspect<T = unknown>(ids: readonly string[]): Promise<T>;
+  list(options?: { all?: boolean }): Promise<unknown[]>;
+  list<T>(parse: JsonParser<T>, options?: { all?: boolean }): Promise<T[]>;
+  inspect(ids: readonly string[]): Promise<unknown>;
+  inspect<T>(ids: readonly string[], parse: JsonParser<T>): Promise<T>;
   exec(
     id: string,
     command: readonly string[],
@@ -111,13 +113,15 @@ export interface ImageOperations {
   pull(reference: string, options?: { platform?: string }): Promise<void>;
   push(reference: string, options?: { platform?: string }): Promise<void>;
   tag(source: string, target: string): Promise<void>;
-  list<T = JsonObject>(): Promise<T[]>;
+  list(): Promise<unknown[]>;
+  list<T>(parse: JsonParser<T>): Promise<T[]>;
 }
 
 export interface SystemOperations {
   start(): Promise<void>;
   stop(): Promise<void>;
-  status<T = unknown>(): Promise<T>;
+  status(): Promise<unknown>;
+  status<T>(parse: JsonParser<T>): Promise<T>;
 }
 
 export interface AppleContainerClient {
@@ -140,8 +144,13 @@ async function checked(
   return result;
 }
 
-function json<T>(result: CommandResult): T {
-  return JSON.parse(result.stdout) as T;
+function json(result: CommandResult): unknown {
+  return JSON.parse(result.stdout);
+}
+
+function array(value: unknown): unknown[] {
+  if (!Array.isArray(value)) throw new Error("Expected container JSON array");
+  return value;
 }
 
 function addProcessOptions(
@@ -183,14 +192,21 @@ export function createContainerOperations(
       });
     },
 
-    async list<T = JsonObject>({ all = false } = {}) {
+    async list<T>(
+      parserOrOptions?: JsonParser<T> | { all?: boolean },
+      options?: { all?: boolean },
+    ) {
+      const parse = typeof parserOrOptions === "function" ? parserOrOptions : undefined;
+      const { all = false } = (typeof parserOrOptions === "function" ? options : parserOrOptions) ?? {};
       const args = ["list", "--format", "json"];
       if (all) args.push("--all");
-      return json<T[]>(await checked(runner, args));
+      const value = array(json(await checked(runner, args)));
+      return parse ? value.map(parse) : value;
     },
 
-    async inspect<T = unknown>(ids: readonly string[]) {
-      return json<T>(await checked(runner, ["inspect", ...ids]));
+    async inspect<T>(ids: readonly string[], parse?: JsonParser<T>) {
+      const value = json(await checked(runner, ["inspect", ...ids]));
+      return parse ? parse(value) : value;
     },
 
     exec(id, command, options = {}) {
@@ -247,10 +263,9 @@ export function createImageOperations(runner: CommandRunner): ImageOperations {
       await checked(runner, ["image", "tag", source, target]);
     },
 
-    async list<T = JsonObject>() {
-      return json<T[]>(
-        await checked(runner, ["image", "list", "--format", "json"]),
-      );
+    async list<T>(parse?: JsonParser<T>) {
+      const value = array(json(await checked(runner, ["image", "list", "--format", "json"])));
+      return parse ? value.map(parse) : value;
     },
   };
 }
@@ -267,10 +282,9 @@ export function createSystemOperations(
       await checked(runner, ["system", "stop"]);
     },
 
-    async status<T = unknown>() {
-      return json<T>(
-        await checked(runner, ["system", "status", "--format", "json"]),
-      );
+    async status<T>(parse?: JsonParser<T>) {
+      const value = json(await checked(runner, ["system", "status", "--format", "json"]));
+      return parse ? parse(value) : value;
     },
   };
 }

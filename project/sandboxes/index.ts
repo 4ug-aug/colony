@@ -1,10 +1,12 @@
 export interface SandboxSpec {
   image: string;
+  volumes?: readonly string[];
 }
 
 export interface ExecRequest {
   command: readonly string[];
   env?: Record<string, string | undefined>;
+  workdir?: string;
 }
 
 export interface ExecutionResult {

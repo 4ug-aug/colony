@@ -15,6 +15,7 @@ export function createAppleContainerSandboxProvider(options: {
         name: id,
         detach: true,
         command: ["sh", "-c", "while :; do sleep 3600; done"],
+        volumes: spec.volumes,
       });
       let disposal: Promise<void> | undefined;
 
@@ -25,7 +26,10 @@ export function createAppleContainerSandboxProvider(options: {
           const result = await options.container.containers.exec(
             id,
             request.command,
-            { env: request.env },
+            {
+              ...(request.env ? { env: request.env } : {}),
+              ...(request.workdir ? { workdir: request.workdir } : {}),
+            },
           );
           return {
             exitCode: result.exitCode,

@@ -66,10 +66,12 @@ describe("Apple container SDK", () => {
       },
     ]);
 
-    const containers = await createAppleContainerClient(runner).containers.list<{
-      id: string;
-      state: string;
-    }>();
+    const containers = await createAppleContainerClient(runner).containers.list((value) => {
+      if (!value || typeof value !== "object") throw new Error("Expected container");
+      const { id, state } = value as { id?: unknown; state?: unknown };
+      if (typeof id !== "string" || typeof state !== "string") throw new Error("Invalid container");
+      return { id, state };
+    });
 
     expect(containers).toEqual([{ id: "web", state: "running" }]);
   });

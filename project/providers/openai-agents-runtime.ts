@@ -25,6 +25,7 @@ export function createOpenAIAgentsRuntime(options: {
           SWEAT_MCP_TOKEN: options.mcp?.token,
           SWEAT_MCP_ALLOWED_TOOLS: options.mcp?.allowedTools?.join(","),
         },
+        ...(request.workspace ? { workdir: request.workspace } : {}),
       }),
   };
 }

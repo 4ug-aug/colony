@@ -20,5 +20,9 @@ export const softwareEngineerRole: AgentRole = {
         "linear.updateIssue",
       ],
     },
+    {
+      id: "github.pull-requests",
+      tools: ["github.createPullRequest"],
+    },
   ],
 };

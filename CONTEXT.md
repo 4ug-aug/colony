@@ -44,10 +44,9 @@ not the platform architecture.
 ## Roles and capabilities
 
 Roles declare capabilities rather than relying on implicit host state. A
-software-engineer role may be allowed shell, Git, and GitHub tools; given a
-repository URL and approved credentials, it can clone into its own ephemeral
-filesystem. Other roles may use uploaded artifacts, APIs, databases, or only a
-prompt.
+software-engineer role may be allowed shell, Git, and GitHub tools, but a run
+prepares required repositories and other inputs before the role starts. Other
+roles may use uploaded artifacts, APIs, databases, or only a prompt.
 
 Mounts are optional generic input artifacts, never a required worktree
 convention.
