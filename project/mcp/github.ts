@@ -3,7 +3,7 @@ import { createMcpGateway, type McpGateway, type McpTool, type McpUpstream } fro
 
 const tools: readonly McpTool[] = [{
   name: "github.create_pull_request",
-  description: "Publish this run's committed branch and create a pull request. Do not use git push or configure a remote: GitHub authentication remains host-side.",
+  description: "Publish this run's committed branch and create a pull request. It is safe to retry after a timeout. Do not use git push or configure a remote: GitHub authentication remains host-side.",
   inputSchema: {
     type: "object",
     properties: {
@@ -17,6 +17,7 @@ const tools: readonly McpTool[] = [{
 
 type PullRequestRequest = { title: string; body?: string };
 type Change = { path: string; deleted: boolean };
+type RemoteBranch = { tree: string };
 
 function string(value: unknown, message: string): string {
   if (typeof value !== "string" || !value) throw new Error(message);
@@ -79,6 +80,47 @@ async function workspaceCommits(options: {
     .filter(Boolean);
 }
 
+function hasStatus(error: unknown, status: number): boolean {
+  return typeof error === "object" && error !== null && "status" in error
+    && (error as { status?: unknown }).status === status;
+}
+
+async function remoteBranch(options: {
+  octokit: Octokit;
+  repository: { owner: string; repo: string };
+  branch: string;
+}): Promise<RemoteBranch | undefined> {
+  try {
+    const ref = await options.octokit.rest.git.getRef({
+      ...options.repository,
+      ref: `heads/${options.branch}`,
+    });
+    const commit = await options.octokit.rest.git.getCommit({
+      ...options.repository,
+      commit_sha: ref.data.object.sha,
+    });
+    return { tree: commit.data.tree.sha };
+  } catch (error) {
+    if (hasStatus(error, 404)) return undefined;
+    throw error;
+  }
+}
+
+async function existingPullRequest(options: {
+  octokit: Octokit;
+  repository: { owner: string; repo: string };
+  branch: string;
+  base: string;
+}): Promise<unknown | undefined> {
+  const response = await options.octokit.rest.pulls.list({
+    ...options.repository,
+    state: "all",
+    head: `${options.repository.owner}:${options.branch}`,
+    base: options.base,
+  });
+  return response.data[0];
+}
+
 export async function createGitHubAppInstallationClient(options: {
   appId: string;
   privateKey: string;
@@ -115,6 +157,24 @@ export function createGitHubMcpUpstream(options: {
       const input = parsePullRequestRequest(args);
       const commits = await workspaceCommits(options);
       if (!commits.length) throw new Error("Run branch has no commits to publish");
+      const expectedTree = (await git(options.workspace, ["rev-parse", `${options.branch}^{tree}`])).trim();
+      const branch = await remoteBranch({ octokit: options.octokit, repository, branch: options.branch });
+      if (branch) {
+        if (branch.tree !== expectedTree) {
+          throw new Error(`Run branch ${options.branch} already exists with different contents`);
+        }
+        const pullRequest = await existingPullRequest({
+          octokit: options.octokit, repository, branch: options.branch, base: options.base,
+        });
+        if (pullRequest) return pullRequest;
+        return (await options.octokit.rest.pulls.create({
+          ...repository,
+          title: input.title,
+          body: input.body,
+          head: options.branch,
+          base: options.base,
+        })).data;
+      }
 
       const head = await options.octokit.rest.git.getRef({
         ...repository,
@@ -154,18 +214,31 @@ export function createGitHubMcpUpstream(options: {
         remoteCommit = next.data.sha;
         remoteTree = tree.data.sha;
       }
-      await options.octokit.rest.git.createRef({
-        ...repository,
-        ref: `refs/heads/${options.branch}`,
-        sha: remoteCommit,
-      });
-      return (await options.octokit.rest.pulls.create({
-        ...repository,
-        title: input.title,
-        body: input.body,
-        head: options.branch,
-        base: options.base,
-      })).data;
+      try {
+        await options.octokit.rest.git.createRef({
+          ...repository,
+          ref: `refs/heads/${options.branch}`,
+          sha: remoteCommit,
+        });
+      } catch (error) {
+        const branch = await remoteBranch({ octokit: options.octokit, repository, branch: options.branch });
+        if (!hasStatus(error, 422) || !branch || branch.tree !== expectedTree) throw error;
+      }
+      try {
+        return (await options.octokit.rest.pulls.create({
+          ...repository,
+          title: input.title,
+          body: input.body,
+          head: options.branch,
+          base: options.base,
+        })).data;
+      } catch (error) {
+        const pullRequest = await existingPullRequest({
+          octokit: options.octokit, repository, branch: options.branch, base: options.base,
+        });
+        if (!hasStatus(error, 422) || !pullRequest) throw error;
+        return pullRequest;
+      }
     },
   };
 }

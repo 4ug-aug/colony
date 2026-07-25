@@ -45,6 +45,9 @@ test("GitHub publishes only the committed run branch", async () => {
       request: {
         fetch: async (url: string, init?: RequestInit) => {
           requests.push({ url, method: init?.method, body: typeof init?.body === "string" ? init.body : undefined });
+          if (url.includes("git/ref/heads%2Fsweat%2Frun-1")) {
+            return Response.json({ message: "Not Found" }, { status: 404 });
+          }
           return Response.json(responses.shift());
         },
       },
@@ -70,10 +73,49 @@ test("GitHub publishes only the committed run branch", async () => {
     })).resolves.toEqual({ number: 12 });
 
     expect(requests.map(({ url, method }) => [method ?? "GET", url.replace("https://api.github.com/repos/acme/product/", "")])).toEqual([
-      ["GET", "git/ref/heads%2Fmain"], ["GET", "git/commits/base-commit"], ["POST", "git/blobs"],
-      ["POST", "git/trees"], ["POST", "git/commits"], ["POST", "git/refs"], ["POST", "pulls"],
+      ["GET", "git/ref/heads%2Fsweat%2Frun-1"], ["GET", "git/ref/heads%2Fmain"],
+      ["GET", "git/commits/base-commit"], ["POST", "git/blobs"], ["POST", "git/trees"],
+      ["POST", "git/commits"], ["POST", "git/refs"], ["POST", "pulls"],
     ]);
-    expect(JSON.parse(requests[5].body!)).toEqual({ ref: "refs/heads/sweat/run-1", sha: "commit" });
+    expect(JSON.parse(requests[6].body!)).toEqual({ ref: "refs/heads/sweat/run-1", sha: "commit" });
+  } finally {
+    await rm(workspace.directory, { force: true, recursive: true });
+  }
+});
+
+test("GitHub returns the existing pull request when publishing is retried", async () => {
+  const workspace = await branchWithChange();
+  const expectedTree = (await git(workspace.directory, ["rev-parse", "HEAD^{tree}"])).trim();
+  const requests: Array<{ url: string; method?: string }> = [];
+  const gateway = createGitHubMcpGateway({
+    octokit: new Octokit({
+      auth: "secret",
+      request: {
+        fetch: async (url: string, init?: RequestInit) => {
+          requests.push({ url, method: init?.method });
+          if (url.includes("git/ref/heads%2Fsweat%2Frun-1")) return Response.json({ object: { sha: "run-commit" } });
+          if (url.includes("git/commits/run-commit")) return Response.json({ tree: { sha: expectedTree } });
+          if (url.includes("pulls?")) return Response.json([{ number: 12, html_url: "https://example.test/pr/12" }]);
+          throw new Error(`Unexpected GitHub request: ${url}`);
+        },
+      },
+    }),
+    repository: "acme/product",
+    workspace: workspace.directory,
+    branch: "sweat/run-1",
+    baseCommit: workspace.baseCommit,
+    base: "main",
+  });
+  const session = gateway.createSession({
+    tools: ["github.create_pull_request"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  try {
+    await expect(gateway.callTool(session.token, "github.create_pull_request", { title: "Change" }))
+      .resolves.toEqual({ number: 12, html_url: "https://example.test/pr/12" });
+    await expect(gateway.callTool(session.token, "github.create_pull_request", { title: "Change" }))
+      .resolves.toEqual({ number: 12, html_url: "https://example.test/pr/12" });
+    expect(requests.filter(({ method }) => method === "POST")).toHaveLength(0);
   } finally {
     await rm(workspace.directory, { force: true, recursive: true });
   }
