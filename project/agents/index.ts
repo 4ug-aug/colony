@@ -4,6 +4,8 @@ import type {
   SandboxProvider,
   SandboxSpec,
 } from "../sandboxes";
+import type { CapabilitySessionBinding, CapabilitySessionFactory } from "../mcp/session";
+import type { McpGrant } from "../mcp/gateway";
 
 export interface ModelRuntimeConfig {
   baseUrl: string;
@@ -83,6 +85,7 @@ export interface RunRecord {
   task: string;
   definition: AgentDefinition;
   inputs: readonly RunInput[];
+  capabilityGrant?: McpGrant;
   effectiveLimits: RunLimits;
   stdout: string;
   stderr: string;
@@ -127,6 +130,7 @@ export interface RuntimeRequest {
   definition: AgentDefinition;
   task: string;
   workspace?: string;
+  capabilitySession?: CapabilitySessionBinding;
 }
 
 export interface AgentProvider {
@@ -138,6 +142,7 @@ export interface StartRunRequest {
   definitionId?: string;
   task: string;
   inputs?: readonly RunInput[];
+  capabilityGrant?: McpGrant;
   maxDurationMs?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
@@ -195,6 +200,7 @@ export function createRunExecutor(dependencies: {
   runtime: AgentProvider;
   store?: RunStore;
   inputs?: InputProvisioner;
+  capabilities?: CapabilitySessionFactory;
   createId?: () => string;
   now?: () => number;
 }): RunExecutor {
@@ -221,6 +227,7 @@ export function createRunExecutor(dependencies: {
 
   const execute = async (record: RunRecord): Promise<void> => {
     let workspace: PreparedInputs["workspace"];
+    let capabilitySession: CapabilitySessionBinding | undefined;
     let sandbox: Sandbox | undefined;
     let result: ExecutionResult | undefined;
     let failure: string | undefined;
@@ -229,6 +236,10 @@ export function createRunExecutor(dependencies: {
 
     try {
       workspace = (await dependencies.inputs?.prepare(record.inputs))?.workspace;
+      if (cancellation.has(record.id)) return;
+      capabilitySession = record.capabilityGrant
+        ? dependencies.capabilities?.create(record.capabilityGrant)
+        : undefined;
       if (cancellation.has(record.id)) return;
 
       const spec: SandboxSpec = {
@@ -246,6 +257,7 @@ export function createRunExecutor(dependencies: {
         definition: snapshot(record.definition),
         task: record.task,
         ...(workspace ? { workspace: "/work" } : {}),
+        ...(capabilitySession ? { capabilitySession } : {}),
       });
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
@@ -275,6 +287,13 @@ export function createRunExecutor(dependencies: {
       if (workspace) {
         try {
           await workspace.dispose();
+        } catch (error) {
+          cleanupFailure = errorText(error);
+        }
+      }
+      if (capabilitySession) {
+        try {
+          capabilitySession.revoke();
         } catch (error) {
           cleanupFailure = errorText(error);
         }
@@ -316,6 +335,9 @@ export function createRunExecutor(dependencies: {
       if (!definitionId) throw new Error("Agent definition ID is required");
       const definition = dependencies.definitions.resolve(definitionId);
       if (!definition) throw new Error(`Unknown agent definition: ${definitionId}`);
+      if (request.capabilityGrant && !dependencies.capabilities) {
+        throw new Error("A capability session factory is required for a capability grant");
+      }
       const maxDurationMs = request.maxDurationMs ?? request.timeoutMs ?? definition.executionPolicy.maxDurationMs;
       const maxOutputBytes = request.maxOutputBytes ?? definition.executionPolicy.maxOutputBytes;
       if (!Number.isSafeInteger(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > definition.executionPolicy.maxDurationMs) {
@@ -331,6 +353,9 @@ export function createRunExecutor(dependencies: {
         task: request.task,
         definition: snapshot(definition),
         inputs: snapshot(request.inputs ?? []),
+        ...(request.capabilityGrant
+          ? { capabilityGrant: snapshot(request.capabilityGrant) }
+          : {}),
         effectiveLimits: { maxDurationMs, maxOutputBytes },
         stdout: "",
         stderr: "",

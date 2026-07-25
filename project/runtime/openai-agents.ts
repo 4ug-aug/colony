@@ -1,11 +1,14 @@
 import {
   Agent,
+  MCPServers,
+  MCPServerStreamableHttp,
   type Model,
   type ModelProvider,
   OpenAIProvider,
   Runner,
   tool,
 } from "@openai/agents";
+import type { CapabilitySessionBinding } from "../mcp/session";
 
 export interface OpenAICompatibleModel {
   baseUrl: string;
@@ -18,6 +21,7 @@ export interface AgentRuntimeRequest {
   instructions: string;
   agentId: string;
   model: OpenAICompatibleModel;
+  capabilitySession?: CapabilitySessionBinding;
 }
 
 export function normalizeModelBaseUrl(baseUrl: string): string {
@@ -31,6 +35,7 @@ export function normalizeModelBaseUrl(baseUrl: string): string {
 function shellEnvironment(): Record<string, string | undefined> {
   const env = { ...Bun.env };
   delete env.SWEAT_MODEL_API_KEY;
+  delete env.SWEAT_MCP_TOKEN;
   delete env.OPENAI_API_KEY;
   return env;
 }
@@ -65,10 +70,23 @@ export async function runAgent(
   request: AgentRuntimeRequest,
   dependencies: { model?: Model; modelProvider?: ModelProvider } = {},
 ): Promise<string> {
+  const mcpServers = request.capabilitySession
+    ? await MCPServers.open([
+        new MCPServerStreamableHttp({
+          name: "capabilities",
+          url: request.capabilitySession.url,
+          requestInit: {
+            headers: { Authorization: `Bearer ${request.capabilitySession.token}` },
+          },
+          toolFilter: { allowedToolNames: [...request.capabilitySession.allowedTools] },
+        }),
+      ])
+    : undefined;
   const agent = new Agent({
     name: request.agentId,
     instructions: request.instructions,
     model: dependencies.model ?? request.model.model,
+    mcpServers: mcpServers?.active,
     tools: [
       tool({
         name: "shell",
@@ -86,16 +104,20 @@ export async function runAgent(
     ],
   });
 
-  const result = await new Runner({
-    modelProvider:
-      dependencies.modelProvider ??
-      new OpenAIProvider({
-        apiKey: request.model.apiKey,
-        baseURL: normalizeModelBaseUrl(request.model.baseUrl),
-        useResponses: false,
-      }),
-    tracingDisabled: true,
-  }).run(agent, request.task);
+  try {
+    const result = await new Runner({
+      modelProvider:
+        dependencies.modelProvider ??
+        new OpenAIProvider({
+          apiKey: request.model.apiKey,
+          baseURL: normalizeModelBaseUrl(request.model.baseUrl),
+          useResponses: false,
+        }),
+      tracingDisabled: true,
+    }).run(agent, request.task);
 
-  return result.finalOutput ?? "";
+    return result.finalOutput ?? "";
+  } finally {
+    await mcpServers?.close();
+  }
 }

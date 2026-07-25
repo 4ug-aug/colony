@@ -132,3 +132,45 @@ test("limits above the definition maximum are rejected", async () => {
     maxDurationMs: 1001,
   })).toThrow();
 });
+
+test("runs bind a granted capability session and revoke it during cleanup", async () => {
+  let revoked = 0;
+  let boundToken: string | undefined;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    capabilities: {
+      create: (grant) => {
+        expect(grant.tools).toEqual(["linear.getIssue"]);
+        return {
+          url: "http://gateway.test/mcp",
+          token: "run-token",
+          expiresAt: grant.expiresAt,
+          allowedTools: grant.tools,
+          revoke: () => { revoked++; },
+        };
+      },
+    },
+    sandboxes: { create: async () => ({
+      id: "sandbox",
+      exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+      dispose: async () => {},
+    }) },
+    runtime: { run: async (_sandbox, request) => {
+      boundToken = request.capabilitySession?.token;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    } },
+    createId: () => "run-6",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "read issue",
+    capabilityGrant: {
+      tools: ["linear.getIssue"],
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(boundToken).toBe("run-token");
+  expect(revoked).toBe(1);
+});

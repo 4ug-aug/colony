@@ -51,8 +51,8 @@ MCP session       -> short-lived token presented by the agent container
 
 The gateway is the agent-facing MCP server. It keeps the Linear key out of
 agent containers, proxies approved calls to Linear, audits them, and revokes
-the session when a run ends. Capability-session binding is the next execution
-slice; V1 runs without grants or MCP sessions.
+the session when a run ends. Capability-session binding is optional per run;
+the software-engineer CLI enables it when `LINEAR_MCP_API_KEY` is configured.
 
 ## Deliberately not built yet
 

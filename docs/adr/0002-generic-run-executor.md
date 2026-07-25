@@ -4,9 +4,9 @@ Status: accepted
 
 Sweat starts runs asynchronously through a generic executor backed by an
 in-memory run-store port. The executor receives a resolved agent-definition
-snapshot, plain-text task, and optional prepared workspace input; it knows
-neither role names, provider credentials, nor gateway transport. V1 does not
-bind capability grants or MCP sessions.
+snapshot, plain-text task, optional prepared workspace input, and an optional
+already-resolved capability grant; it knows neither role names, provider
+credentials, nor gateway transport.
 
 V1 has `preparing` and `running` active states and `succeeded`, `failed`, and
 `cancelled` terminal states. Cancellation is idempotent and wins before a

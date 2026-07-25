@@ -18,6 +18,13 @@ export function createOpenAIAgentsRuntime(options: {
           SWEAT_MODEL_BASE_URL: model.baseUrl,
           SWEAT_MODEL_API_KEY: model.apiKey,
           SWEAT_MODEL_NAME: model.model,
+          ...(request.capabilitySession
+            ? {
+                SWEAT_MCP_URL: request.capabilitySession.url,
+                SWEAT_MCP_TOKEN: request.capabilitySession.token,
+                SWEAT_MCP_ALLOWED_TOOLS: request.capabilitySession.allowedTools.join(","),
+              }
+            : {}),
         },
         ...(request.workspace ? { workdir: request.workspace } : {}),
       });

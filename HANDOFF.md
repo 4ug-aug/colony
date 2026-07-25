@@ -56,12 +56,22 @@ The implementation is under `project/` and uses Bun/TypeScript.
   LLM_BASE_URL=https://api.openai.com/v1 \
   LLM_API_KEY=... \
   LLM_MODEL=... \
-  LINEAR_MCP_API_KEY=... \
   bun run agent:software-engineer -- "Investigate this task and report your findings."
   ```
 
-The current direct `LINEAR_MCP_API_KEY` binding is deliberately a temporary
-end-to-end proof. Do not extend the pattern to provider credentials in agents.
+When `LINEAR_MCP_API_KEY` is set, the CLI keeps it on the host, creates a
+run-scoped gateway session, and passes only the short-lived session binding to
+the container.
+
+Apple Container needs a host-service DNS rule to reach the host gateway. Set
+it up once (the rule is removed after a macOS restart):
+
+```bash
+sudo container system dns create host.container.internal --localhost 203.0.113.113
+```
+
+Use `SWEAT_MCP_HOST` to override the advertised host for another local
+forwarding setup.
 
 ## Capability model
 
@@ -73,16 +83,17 @@ Run grant         -> narrow allowed actions/resources/expiry
 MCP session       -> short-lived token given to the container
 ```
 
-The repository already has a composable MCP gateway core and Linear upstream
-adapter. The eventual HTTP/MCP gateway will keep provider credentials outside
-the container, filter/audit calls, and revoke the session when the run ends.
-Roles request capabilities; runs grant them. Do not create a generic task
+The repository has a composable MCP gateway core, HTTP transport, and Linear
+upstream adapter. The gateway keeps provider credentials outside the
+container, filters calls, and revokes the session when the run ends. Roles
+request capabilities; runs grant them. Do not create a generic task
 abstraction until multiple providers prove one is needed.
 
 ## Next vertical slice
 
-Build the generic repository-workspace input and checkout provisioner, then a
-scoped GitHub capability that can create a branch and pull request.
+Complete the validated repository-to-PR path by wiring the existing generic
+repository workspace provisioner and scoped GitHub gateway into run creation
+through the same capability-session transport.
 
 Target flow:
 

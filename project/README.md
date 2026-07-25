@@ -35,8 +35,20 @@ bun run agent:build
 LLM_BASE_URL=https://api.openai.com/v1 \
 LLM_API_KEY=... \
 LLM_MODEL=... \
+LINEAR_MCP_API_KEY=... \
 bun run agent:software-engineer -- "Investigate this task and report your findings."
 ```
 
-V1 does not bind capability grants or MCP sessions. Repository inputs and
-capability sessions are separate follow-up slices.
+Capability sessions are optional. Set `LINEAR_MCP_API_KEY` to let the CLI
+create a host-owned, run-scoped Linear session; the provider credential never
+enters the sandbox.
+
+Apple Container needs a host-service DNS rule to reach the host gateway. Set
+it up once (the rule is removed after a macOS restart):
+
+```bash
+sudo container system dns create host.container.internal --localhost 203.0.113.113
+```
+
+Use `SWEAT_MCP_HOST` to override the advertised host for another local
+forwarding setup.

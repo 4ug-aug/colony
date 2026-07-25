@@ -13,6 +13,7 @@ import {
   type AppleContainerClient,
 } from "../sdk/src";
 import type { OpenAICompatibleModel } from "../runtime/openai-agents";
+import type { CapabilitySessionFactory } from "../mcp/session";
 
 const defaultLimits = {
   maxDurationMs: 30 * 60 * 1000,
@@ -23,6 +24,7 @@ export function createSoftwareEngineerExecutor(options: {
   model: OpenAICompatibleModel;
   image?: string;
   repositorySources?: readonly RepositoryCheckoutSource[];
+  capabilities?: CapabilitySessionFactory;
   container?: AppleContainerClient;
   createId?: () => string;
 }): RunExecutor {
@@ -44,6 +46,7 @@ export function createSoftwareEngineerExecutor(options: {
       createId: options.createId,
     }),
     runtime: createOpenAIAgentsRuntime({}),
+    capabilities: options.capabilities,
     inputs: options.repositorySources
     ? createRepositoryWorkspaceProvisioner({ sources: options.repositorySources })
       : undefined,
