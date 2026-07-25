@@ -66,6 +66,7 @@ try {
 
   process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
+  if (result.error) process.stderr.write(`${result.error}\n`);
   process.exitCode = result.state === "succeeded" ? 0 : 1;
 } finally {
   await capabilityServer?.close();

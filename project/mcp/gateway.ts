@@ -49,8 +49,13 @@ export function createMcpGateway(options: {
     },
 
     async listTools(token) {
-      const allowed = new Set(grantFor(token).tools);
-      return (await options.upstream.listTools()).filter((tool) => allowed.has(tool.name));
+      const granted = grantFor(token).tools;
+      const allowed = new Set(granted);
+      const tools = (await options.upstream.listTools()).filter((tool) => allowed.has(tool.name));
+      const available = new Set(tools.map((tool) => tool.name));
+      const missing = granted.filter((name) => !available.has(name));
+      if (missing.length) throw new Error(`Granted MCP tools are unavailable: ${missing.join(", ")}`);
+      return tools;
     },
 
     async callTool(token, name, args) {

@@ -80,7 +80,7 @@ export async function runAgent(
           },
           toolFilter: { allowedToolNames: [...request.capabilitySession.allowedTools] },
         }),
-      ])
+      ], { strict: true })
     : undefined;
   const agent = new Agent({
     name: request.agentId,

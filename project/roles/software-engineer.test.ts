@@ -6,10 +6,10 @@ test("the software engineer requests scoped issue and pull request tools", () =>
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({
     id: "linear.issues",
     tools: [
-      "linear.getIssue",
-      "linear.searchIssues",
-      "linear.createComment",
-      "linear.updateIssue",
+      "get_issue",
+      "list_issues",
+      "save_comment",
+      "save_issue",
     ],
   });
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({

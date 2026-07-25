@@ -28,3 +28,20 @@ test("a session exposes and invokes only its granted MCP tools", async () => {
   );
   expect(calls).toEqual([{ name: "get_issue", args: { id: "ENG-123" } }]);
 });
+
+test("a session fails when an upstream tool named in its grant is unavailable", async () => {
+  const gateway = createMcpGateway({
+    upstream: {
+      listTools: async () => [{ name: "get_issue" }],
+      callTool: async () => "ok",
+    },
+  });
+  const session = gateway.createSession({
+    tools: ["linear.getIssue"],
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await expect(gateway.listTools(session.token)).rejects.toThrow(
+    "Granted MCP tools are unavailable: linear.getIssue",
+  );
+});

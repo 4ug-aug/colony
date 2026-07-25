@@ -14,10 +14,10 @@ export const softwareEngineerRole: AgentRole = {
     {
       id: "linear.issues",
       tools: [
-        "linear.getIssue",
-        "linear.searchIssues",
-        "linear.createComment",
-        "linear.updateIssue",
+        "get_issue",
+        "list_issues",
+        "save_comment",
+        "save_issue",
       ],
     },
     {
