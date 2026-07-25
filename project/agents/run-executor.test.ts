@@ -8,7 +8,7 @@ import {
 const definition: AgentDefinition = {
   id: "test-agent",
   instructions: "test instructions",
-  requestedCapabilities: [],
+  requestedCapabilities: [{ id: "linear.issues", tools: ["linear.get_issue"] }],
   runtime: { image: "test:latest" },
   executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 20 },
 };
@@ -133,6 +133,21 @@ test("limits above the definition maximum are rejected", async () => {
   })).toThrow();
 });
 
+test("a run grant cannot exceed its agent definition", () => {
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => { throw new Error("should not run"); } },
+    runtime: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+    capabilities: { create: () => ({ url: "http://gateway.test/mcp", token: "token", expiresAt: new Date(), allowedTools: [], revoke: () => {} }) },
+  });
+
+  expect(() => executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "no",
+    capabilityGrant: { tools: ["github.create_pull_request"], expiresAt: new Date(Date.now() + 60_000) },
+  })).toThrow("Capability grant exceeds agent definition");
+});
+
 test("runs bind a granted capability session and revoke it during cleanup", async () => {
   let revoked = 0;
   let boundToken: string | undefined;
@@ -140,7 +155,7 @@ test("runs bind a granted capability session and revoke it during cleanup", asyn
     definitions: createInMemoryAgentDefinitionResolver([definition]),
     capabilities: {
       create: (grant) => {
-        expect(grant.tools).toEqual(["linear.getIssue"]);
+          expect(grant.tools).toEqual(["linear.get_issue"]);
         return {
           url: "http://gateway.test/mcp",
           token: "run-token",
@@ -166,7 +181,7 @@ test("runs bind a granted capability session and revoke it during cleanup", asyn
     agentDefinitionId: "test-agent",
     task: "read issue",
     capabilityGrant: {
-      tools: ["linear.getIssue"],
+      tools: ["linear.get_issue"],
       expiresAt: new Date(Date.now() + 60_000),
     },
   });

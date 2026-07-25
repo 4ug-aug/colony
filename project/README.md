@@ -51,19 +51,25 @@ sudo container system dns create host.container.internal --localhost 203.0.113.1
 ```
 
 Then run the agent. The model variables are required; the Linear token is
-optional unless the task needs Linear:
+optional unless the task needs Linear. To give a software-engineer run a Git
+workspace and permission to publish a PR, authenticate the host GitHub CLI and
+set its repository scope:
 
 ```bash
+gh auth login -h github.com
+
 LLM_BASE_URL=https://api.openai.com/v1 \
 LLM_API_KEY=... \
 LLM_MODEL=... \
 LINEAR_MCP_API_KEY=... \
+SWEAT_GITHUB_REPOSITORY=4ug-aug/sweat-v2 \
+SWEAT_GITHUB_BASE=main \
 bun run agent:software-engineer -- "Investigate this task and report your findings."
 ```
 
-Capability sessions are optional. Set `LINEAR_MCP_API_KEY` to let the CLI
-create a host-owned, run-scoped Linear session; the provider credential never
-enters the sandbox.
+The CLI creates one host-owned, run-scoped Sweat session containing the
+available Linear and GitHub adapters. GitHub authentication stays on the host;
+the sandbox receives neither a GitHub token nor a provider credential.
 
 ### Troubleshooting
 

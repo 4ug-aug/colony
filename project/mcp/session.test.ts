@@ -6,7 +6,7 @@ test("a capability session factory creates and revokes a run-scoped session", as
   let revoked = false;
   const gateway = createMcpGateway({
     createToken: () => "run-token",
-    upstream: { listTools: async () => [], callTool: async () => "ok" },
+    upstream: { listTools: async () => [{ name: "linear.get_issue" }], callTool: async () => "ok" },
   });
   const originalRevoke = gateway.revokeSession;
   gateway.revokeSession = (token) => {
@@ -16,15 +16,15 @@ test("a capability session factory creates and revokes a run-scoped session", as
     gateway,
     url: "http://gateway.test/mcp",
   });
-  const session = factory.create({
-    tools: ["linear.getIssue"],
+  const session = await factory.create({
+    tools: ["linear.get_issue"],
     expiresAt: new Date(Date.now() + 60_000),
   });
 
   expect(session).toMatchObject({
     url: "http://gateway.test/mcp",
     token: "run-token",
-    allowedTools: ["linear.getIssue"],
+    allowedTools: ["linear.get_issue"],
   });
   session.revoke();
   session.revoke();

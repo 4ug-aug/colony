@@ -34,9 +34,13 @@ export function createGitHubRepositoryCheckoutSource(options: {
     provider: "github",
     async checkout(input, directory) {
       const archive = join(directory, "repository.tar.gz");
-      const response = await options.octokit.rest.repos.downloadTarballArchive({
+      const commit = await options.octokit.rest.repos.getCommit({
         ...repositoryParts(input.repository),
         ref: input.revision,
+      });
+      const response = await options.octokit.rest.repos.downloadTarballArchive({
+        ...repositoryParts(input.repository),
+        ref: commit.data.sha,
       });
       await Bun.write(archive, archiveBody(response.data));
       try {
@@ -44,6 +48,7 @@ export function createGitHubRepositoryCheckoutSource(options: {
       } finally {
         await rm(archive, { force: true });
       }
+      return { revision: commit.data.sha };
     },
   };
 }

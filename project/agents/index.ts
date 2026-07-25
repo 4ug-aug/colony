@@ -164,11 +164,22 @@ export interface RepositoryInput {
 }
 
 export interface PreparedInputs {
-  workspace?: { path: string; dispose(): Promise<void> };
+  workspace?: PreparedWorkspace;
+}
+
+export interface PreparedWorkspace {
+  path: string;
+  dispose(): Promise<void>;
+  git?: {
+    repository: string;
+    baseRevision: string;
+    baseCommit: string;
+    branch: string;
+  };
 }
 
 export interface InputProvisioner {
-  prepare(inputs: readonly RunInput[]): Promise<PreparedInputs>;
+  prepare(inputs: readonly RunInput[], context: { runId: string }): Promise<PreparedInputs>;
 }
 
 const terminal = (state: RunState): boolean =>
@@ -235,10 +246,10 @@ export function createRunExecutor(dependencies: {
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     try {
-      workspace = (await dependencies.inputs?.prepare(record.inputs))?.workspace;
+      workspace = (await dependencies.inputs?.prepare(record.inputs, { runId: record.id }))?.workspace;
       if (cancellation.has(record.id)) return;
       capabilitySession = record.capabilityGrant
-        ? dependencies.capabilities?.create(record.capabilityGrant)
+        ? await dependencies.capabilities?.create(record.capabilityGrant, { workspace })
         : undefined;
       if (cancellation.has(record.id)) return;
 
@@ -293,7 +304,7 @@ export function createRunExecutor(dependencies: {
       }
       if (capabilitySession) {
         try {
-          capabilitySession.revoke();
+          await capabilitySession.revoke();
         } catch (error) {
           cleanupFailure = errorText(error);
         }
@@ -338,6 +349,15 @@ export function createRunExecutor(dependencies: {
       if (request.capabilityGrant && !dependencies.capabilities) {
         throw new Error("A capability session factory is required for a capability grant");
       }
+      if (request.capabilityGrant) {
+        const requestedTools = new Set(
+          definition.requestedCapabilities.flatMap((capability) => capability.tools),
+        );
+        const unexpected = request.capabilityGrant.tools.filter((tool) => !requestedTools.has(tool));
+        if (unexpected.length) {
+          throw new Error(`Capability grant exceeds agent definition: ${unexpected.join(", ")}`);
+        }
+      }
       const maxDurationMs = request.maxDurationMs ?? request.timeoutMs ?? definition.executionPolicy.maxDurationMs;
       const maxOutputBytes = request.maxOutputBytes ?? definition.executionPolicy.maxOutputBytes;
       if (!Number.isSafeInteger(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > definition.executionPolicy.maxDurationMs) {
@@ -354,7 +374,15 @@ export function createRunExecutor(dependencies: {
         definition: snapshot(definition),
         inputs: snapshot(request.inputs ?? []),
         ...(request.capabilityGrant
-          ? { capabilityGrant: snapshot(request.capabilityGrant) }
+          ? {
+              capabilityGrant: {
+                ...snapshot(request.capabilityGrant),
+                expiresAt: new Date(Math.min(
+                  request.capabilityGrant.expiresAt.getTime(),
+                  now() + maxDurationMs,
+                )),
+              },
+            }
           : {}),
         effectiveLimits: { maxDurationMs, maxOutputBytes },
         stdout: "",

@@ -6,14 +6,14 @@ test("the software engineer requests scoped issue and pull request tools", () =>
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({
     id: "linear.issues",
     tools: [
-      "get_issue",
-      "list_issues",
-      "save_comment",
-      "save_issue",
+      "linear.get_issue",
+      "linear.list_issues",
+      "linear.save_comment",
+      "linear.save_issue",
     ],
   });
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({
     id: "github.pull-requests",
-    tools: ["github.createPullRequest"],
+    tools: ["github.create_pull_request"],
   });
 });

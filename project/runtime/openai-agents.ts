@@ -79,6 +79,7 @@ export async function runAgent(
             headers: { Authorization: `Bearer ${request.capabilitySession.token}` },
           },
           toolFilter: { allowedToolNames: [...request.capabilitySession.allowedTools] },
+          timeout: 5 * 60_000,
         }),
       ], { strict: true })
     : undefined;
@@ -114,7 +115,7 @@ export async function runAgent(
           useResponses: false,
         }),
       tracingDisabled: true,
-    }).run(agent, request.task);
+    }).run(agent, request.task, { maxTurns: 50 });
 
     return result.finalOutput ?? "";
   } finally {

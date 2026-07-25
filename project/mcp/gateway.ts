@@ -12,6 +12,10 @@ export interface McpUpstream {
 export interface McpGrant {
   tools: readonly string[];
   expiresAt: Date;
+  resources?: readonly {
+    provider: string;
+    repository: string;
+  }[];
 }
 
 export interface McpGateway {
@@ -26,13 +30,28 @@ export interface McpGateway {
 }
 
 export function createMcpGateway(options: {
-  upstream: McpUpstream;
+  upstream?: McpUpstream;
+  upstreams?: readonly McpUpstream[];
   now?: () => Date;
   createToken?: () => string;
 }): McpGateway {
   const now = options.now ?? (() => new Date());
   const createToken = options.createToken ?? (() => crypto.randomUUID());
   const sessions = new Map<string, McpGrant>();
+  const upstreams = options.upstreams ?? (options.upstream ? [options.upstream] : []);
+  if (!upstreams.length) throw new Error("At least one MCP upstream is required");
+
+  const availableTools = async (): Promise<Map<string, { upstream: McpUpstream; tool: McpTool }>> => {
+    const tools = await Promise.all(upstreams.map(async (upstream) => [upstream, await upstream.listTools()] as const));
+    const routes = new Map<string, { upstream: McpUpstream; tool: McpTool }>();
+    for (const [upstream, entries] of tools) {
+      for (const tool of entries) {
+        if (routes.has(tool.name)) throw new Error(`Duplicate MCP tool name: ${tool.name}`);
+        routes.set(tool.name, { upstream, tool });
+      }
+    }
+    return routes;
+  };
 
   const grantFor = (token: string): McpGrant => {
     const grant = sessions.get(token);
@@ -51,18 +70,23 @@ export function createMcpGateway(options: {
     async listTools(token) {
       const granted = grantFor(token).tools;
       const allowed = new Set(granted);
-      const tools = (await options.upstream.listTools()).filter((tool) => allowed.has(tool.name));
-      const available = new Set(tools.map((tool) => tool.name));
+      const routes = await availableTools();
+      const tools = [...routes.keys()]
+        .filter((name) => allowed.has(name))
+        .map((name) => routes.get(name)!);
+      const available = new Set(tools.map((tool) => tool.tool.name));
       const missing = granted.filter((name) => !available.has(name));
       if (missing.length) throw new Error(`Granted MCP tools are unavailable: ${missing.join(", ")}`);
-      return tools;
+      return tools.map((tool) => tool.tool);
     },
 
     async callTool(token, name, args) {
       if (!grantFor(token).tools.includes(name)) {
         throw new Error(`MCP tool is not granted: ${name}`);
       }
-      return options.upstream.callTool(name, args);
+      const upstream = (await availableTools()).get(name);
+      if (!upstream) throw new Error(`Granted MCP tool is unavailable: ${name}`);
+      return upstream.upstream.callTool(name, args);
     },
 
     revokeSession: (token) => sessions.delete(token),

@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import { createLightAgentExecutor } from "../composition/light-agent";
+import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
+import { createAppleContainerClient } from "../sdk/src";
 
 const liveTest = Bun.env.RUN_CONTAINER_E2E === "1" ? test : test.skip;
 
@@ -26,4 +28,19 @@ liveTest("a light agent runs in a native Apple container", async () => {
     startedAt: expect.any(Number),
     completedAt: expect.any(Number),
   });
+});
+
+liveTest("the agent image includes Git", async () => {
+  const sandboxes = createAppleContainerSandboxProvider({
+    container: createAppleContainerClient(),
+  });
+  const sandbox = await sandboxes.create({ image: "sweat-agent:latest" });
+
+  try {
+    const result = await sandbox.exec({ command: ["git", "--version"] });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toStartWith("git version ");
+  } finally {
+    await sandbox.dispose();
+  }
 });

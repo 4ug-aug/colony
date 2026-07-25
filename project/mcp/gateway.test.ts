@@ -45,3 +45,31 @@ test("a session fails when an upstream tool named in its grant is unavailable", 
     "Granted MCP tools are unavailable: linear.getIssue",
   );
 });
+
+test("one session routes granted tools across provider adapters", async () => {
+  const calls: string[] = [];
+  const gateway = createMcpGateway({
+    upstreams: [
+      {
+        listTools: async () => [{ name: "linear.get_issue" }],
+        callTool: async (name) => { calls.push(name); return "issue"; },
+      },
+      {
+        listTools: async () => [{ name: "github.create_pull_request" }],
+        callTool: async (name) => { calls.push(name); return "pull request"; },
+      },
+    ],
+  });
+  const session = gateway.createSession({
+    tools: ["linear.get_issue", "github.create_pull_request"],
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await expect(gateway.listTools(session.token)).resolves.toEqual([
+    { name: "linear.get_issue" },
+    { name: "github.create_pull_request" },
+  ]);
+  await expect(gateway.callTool(session.token, "linear.get_issue", {})).resolves.toBe("issue");
+  await expect(gateway.callTool(session.token, "github.create_pull_request", {})).resolves.toBe("pull request");
+  expect(calls).toEqual(["linear.get_issue", "github.create_pull_request"]);
+});

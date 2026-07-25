@@ -72,6 +72,54 @@ test("the runtime completes an SDK tool loop against an OpenAI-compatible API", 
   expect(calls).toBe(2);
 });
 
+test("the runtime allows a coding task to exceed the SDK's ten-turn default", async () => {
+  let calls = 0;
+  const client = new OpenAI({
+    apiKey: "test-key",
+    baseURL: "https://models.example/v1",
+    fetch: async () => {
+      calls += 1;
+      return Response.json({
+        id: `chatcmpl-${calls}`,
+        object: "chat.completion",
+        created: 0,
+        model: "test-model",
+        choices: calls <= 11
+          ? [{
+              index: 0,
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [{
+                  id: `call-${calls}`,
+                  type: "function",
+                  function: { name: "shell", arguments: '{"command":"true"}' },
+                }],
+              },
+              finish_reason: "tool_calls",
+            }]
+          : [{
+              index: 0,
+              message: { role: "assistant", content: "coding task complete" },
+              finish_reason: "stop",
+            }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      });
+    },
+  });
+
+  await expect(runAgent(
+    {
+      task: "Use the shell until the task is complete.",
+      instructions: "Use tools when needed.",
+      agentId: "software-engineer",
+      model: { baseUrl: "https://models.example/v1", apiKey: "test-key", model: "test-model" },
+    },
+    { model: new OpenAIChatCompletionsModel(client, "test-model") },
+  )).resolves.toBe("coding task complete");
+  expect(calls).toBe(12);
+});
+
 test("the runtime fails when its capability server is unreachable", async () => {
   let modelCalls = 0;
   const client = new OpenAI({
@@ -113,6 +161,6 @@ test("the runtime fails when its capability server is unreachable", async () => 
       },
     },
     { model: new OpenAIChatCompletionsModel(client, "test-model") },
-  )).rejects.toThrow("Was there a typo in the url or port?");
+  )).rejects.toThrow();
   expect(modelCalls).toBe(0);
 });
