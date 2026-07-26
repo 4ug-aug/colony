@@ -14,6 +14,7 @@ test("the software engineer requests scoped issue and pull request tools", () =>
   });
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({
     id: "github.pull-requests",
-    tools: ["github.create_pull_request"],
+    tools: ["github.create_pull_request", "github.wait_for_pull_request_checks"],
   });
+  expect(softwareEngineerRole.instructions).toContain("Make at most two repair attempts");
 });

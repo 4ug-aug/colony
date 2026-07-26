@@ -74,6 +74,10 @@ the sandbox receives neither a GitHub token nor a provider credential.
 `SWEAT_VERIFY_COMMAND` runs in the sandbox before the GitHub adapter publishes
 a PR. Without it, the run has no pull-request capability.
 
+After publishing, the software-engineer role waits for GitHub checks for up to
+four minutes per call. Failed checks are returned to the same agent, which may
+make up to two repair attempts and re-publish the run branch.
+
 ### Troubleshooting
 
 If a run waits for several minutes and ends with `Connection error.`, verify

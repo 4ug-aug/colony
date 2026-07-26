@@ -121,6 +121,82 @@ test("GitHub returns the existing pull request when publishing is retried", asyn
   }
 });
 
+test("GitHub syncs an existing run branch before returning its pull request", async () => {
+  const workspace = await branchWithChange();
+  const requests: Array<{ url: string; method?: string; body?: string }> = [];
+  const gateway = createGitHubMcpGateway({
+    octokit: new Octokit({
+      auth: "secret",
+      request: {
+        fetch: async (url: string, init?: RequestInit) => {
+          requests.push({ url, method: init?.method, body: typeof init?.body === "string" ? init.body : undefined });
+          if (url.includes("git/ref/heads%2Fsweat%2Frun-1")) return Response.json({ object: { sha: "run-commit" } });
+          if (url.includes("git/commits/run-commit")) return Response.json({ tree: { sha: "old-tree" } });
+          if (url.includes("git/blobs")) return Response.json({ sha: "blob" });
+          if (url.includes("git/trees")) return Response.json({ sha: "new-tree" });
+          if (url.includes("git/commits")) return Response.json({ sha: "synced-commit" });
+          if (url.includes("git/refs/heads%2Fsweat%2Frun-1")) return Response.json({});
+          if (url.includes("pulls?")) return Response.json([{ number: 12 }]);
+          throw new Error(`Unexpected GitHub request: ${url}`);
+        },
+      },
+    }),
+    repository: "acme/product",
+    workspace: workspace.directory,
+    branch: "sweat/run-1",
+    baseCommit: workspace.baseCommit,
+    base: "main",
+  });
+  const session = gateway.createSession({
+    tools: ["github.create_pull_request"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  try {
+    await expect(gateway.callTool(session.token, "github.create_pull_request", { title: "Change" }))
+      .resolves.toEqual({ number: 12 });
+    const update = requests.find(({ method }) => method === "PATCH");
+    expect(update?.url).toContain("git/refs/heads%2Fsweat%2Frun-1");
+    expect(JSON.parse(update!.body!)).toEqual({ sha: "synced-commit", force: false });
+  } finally {
+    await rm(workspace.directory, { force: true, recursive: true });
+  }
+});
+
+test("GitHub returns failed pull request checks", async () => {
+  const gateway = createGitHubMcpGateway({
+    octokit: new Octokit({
+      auth: "secret",
+      request: {
+        fetch: async (url: string) => {
+          if (url.includes("pulls/12")) return Response.json({ head: { sha: "run-commit" } });
+          if (url.includes("commits/run-commit/check-runs")) {
+            return Response.json({ check_runs: [{
+              name: "test", status: "completed", conclusion: "failure", details_url: "https://example.test/check/1",
+            }] });
+          }
+          throw new Error(`Unexpected GitHub request: ${url}`);
+        },
+      },
+    }),
+    repository: "acme/product",
+    workspace: "/unused",
+    branch: "sweat/run-1",
+    baseCommit: "base",
+    base: "main",
+  });
+  const session = gateway.createSession({
+    tools: ["github.wait_for_pull_request_checks"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await expect(gateway.callTool(session.token, "github.wait_for_pull_request_checks", { number: 12 }))
+    .resolves.toEqual({
+      state: "failed",
+      checks: [{
+        name: "test", status: "completed", conclusion: "failure", detailsUrl: "https://example.test/check/1",
+      }],
+    });
+});
+
 test("GitHub refuses to publish uncommitted workspace edits", async () => {
   const workspace = await branchWithChange();
   await Bun.write(join(workspace.directory, "README.md"), "dirty\n");

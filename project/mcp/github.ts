@@ -1,23 +1,39 @@
 import { App, Octokit } from "octokit";
 import { createMcpGateway, type McpGateway, type McpTool, type McpUpstream } from "./gateway";
 
-const tools: readonly McpTool[] = [{
-  name: "github.create_pull_request",
-  description: "Publish this run's committed branch and create a pull request. It is safe to retry after a timeout. Do not use git push or configure a remote: GitHub authentication remains host-side.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      title: { type: "string" },
-      body: { type: "string" },
+const tools: readonly McpTool[] = [
+  {
+    name: "github.create_pull_request",
+    description: "Publish this run's committed branch and create or update its pull request. It is safe to retry after a timeout. Do not use git push or configure a remote: GitHub authentication remains host-side.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        body: { type: "string" },
+      },
+      required: ["title"],
+      additionalProperties: false,
     },
-    required: ["title"],
-    additionalProperties: false,
   },
-}];
+  {
+    name: "github.wait_for_pull_request_checks",
+    description: "Wait up to four minutes for checks on a pull request, then return their status and failure details.",
+    inputSchema: {
+      type: "object",
+      properties: { number: { type: "integer", minimum: 1 } },
+      required: ["number"],
+      additionalProperties: false,
+    },
+  },
+];
 
 type PullRequestRequest = { title: string; body?: string };
 type Change = { path: string; deleted: boolean };
-type RemoteBranch = { tree: string };
+type RemoteBranch = { sha: string; tree: string };
+type PullRequestChecksRequest = { number: number };
+
+const checkWaitMs = 4 * 60_000;
+const checkPollMs = 15_000;
 
 function string(value: unknown, message: string): string {
   if (typeof value !== "string" || !value) throw new Error(message);
@@ -29,6 +45,13 @@ function parsePullRequestRequest(value: Record<string, unknown>): PullRequestReq
     title: string(value.title, "GitHub pull request title is required"),
     ...(value.body === undefined ? {} : { body: string(value.body, "GitHub pull request body must be a string") }),
   };
+}
+
+function parsePullRequestChecksRequest(value: Record<string, unknown>): PullRequestChecksRequest {
+  if (!Number.isInteger(value.number) || (value.number as number) < 1) {
+    throw new Error("GitHub pull request number must be a positive integer");
+  }
+  return { number: value.number as number };
 }
 
 function repositoryParts(repository: string): { owner: string; repo: string } {
@@ -99,11 +122,34 @@ async function remoteBranch(options: {
       ...options.repository,
       commit_sha: ref.data.object.sha,
     });
-    return { tree: commit.data.tree.sha };
+    return { sha: ref.data.object.sha, tree: commit.data.tree.sha };
   } catch (error) {
     if (hasStatus(error, 404)) return undefined;
     throw error;
   }
+}
+
+function checkResult(checks: readonly {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  details_url: string | null;
+}[]): { state: "passed" | "failed" | "pending"; checks: readonly unknown[] } {
+  const result = checks.map((check) => ({
+    name: check.name,
+    status: check.status,
+    conclusion: check.conclusion,
+    ...(check.details_url ? { detailsUrl: check.details_url } : {}),
+  }));
+  if (!checks.length || checks.some((check) => check.status !== "completed")) {
+    return { state: "pending", checks: result };
+  }
+  return {
+    state: checks.some((check) => !["success", "neutral", "skipped"].includes(check.conclusion ?? ""))
+      ? "failed"
+      : "passed",
+    checks: result,
+  };
 }
 
 async function existingPullRequest(options: {
@@ -154,6 +200,22 @@ export function createGitHubMcpUpstream(options: {
   return {
     listTools: async () => tools,
     async callTool(name, args) {
+      if (name === "github.wait_for_pull_request_checks") {
+        const input = parsePullRequestChecksRequest(args);
+        const deadline = Date.now() + checkWaitMs;
+        let latest: ReturnType<typeof checkResult> = { state: "pending", checks: [] };
+        do {
+          const pullRequest = await options.octokit.rest.pulls.get({ ...repository, pull_number: input.number });
+          const checks = await options.octokit.rest.checks.listForRef({
+            ...repository,
+            ref: pullRequest.data.head.sha,
+          });
+          latest = checkResult(checks.data.check_runs);
+          if (latest.state !== "pending") return latest;
+          await Bun.sleep(Math.min(checkPollMs, Math.max(0, deadline - Date.now())));
+        } while (Date.now() < deadline);
+        return latest;
+      }
       if (name !== "github.create_pull_request") throw new Error(`Unknown GitHub tool: ${name}`);
       const input = parsePullRequestRequest(args);
       const commits = await workspaceCommits(options);
@@ -162,9 +224,48 @@ export function createGitHubMcpUpstream(options: {
       const expectedTree = (await git(options.workspace, ["rev-parse", `${options.branch}^{tree}`])).trim();
       const branch = await remoteBranch({ octokit: options.octokit, repository, branch: options.branch });
       if (branch) {
-        if (branch.tree !== expectedTree) {
-          throw new Error(`Run branch ${options.branch} already exists with different contents`);
+        if (branch.tree === expectedTree) {
+          const pullRequest = await existingPullRequest({
+            octokit: options.octokit, repository, branch: options.branch, base: options.base,
+          });
+          if (pullRequest) return pullRequest;
+          return (await options.octokit.rest.pulls.create({
+            ...repository,
+            title: input.title,
+            body: input.body,
+            head: options.branch,
+            base: options.base,
+          })).data;
         }
+        const changed = changes(await git(options.workspace, ["diff", "--name-status", "-z", options.baseCommit, options.branch]));
+        const tree = await options.octokit.rest.git.createTree({
+          ...repository,
+          base_tree: branch.tree,
+          tree: await Promise.all(changed.map(async (file) => file.deleted
+            ? { path: file.path, mode: "100644" as const, type: "blob" as const, sha: null }
+            : {
+                path: file.path,
+                mode: "100644" as const,
+                type: "blob" as const,
+                sha: (await options.octokit.rest.git.createBlob({
+                  ...repository,
+                  content: await git(options.workspace, ["show", `${options.branch}:${file.path}`]),
+                  encoding: "utf-8",
+                })).data.sha,
+              })),
+        });
+        const next = await options.octokit.rest.git.createCommit({
+          ...repository,
+          message: "Sync run branch",
+          tree: tree.data.sha,
+          parents: [branch.sha],
+        });
+        await options.octokit.rest.git.updateRef({
+          ...repository,
+          ref: `heads/${options.branch}`,
+          sha: next.data.sha,
+          force: false,
+        });
         const pullRequest = await existingPullRequest({
           octokit: options.octokit, repository, branch: options.branch, base: options.base,
         });
