@@ -1,5 +1,6 @@
 import type { McpGateway, McpGrant } from "./gateway";
 import type { PreparedWorkspace } from "../agents";
+import type { Sandbox } from "../sandboxes";
 
 export interface CapabilitySessionBinding {
   url: string;
@@ -12,13 +13,17 @@ export interface CapabilitySessionBinding {
 export interface CapabilitySessionFactory {
   create(
     grant: McpGrant,
-    context?: { workspace?: PreparedWorkspace },
+    context?: { workspace?: PreparedWorkspace; sandbox?: Pick<Sandbox, "exec"> },
   ): CapabilitySessionBinding | Promise<CapabilitySessionBinding>;
 }
 
 export function createCapabilitySessionFactory(options: {
   gateway?: McpGateway;
-  createGateway?: (context: { grant: McpGrant; workspace?: PreparedWorkspace }) => McpGateway;
+  createGateway?: (context: {
+    grant: McpGrant;
+    workspace?: PreparedWorkspace;
+    sandbox?: Pick<Sandbox, "exec">;
+  }) => McpGateway;
   url?: string;
   createEndpoint?: (gateway: McpGateway) => { url: string; close(): Promise<void> };
 }): CapabilitySessionFactory {

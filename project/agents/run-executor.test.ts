@@ -154,8 +154,9 @@ test("runs bind a granted capability session and revoke it during cleanup", asyn
   const executor = createRunExecutor({
     definitions: createInMemoryAgentDefinitionResolver([definition]),
     capabilities: {
-      create: (grant) => {
+      create: (grant, context) => {
           expect(grant.tools).toEqual(["linear.get_issue"]);
+          expect(typeof context?.sandbox?.exec).toBe("function");
         return {
           url: "http://gateway.test/mcp",
           token: "run-token",

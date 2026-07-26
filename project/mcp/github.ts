@@ -147,6 +147,7 @@ export function createGitHubMcpUpstream(options: {
   branch: string;
   baseCommit: string;
   base: string;
+  verify?: () => Promise<void>;
 }): McpUpstream {
   const repository = repositoryParts(options.repository);
 
@@ -157,6 +158,7 @@ export function createGitHubMcpUpstream(options: {
       const input = parsePullRequestRequest(args);
       const commits = await workspaceCommits(options);
       if (!commits.length) throw new Error("Run branch has no commits to publish");
+      await options.verify?.();
       const expectedTree = (await git(options.workspace, ["rev-parse", `${options.branch}^{tree}`])).trim();
       const branch = await remoteBranch({ octokit: options.octokit, repository, branch: options.branch });
       if (branch) {
@@ -250,6 +252,7 @@ export function createGitHubMcpGateway(options: {
   branch: string;
   baseCommit: string;
   base: string;
+  verify?: () => Promise<void>;
   now?: () => Date;
   createToken?: () => string;
 }): McpGateway {

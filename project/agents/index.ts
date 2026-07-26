@@ -243,11 +243,6 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     try {
       workspace = (await dependencies.inputs?.prepare(record.inputs, { runId: record.id }))?.workspace;
       if (cancellation.has(record.id)) return;
-      capabilitySession = record.capabilityGrant
-        ? await dependencies.capabilities?.create(record.capabilityGrant, { workspace })
-        : undefined;
-      if (cancellation.has(record.id)) return;
-
       const spec: SandboxSpec = {
         image: record.definition.runtime.image,
         ...(workspace
@@ -256,6 +251,10 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       };
       sandbox = await dependencies.sandboxes.create(spec);
       sandboxes.set(record.id, sandbox);
+      if (cancellation.has(record.id)) return;
+      capabilitySession = record.capabilityGrant
+        ? await dependencies.capabilities?.create(record.capabilityGrant, { workspace, sandbox })
+        : undefined;
       if (cancellation.has(record.id)) return;
 
       store.update(record.id, { state: "running", startedAt: now() });

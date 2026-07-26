@@ -144,6 +144,37 @@ test("GitHub refuses to publish uncommitted workspace edits", async () => {
   }
 });
 
+test("GitHub refuses to publish when verification fails", async () => {
+  const workspace = await branchWithChange();
+  const requests: unknown[] = [];
+  const gateway = createGitHubMcpGateway({
+    octokit: new Octokit({
+      auth: "secret",
+      request: { fetch: async (...args) => {
+        requests.push(args);
+        throw new Error("GitHub must not be called");
+      } },
+    }),
+    repository: "acme/product",
+    workspace: workspace.directory,
+    branch: "sweat/run-1",
+    baseCommit: workspace.baseCommit,
+    base: "main",
+    verify: async () => { throw new Error("Verification failed with code 1"); },
+  });
+  const session = gateway.createSession({
+    tools: ["github.create_pull_request"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  try {
+    await expect(gateway.callTool(session.token, "github.create_pull_request", { title: "Change" }))
+      .rejects.toThrow("Verification failed with code 1");
+    expect(requests).toEqual([]);
+  } finally {
+    await rm(workspace.directory, { force: true, recursive: true });
+  }
+});
+
 test("GitHub validates pull request arguments before publishing", async () => {
   const gateway = createGitHubMcpGateway({
     octokit: new Octokit({ auth: "secret" }),

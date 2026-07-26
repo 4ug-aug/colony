@@ -6,6 +6,7 @@ import { createMcpGatewayHttpServer } from "../mcp/http";
 import { createLinearMcpUpstream } from "../mcp/linear";
 import { createCapabilitySessionFactory } from "../mcp/session";
 import { softwareEngineerRole } from "../roles/software-engineer";
+import type { Sandbox } from "../sandboxes";
 
 const required = (name: string): string => {
   const value = Bun.env[name];
@@ -23,24 +24,32 @@ const linearAccessToken = Bun.env.LINEAR_MCP_API_KEY;
 const githubRepository = Bun.env.SWEAT_GITHUB_REPOSITORY;
 const githubBase = Bun.env.SWEAT_GITHUB_BASE ?? "main";
 const github = githubRepository ? await createGitHubCliClient() : undefined;
+const verificationCommand = Bun.env.SWEAT_VERIFY_COMMAND;
 const grantedTools = [
   ...(linearAccessToken ? capabilityTools("linear.issues") : []),
-  ...(github ? capabilityTools("github.pull-requests") : []),
+  ...(github && verificationCommand ? capabilityTools("github.pull-requests") : []),
 ];
 const capabilityUrl = (url: string): string => url.replace(
   "http://0.0.0.0",
   Bun.env.SWEAT_MCP_HOST ?? "http://host.container.internal",
 );
+const verification = (command: string, sandbox: Pick<Sandbox, "exec">): (() => Promise<void>) => async () => {
+  const result = await sandbox.exec({ command: ["sh", "-lc", command], workdir: "/work" });
+  if (result.exitCode === 0) return;
+  const output = [result.stdout, result.stderr].filter(Boolean).join("\n").slice(-20_000);
+  throw new Error(`Verification failed with code ${result.exitCode}${output ? `:\n${output}` : ""}`);
+};
 const capabilities = grantedTools.length
   ? createCapabilitySessionFactory({
-      createGateway: ({ grant, workspace }) => {
+      createGateway: ({ grant, workspace, sandbox }) => {
         const upstreams = [];
         if (linearAccessToken) upstreams.push(createLinearMcpUpstream({ accessToken: linearAccessToken }));
-        if (github && githubRepository) {
+        if (github && githubRepository && verificationCommand) {
           const githubScope = grant.resources?.find((resource) => resource.provider === "github");
           if (githubScope?.repository !== githubRepository || workspace?.git?.repository !== githubRepository) {
             throw new Error("GitHub grant and prepared repository must match");
           }
+          if (!sandbox) throw new Error("A sandbox is required to verify a pull request");
           upstreams.push(createGitHubMcpUpstream({
             octokit: github,
             repository: githubRepository,
@@ -48,6 +57,7 @@ const capabilities = grantedTools.length
             branch: workspace.git.branch,
             baseCommit: workspace.git.baseCommit,
             base: githubBase,
+            verify: verification(verificationCommand, sandbox),
           }));
         }
         return createMcpGateway({ upstreams });

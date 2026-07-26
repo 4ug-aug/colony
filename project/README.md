@@ -64,12 +64,15 @@ LLM_MODEL=... \
 LINEAR_MCP_API_KEY=... \
 SWEAT_GITHUB_REPOSITORY=4ug-aug/sweat-v2 \
 SWEAT_GITHUB_BASE=main \
+SWEAT_VERIFY_COMMAND='bun install --frozen-lockfile && bunx tsc -p tsconfig.json --skipLibCheck && bun test' \
 bun run agent:software-engineer -- "Investigate this task and report your findings."
 ```
 
 The CLI creates one host-owned, run-scoped Sweat session containing the
 available Linear and GitHub adapters. GitHub authentication stays on the host;
 the sandbox receives neither a GitHub token nor a provider credential.
+`SWEAT_VERIFY_COMMAND` runs in the sandbox before the GitHub adapter publishes
+a PR. Without it, the run has no pull-request capability.
 
 ### Troubleshooting
 
