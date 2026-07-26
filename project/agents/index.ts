@@ -79,12 +79,16 @@ export interface RunLimits {
   maxOutputBytes: number;
 }
 
-export interface RunRecord {
+export interface RunInput {
+  type: string;
+}
+
+export interface RunRecord<Input extends RunInput = RunInput> {
   id: string;
   state: RunState;
   task: string;
   definition: AgentDefinition;
-  inputs: readonly RunInput[];
+  inputs: readonly Input[];
   capabilityGrant?: McpGrant;
   effectiveLimits: RunLimits;
   stdout: string;
@@ -96,34 +100,34 @@ export interface RunRecord {
   error?: string;
 }
 
-export interface RunStore {
-  create(record: RunRecord): void;
-  get(id: string): RunRecord | undefined;
-  update(id: string, patch: Partial<RunRecord>): void;
+export interface RunStore<Input extends RunInput = RunInput> {
+  create(record: RunRecord<Input>): void;
+  get(id: string): RunRecord<Input> | undefined;
+  update(id: string, patch: Partial<RunRecord<Input>>): void;
 }
 
-export class InMemoryRunStore implements RunStore {
-  private readonly records = new Map<string, RunRecord>();
+export class InMemoryRunStore<Input extends RunInput = RunInput> implements RunStore<Input> {
+  private readonly records = new Map<string, RunRecord<Input>>();
 
-  create(record: RunRecord): void {
+  create(record: RunRecord<Input>): void {
     if (this.records.has(record.id)) throw new Error(`Run already exists: ${record.id}`);
     this.records.set(record.id, snapshot(record));
   }
 
-  get(id: string): RunRecord | undefined {
+  get(id: string): RunRecord<Input> | undefined {
     const record = this.records.get(id);
     return record ? snapshot(record) : undefined;
   }
 
-  update(id: string, patch: Partial<RunRecord>): void {
+  update(id: string, patch: Partial<RunRecord<Input>>): void {
     const record = this.records.get(id);
     if (!record) throw new Error(`Unknown run: ${id}`);
     this.records.set(id, snapshot({ ...record, ...patch }));
   }
 }
 
-export function createInMemoryRunStore(): RunStore {
-  return new InMemoryRunStore();
+export function createInMemoryRunStore<Input extends RunInput = RunInput>(): RunStore<Input> {
+  return new InMemoryRunStore<Input>();
 }
 
 export interface RuntimeRequest {
@@ -137,30 +141,21 @@ export interface AgentProvider {
   run(sandbox: Sandbox, request: RuntimeRequest): Promise<ExecutionResult>;
 }
 
-export interface StartRunRequest {
+export interface StartRunRequest<Input extends RunInput = never> {
   agentDefinitionId?: string;
   definitionId?: string;
   task: string;
-  inputs?: readonly RunInput[];
+  inputs?: readonly Input[];
   capabilityGrant?: McpGrant;
   maxDurationMs?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
 }
 
-export interface RunExecutor {
-  startRun(request: StartRunRequest): string;
-  getRun(id: string): RunRecord | undefined;
-  cancelRun(id: string): Promise<RunRecord | undefined>;
-}
-
-export type RunInput = RepositoryInput;
-
-export interface RepositoryInput {
-  type: "repository";
-  provider: string;
-  repository: string;
-  revision: string;
+export interface RunExecutor<Input extends RunInput = never> {
+  startRun(request: StartRunRequest<Input>): string;
+  getRun(id: string): RunRecord<Input> | undefined;
+  cancelRun(id: string): Promise<RunRecord<Input> | undefined>;
 }
 
 export interface PreparedInputs {
@@ -178,8 +173,8 @@ export interface PreparedWorkspace {
   };
 }
 
-export interface InputProvisioner {
-  prepare(inputs: readonly RunInput[], context: { runId: string }): Promise<PreparedInputs>;
+export interface InputProvisioner<Input extends RunInput> {
+  prepare(inputs: readonly Input[], context: { runId: string }): Promise<PreparedInputs>;
 }
 
 const terminal = (state: RunState): boolean =>
@@ -205,17 +200,17 @@ export function retainOutput(value: string, maxBytes: number): string {
   return tail(value, maxBytes);
 }
 
-export function createRunExecutor(dependencies: {
+export function createRunExecutor<Input extends RunInput = never>(dependencies: {
   definitions: AgentDefinitionResolver;
   sandboxes: SandboxProvider;
   runtime: AgentProvider;
-  store?: RunStore;
-  inputs?: InputProvisioner;
+  store?: RunStore<Input>;
+  inputs?: InputProvisioner<Input>;
   capabilities?: CapabilitySessionFactory;
   createId?: () => string;
   now?: () => number;
-}): RunExecutor {
-  const store = dependencies.store ?? new InMemoryRunStore();
+}): RunExecutor<Input> {
+  const store: RunStore<Input> = dependencies.store ?? new InMemoryRunStore<Input>();
   const createId = dependencies.createId ?? (() => crypto.randomUUID());
   const now = dependencies.now ?? Date.now;
   const cancellation = new Set<string>();
@@ -231,12 +226,12 @@ export function createRunExecutor(dependencies: {
     return operation;
   };
 
-  const finish = (id: string, patch: Partial<RunRecord>): void => {
+  const finish = (id: string, patch: Partial<RunRecord<Input>>): void => {
     const record = store.get(id);
     if (record && !terminal(record.state)) store.update(id, patch);
   };
 
-  const execute = async (record: RunRecord): Promise<void> => {
+  const execute = async (record: RunRecord<Input>): Promise<void> => {
     let workspace: PreparedInputs["workspace"];
     let capabilitySession: CapabilitySessionBinding | undefined;
     let sandbox: Sandbox | undefined;
@@ -367,7 +362,7 @@ export function createRunExecutor(dependencies: {
         throw new Error("Requested maxOutputBytes must be positive and within the agent definition limit");
       }
 
-      const record: RunRecord = {
+      const record: RunRecord<Input> = {
         id: createId(),
         state: "preparing",
         task: request.task,

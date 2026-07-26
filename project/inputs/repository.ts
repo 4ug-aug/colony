@@ -1,11 +1,29 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { InputProvisioner, RepositoryInput } from "../agents";
+import type { InputProvisioner, RunInput } from "../agents";
+
+export interface RepositoryInput extends RunInput {
+  type: "repository";
+  provider: string;
+  repository: string;
+  revision: string;
+}
 
 export interface RepositoryCheckoutSource {
   provider: string;
   checkout(input: RepositoryInput, directory: string): Promise<{ revision: string }>;
+}
+
+function repositoryInput(input: RunInput): RepositoryInput {
+  const value = input as unknown as Record<string, unknown>;
+  if (input.type !== "repository"
+    || typeof value.provider !== "string"
+    || typeof value.repository !== "string"
+    || typeof value.revision !== "string") {
+    throw new Error("Repository input requires provider, repository, and revision");
+  }
+  return input as RepositoryInput;
 }
 
 async function git(directory: string, args: readonly string[]): Promise<string> {
@@ -37,19 +55,18 @@ export function createRepositoryWorkspaceProvisioner(options: {
   sources: readonly RepositoryCheckoutSource[];
   createDirectory?: () => Promise<string>;
   removeDirectory?: (directory: string) => Promise<void>;
-}): InputProvisioner {
+}): InputProvisioner<RepositoryInput> {
   const sources = new Map(options.sources.map((source) => [source.provider, source]));
   const createDirectory = options.createDirectory ?? (() => mkdtemp(join(tmpdir(), "sweat-run-")));
   const removeDirectory = options.removeDirectory ?? ((directory) => rm(directory, { force: true, recursive: true }));
 
   return {
     async prepare(inputs, context) {
-      const repositories = inputs.filter((input): input is RepositoryInput => input.type === "repository");
-      if (!repositories.length) return {};
-      if (repositories.length !== 1 || inputs.length !== 1) {
+      if (!inputs.length) return {};
+      if (inputs.length !== 1) {
         throw new Error("A run currently supports one repository workspace");
       }
-      const input = repositories[0];
+      const input = repositoryInput(inputs[0]);
       const source = sources.get(input.provider);
       if (!source) throw new Error(`Unsupported repository provider: ${input.provider}`);
       const path = await createDirectory();

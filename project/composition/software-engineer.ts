@@ -4,7 +4,11 @@ import {
   type AgentDefinition,
   type RunExecutor,
 } from "../agents";
-import { createRepositoryWorkspaceProvisioner, type RepositoryCheckoutSource } from "../inputs/repository";
+import {
+  createRepositoryWorkspaceProvisioner,
+  type RepositoryCheckoutSource,
+  type RepositoryInput,
+} from "../inputs/repository";
 import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import { createOpenAIAgentsRuntime } from "../providers/openai-agents-runtime";
 import { softwareEngineerRole } from "../roles/software-engineer";
@@ -27,7 +31,7 @@ export function createSoftwareEngineerExecutor(options: {
   capabilities?: CapabilitySessionFactory;
   container?: AppleContainerClient;
   createId?: () => string;
-}): RunExecutor {
+}): RunExecutor<RepositoryInput> {
   const container = options.container ?? createAppleContainerClient();
   const definition: AgentDefinition = {
     id: softwareEngineerRole.id,
@@ -39,7 +43,7 @@ export function createSoftwareEngineerExecutor(options: {
     },
     executionPolicy: defaultLimits,
   };
-  return createRunExecutor({
+  return createRunExecutor<RepositoryInput>({
     definitions: createInMemoryAgentDefinitionResolver([definition]),
     sandboxes: createAppleContainerSandboxProvider({
       container,
@@ -47,8 +51,6 @@ export function createSoftwareEngineerExecutor(options: {
     }),
     runtime: createOpenAIAgentsRuntime({}),
     capabilities: options.capabilities,
-    inputs: options.repositorySources
-    ? createRepositoryWorkspaceProvisioner({ sources: options.repositorySources })
-      : undefined,
+    inputs: createRepositoryWorkspaceProvisioner({ sources: options.repositorySources ?? [] }),
   });
 }

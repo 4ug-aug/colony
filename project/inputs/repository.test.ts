@@ -33,3 +33,11 @@ test("a repository input is checked out into a disposable workspace", async () =
   await prepared.workspace?.dispose();
   expect(removed).toBe(prepared.workspace?.path);
 });
+
+test("a repository provisioner validates its own input fields", async () => {
+  const provisioner = createRepositoryWorkspaceProvisioner({ sources: [] });
+
+  await expect(provisioner.prepare([{
+    type: "repository", provider: "github", repository: "acme/product",
+  }], { runId: "run-1" })).rejects.toThrow("Repository input requires");
+});
