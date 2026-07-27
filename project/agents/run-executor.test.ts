@@ -195,6 +195,7 @@ test("a run grant cannot exceed its agent definition", () => {
 
 test("steps reach subscribers and unsubscribe stops delivery", async () => {
   const steps: Array<{ runId: string; step: Step }> = [];
+  let runCounter = 0;
   const executor = createRunExecutor({
     definitions: createInMemoryAgentDefinitionResolver([definition]),
     sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
@@ -204,7 +205,7 @@ test("steps reach subscribers and unsubscribe stops delivery", async () => {
       request.onStep?.({ kind: "tool_result", text: "done", tool: "shell", callId: "c1", at: 3 });
       return { exitCode: 0, stdout: "", stderr: "" };
     } },
-    createId: () => "run-steps-1",
+    createId: () => `run-steps-${++runCounter}`,
   });
 
   const unsubscribe = executor.subscribeSteps((runId, step) => steps.push({ runId, step }));
@@ -217,29 +218,15 @@ test("steps reach subscribers and unsubscribe stops delivery", async () => {
   expect(steps[1].step.kind).toBe("tool_call");
   expect(steps[2].step.kind).toBe("tool_result");
 
-  // unsubscribe prevents further delivery
+  // unsubscribe prevents further delivery on the SAME executor
   const before = steps.length;
-  // start another run — listener should not fire
-  const executor2 = createRunExecutor({
-    definitions: createInMemoryAgentDefinitionResolver([definition]),
-    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
-    runtime: { run: async (_sandbox, request) => {
-      request.onStep?.({ kind: "message", text: "after unsub", at: 4 });
-      return { exitCode: 0, stdout: "", stderr: "" };
-    } },
-  });
-  // We unsubscribed from executor, not executor2 — test that unsubscribe works on same executor
-  const executor3 = createRunExecutor({
-    definitions: createInMemoryAgentDefinitionResolver([definition]),
-    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
-    runtime: { run: async (_sandbox, request) => {
-      request.onStep?.({ kind: "message", text: "after unsub from executor", at: 5 });
-      return { exitCode: 0, stdout: "", stderr: "" };
-    } },
-    createId: () => "run-steps-after",
-  });
-  executor.subscribeSteps((_runId, _step) => steps.push({ runId: "should-not", step: _step }));
-  // The original listener was already unsubscribed, count stays the same
+  expect(before).toBeGreaterThan(0); // listener was proven live
+
+  const id2 = executor.startRun({ agentDefinitionId: "test-agent", task: "steps-after-unsub" });
+  // The runtime for this run is the same factory — it will emit steps, but the listener is gone
+  await waitFor(() => executor.getRun(id2)?.state === "succeeded");
+
+  // The unsubscribed listener must not have received anything from the second run
   expect(steps.length).toBe(before);
 });
 
