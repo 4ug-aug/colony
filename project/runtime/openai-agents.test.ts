@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { OpenAIChatCompletionsModel } from "@openai/agents";
 import OpenAI from "openai";
+import type { Step } from "../agents";
 import { normalizeModelBaseUrl, runAgent } from "./openai-agents";
 
 function completionStream(
@@ -76,7 +77,7 @@ test("OpenAI's root URL uses its versioned API path", () => {
 
 test("the runtime completes an SDK tool loop against an OpenAI-compatible API", async () => {
   let calls = 0;
-  const deltas: string[] = [];
+  const steps: Step[] = [];
   const client = new OpenAI({
     apiKey: "test-key",
     baseURL: "https://models.example/v1",
@@ -110,12 +111,81 @@ test("the runtime completes an SDK tool loop against an OpenAI-compatible API", 
     },
     {
       model: new OpenAIChatCompletionsModel(client, "test-model"),
-      onTextDelta: (text) => deltas.push(text),
+      onStep: (step) => steps.push(step),
     },
   );
   expect(result).toBe("runtime ready");
-  expect(deltas.join("")).toBe("runtime ready");
+  const messageSteps = steps.filter((s) => s.kind === "message");
+  expect(messageSteps.some((s) => s.text === "runtime ready")).toBe(true);
   expect(calls).toBe(2);
+});
+
+test("the runtime emits structured steps for a tool call and final message", async () => {
+  let calls = 0;
+  const steps: Step[] = [];
+  // Use a fake API key value that must not appear in emitted step text.
+  const fakeApiKey = "sk-test-secret-xyzzy";
+  const client = new OpenAI({
+    apiKey: fakeApiKey,
+    baseURL: "https://models.example/v1",
+    fetch: async () => {
+      calls += 1;
+      return completionStream(
+        `chatcmpl-${calls}`,
+        calls === 1
+          ? {
+              toolCall: {
+                id: "call-abc",
+                name: "shell",
+                arguments: '{"command":"echo hello"}',
+              },
+            }
+          : { content: "done" },
+      );
+    },
+  });
+
+  await runAgent(
+    {
+      task: "Echo hello.",
+      instructions: "Use tools when needed.",
+      agentId: "software-engineer",
+      model: {
+        baseUrl: "https://models.example/v1",
+        apiKey: fakeApiKey,
+        model: "test-model",
+      },
+    },
+    {
+      model: new OpenAIChatCompletionsModel(client, "test-model"),
+      onStep: (step) => steps.push(step),
+    },
+  );
+
+  // Must emit: tool_call → tool_result → message (at minimum)
+  const toolCallStep = steps.find((s) => s.kind === "tool_call");
+  const toolResultStep = steps.find((s) => s.kind === "tool_result");
+  const messageStep = steps.find((s) => s.kind === "message" && s.text === "done");
+
+  expect(toolCallStep).toBeDefined();
+  expect(toolCallStep?.tool).toBe("shell");
+  expect(toolCallStep?.text).toBe('{"command":"echo hello"}');
+  expect(typeof toolCallStep?.callId).toBe("string");
+
+  expect(toolResultStep).toBeDefined();
+  expect(toolResultStep?.callId).toBe(toolCallStep?.callId);
+
+  expect(messageStep).toBeDefined();
+
+  // No step should contain the fake API key in its text
+  for (const step of steps) {
+    expect(step.text).not.toContain(fakeApiKey);
+  }
+
+  // Steps have monotonically non-decreasing timestamps
+  for (let i = 1; i < steps.length; i++) {
+    expect(steps[i]!.at).toBeGreaterThanOrEqual(steps[i - 1]!.at);
+  }
 });
 
 test("the runtime allows a coding task to exceed the SDK's ten-turn default", async () => {
