@@ -7,6 +7,7 @@ import {
   type RoomStore,
   type RoomUser,
 } from './room-store'
+import { createRoomMessageHub, type RoomMessageHub } from './room-hub'
 
 export interface SessionAuthenticator {
   authenticate(request: Request): Promise<RoomUser | undefined>
@@ -87,6 +88,7 @@ async function roomNameFrom(request: Request): Promise<string | undefined> {
 export function createCoordinator(options: {
   control: RunControl
   store: RoomStore
+  messages: RoomMessageHub
   authenticator: SessionAuthenticator
   authHandler: (request: Request) => Promise<Response>
   origin: string
@@ -108,6 +110,9 @@ export function createCoordinator(options: {
     broadcastRoom(changed.roomId, { type: 'run.changed', run: changed })
   }
   const unsubscribe = options.control.subscribe(project)
+  const unsubscribeMessages = options.messages.subscribe((event) =>
+    broadcastRoom(event.message.roomId, event),
+  )
   options.store
     .failStaleRuns()
     .forEach((run) => broadcastRoom(run.roomId, { type: 'run.changed', run }))
@@ -171,18 +176,14 @@ export function createCoordinator(options: {
           : undefined
         if (mention.test(text) && !task)
           return cors(json({ error: 'Agent task is required' }, 400))
-        const message: RoomMessage = {
-          id: crypto.randomUUID(),
+        const message = options.messages.postMessage({
           roomId,
-          author: user,
+          author: { kind: 'user', ...user },
           text,
-          createdAt: Date.now(),
-        }
-        options.store.createMessage(message)
-        broadcastRoom(roomId, { type: 'message.created', message })
+        })
         if (!task) return cors(json({ message }, 201))
         try {
-          const runId = options.control.start(task)
+          const runId = options.control.start(task, { roomId })
           const source = options.control
             .listRuns()
             .find((run) => run.id === runId)
@@ -242,7 +243,7 @@ export function createCoordinator(options: {
         send(socket, {
           type: 'room.snapshot',
           room,
-          messages: options.store.listMessages(socket.data.roomId),
+          messages: options.messages.listMessages(socket.data.roomId),
           runs: options.store.listRuns(socket.data.roomId),
         })
       },
@@ -256,6 +257,7 @@ export function createCoordinator(options: {
     port: server.port,
     stop: () => {
       unsubscribe()
+      unsubscribeMessages()
       server.stop(true)
     },
   }
@@ -273,11 +275,51 @@ if (import.meta.main) {
     { auth },
     { betterAuthSessionAuthenticator },
     { createSoftwareEngineerExecutor },
+    { softwareEngineerRole },
+    { createMcpGateway },
+    { createMcpGatewayHttpServer },
+    { createCapabilitySessionFactory },
+    { createWorkspaceMcpUpstream },
+    { agentParticipant },
   ] = await Promise.all([
     import('../lib/auth'),
     import('./session-auth'),
     import('../../../composition/software-engineer'),
+    import('../../../roles/software-engineer'),
+    import('../../../mcp/gateway'),
+    import('../../../mcp/http'),
+    import('../../../mcp/session'),
+    import('../../../mcp/workspace'),
+    import('./room-store'),
   ])
+  const store = createSqliteRoomStore(sqlite)
+  const messages = createRoomMessageHub(store)
+  const workspaceTools =
+    softwareEngineerRole.requestedCapabilities.find((c) => c.id === 'workspace.room')?.tools ?? []
+  const capabilityUrl = (u: string): string =>
+    u.replace('http://0.0.0.0', process.env.SWEAT_MCP_HOST ?? 'http://host.container.internal')
+  const capabilities = workspaceTools.length
+    ? createCapabilitySessionFactory({
+        createGateway: ({ grantContext }) => {
+          const roomId = (grantContext as { roomId?: string } | undefined)?.roomId
+          if (!roomId) throw new Error('A room id is required for the workspace capability')
+          return createMcpGateway({
+            upstream: createWorkspaceMcpUpstream({
+              port: {
+                listMessages: (id) => messages.listMessages(id),
+                postMessage: (input) => { messages.postMessage(input) },
+              },
+              roomId,
+              agent: agentParticipant('software-engineer'),
+            }),
+          })
+        },
+        createEndpoint: (gateway) => {
+          const server = createMcpGatewayHttpServer({ gateway, hostname: '0.0.0.0' })
+          return { url: capabilityUrl(server.url), close: server.close }
+        },
+      })
+    : undefined
   const control = createRunControl(
     createSoftwareEngineerExecutor({
       image: process.env.SWEAT_AGENT_IMAGE,
@@ -286,11 +328,14 @@ if (import.meta.main) {
         apiKey: required('LLM_API_KEY'),
         model: required('LLM_MODEL'),
       },
+      ...(capabilities ? { capabilities } : {}),
     }),
+    { workspaceCapability: { tools: workspaceTools } },
   )
   const coordinator = createCoordinator({
     control,
-    store: createSqliteRoomStore(sqlite),
+    store,
+    messages,
     authenticator: betterAuthSessionAuthenticator,
     authHandler: (request) => auth.handler(request),
     origin: process.env.SWEAT_GUI_ORIGIN ?? 'http://localhost:3000',

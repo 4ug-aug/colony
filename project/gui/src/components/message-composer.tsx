@@ -1,8 +1,9 @@
 import { EditorContent, useEditor } from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
+import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
 import { AtSign, Bold, Code, Italic, List, Send } from 'lucide-react'
-import { forwardRef, useEffect, useImperativeHandle } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '#/components/ui/button'
 
@@ -15,7 +16,7 @@ const agents = [
   },
 ]
 
-function suggestionMenu() {
+function suggestionMenu(mentionOpen: { current: boolean }) {
   let popup: HTMLDivElement | undefined
   let selected = 0
   let current:
@@ -75,6 +76,7 @@ function suggestionMenu() {
       popup.setAttribute('aria-label', 'Agents')
       document.body.appendChild(popup)
       render(props)
+      mentionOpen.current = true
     },
     onUpdate(props: Parameters<typeof render>[0]) {
       selected = Math.min(selected, Math.max(0, props.items.length - 1))
@@ -93,7 +95,8 @@ function suggestionMenu() {
         render(props)
         return true
       }
-      if (event.key === 'Enter') {
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault()
         props.command(props.items[selected])
         return true
       }
@@ -105,6 +108,7 @@ function suggestionMenu() {
       popup = undefined
       selected = 0
       current = undefined
+      mentionOpen.current = false
     },
   }
 }
@@ -126,6 +130,9 @@ export const MessageComposer = forwardRef<
   { value, onChange, onSubmit, disabled, roomName },
   ref,
 ) {
+  const mentionOpen = useRef(false)
+  const roomNameRef = useRef(roomName)
+  useEffect(() => { roomNameRef.current = roomName }, [roomName])
   const serialize = () => editor.getText()
   const submit = () => {
     const text = serialize()
@@ -145,9 +152,10 @@ export const MessageComposer = forwardRef<
         suggestion: {
           items: ({ query }) =>
             agents.filter((agent) => agent.label.includes(query.toLowerCase())),
-          render: suggestionMenu,
+          render: () => suggestionMenu(mentionOpen),
         },
       }),
+      Placeholder.configure({ placeholder: () => `Message #${roomNameRef.current}` }),
     ],
     content: value,
     editable: !disabled,
@@ -155,9 +163,9 @@ export const MessageComposer = forwardRef<
       attributes: {
         class: 'min-h-20 px-1 py-1 text-sm leading-6 outline-none',
         'aria-label': `Message #${roomName}`,
-        'data-placeholder': `Message #${roomName}`,
       },
       handleKeyDown: (_, event) => {
+        if (mentionOpen.current) return false
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault()
           submit()
@@ -203,6 +211,10 @@ export const MessageComposer = forwardRef<
   useEffect(() => {
     editor.setEditable(!disabled)
   }, [editor, disabled])
+
+  useEffect(() => {
+    if (editor) editor.view.dispatch(editor.state.tr)
+  }, [editor, roomName])
 
   const control = (
     label: string,

@@ -91,6 +91,7 @@ export interface RunRecord<Input extends RunInput = RunInput> {
   definition: AgentDefinition;
   inputs: readonly Input[];
   capabilityGrant?: McpGrant;
+  grantContext?: unknown;
   effectiveLimits: RunLimits;
   stdout: string;
   stderr: string;
@@ -170,6 +171,7 @@ export interface StartRunRequest<Input extends RunInput = never> {
   task: string;
   inputs?: readonly Input[];
   capabilityGrant?: McpGrant;
+  grantContext?: unknown;
   maxDurationMs?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
@@ -278,7 +280,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       sandboxes.set(record.id, sandbox);
       if (cancellation.has(record.id)) return;
       capabilitySession = record.capabilityGrant
-        ? await dependencies.capabilities?.create(record.capabilityGrant, { workspace, sandbox })
+        ? await dependencies.capabilities?.create(record.capabilityGrant, { workspace, sandbox, grantContext: record.grantContext })
         : undefined;
       if (cancellation.has(record.id)) return;
 
@@ -413,6 +415,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
               },
             }
           : {}),
+        ...(request.grantContext !== undefined ? { grantContext: snapshot(request.grantContext) } : {}),
         effectiveLimits: { maxDurationMs, maxOutputBytes },
         stdout: "",
         stderr: "",

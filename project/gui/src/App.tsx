@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { SubmitEvent } from 'react'
 import { Bot, Hash, Terminal, Wifi, WifiOff } from 'lucide-react'
 import { authClient, sweatApiUrl } from '#/lib/auth-client'
 import { Button } from '#/components/ui/button'
 import { MessageComposer } from '#/components/message-composer'
 import type { MessageComposerHandle } from '#/components/message-composer'
+import { Markdown } from '#/components/markdown'
 import {
   Popover,
   PopoverContent,
@@ -19,7 +20,6 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
@@ -28,7 +28,7 @@ import {
   SidebarTrigger,
 } from '#/components/ui/sidebar'
 
-type Author = { id: string; name: string; image?: string }
+type Author = { id: string; name: string; image?: string; kind?: 'user' | 'agent' }
 type Room = { id: string; name: string }
 type RoomMessage = {
   id: string
@@ -305,26 +305,6 @@ function Avatar({
   )
 }
 
-function MentionText({ text }: { text: string }) {
-  const pieces = text.split(/(@software-engineer\b)/g)
-  return (
-    <>
-      {pieces.map((piece, index) =>
-        piece === '@software-engineer' ? (
-          <span
-            className="rounded bg-muted px-1.5 py-0.5 text-sm font-medium text-muted-foreground"
-            key={index}
-          >
-            software engineer
-          </span>
-        ) : (
-          piece
-        ),
-      )}
-    </>
-  )
-}
-
 function timestamp(value: number) {
   return new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
@@ -408,9 +388,10 @@ function Timeline({
           'result' in item
             ? (item.result.output ?? item.result.stdout) || 'Completed.'
             : item.message.text
+        const isAgent = isResult || (!isResult && item.message.author.kind === 'agent')
         return (
           <article className="flex gap-3" key={item.id}>
-            <Avatar author={author} agent={isResult} />
+            <Avatar author={author} agent={isAgent} />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
                 <span className="font-semibold">{author.name}</span>
@@ -418,9 +399,9 @@ function Timeline({
                   {timestamp(item.createdAt)}
                 </time>
               </div>
-              <p className="mt-0.5 whitespace-pre-wrap break-words leading-6">
-                <MentionText text={text} />
-              </p>
+              <div className="mt-0.5 text-sm leading-6">
+                <Markdown>{text}</Markdown>
+              </div>
               {!isResult && item.run && (
                 <RunBadge
                   run={item.run}
@@ -457,12 +438,14 @@ function Dashboard({ user }: { user: Author }) {
   const [creatingRoom, setCreatingRoom] = useState(false)
   const roomNameInput = useRef<HTMLInputElement>(null)
   const composer = useRef<MessageComposerHandle>(null)
+  const scrollRef = useRef<HTMLElement>(null)
+  const atBottomRef = useRef(true)
   const submit = async (text: string) => {
     if (!text.trim()) return
     const result = await send(text)
     if (result) setDraft('')
   }
-  const submitRoom = async (event: FormEvent<HTMLFormElement>) => {
+  const submitRoom = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!roomName.trim()) return
     setCreatingRoom(true)
@@ -482,17 +465,22 @@ function Dashboard({ user }: { user: Author }) {
     if (creating) roomNameInput.current?.focus()
   }, [creating])
 
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [messages, runs])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) {
+      el.scrollTop = el.scrollHeight
+      atBottomRef.current = true
+    }
+  }, [room?.id])
+
   return (
     <SidebarProvider>
       <Sidebar variant="inset" collapsible="icon">
-        <SidebarHeader>
-          <div className="flex h-9 items-center gap-2 px-2 font-semibold">
-            <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              S
-            </span>
-            <span>Sweat</span>
-          </div>
-        </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
             <div className="flex items-center justify-between pr-2">
@@ -609,7 +597,7 @@ function Dashboard({ user }: { user: Author }) {
           </div>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset className="min-h-[calc(100svh-1rem)] overflow-hidden border border-border/70 bg-background">
+      <SidebarInset className="h-[calc(100svh-1rem)] overflow-hidden border border-border/70 bg-background">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Hash className="size-4 text-muted-foreground" />
@@ -625,8 +613,13 @@ function Dashboard({ user }: { user: Author }) {
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
           <section
+            ref={scrollRef}
             className="flex-1 overflow-y-auto px-5 py-6 sm:px-8"
             aria-busy={loading}
+            onScroll={() => {
+              const el = scrollRef.current
+              if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150
+            }}
           >
             <div className="mx-auto max-w-4xl">
               {loading ? (
@@ -674,7 +667,7 @@ function SignIn() {
   const [name, setName] = useState('')
   const [signingUp, setSigningUp] = useState(false)
   const [error, setError] = useState<string>()
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     try {
       const result = signingUp

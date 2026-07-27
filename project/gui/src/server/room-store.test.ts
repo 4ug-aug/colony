@@ -11,14 +11,14 @@ test('room store retains history and fails stale runs', () => {
   sqlite.exec(`
     CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL);
     INSERT INTO room (id, name) VALUES ('general', 'General');
-    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, text TEXT, created_at INTEGER);
+    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
     CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   `)
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'message-1',
     roomId: GENERAL_ROOM_ID,
-    author: { id: 'user-1', name: 'Ada' },
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
     text: 'Please help',
     createdAt: 1,
   })
@@ -39,7 +39,7 @@ test('room store retains history and fails stale runs', () => {
     {
       id: 'message-1',
       roomId: GENERAL_ROOM_ID,
-      author: { id: 'user-1', name: 'Ada' },
+      author: { kind: 'user', id: 'user-1', name: 'Ada' },
       text: 'Please help',
       createdAt: 1,
     },
@@ -64,7 +64,7 @@ test('room store creates ordered, isolated rooms', () => {
     CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL);
     CREATE UNIQUE INDEX room_name_nocase_unique ON room (name COLLATE NOCASE);
     INSERT INTO room (id, name) VALUES ('general', 'General');
-    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, text TEXT, created_at INTEGER);
+    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
     CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   `)
   const store = createSqliteRoomStore(sqlite)
@@ -79,7 +79,7 @@ test('room store creates ordered, isolated rooms', () => {
   store.createMessage({
     id: 'product-message',
     roomId: 'alpha',
-    author: { id: 'user-1', name: 'Ada' },
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
     text: 'Product',
     createdAt: 1,
   })
@@ -89,7 +89,7 @@ test('room store creates ordered, isolated rooms', () => {
   store.createMessage({
     id: 'general-message',
     roomId: GENERAL_ROOM_ID,
-    author: { id: 'user-1', name: 'Ada' },
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
     text: 'General',
     createdAt: 2,
   })

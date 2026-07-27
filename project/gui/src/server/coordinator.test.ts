@@ -9,6 +9,7 @@ import {
   type RoomSummary,
   type RoomStore,
 } from './room-store'
+import { createRoomMessageHub } from './room-hub'
 
 class FakeRunControl implements RunControl {
   private listeners = new Set<(run: RunSummary) => void>()
@@ -20,7 +21,7 @@ class FakeRunControl implements RunControl {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
-  start(task: string) {
+  start(task: string, _context: { roomId: string }) {
     const run: RunSummary = {
       id: crypto.randomUUID(),
       task,
@@ -148,9 +149,11 @@ const open = (url: string) =>
 test('two clients receive durable room messages and agent runs', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
   const coordinator = createCoordinator({
     control,
     store,
+    messages,
     authenticator: authorized,
     authHandler: async () => new Response('ok'),
     origin: 'http://gui.test',
@@ -251,9 +254,11 @@ test('two clients receive durable room messages and agent runs', async () => {
 
 test('rooms are created once and streams stay isolated', async () => {
   const control = new FakeRunControl()
+  const store = new MemoryRoomStore()
   const coordinator = createCoordinator({
     control,
-    store: new MemoryRoomStore(),
+    store,
+    messages: createRoomMessageHub(store),
     authenticator: authorized,
     authHandler: async () => new Response('ok'),
     origin: 'http://gui.test',
@@ -353,9 +358,11 @@ test('rooms are created once and streams stay isolated', async () => {
 })
 
 test('room endpoints require a session', async () => {
+  const store = new MemoryRoomStore()
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
-    store: new MemoryRoomStore(),
+    store,
+    messages: createRoomMessageHub(store),
     authenticator: { authenticate: async () => undefined },
     authHandler: async () => new Response('ok'),
     origin: 'http://gui.test',
@@ -375,9 +382,11 @@ test('room endpoints require a session', async () => {
 })
 
 test('localhost Vite ports are allowed when the configured GUI is localhost', async () => {
+  const store = new MemoryRoomStore()
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
-    store: new MemoryRoomStore(),
+    store,
+    messages: createRoomMessageHub(store),
     authenticator: authorized,
     authHandler: async () => new Response('ok'),
     origin: 'http://localhost:3000',
@@ -402,6 +411,75 @@ test('localhost Vite ports are allowed when the configured GUI is localhost', as
         })
       ).status,
     ).toBe(403)
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('hub post by non-HTTP caller broadcasts message.created to subscribed socket', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages,
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const socket = await open(`${base.replace('http', 'ws')}/api/rooms/general/stream`)
+    expect((await socket.next()).type).toBe('room.snapshot')
+    const pending = socket.next()
+    messages.postMessage({
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'agent', id: 'software-engineer', name: 'Software engineer' },
+      text: 'Agent says hello',
+    })
+    const event = await pending
+    expect(event).toMatchObject({
+      type: 'message.created',
+      message: { roomId: GENERAL_ROOM_ID, text: 'Agent says hello' },
+    })
+    socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('agent-authored hub post does NOT create a run', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages,
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const socket = await open(`${base.replace('http', 'ws')}/api/rooms/general/stream`)
+    expect((await socket.next()).type).toBe('room.snapshot')
+    const pending = socket.next()
+    messages.postMessage({
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'agent', id: 'software-engineer', name: 'Software engineer' },
+      text: '@software-engineer do something',
+    })
+    const event = await pending
+    expect(event.type).toBe('message.created')
+    // No run should be created by an agent hub post
+    expect(control.listRuns()).toHaveLength(0)
+    expect(store.runs).toHaveLength(0)
+    await expectNoEvent(socket)
+    socket.socket.close()
   } finally {
     coordinator.stop()
   }

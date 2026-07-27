@@ -4,13 +4,23 @@ import type { RunSummary } from './run-control'
 export const GENERAL_ROOM_ID = 'general' as const
 
 export type RoomUser = { id: string; name: string; image?: string }
+export type MessageAuthor =
+  | ({ kind: 'user' } & RoomUser)
+  | { kind: 'agent'; id: string; name: string; image?: string }
 export type RoomSummary = { id: string; name: string }
 export type RoomMessage = {
   id: string
   roomId: string
-  author: RoomUser
+  author: MessageAuthor
   text: string
   createdAt: number
+}
+
+const AGENT_PARTICIPANTS: Record<string, { id: string; name: string; image?: string }> = {
+  'software-engineer': { id: 'software-engineer', name: 'Software engineer' },
+}
+export function agentParticipant(definitionId: string): { id: string; name: string; image?: string } {
+  return AGENT_PARTICIPANTS[definitionId] ?? { id: definitionId, name: definitionId }
 }
 export type RoomRun = RunSummary & {
   roomId: string
@@ -43,6 +53,7 @@ type MessageRow = {
   author_id: string
   author_name: string
   author_image: string | null
+  author_kind: string
   text: string
   created_at: number
 }
@@ -68,11 +79,9 @@ type RunRow = {
 const messageFrom = (row: MessageRow): RoomMessage => ({
   id: row.id,
   roomId: row.room_id,
-  author: {
-    id: row.author_id,
-    name: row.author_name,
-    ...(row.author_image ? { image: row.author_image } : {}),
-  },
+  author: row.author_kind === 'agent'
+    ? { kind: 'agent', id: row.author_id, name: row.author_name, ...(row.author_image ? { image: row.author_image } : {}) }
+    : { kind: 'user', id: row.author_id, name: row.author_name, ...(row.author_image ? { image: row.author_image } : {}) },
   text: row.text,
   createdAt: row.created_at,
 })
@@ -102,7 +111,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     (
       sqlite
         .prepare(
-          'SELECT id, room_id, author_id, author_name, author_image, text, created_at FROM room_message WHERE room_id = ? ORDER BY created_at, id',
+          'SELECT id, room_id, author_id, author_name, author_image, author_kind, text, created_at FROM room_message WHERE room_id = ? ORDER BY created_at, id',
         )
         .all(roomId) as MessageRow[]
     ).map(messageFrom)
@@ -153,7 +162,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     createMessage: (message) => {
       sqlite
         .prepare(
-          'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, author_kind, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .run(
           message.id,
@@ -161,6 +170,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           message.author.id,
           message.author.name,
           message.author.image ?? null,
+          message.author.kind,
           message.text,
           message.createdAt,
         )

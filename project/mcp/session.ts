@@ -13,7 +13,7 @@ export interface CapabilitySessionBinding {
 export interface CapabilitySessionFactory {
   create(
     grant: McpGrant,
-    context?: { workspace?: PreparedWorkspace; sandbox?: Pick<Sandbox, "exec"> },
+    context?: { workspace?: PreparedWorkspace; sandbox?: Pick<Sandbox, "exec">; grantContext?: unknown },
   ): CapabilitySessionBinding | Promise<CapabilitySessionBinding>;
 }
 
@@ -23,6 +23,7 @@ export function createCapabilitySessionFactory(options: {
     grant: McpGrant;
     workspace?: PreparedWorkspace;
     sandbox?: Pick<Sandbox, "exec">;
+    grantContext?: unknown;
   }) => McpGateway;
   url?: string;
   createEndpoint?: (gateway: McpGateway) => { url: string; close(): Promise<void> };
@@ -35,7 +36,8 @@ export function createCapabilitySessionFactory(options: {
   }
   return {
     async create(grant, context = {}) {
-      const gateway = options.createGateway?.({ grant, ...context }) ?? options.gateway!;
+      const { workspace, sandbox, grantContext } = context;
+      const gateway = options.createGateway?.({ grant, workspace, sandbox, grantContext }) ?? options.gateway!;
       const session = gateway.createSession(grant);
       const endpoint = options.createEndpoint?.(gateway);
       try {
