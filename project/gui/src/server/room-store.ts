@@ -28,6 +28,18 @@ export type RoomRun = RunSummary & {
   requestedBy: RoomUser
 }
 
+export type StoredStep = {
+  id: string
+  runId: string
+  roomId: string
+  idx: number
+  kind: 'message' | 'tool_call' | 'tool_result'
+  tool?: string
+  callId?: string
+  text: string
+  createdAt: number
+}
+
 export interface RoomStore {
   listRooms(): RoomSummary[]
   getRoom(roomId: string): RoomSummary | undefined
@@ -39,6 +51,9 @@ export interface RoomStore {
   updateRun(run: RoomRun): void
   failStaleRuns(): RoomRun[]
   getRun(id: string): RoomRun | undefined
+  appendStep(step: StoredStep): void
+  listSteps(runId: string): StoredStep[]
+  latestStepsForActiveRuns(roomId: string): Map<string, StoredStep>
 }
 
 type Statement = {
@@ -75,6 +90,17 @@ type RunRow = {
   stderr: string
   trigger_message_id: string
 }
+type StepRow = {
+  id: string
+  run_id: string
+  room_id: string
+  idx: number
+  kind: string
+  tool: string | null
+  call_id: string | null
+  text: string
+  created_at: number
+}
 
 const messageFrom = (row: MessageRow): RoomMessage => ({
   id: row.id,
@@ -82,6 +108,17 @@ const messageFrom = (row: MessageRow): RoomMessage => ({
   author: row.author_kind === 'agent'
     ? { kind: 'agent', id: row.author_id, name: row.author_name, ...(row.author_image ? { image: row.author_image } : {}) }
     : { kind: 'user', id: row.author_id, name: row.author_name, ...(row.author_image ? { image: row.author_image } : {}) },
+  text: row.text,
+  createdAt: row.created_at,
+})
+const stepFrom = (row: StepRow): StoredStep => ({
+  id: row.id,
+  runId: row.run_id,
+  roomId: row.room_id,
+  idx: row.idx,
+  kind: row.kind as StoredStep['kind'],
+  ...(row.tool != null ? { tool: row.tool } : {}),
+  ...(row.call_id != null ? { callId: row.call_id } : {}),
   text: row.text,
   createdAt: row.created_at,
 })
@@ -212,5 +249,42 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       )
     },
     getRun: (id) => selectRuns('WHERE id = ?', id).at(0),
+    appendStep: (step) => {
+      sqlite
+        .prepare(
+          'INSERT INTO run_step (id, run_id, room_id, idx, kind, tool, call_id, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          step.id,
+          step.runId,
+          step.roomId,
+          step.idx,
+          step.kind,
+          step.tool ?? null,
+          step.callId ?? null,
+          step.text,
+          step.createdAt,
+        )
+    },
+    listSteps: (runId) =>
+      (
+        sqlite
+          .prepare('SELECT id, run_id, room_id, idx, kind, tool, call_id, text, created_at FROM run_step WHERE run_id = ? ORDER BY idx')
+          .all(runId) as StepRow[]
+      ).map(stepFrom),
+    latestStepsForActiveRuns: (roomId) => {
+      const rows = sqlite
+        .prepare(
+          `SELECT s.id, s.run_id, s.room_id, s.idx, s.kind, s.tool, s.call_id, s.text, s.created_at
+           FROM run_step s
+           JOIN room_run r ON r.id = s.run_id
+           WHERE r.room_id = ? AND r.state IN ('preparing', 'running')
+             AND s.idx = (SELECT MAX(s2.idx) FROM run_step s2 WHERE s2.run_id = s.run_id)`,
+        )
+        .all(roomId) as StepRow[]
+      const map = new Map<string, StoredStep>()
+      for (const row of rows) map.set(row.run_id, stepFrom(row))
+      return map
+    },
   }
 }
