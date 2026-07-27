@@ -81,9 +81,13 @@ the sandbox.
 run. The sandbox receives this session, never a Linear, GitHub, or other
 provider credential.
 
-**Run result** contains a terminal outcome and runtime stdout/stderr. V1 does
-not collect artifacts or provide a live agent-to-operator communication channel;
-both are deferred until a concrete role needs them.
+**Run result** contains a terminal outcome and runtime stderr, plus the run's
+ordered **step history** (see `CONTEXT.md`). The runtime streams steps as
+newline-delimited JSON on the container's stdout; the Agents runtime therefore
+no longer populates `RunRecord.stdout`, and the `message` steps are its
+narration record. Steps are the live agent-to-operator channel and the audit
+trail; see [ADR 0003](adr/0003-structured-step-stream-over-container-stdout.md).
+V1 still does not collect artifacts.
 
 Capability grants are resolved before execution by a separate composition or
 policy layer. The executor receives those resolved grants and only binds and
