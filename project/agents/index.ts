@@ -1,5 +1,6 @@
 import type {
   ExecutionResult,
+  ExecRequest,
   Sandbox,
   SandboxProvider,
   SandboxSpec,
@@ -103,15 +104,25 @@ export interface RunRecord<Input extends RunInput = RunInput> {
 export interface RunStore<Input extends RunInput = RunInput> {
   create(record: RunRecord<Input>): void;
   get(id: string): RunRecord<Input> | undefined;
+  list(): RunRecord<Input>[];
   update(id: string, patch: Partial<RunRecord<Input>>): void;
+  subscribe(listener: (record: RunRecord<Input>) => void): () => void;
 }
 
 export class InMemoryRunStore<Input extends RunInput = RunInput> implements RunStore<Input> {
   private readonly records = new Map<string, RunRecord<Input>>();
+  private readonly listeners = new Set<(record: RunRecord<Input>) => void>();
+
+  private publish(record: RunRecord<Input>): void {
+    const value = snapshot(record);
+    for (const listener of this.listeners) listener(value);
+  }
 
   create(record: RunRecord<Input>): void {
     if (this.records.has(record.id)) throw new Error(`Run already exists: ${record.id}`);
-    this.records.set(record.id, snapshot(record));
+    const value = snapshot(record);
+    this.records.set(record.id, value);
+    this.publish(value);
   }
 
   get(id: string): RunRecord<Input> | undefined {
@@ -119,10 +130,21 @@ export class InMemoryRunStore<Input extends RunInput = RunInput> implements RunS
     return record ? snapshot(record) : undefined;
   }
 
+  list(): RunRecord<Input>[] {
+    return [...this.records.values()].map(snapshot);
+  }
+
   update(id: string, patch: Partial<RunRecord<Input>>): void {
     const record = this.records.get(id);
     if (!record) throw new Error(`Unknown run: ${id}`);
-    this.records.set(id, snapshot({ ...record, ...patch }));
+    const value = snapshot({ ...record, ...patch });
+    this.records.set(id, value);
+    this.publish(value);
+  }
+
+  subscribe(listener: (record: RunRecord<Input>) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 }
 
@@ -135,6 +157,7 @@ export interface RuntimeRequest {
   task: string;
   workspace?: string;
   capabilitySession?: CapabilitySessionBinding;
+  onOutput?: ExecRequest["onOutput"];
 }
 
 export interface AgentProvider {
@@ -155,6 +178,8 @@ export interface StartRunRequest<Input extends RunInput = never> {
 export interface RunExecutor<Input extends RunInput = never> {
   startRun(request: StartRunRequest<Input>): string;
   getRun(id: string): RunRecord<Input> | undefined;
+  listRuns(): RunRecord<Input>[];
+  subscribe(listener: (record: RunRecord<Input>) => void): () => void;
   cancelRun(id: string): Promise<RunRecord<Input> | undefined>;
 }
 
@@ -263,6 +288,16 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         task: record.task,
         ...(workspace ? { workspace: "/work" } : {}),
         ...(capabilitySession ? { capabilitySession } : {}),
+        onOutput: (chunk) => {
+          const current = store.get(record.id);
+          if (!current || terminal(current.state)) return;
+          store.update(record.id, {
+            [chunk.stream]: retainOutput(
+              current[chunk.stream] + chunk.text,
+              record.effectiveLimits.maxOutputBytes,
+            ),
+          });
+        },
       });
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
@@ -395,6 +430,14 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
 
     getRun(id) {
       return store.get(id);
+    },
+
+    listRuns() {
+      return store.list();
+    },
+
+    subscribe(listener) {
+      return store.subscribe(listener);
     },
 
     async cancelRun(id) {

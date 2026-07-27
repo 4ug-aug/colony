@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   ContainerCommandError,
+  BunCommandRunner,
   createAppleContainerClient,
   type CommandOptions,
   type CommandResult,
@@ -27,6 +28,24 @@ class FakeRunner implements CommandRunner {
 }
 
 describe("Apple container SDK", () => {
+  test("streams command output while retaining the result", async () => {
+    const chunks: string[] = [];
+    let completed = false;
+    const operation = new BunCommandRunner("sh")
+      .run(["-c", "printf first; sleep 0.05; printf second"], {
+        onOutput: ({ text }) => chunks.push(text),
+      })
+      .then((result) => {
+        completed = true;
+        return result;
+      });
+
+    while (!chunks.length) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(completed).toBe(false);
+    expect((await operation).stdout).toBe("firstsecond");
+    expect(chunks.join("")).toBe("firstsecond");
+  });
+
   test("composes operations over an injected command protocol", async () => {
     const runner = new FakeRunner();
     const sdk = createAppleContainerClient(runner);

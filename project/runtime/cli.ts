@@ -7,8 +7,8 @@ const required = (name: string): string => {
 };
 
 try {
-  console.log(
-    await runAgent({
+  await runAgent(
+    {
       task: required("SWEAT_AGENT_TASK"),
       instructions: required("SWEAT_AGENT_INSTRUCTIONS"),
       agentId: required("SWEAT_AGENT_ID"),
@@ -26,7 +26,10 @@ try {
             revoke: () => {},
           }
         : undefined,
-    }),
+    },
+    {
+      onTextDelta: (text) => process.stdout.write(text),
+    },
   );
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);

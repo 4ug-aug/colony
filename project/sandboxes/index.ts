@@ -7,6 +7,10 @@ export interface ExecRequest {
   command: readonly string[];
   env?: Record<string, string | undefined>;
   workdir?: string;
+  onOutput?: (chunk: {
+    stream: "stdout" | "stderr";
+    text: string;
+  }) => void;
 }
 
 export interface ExecutionResult {

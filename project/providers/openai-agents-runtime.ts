@@ -27,6 +27,7 @@ export function createOpenAIAgentsRuntime(options: {
             : {}),
         },
         ...(request.workspace ? { workdir: request.workspace } : {}),
+        ...(request.onOutput ? { onOutput: request.onOutput } : {}),
       });
     },
   };

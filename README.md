@@ -1,3 +1,15 @@
-# sweat-v2
+# Sweat
 
-This project is for building the scaffold for a reusable agent. The core idea is that we can use this to spawn multiple roles inside a company, for example a junior software engineer, marketing or similar, that we can delegate different tasks to.
+Sweat is a self-hosted multiplayer workspace where people delegate work to
+isolated AI agents and collaborate around the results. Its intended primary
+experience is a Tauri desktop application backed by the same static client
+available in a browser.
+
+Read [VISION.md](./VISION.md) for the product direction,
+[CONTEXT.md](./CONTEXT.md) for the domain language, and
+[docs/architecture.md](./docs/architecture.md) for the current architecture.
+
+The implementation lives in [`project/`](./project/).
+
+For local two-user testing, `make dev` seeds `admin@sweat.local` and
+`teammate@sweat.local`; both use the password `change-me-now`.

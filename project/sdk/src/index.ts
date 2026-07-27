@@ -1,9 +1,14 @@
 export type Stdio = "capture" | "inherit";
+export type OutputChunk = {
+  stream: "stdout" | "stderr";
+  text: string;
+};
 
 export interface CommandOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;
   stdio?: Stdio;
+  onOutput?: (chunk: OutputChunk) => void;
 }
 
 export interface CommandResult {
@@ -15,6 +20,22 @@ export interface CommandResult {
 
 export interface CommandRunner {
   run(args: readonly string[], options?: CommandOptions): Promise<CommandResult>;
+}
+
+async function readOutput(
+  stream: ReadableStream<Uint8Array>,
+  onChunk?: (text: string) => void,
+): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let output = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    const text = decoder.decode(value, { stream: !done });
+    output += text;
+    if (text) onChunk?.(text);
+    if (done) return output;
+  }
 }
 
 export class BunCommandRunner implements CommandRunner {
@@ -36,8 +57,16 @@ export class BunCommandRunner implements CommandRunner {
 
     const [exitCode, stdout, stderr] = await Promise.all([
       process.exited,
-      capture ? new Response(process.stdout).text() : "",
-      capture ? new Response(process.stderr).text() : "",
+      capture
+        ? readOutput(process.stdout!, (text) =>
+            options.onOutput?.({ stream: "stdout", text }),
+          )
+        : "",
+      capture
+        ? readOutput(process.stderr!, (text) =>
+            options.onOutput?.({ stream: "stderr", text }),
+          )
+        : "",
     ]);
 
     return { args, exitCode, stdout, stderr };
@@ -92,6 +121,7 @@ export interface ExecOptions {
   env?: Record<string, string | undefined>;
   workdir?: string;
   stdio?: Stdio;
+  onOutput?: (chunk: OutputChunk) => void;
 }
 
 export interface ContainerOperations {
@@ -218,6 +248,7 @@ export function createContainerOperations(
         stdio:
           options.stdio ??
           (options.interactive || options.tty ? "inherit" : "capture"),
+        ...(options.onOutput ? { onOutput: options.onOutput } : {}),
       });
     },
 

@@ -68,7 +68,11 @@ function shellCommand(input: unknown): string {
 
 export async function runAgent(
   request: AgentRuntimeRequest,
-  dependencies: { model?: Model; modelProvider?: ModelProvider } = {},
+  dependencies: {
+    model?: Model;
+    modelProvider?: ModelProvider;
+    onTextDelta?: (text: string) => void;
+  } = {},
 ): Promise<string> {
   const mcpServers = request.capabilitySession
     ? await MCPServers.open([
@@ -115,7 +119,14 @@ export async function runAgent(
           useResponses: false,
         }),
       tracingDisabled: true,
-    }).run(agent, request.task, { maxTurns: 50 });
+    }).run(agent, request.task, { maxTurns: 50, stream: true });
+
+    for await (const text of result.toTextStream({
+      compatibleWithNodeStreams: true,
+    })) {
+      dependencies.onTextDelta?.(text);
+    }
+    await result.completed;
 
     return result.finalOutput ?? "";
   } finally {

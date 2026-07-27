@@ -37,6 +37,50 @@ test("startRun records preparation before asynchronous execution and snapshots r
   await waitFor(() => executor.getRun(id)?.state === "succeeded");
 });
 
+test("lists and publishes run transitions", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    inputs: { prepare: async () => { await pending; return {}; } },
+    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
+    runtime: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+    createId: () => "run-events",
+  });
+  const states: string[] = [];
+  const unsubscribe = executor.subscribe((run) => states.push(run.state));
+
+  const id = executor.startRun({ agentDefinitionId: "test-agent", task: "events" });
+  expect(executor.listRuns().map((run) => run.id)).toEqual([id]);
+  release();
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  unsubscribe();
+
+  expect(states).toEqual(["preparing", "running", "succeeded"]);
+});
+
+test("publishes bounded output while a run is active", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
+    runtime: { run: async (_sandbox, request) => {
+      request.onOutput?.({ stream: "stdout", text: "working" });
+      await pending;
+      return { exitCode: 0, stdout: "working done", stderr: "" };
+    } },
+    createId: () => "run-output",
+  });
+
+  const id = executor.startRun({ agentDefinitionId: "test-agent", task: "stream" });
+  await waitFor(() => executor.getRun(id)?.stdout === "working");
+  expect(executor.getRun(id)?.state).toBe("running");
+  release();
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(executor.getRun(id)?.stdout).toBe("working done");
+});
+
 test("successful workspace runs retain bounded tails and clean resources", async () => {
   let disposedSandbox = 0;
   let disposedWorkspace = 0;

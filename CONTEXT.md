@@ -6,6 +6,14 @@ software engineering is one possible role, not the platform's default shape.
 
 ## Language
 
+**Workspace**: The customer-owned collaborative environment containing people,
+agent definitions, rooms, and their shared work history.
+_Avoid_: Community
+
+**Room**: A durable context in a workspace where people coordinate work and
+where related runs and their results remain visible.
+_Avoid_: Channel, conversation
+
 **Task**: The plain-text assignment supplied by a run to an agent runtime.
 _Avoid_: Prompt
 

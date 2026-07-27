@@ -29,6 +29,7 @@ export function createAppleContainerSandboxProvider(options: {
             {
               ...(request.env ? { env: request.env } : {}),
               ...(request.workdir ? { workdir: request.workdir } : {}),
+              ...(request.onOutput ? { onOutput: request.onOutput } : {}),
             },
           );
           return {
