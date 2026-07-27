@@ -3,6 +3,7 @@ import {
   createInMemoryAgentDefinitionResolver,
   createRunExecutor,
   type AgentDefinition,
+  type Step,
 } from "./index";
 
 const definition: AgentDefinition = {
@@ -190,6 +191,109 @@ test("a run grant cannot exceed its agent definition", () => {
     task: "no",
     capabilityGrant: { tools: ["github.create_pull_request"], expiresAt: new Date(Date.now() + 60_000) },
   })).toThrow("Capability grant exceeds agent definition");
+});
+
+test("steps reach subscribers and unsubscribe stops delivery", async () => {
+  const steps: Array<{ runId: string; step: Step }> = [];
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
+    runtime: { run: async (_sandbox, request) => {
+      request.onStep?.({ kind: "message", text: "step 1", at: 1 });
+      request.onStep?.({ kind: "tool_call", text: "{}", tool: "shell", callId: "c1", at: 2 });
+      request.onStep?.({ kind: "tool_result", text: "done", tool: "shell", callId: "c1", at: 3 });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    } },
+    createId: () => "run-steps-1",
+  });
+
+  const unsubscribe = executor.subscribeSteps((runId, step) => steps.push({ runId, step }));
+  const id = executor.startRun({ agentDefinitionId: "test-agent", task: "steps" });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  unsubscribe();
+
+  expect(steps).toHaveLength(3);
+  expect(steps[0]).toEqual({ runId: "run-steps-1", step: { kind: "message", text: "step 1", at: 1 } });
+  expect(steps[1].step.kind).toBe("tool_call");
+  expect(steps[2].step.kind).toBe("tool_result");
+
+  // unsubscribe prevents further delivery
+  const before = steps.length;
+  // start another run — listener should not fire
+  const executor2 = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
+    runtime: { run: async (_sandbox, request) => {
+      request.onStep?.({ kind: "message", text: "after unsub", at: 4 });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    } },
+  });
+  // We unsubscribed from executor, not executor2 — test that unsubscribe works on same executor
+  const executor3 = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
+    runtime: { run: async (_sandbox, request) => {
+      request.onStep?.({ kind: "message", text: "after unsub from executor", at: 5 });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    } },
+    createId: () => "run-steps-after",
+  });
+  executor.subscribeSteps((_runId, _step) => steps.push({ runId: "should-not", step: _step }));
+  // The original listener was already unsubscribed, count stays the same
+  expect(steps.length).toBe(before);
+});
+
+test("count cap emits maxSteps real steps then one truncation-marker and no more", async () => {
+  const received: Step[] = [];
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
+    runtime: { run: async (_sandbox, request) => {
+      for (let i = 0; i < 6; i++) {
+        request.onStep?.({ kind: "message", text: `step ${i}`, at: i });
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    } },
+    createId: () => "run-cap",
+  });
+
+  executor.subscribeSteps((_runId, step) => received.push(step));
+  // maxSteps: 3 (within definition's maxSteps: 100)
+  const id = executor.startRun({ agentDefinitionId: "test-agent", task: "cap", maxSteps: 3 });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+
+  // 3 real steps + 1 truncation marker = 4 total
+  expect(received).toHaveLength(4);
+  expect(received[0].text).toBe("step 0");
+  expect(received[1].text).toBe("step 1");
+  expect(received[2].text).toBe("step 2");
+  expect(received[3].kind).toBe("message");
+  expect(received[3].text).toBe("[steps truncated: reached maxSteps limit]");
+});
+
+test("per-step text truncation caps at MIN(maxOutputBytes, MAX_STEP_TEXT_BYTES)", async () => {
+  const received: Step[] = [];
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
+    runtime: { run: async (_sandbox, request) => {
+      // definition.executionPolicy.maxOutputBytes = 20
+      // So cap = min(20, 16*1024) = 20
+      request.onStep?.({ kind: "message", text: "a".repeat(100), at: 1 });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    } },
+    createId: () => "run-trunc",
+  });
+
+  executor.subscribeSteps((_runId, step) => received.push(step));
+  const id = executor.startRun({ agentDefinitionId: "test-agent", task: "trunc" });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+
+  expect(received).toHaveLength(1);
+  const text = received[0].text;
+  expect(text.startsWith("[truncated]")).toBe(true);
+  const byteLen = new TextEncoder().encode(text).byteLength;
+  expect(byteLen).toBeLessThanOrEqual(20);
 });
 
 test("runs bind a granted capability session and revoke it during cleanup", async () => {

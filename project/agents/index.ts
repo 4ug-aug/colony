@@ -226,6 +226,7 @@ export interface RunExecutor<Input extends RunInput = never> {
   getRun(id: string): RunRecord<Input> | undefined;
   listRuns(): RunRecord<Input>[];
   subscribe(listener: (record: RunRecord<Input>) => void): () => void;
+  subscribeSteps(listener: (runId: string, step: Step) => void): () => void;
   cancelRun(id: string): Promise<RunRecord<Input> | undefined>;
 }
 
@@ -271,6 +272,8 @@ export function retainOutput(value: string, maxBytes: number): string {
   return tail(value, maxBytes);
 }
 
+const MAX_STEP_TEXT_BYTES = 16 * 1024;
+
 export function createRunExecutor<Input extends RunInput = never>(dependencies: {
   definitions: AgentDefinitionResolver;
   sandboxes: SandboxProvider;
@@ -288,6 +291,11 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   const active = new Map<string, Promise<void>>();
   const sandboxes = new Map<string, Sandbox>();
   const disposed = new Map<string, Promise<void>>();
+  const stepListeners = new Set<(runId: string, step: Step) => void>();
+
+  const publishStep = (runId: string, step: Step): void => {
+    for (const listener of stepListeners) listener(runId, step);
+  };
 
   const disposeSandbox = (id: string, sandbox: Sandbox): Promise<void> => {
     const existing = disposed.get(id);
@@ -329,6 +337,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       if (cancellation.has(record.id)) return;
 
       store.update(record.id, { state: "running", startedAt: now() });
+      let stepCount = 0;
+      let stepsTruncated = false;
       const runtime = dependencies.runtime.run(sandbox, {
         definition: snapshot(record.definition),
         task: record.task,
@@ -343,6 +353,19 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
               record.effectiveLimits.maxOutputBytes,
             ),
           });
+        },
+        onStep: (step) => {
+          if (stepsTruncated) return;
+          if (stepCount >= record.effectiveLimits.maxSteps) {
+            stepsTruncated = true;
+            const marker: Step = { kind: "message", text: "[steps truncated: reached maxSteps limit]", at: now() };
+            publishStep(record.id, marker);
+            return;
+          }
+          const cap = Math.min(record.effectiveLimits.maxOutputBytes, MAX_STEP_TEXT_BYTES);
+          const bounded: Step = { ...step, text: tail(step.text, cap) };
+          stepCount++;
+          publishStep(record.id, bounded);
         },
       });
       const timeout = new Promise<never>((_, reject) => {
@@ -489,6 +512,11 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
 
     subscribe(listener) {
       return store.subscribe(listener);
+    },
+
+    subscribeSteps(listener) {
+      stepListeners.add(listener);
+      return () => stepListeners.delete(listener);
     },
 
     async cancelRun(id) {
