@@ -116,7 +116,8 @@ test("the runtime completes an SDK tool loop against an OpenAI-compatible API", 
   );
   expect(result).toBe("runtime ready");
   const messageSteps = steps.filter((s) => s.kind === "message");
-  expect(messageSteps.some((s) => s.text === "runtime ready")).toBe(true);
+  expect(messageSteps.length).toBeGreaterThan(0);
+  expect(messageSteps[messageSteps.length - 1]!.text).toBe("runtime ready");
   expect(calls).toBe(2);
 });
 

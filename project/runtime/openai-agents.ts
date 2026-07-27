@@ -8,7 +8,7 @@ import {
   Runner,
   tool,
 } from "@openai/agents";
-import type { RunItemStreamEvent } from "@openai/agents-core";
+
 import type { Step } from "../agents";
 import type { CapabilitySessionBinding } from "../mcp/session";
 
@@ -127,7 +127,7 @@ export async function runAgent(
 
     for await (const event of result) {
       if (event.type !== "run_item_stream_event") continue;
-      const { name, item } = event as RunItemStreamEvent;
+      const { name, item } = event;
       if (name === "message_output_created") {
         const text = (item as { content: string }).content;
         lastMessageText = text;
@@ -142,10 +142,12 @@ export async function runAgent(
           at: Date.now(),
         });
       } else if (name === "tool_output") {
-        const outputItem = item as { output: unknown; callId?: string; rawItem: { name: string } };
+        const outputItem = item as { output: unknown; callId?: string; rawItem: { type?: string; name?: string } };
+        const rawItem = outputItem.rawItem;
+        const toolName = rawItem.type === "function_call_result" && typeof rawItem.name === "string" ? rawItem.name : "";
         dependencies.onStep?.({
           kind: "tool_result",
-          tool: outputItem.rawItem.name,
+          tool: toolName,
           text: String(outputItem.output),
           callId: outputItem.callId,
           at: Date.now(),
