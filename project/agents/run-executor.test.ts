@@ -10,7 +10,7 @@ const definition: AgentDefinition = {
   instructions: "test instructions",
   requestedCapabilities: [{ id: "linear.issues", tools: ["linear.get_issue"] }],
   runtime: { image: "test:latest" },
-  executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 20 },
+  executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 20, maxSteps: 100 },
 };
 
 const waitFor = async (check: () => boolean): Promise<void> => {

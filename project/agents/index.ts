@@ -28,6 +28,7 @@ export interface AgentDefinition {
   executionPolicy: {
     maxDurationMs: number;
     maxOutputBytes: number;
+    maxSteps: number;
   };
 }
 
@@ -68,6 +69,46 @@ export function createInMemoryAgentDefinitionResolver(
   return new InMemoryAgentDefinitionResolver(definitions);
 }
 
+export type StepKind = 'message' | 'tool_call' | 'tool_result';
+
+export interface Step {
+  kind: StepKind;
+  // message: the narration text. tool_call: the arguments (JSON string).
+  // tool_result: the tool output.
+  text: string;
+  tool?: string;     // tool_call / tool_result only, e.g. "shell"
+  callId?: string;   // correlates a tool_call with its tool_result
+  at: number;        // ms epoch, set in the container
+}
+
+export function serializeStep(step: Step): string {
+  const line = JSON.stringify(step);
+  // JSON.stringify escapes \n inside strings, so the result must be single-line.
+  if (line.includes('\n')) throw new Error("serializeStep produced a line with embedded newlines");
+  return line;
+}
+
+export function parseStep(line: string): Step | undefined {
+  if (!line.trim()) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj['kind'] !== 'string') return undefined;
+  const kind = obj['kind'];
+  if (kind !== 'message' && kind !== 'tool_call' && kind !== 'tool_result') return undefined;
+  if (typeof obj['text'] !== 'string') return undefined;
+  if (typeof obj['at'] !== 'number') return undefined;
+  const step: Step = { kind: kind as StepKind, text: obj['text'] as string, at: obj['at'] as number };
+  if (typeof obj['tool'] === 'string') step.tool = obj['tool'];
+  if (typeof obj['callId'] === 'string') step.callId = obj['callId'];
+  return step;
+}
+
 export type RunState =
   | "preparing"
   | "running"
@@ -78,6 +119,7 @@ export type RunState =
 export interface RunLimits {
   maxDurationMs: number;
   maxOutputBytes: number;
+  maxSteps: number;
 }
 
 export interface RunInput {
@@ -159,6 +201,7 @@ export interface RuntimeRequest {
   workspace?: string;
   capabilitySession?: CapabilitySessionBinding;
   onOutput?: ExecRequest["onOutput"];
+  onStep?: (step: Step) => void;
 }
 
 export interface AgentProvider {
@@ -175,6 +218,7 @@ export interface StartRunRequest<Input extends RunInput = never> {
   maxDurationMs?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  maxSteps?: number;
 }
 
 export interface RunExecutor<Input extends RunInput = never> {
@@ -391,11 +435,15 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       }
       const maxDurationMs = request.maxDurationMs ?? request.timeoutMs ?? definition.executionPolicy.maxDurationMs;
       const maxOutputBytes = request.maxOutputBytes ?? definition.executionPolicy.maxOutputBytes;
+      const maxSteps = request.maxSteps ?? definition.executionPolicy.maxSteps;
       if (!Number.isSafeInteger(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > definition.executionPolicy.maxDurationMs) {
         throw new Error("Requested maxDurationMs must be positive and within the agent definition limit");
       }
       if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes <= 0 || maxOutputBytes > definition.executionPolicy.maxOutputBytes) {
         throw new Error("Requested maxOutputBytes must be positive and within the agent definition limit");
+      }
+      if (!Number.isSafeInteger(maxSteps) || maxSteps <= 0 || maxSteps > definition.executionPolicy.maxSteps) {
+        throw new Error("Requested maxSteps must be positive and within the agent definition limit");
       }
 
       const record: RunRecord<Input> = {
@@ -416,7 +464,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
             }
           : {}),
         ...(request.grantContext !== undefined ? { grantContext: snapshot(request.grantContext) } : {}),
-        effectiveLimits: { maxDurationMs, maxOutputBytes },
+        effectiveLimits: { maxDurationMs, maxOutputBytes, maxSteps },
         stdout: "",
         stderr: "",
         createdAt: now(),

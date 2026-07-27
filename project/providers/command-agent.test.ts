@@ -23,7 +23,7 @@ test("a command agent executes its task inside the sandbox", async () => {
       instructions: "Run the task.",
       requestedCapabilities: [],
       runtime: { image: "alpine:latest" },
-      executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 1000 },
+      executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 1000, maxSteps: 100 },
     },
   });
 

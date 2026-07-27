@@ -24,7 +24,7 @@ test("the OpenAI runtime passes the definition and task to its container command
           image: "sweat-agent:latest",
           model: { baseUrl: "https://models.example/v1", apiKey: "secret", model: "test" },
         },
-        executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 1000 },
+        executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 1000, maxSteps: 100 },
       },
       workspace: "/work",
     },

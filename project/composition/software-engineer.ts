@@ -22,6 +22,7 @@ import type { CapabilitySessionFactory } from "../mcp/session";
 const defaultLimits = {
   maxDurationMs: 30 * 60 * 1000,
   maxOutputBytes: 1024 * 1024,
+  maxSteps: 500,
 };
 
 export function createSoftwareEngineerExecutor(options: {
