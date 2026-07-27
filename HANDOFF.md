@@ -89,18 +89,19 @@ container, filters calls, and revokes the session when the run ends. Roles
 request capabilities; runs grant them. Do not create a generic task
 abstraction until multiple providers prove one is needed.
 
-## Current vertical slice: shared General room
+## Current vertical slice: shared public rooms
 
 The current slice makes one deployment one implicit workspace with a seeded
-`General` room. Any authenticated user can post to its shared, durable
-timeline. A message beginning exactly with `@software-engineer ` delegates the
-remaining text as a bounded run; the linked status is visible below the human
-request, and a successful result appears as a later agent-authored message.
+`General` room plus user-created shared public rooms. Any authenticated user
+can create, select, and post in any room's durable timeline. A message
+beginning exactly with `@software-engineer ` delegates the remaining text as a
+bounded run; the linked status is visible below the human request, and a
+successful result appears as a later agent-authored message in the same room.
 
 Target shape:
 
 ```text
-Static React client -> seeded General room and shared activity
+Static React client -> shared public rooms and room-scoped activity
                     -> durable room-linked runs
                     -> existing isolated run executor
 ```
@@ -116,16 +117,18 @@ Constraints:
 
 Acceptance checks:
 
-- Two signed-in browser sessions receive each other's General messages and
-  run-status updates through the server's realtime connection.
-- Refreshing either session retains messages, linked run state, and completed
-  agent results; active runs found after restart are reported as failed rather
-  than silently left active.
+- Two signed-in browser sessions receive each other's messages and run-status
+  updates only for the selected shared room through the server's realtime
+  connection; both discover newly created rooms.
+- Refreshing either session retains room messages, linked run state, completed
+  agent results, and the selected room; active runs found after restart are
+  reported as failed rather than silently left active.
 - Only the exact leading `@software-engineer ` mention delegates. Ordinary
   text remains an ordinary message, and a missing delegated task is rejected.
-- The client presents a left-aligned channel timeline, status badge beneath an
+- The client presents a left-aligned room timeline, status badge beneath an
   active delegated request, and an inset sidebar with a padded, rounded main
   surface. It stays a static API client suitable for a future Tauri wrapper.
 
-Do not add private rooms, membership management, presence, reactions,
-attachments, or persistent agent processes in this slice.
+Do not add private rooms, membership management, invitations, room renaming or
+deletion, presence, reactions, attachments, Tauri packaging, or persistent
+agent processes in this slice.

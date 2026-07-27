@@ -1,14 +1,18 @@
 # Sweat client and server
 
 `src/main.tsx` builds a static React client. `src/server/coordinator.ts` is the
-authoritative HTTP/WebSocket server for authentication, the shared seeded
-`General` room, durable room messages, and room-linked run control.
+authoritative HTTP/WebSocket server for authentication, shared public rooms,
+durable room messages, and room-linked run control.
 
-Every authenticated user shares `General`. Start a bounded software-engineer
-run by posting a message that begins exactly with `@software-engineer `; its
-status and successful result appear in the shared room history. The client is
-an inset, left-aligned channel UI and remains ready for a future Tauri wrapper
-without embedding server logic.
+Every authenticated user shares `General` and can create and select additional
+public rooms. Start a bounded software-engineer run by posting a message that
+begins exactly with `@software-engineer `; its status and successful result
+appear in that room's shared history. Realtime messages and run updates are
+room-scoped. The client is an inset, left-aligned room UI and remains ready
+for a future Tauri wrapper without embedding server logic.
+
+Private rooms, membership, invitations, room renaming/deletion, and Tauri
+packaging are intentionally deferred.
 
 From the repository root:
 

@@ -1,7 +1,17 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { AtSign, Bot, Hash, Send, Terminal, Wifi, WifiOff } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import { Bot, Hash, Terminal, Wifi, WifiOff } from 'lucide-react'
 import { authClient, sweatApiUrl } from '#/lib/auth-client'
 import { Button } from '#/components/ui/button'
+import { MessageComposer } from '#/components/message-composer'
+import type { MessageComposerHandle } from '#/components/message-composer'
+import {
+  Popover,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '#/components/ui/popover'
 import {
   Sidebar,
   SidebarContent,
@@ -49,15 +59,15 @@ type StreamMessage =
       messages: RoomMessage[]
       runs: RoomRun[]
     }
+  | { type: 'room.created'; room: Room }
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
 
-const agentMention = '@software-engineer '
 const terminal = (state: RoomRun['state']) =>
   state === 'succeeded' || state === 'failed' || state === 'cancelled'
 
-function roomStreamUrl() {
-  const url = new URL(sweatApiUrl('/api/rooms/general/stream'))
+function roomStreamUrl(roomId: string) {
+  const url = new URL(sweatApiUrl(`/api/rooms/${roomId}/stream`))
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.toString()
 }
@@ -69,23 +79,47 @@ function upsert<T extends { id: string }>(items: T[], item: T) {
     : items.map((value) => (value.id === item.id ? item : value))
 }
 
-function useRoom() {
-  const [room, setRoom] = useState<Room>({ id: 'general', name: 'General' })
+function orderedRooms(rooms: Room[]) {
+  return [...rooms].sort(
+    (a, b) =>
+      (a.id === 'general' ? -1 : b.id === 'general' ? 1 : 0) ||
+      a.name.localeCompare(b.name) ||
+      a.id.localeCompare(b.id),
+  )
+}
+
+const selectedRoomKey = 'sweat.selected-room'
+
+function useRooms() {
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [runs, setRuns] = useState<RoomRun[]>([])
+  const [loading, setLoading] = useState(true)
+  const [, setDraftVersion] = useState(0)
   const [connection, setConnection] = useState<
     'connecting' | 'connected' | 'reconnecting' | 'disconnected'
   >('connecting')
   const [error, setError] = useState<string>()
+  const [createError, setCreateError] = useState<string>()
   const socket = useRef<WebSocket | undefined>(undefined)
+  const drafts = useRef<Record<string, string>>({})
 
   useEffect(() => {
     void fetch(sweatApiUrl('/api/rooms'), { credentials: 'include' })
       .then(async (response) => {
         if (!response.ok) throw new Error('Unable to load rooms')
         const result = (await response.json()) as { rooms: Room[] }
-        const general = result.rooms.find(({ id }) => id === 'general')
-        if (general) setRoom(general)
+        setRooms(orderedRooms(result.rooms))
+        const saved = localStorage.getItem(selectedRoomKey)
+        setSelectedRoomId(
+          result.rooms.some(({ id }) => id === saved)
+            ? saved!
+            : (
+                result.rooms.find(({ id }) => id === 'general') ??
+                result.rooms.at(0)
+              )?.id,
+        )
       })
       .catch((reason) =>
         setError(
@@ -95,12 +129,13 @@ function useRoom() {
   }, [])
 
   useEffect(() => {
+    if (!selectedRoomId) return
     let stopped = false
     let attempts = 0
     let retry: ReturnType<typeof setTimeout> | undefined
     const connect = () => {
       if (stopped) return
-      const next = new WebSocket(roomStreamUrl())
+      const next = new WebSocket(roomStreamUrl(selectedRoomId))
       socket.current = next
       next.onopen = () => {
         attempts = 0
@@ -108,14 +143,23 @@ function useRoom() {
       }
       next.onmessage = ({ data }) => {
         const event = JSON.parse(data) as StreamMessage
+        if (stopped) return
+        if (event.type === 'room.created') {
+          setRooms((current) => orderedRooms(upsert(current, event.room)))
+          return
+        }
         if (event.type === 'room.snapshot') {
-          setRoom(event.room)
+          if (event.room.id !== selectedRoomId) return
           setMessages(event.messages)
           setRuns(event.runs)
+          setLoading(false)
         }
-        if (event.type === 'message.created')
+        if (
+          event.type === 'message.created' &&
+          event.message.roomId === selectedRoomId
+        )
           setMessages((current) => upsert(current, event.message))
-        if (event.type === 'run.changed')
+        if (event.type === 'run.changed' && event.run.roomId === selectedRoomId)
           setRuns((current) => upsert(current, event.run))
       }
       next.onclose = () => {
@@ -136,7 +180,7 @@ function useRoom() {
       if (retry) clearTimeout(retry)
       socket.current?.close()
     }
-  }, [])
+  }, [selectedRoomId])
 
   const post = async <T,>(
     path: string,
@@ -159,14 +203,64 @@ function useRoom() {
   }
 
   return {
-    room,
+    rooms,
+    room: rooms.find(({ id }) => id === selectedRoomId),
     messages,
     runs,
+    loading,
     connection,
     error,
+    select: (roomId: string) => {
+      if (roomId === selectedRoomId) return
+      setSelectedRoomId(roomId)
+      localStorage.setItem(selectedRoomKey, roomId)
+      setMessages([])
+      setRuns([])
+      setLoading(true)
+      setConnection('connecting')
+    },
+    draft: selectedRoomId ? (drafts.current[selectedRoomId] ?? '') : '',
+    setDraft: (text: string) => {
+      if (selectedRoomId) {
+        drafts.current[selectedRoomId] = text
+        setDraftVersion((version) => version + 1)
+      }
+    },
+    create: async (name: string) => {
+      try {
+        const response = await fetch(sweatApiUrl('/api/rooms'), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name }),
+        })
+        const result = (await response.json()) as {
+          room?: Room
+          error?: string
+        }
+        if (!response.ok || !result.room)
+          throw new Error(result.error ?? 'Unable to create room')
+        setCreateError(undefined)
+        setError(undefined)
+        setRooms((current) => orderedRooms(upsert(current, result.room!)))
+        setSelectedRoomId(result.room.id)
+        localStorage.setItem(selectedRoomKey, result.room.id)
+        setMessages([])
+        setRuns([])
+        setLoading(true)
+        setConnection('connecting')
+        return result
+      } catch (reason) {
+        setCreateError(
+          reason instanceof Error ? reason.message : 'Unable to create room',
+        )
+      }
+    },
+    createError,
     send: async (text: string) => {
+      if (!selectedRoomId) return
       const result = await post<{ message: RoomMessage; run?: RoomRun }>(
-        '/api/rooms/general/messages',
+        `/api/rooms/${selectedRoomId}/messages`,
         { text },
       )
       if (result) {
@@ -175,7 +269,10 @@ function useRoom() {
       }
       return result
     },
-    cancel: (runId: string) => post(`/api/rooms/general/runs/${runId}/cancel`),
+    cancel: (runId: string) =>
+      selectedRoomId
+        ? post(`/api/rooms/${selectedRoomId}/runs/${runId}/cancel`)
+        : undefined,
   }
 }
 
@@ -303,12 +400,14 @@ function Timeline({
     <div className="space-y-5">
       {items.map((item) => {
         const isResult = 'result' in item
-        const author = isResult
-          ? { id: 'software-engineer', name: 'Software engineer' }
-          : item.message!.author
-        const text = isResult
-          ? (item.result!.output ?? item.result!.stdout) || 'Completed.'
-          : item.message!.text
+        const author =
+          'result' in item
+            ? { id: 'software-engineer', name: 'Software engineer' }
+            : item.message.author
+        const text =
+          'result' in item
+            ? (item.result.output ?? item.result.stdout) || 'Completed.'
+            : item.message.text
         return (
           <article className="flex gap-3" key={item.id}>
             <Avatar author={author} agent={isResult} />
@@ -337,22 +436,51 @@ function Timeline({
 }
 
 function Dashboard({ user }: { user: Author }) {
-  const { room, messages, runs, connection, error, send, cancel } = useRoom()
-  const [text, setText] = useState('')
-  const composer = useRef<HTMLTextAreaElement>(null)
-  const delegated = text.startsWith(agentMention)
-  const submit = async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault()
+  const {
+    rooms,
+    room,
+    messages,
+    runs,
+    loading,
+    connection,
+    error,
+    createError,
+    select,
+    create,
+    send,
+    cancel,
+    draft,
+    setDraft,
+  } = useRooms()
+  const [creating, setCreating] = useState(false)
+  const [roomName, setRoomName] = useState('')
+  const [creatingRoom, setCreatingRoom] = useState(false)
+  const roomNameInput = useRef<HTMLInputElement>(null)
+  const composer = useRef<MessageComposerHandle>(null)
+  const submit = async (text: string) => {
     if (!text.trim()) return
     const result = await send(text)
-    if (result) setText('')
+    if (result) setDraft('')
   }
-  const insertAgent = () => {
-    setText((current) =>
-      current.startsWith(agentMention) ? current : `${agentMention}${current}`,
-    )
-    composer.current?.focus()
+  const submitRoom = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!roomName.trim()) return
+    setCreatingRoom(true)
+    const result = await create(roomName.trim())
+    setCreatingRoom(false)
+    if (result) {
+      setRoomName('')
+      setCreating(false)
+    }
   }
+  const cancelRoom = () => {
+    setRoomName('')
+    setCreating(false)
+  }
+
+  useEffect(() => {
+    if (creating) roomNameInput.current?.focus()
+  }, [creating])
 
   return (
     <SidebarProvider>
@@ -367,15 +495,81 @@ function Dashboard({ user }: { user: Author }) {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Rooms</SidebarGroupLabel>
+            <div className="flex items-center justify-between pr-2">
+              <SidebarGroupLabel>Rooms</SidebarGroupLabel>
+              <Popover
+                open={creating}
+                onOpenChange={(open) => {
+                  if (open) setCreating(true)
+                  else cancelRoom()
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    aria-label="Create room"
+                  >
+                    +
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent side="right" align="start">
+                  <PopoverHeader>
+                    <PopoverTitle>Create room</PopoverTitle>
+                  </PopoverHeader>
+                  <form
+                    className="mt-3 flex gap-1"
+                    onSubmit={(event) => void submitRoom(event)}
+                  >
+                    <input
+                      ref={roomNameInput}
+                      value={roomName}
+                      onChange={(event) => setRoomName(event.target.value)}
+                      className="min-w-0 flex-1 rounded border bg-background px-2 py-1 text-sm"
+                      aria-label="Room name"
+                      placeholder="Room name"
+                      disabled={creatingRoom}
+                      required
+                    />
+                    <Button
+                      type="submit"
+                      size="xs"
+                      disabled={creatingRoom || !roomName.trim()}
+                    >
+                      Create
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={cancelRoom}
+                    >
+                      Cancel
+                    </Button>
+                  </form>
+                  {creating && createError && (
+                    <p className="mt-1 text-xs text-destructive" role="alert">
+                      {createError}
+                    </p>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </div>
             <SidebarGroupContent>
               <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton isActive tooltip="General">
-                    <Hash />
-                    <span>{room.name}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                {rooms.map((item) => (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      isActive={item.id === room?.id}
+                      tooltip={item.name}
+                      onClick={() => select(item.id)}
+                    >
+                      <Hash />
+                      <span>{item.name}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -386,7 +580,9 @@ function Dashboard({ user }: { user: Author }) {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     tooltip="Software engineer"
-                    onClick={insertAgent}
+                    onClick={() =>
+                      composer.current?.mention('software-engineer')
+                    }
                   >
                     <Bot />
                     <span>Software engineer</span>
@@ -417,7 +613,7 @@ function Dashboard({ user }: { user: Author }) {
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Hash className="size-4 text-muted-foreground" />
-          <h1 className="font-semibold">{room.name}</h1>
+          <h1 className="font-semibold">{room?.name ?? 'Rooms'}</h1>
           <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             {connection === 'connected' ? (
               <Wifi className="size-3.5" />
@@ -428,59 +624,40 @@ function Dashboard({ user }: { user: Author }) {
           </span>
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
-          <section className="flex-1 overflow-y-auto px-5 py-6 sm:px-8">
+          <section
+            className="flex-1 overflow-y-auto px-5 py-6 sm:px-8"
+            aria-busy={loading}
+          >
             <div className="mx-auto max-w-4xl">
-              <Timeline
-                messages={messages}
-                runs={runs}
-                cancel={(runId) => void cancel(runId)}
-              />
+              {loading ? (
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  Loading room…
+                </p>
+              ) : (
+                <Timeline
+                  messages={messages}
+                  runs={runs}
+                  cancel={(runId) => void cancel(runId)}
+                />
+              )}
             </div>
           </section>
           <div className="shrink-0 px-4 pb-4 sm:px-6">
             <div className="mx-auto max-w-4xl rounded-2xl border bg-background p-3 shadow-sm">
-              <form onSubmit={(event) => void submit(event)}>
-                <textarea
-                  ref={composer}
-                  value={text}
-                  onChange={(event) => setText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault()
-                      void submit()
-                    }
-                  }}
-                  placeholder={`Message #${room.id}`}
-                  className="min-h-20 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground"
-                />
-                <div className="mt-2 flex items-center justify-between">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Mention software engineer"
-                    onClick={insertAgent}
-                  >
-                    <AtSign />
-                  </Button>
-                  <Button
-                    type="submit"
-                    size="icon-sm"
-                    className="rounded-full"
-                    aria-label={
-                      delegated
-                        ? 'Delegate to software engineer'
-                        : 'Send message'
-                    }
-                    disabled={!text.trim()}
-                  >
-                    <Send />
-                  </Button>
-                </div>
-              </form>
+              <MessageComposer
+                ref={composer}
+                value={draft}
+                onChange={setDraft}
+                onSubmit={(text) => void submit(text)}
+                disabled={loading || !room}
+                roomName={room?.name ?? 'room'}
+              />
             </div>
             {error && (
-              <p className="mx-auto mt-2 max-w-4xl text-sm text-destructive">
+              <p
+                className="mx-auto mt-2 max-w-4xl text-sm text-destructive"
+                role="alert"
+              >
                 {error}
               </p>
             )}

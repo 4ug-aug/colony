@@ -6,6 +6,7 @@ import {
   GENERAL_ROOM_ID,
   type RoomMessage,
   type RoomRun,
+  type RoomSummary,
   type RoomStore,
 } from './room-store'
 
@@ -50,16 +51,30 @@ class FakeRunControl implements RunControl {
   }
 }
 class MemoryRoomStore implements RoomStore {
+  rooms: RoomSummary[] = [{ id: GENERAL_ROOM_ID, name: 'General' }]
   messages: RoomMessage[] = []
   runs: RoomRun[] = []
   listRooms() {
-    return [{ id: GENERAL_ROOM_ID, name: 'General' as const }]
+    return this.rooms
   }
-  listMessages() {
-    return this.messages
+  getRoom(id: string) {
+    return this.rooms.find((room) => room.id === id)
   }
-  listRuns() {
-    return this.runs
+  createRoom(room: RoomSummary) {
+    if (
+      this.rooms.some(
+        (item) => item.name.toLowerCase() === room.name.toLowerCase(),
+      )
+    )
+      return false
+    this.rooms.push(room)
+    return true
+  }
+  listMessages(roomId: string) {
+    return this.messages.filter((message) => message.roomId === roomId)
+  }
+  listRuns(roomId: string) {
+    return this.runs.filter((run) => run.roomId === roomId)
   }
   createMessage(message: RoomMessage) {
     this.messages.push(message)
@@ -96,6 +111,13 @@ const port = (): Promise<number> =>
 type TestSocket = {
   socket: WebSocket
   next(): Promise<Record<string, unknown>>
+}
+const expectNoEvent = async (socket: TestSocket): Promise<void> => {
+  const received = await Promise.race([
+    socket.next().then(() => true),
+    Bun.sleep(25).then(() => false),
+  ])
+  expect(received).toBe(false)
 }
 const open = (url: string) =>
   new Promise<TestSocket>((resolve, reject) => {
@@ -201,6 +223,17 @@ test('two clients receive durable room messages and agent runs', async () => {
     })
     expect(emptyTask.status).toBe(400)
     expect(store.messages).toHaveLength(1)
+    const inline = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Please @software-engineer fix the login' }),
+    })
+    expect(((await inline.json()) as { run: RoomRun }).run.task).toBe(
+      'Please fix the login',
+    )
     expect(
       (
         await fetch(`${base}/api/rooms/other/messages`, {
@@ -211,6 +244,109 @@ test('two clients receive durable room messages and agent runs', async () => {
     ).toBe(404)
     a.socket.close()
     b.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('rooms are created once and streams stay isolated', async () => {
+  const control = new FakeRunControl()
+  const coordinator = createCoordinator({
+    control,
+    store: new MemoryRoomStore(),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const general = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    expect((await general.next()).type).toBe('room.snapshot')
+    const createdEvent = general.next()
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Product' }),
+    })
+    expect(created.status).toBe(201)
+    const room = ((await created.json()) as { room: RoomSummary }).room
+    expect(await createdEvent).toMatchObject({ type: 'room.created', room })
+    expect(
+      (
+        await fetch(`${base}/api/rooms`, {
+          method: 'POST',
+          headers: {
+            origin: 'http://gui.test',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ name: ' product ' }),
+        })
+      ).status,
+    ).toBe(409)
+    expect(
+      (
+        await fetch(`${base}/api/rooms`, {
+          method: 'POST',
+          headers: {
+            origin: 'http://gui.test',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ name: ' ' }),
+        })
+      ).status,
+    ).toBe(400)
+    const product = await open(
+      `${base.replace('http', 'ws')}/api/rooms/${room.id}/stream`,
+    )
+    expect(await product.next()).toMatchObject({ type: 'room.snapshot', room })
+    const productMessage = product.next()
+    const sent = await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Only product' }),
+    })
+    expect(sent.status).toBe(201)
+    expect(await productMessage).toMatchObject({
+      type: 'message.created',
+      message: { roomId: room.id },
+    })
+    const delegated = await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@software-engineer Fix product' }),
+    })
+    const run = ((await delegated.json()) as { run: RoomRun }).run
+    expect(await product.next()).toMatchObject({
+      type: 'message.created',
+      message: { roomId: room.id, text: '@software-engineer Fix product' },
+    })
+    expect(await product.next()).toMatchObject({
+      type: 'run.changed',
+      run: { id: run.id, roomId: room.id, state: 'preparing' },
+    })
+    await expectNoEvent(general)
+    expect(
+      (
+        await fetch(`${base}/api/rooms/general/runs/${run.id}/cancel`, {
+          method: 'POST',
+          headers: { origin: 'http://gui.test' },
+        })
+      ).status,
+    ).toBe(404)
+    general.socket.close()
+    product.socket.close()
   } finally {
     coordinator.stop()
   }

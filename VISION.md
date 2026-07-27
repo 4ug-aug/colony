@@ -77,20 +77,21 @@ The current GUI is split into:
 2. a server that owns authentication, persistence, run control, and
    subscriptions.
 
-The first multiplayer slice is one implicit workspace with one seeded
-**General** room. Authenticated people share its durable message history and
-can delegate a task with the exact leading mention `@software-engineer `.
-The resulting bounded run stays linked to that request; its progress and
-result are shared with the room and survive refreshes and server restarts.
+The current multiplayer slice is one implicit workspace with shared public
+rooms. Authenticated people can create and select rooms; **General** remains
+seeded. Each room retains its own durable message history and linked run
+history. A message with the exact leading mention `@software-engineer `
+delegates a bounded run whose progress and result stay in that room and
+survive refreshes and server restarts.
 
-The channel experience keeps messages left-aligned as a shared team timeline.
+The room experience keeps messages left-aligned as a shared team timeline.
 An active agent is represented by a small status badge below the request, then
 by a normal agent-authored result when it completes. The static client uses an
 inset, rounded main surface so the same API client is ready to become the
 future Tauri shell without taking server responsibility.
 
-Next, add multiple rooms, membership, and Tauri packaging on top of this
-shared General-room flow.
+Next, add membership and Tauri packaging on top of this shared public-room
+flow.
 
 ## Deliberate non-goals
 
@@ -100,6 +101,8 @@ shared General-room flow.
   look present; room activity comes from bounded runs.
 - Do not adopt federation, peer-to-peer protocols, or a universal event model
   before the workspace requires them.
+- Do not add private rooms, room membership, invitations, renaming, or
+  deletion in the current public-room slice.
 - Do not add Redis, object storage, or multi-node infrastructure until the
   single-node self-hosted product outgrows simpler storage.
 

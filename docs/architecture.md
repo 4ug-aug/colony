@@ -39,22 +39,23 @@ client and one server contract. Tauri may provide native notifications, tray
 status, deep links, and narrow local capabilities, but it does not embed the
 server or create a second orchestration path.
 
-## First multiplayer boundary
+## Current multiplayer boundary
 
-One deployment currently acts as one implicit workspace. The server seeds a
-single `General` room and authorizes every authenticated user to read and post
-there. It persists room messages and room-linked run projections, then
-broadcasts snapshots and subsequent message/run changes over the realtime
-connection.
+One deployment acts as one implicit workspace. The server seeds `General` and
+authorizes every authenticated user to create, discover, read, and post in
+shared public rooms. It persists room messages and room-linked run
+projections, then broadcasts room-scoped snapshots and message/run changes
+over realtime connections. Room creation is also broadcast so connected
+clients discover new public rooms immediately.
 
 ```text
-authenticated user -> durable General message
+authenticated user -> durable room message
                    -> @software-engineer task (only at exact leading mention)
                    -> bounded existing run executor
-                   -> durable status/result projected back into General
+                   -> durable status/result projected back into that room
 ```
 
-The static React client renders this as a left-aligned channel timeline. A
+The static React client renders this as a left-aligned room timeline. A
 request that delegates work retains a small attached agent-status badge; a
 successful result becomes a later agent-authored message. Its inset sidebar
 layout leaves a rounded, padded main surface and remains suitable for the
@@ -108,7 +109,8 @@ the software-engineer CLI enables it when `LINEAR_MCP_API_KEY` is configured.
 
 ## Deliberately not built yet
 
-- Multiple rooms, workspace membership, invitations, and room policy.
+- Private rooms, workspace membership, invitations, room policy, renaming,
+  and deletion.
 - Tauri packaging and native desktop affordances.
 - Gateway HTTP/MCP transport and local encrypted connection storage.
 - Run scheduler, capability-grant policy, and resource-level authorization.
@@ -116,7 +118,7 @@ the software-engineer CLI enables it when `LINEAR_MCP_API_KEY` is configured.
 
 ## Current delivered slice
 
-The General-room slice provides one shared, seeded room for authenticated
-users, with durable messages and room-linked run history. The next product
-work can add multiple rooms, membership policy, and Tauri packaging on this
-server-backed boundary.
+The public-room slice provides `General` plus user-created shared rooms for
+authenticated users, with durable messages, room-linked run history, and
+room-scoped realtime activity. The next product work can add membership
+policy and Tauri packaging on this server-backed boundary.

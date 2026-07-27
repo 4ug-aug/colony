@@ -4,24 +4,26 @@ import type { RunSummary } from './run-control'
 export const GENERAL_ROOM_ID = 'general' as const
 
 export type RoomUser = { id: string; name: string; image?: string }
-export type RoomSummary = { id: typeof GENERAL_ROOM_ID; name: 'General' }
+export type RoomSummary = { id: string; name: string }
 export type RoomMessage = {
   id: string
-  roomId: typeof GENERAL_ROOM_ID
+  roomId: string
   author: RoomUser
   text: string
   createdAt: number
 }
 export type RoomRun = RunSummary & {
-  roomId: typeof GENERAL_ROOM_ID
+  roomId: string
   triggerMessageId: string
   requestedBy: RoomUser
 }
 
 export interface RoomStore {
   listRooms(): RoomSummary[]
-  listMessages(): RoomMessage[]
-  listRuns(): RoomRun[]
+  getRoom(roomId: string): RoomSummary | undefined
+  createRoom(room: RoomSummary): boolean
+  listMessages(roomId: string): RoomMessage[]
+  listRuns(roomId: string): RoomRun[]
   createMessage(message: RoomMessage): void
   createRun(run: RoomRun): void
   updateRun(run: RoomRun): void
@@ -37,7 +39,7 @@ type Statement = {
 type Sqlite = { prepare(sql: string): Statement }
 type MessageRow = {
   id: string
-  room_id: typeof GENERAL_ROOM_ID
+  room_id: string
   author_id: string
   author_name: string
   author_image: string | null
@@ -46,7 +48,7 @@ type MessageRow = {
 }
 type RunRow = {
   id: string
-  room_id: typeof GENERAL_ROOM_ID
+  room_id: string
   author_id: string
   author_name: string
   author_image: string | null
@@ -96,13 +98,13 @@ const runFrom = (row: RunRow): RoomRun => ({
 })
 
 export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
-  const messages = (): RoomMessage[] =>
+  const messages = (roomId: string): RoomMessage[] =>
     (
       sqlite
         .prepare(
           'SELECT id, room_id, author_id, author_name, author_image, text, created_at FROM room_message WHERE room_id = ? ORDER BY created_at, id',
         )
-        .all(GENERAL_ROOM_ID) as MessageRow[]
+        .all(roomId) as MessageRow[]
     ).map(messageFrom)
   const selectRuns = (where = '', ...values: unknown[]): RoomRun[] =>
     (
@@ -131,9 +133,23 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     run.stderr,
   ]
   return {
-    listRooms: () => [{ id: GENERAL_ROOM_ID, name: 'General' }],
+    listRooms: () =>
+      sqlite
+        .prepare(
+          "SELECT id, name FROM room ORDER BY CASE WHEN id = 'general' THEN 0 ELSE 1 END, name COLLATE NOCASE, id",
+        )
+        .all() as RoomSummary[],
+    getRoom: (roomId) =>
+      sqlite.prepare('SELECT id, name FROM room WHERE id = ?').get(roomId) as
+        RoomSummary | undefined,
+    createRoom: (room) => {
+      const result = sqlite
+        .prepare('INSERT OR IGNORE INTO room (id, name) VALUES (?, ?)')
+        .run(room.id, room.name) as { changes?: number }
+      return result.changes === 1
+    },
     listMessages: messages,
-    listRuns: () => selectRuns("WHERE room_id = 'general'"),
+    listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
     createMessage: (message) => {
       sqlite
         .prepare(

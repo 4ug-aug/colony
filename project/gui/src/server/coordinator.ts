@@ -2,7 +2,6 @@ import type { ServerWebSocket } from 'bun'
 import { createRunControl, type RunControl } from './run-control'
 import {
   createSqliteRoomStore,
-  GENERAL_ROOM_ID,
   type RoomMessage,
   type RoomRun,
   type RoomStore,
@@ -22,9 +21,10 @@ export type ServerMessage =
     }
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
+  | { type: 'room.created'; room: ReturnType<RoomStore['listRooms']>[number] }
 
 const send = (
-  socket: ServerWebSocket<unknown>,
+  socket: ServerWebSocket<{ roomId: string }>,
   message: ServerMessage,
 ): void => {
   socket.send(JSON.stringify(message))
@@ -42,7 +42,10 @@ const withCors = (response: Response, origin: string): Response => {
     headers,
   })
 }
-const allowedOrigin = (origin: string | null, configured: string): string | undefined => {
+const allowedOrigin = (
+  origin: string | null,
+  configured: string,
+): string | undefined => {
   if (origin === configured) return origin
   if (
     new URL(configured).hostname === 'localhost' &&
@@ -66,6 +69,20 @@ async function textFrom(request: Request): Promise<string | undefined> {
     return undefined
   }
 }
+async function roomNameFrom(request: Request): Promise<string | undefined> {
+  try {
+    const body: unknown = await request.json()
+    const name =
+      body && typeof body === 'object'
+        ? (body as Record<string, unknown>).name
+        : undefined
+    if (typeof name !== 'string') return undefined
+    const trimmed = name.trim()
+    return trimmed.length >= 1 && trimmed.length <= 50 ? trimmed : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export function createCoordinator(options: {
   control: RunControl
@@ -75,30 +92,35 @@ export function createCoordinator(options: {
   origin: string
   port?: number
 }) {
-  const sockets = new Set<ServerWebSocket<unknown>>()
+  const sockets = new Set<ServerWebSocket<{ roomId: string }>>()
   const broadcast = (message: ServerMessage): void => {
     for (const socket of sockets) send(socket, message)
+  }
+  const broadcastRoom = (roomId: string, message: ServerMessage): void => {
+    for (const socket of sockets)
+      if (socket.data.roomId === roomId) send(socket, message)
   }
   const project = (run: ReturnType<RunControl['listRuns']>[number]): void => {
     const saved = options.store.getRun(run.id)
     if (!saved) return
     const changed = { ...saved, ...run }
     options.store.updateRun(changed)
-    broadcast({ type: 'run.changed', run: changed })
+    broadcastRoom(changed.roomId, { type: 'run.changed', run: changed })
   }
   const unsubscribe = options.control.subscribe(project)
   options.store
     .failStaleRuns()
-    .forEach((run) => broadcast({ type: 'run.changed', run }))
-  const server = Bun.serve({
+    .forEach((run) => broadcastRoom(run.roomId, { type: 'run.changed', run }))
+  const server = Bun.serve<{ roomId: string }>({
     port: options.port ?? 3001,
     async fetch(request, server) {
       const url = new URL(request.url)
-      const origin = allowedOrigin(request.headers.get('origin'), options.origin)
-      const cors = (response: Response): Response =>
-        withCors(response, origin!)
-      if (!origin)
-        return json({ error: 'Forbidden' }, 403)
+      const origin = allowedOrigin(
+        request.headers.get('origin'),
+        options.origin,
+      )
+      const cors = (response: Response): Response => withCors(response, origin!)
+      if (!origin) return json({ error: 'Forbidden' }, 403)
       if (request.method === 'OPTIONS')
         return cors(
           new Response(null, {
@@ -113,36 +135,51 @@ export function createCoordinator(options: {
         return cors(await options.authHandler(request))
       const user = await options.authenticator.authenticate(request)
       if (!user) return cors(json({ error: 'Unauthorized' }, 401))
+      const stream = url.pathname.match(/^\/api\/rooms\/([^/]+)\/stream$/)
       if (
-        url.pathname === `/api/rooms/${GENERAL_ROOM_ID}/stream` &&
+        stream &&
         request.headers.get('upgrade')?.toLowerCase() === 'websocket'
-      )
-        return server.upgrade(request)
+      ) {
+        const roomId = stream[1]!
+        if (!options.store.getRoom(roomId))
+          return cors(json({ error: 'Room not found' }, 404))
+        return server.upgrade(request, { data: { roomId } })
           ? undefined
           : json({ error: 'Upgrade failed' }, 400)
+      }
       if (url.pathname === '/api/rooms' && request.method === 'GET')
         return cors(json({ rooms: options.store.listRooms() }))
-      if (
-        url.pathname === `/api/rooms/${GENERAL_ROOM_ID}/messages` &&
-        request.method === 'POST'
-      ) {
+      if (url.pathname === '/api/rooms' && request.method === 'POST') {
+        const name = await roomNameFrom(request)
+        if (!name) return cors(json({ error: 'Invalid room name' }, 400))
+        const room = { id: crypto.randomUUID(), name }
+        if (!options.store.createRoom(room))
+          return cors(json({ error: 'Room already exists' }, 409))
+        broadcast({ type: 'room.created', room })
+        return cors(json({ room }, 201))
+      }
+      const messages = url.pathname.match(/^\/api\/rooms\/([^/]+)\/messages$/)
+      if (messages && request.method === 'POST') {
+        const roomId = messages[1]!
+        if (!options.store.getRoom(roomId))
+          return cors(json({ error: 'Room not found' }, 404))
         const text = await textFrom(request)
         if (!text) return cors(json({ error: 'Invalid message' }, 400))
-        const prefix = '@software-engineer '
-        const task = text.startsWith(prefix)
-          ? text.slice(prefix.length).trim()
+        const mention = /(^|\s)@software-engineer\b\s*/
+        const task = mention.test(text)
+          ? text.replace(mention, (_, prefix: string) => prefix).trim()
           : undefined
-        if (text === '@software-engineer' || (text.startsWith(prefix) && !task))
+        if (mention.test(text) && !task)
           return cors(json({ error: 'Agent task is required' }, 400))
         const message: RoomMessage = {
           id: crypto.randomUUID(),
-          roomId: GENERAL_ROOM_ID,
+          roomId,
           author: user,
           text,
           createdAt: Date.now(),
         }
         options.store.createMessage(message)
-        broadcast({ type: 'message.created', message })
+        broadcastRoom(roomId, { type: 'message.created', message })
         if (!task) return cors(json({ message }, 201))
         try {
           const runId = options.control.start(task)
@@ -152,12 +189,12 @@ export function createCoordinator(options: {
           if (!source) throw new Error('Agent run was not created')
           const run: RoomRun = {
             ...source,
-            roomId: GENERAL_ROOM_ID,
+            roomId,
             triggerMessageId: message.id,
             requestedBy: user,
           }
           options.store.createRun(run)
-          broadcast({ type: 'run.changed', run })
+          broadcastRoom(roomId, { type: 'run.changed', run })
           return cors(json({ message, run }, 202))
         } catch (error) {
           return cors(
@@ -175,11 +212,18 @@ export function createCoordinator(options: {
         }
       }
       const cancellation = url.pathname.match(
-        new RegExp(`^/api/rooms/${GENERAL_ROOM_ID}/runs/([^/]+)/cancel$`),
+        /^\/api\/rooms\/([^/]+)\/runs\/([^/]+)\/cancel$/,
       )
       if (cancellation && request.method === 'POST') {
-        const runId = cancellation[1]
-        if (!runId || runId.length > 200 || !options.store.getRun(runId))
+        const [, roomId, runId] = cancellation
+        const stored =
+          runId && runId.length <= 200 ? options.store.getRun(runId) : undefined
+        if (
+          !roomId ||
+          !options.store.getRoom(roomId) ||
+          !stored ||
+          stored.roomId !== roomId
+        )
           return cors(json({ error: 'Run not found' }, 404))
         const run = await options.control.cancel(runId)
         return cors(
@@ -193,11 +237,13 @@ export function createCoordinator(options: {
     websocket: {
       open(socket) {
         sockets.add(socket)
+        const room = options.store.getRoom(socket.data.roomId)
+        if (!room) return socket.close()
         send(socket, {
           type: 'room.snapshot',
-          room: options.store.listRooms()[0]!,
-          messages: options.store.listMessages(),
-          runs: options.store.listRuns(),
+          room,
+          messages: options.store.listMessages(socket.data.roomId),
+          runs: options.store.listRuns(socket.data.roomId),
         })
       },
       message() {},

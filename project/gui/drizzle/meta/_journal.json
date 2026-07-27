@@ -15,6 +15,13 @@
       "when": 1785085393257,
       "tag": "0001_general_room",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785085393258,
+      "tag": "0002_room_name_nocase",
+      "breakpoints": true
     }
   ]
 }
