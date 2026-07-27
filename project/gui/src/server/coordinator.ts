@@ -6,6 +6,7 @@ import {
   type RoomRun,
   type RoomStore,
   type RoomUser,
+  type StoredStep,
 } from './room-store'
 import { createRoomMessageHub, type RoomMessageHub } from './room-hub'
 
@@ -19,10 +20,12 @@ export type ServerMessage =
       room: ReturnType<RoomStore['listRooms']>[number]
       messages: RoomMessage[]
       runs: RoomRun[]
+      latestSteps: StoredStep[]
     }
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
   | { type: 'room.created'; room: ReturnType<RoomStore['listRooms']>[number] }
+  | { type: 'run.step'; runId: string; step: StoredStep }
 
 const send = (
   socket: ServerWebSocket<{ roomId: string }>,
@@ -113,6 +116,26 @@ export function createCoordinator(options: {
   const unsubscribeMessages = options.messages.subscribe((event) =>
     broadcastRoom(event.message.roomId, event),
   )
+  const stepIndex = new Map<string, number>()
+  const unsubscribeSteps = options.control.subscribeSteps((runId, step) => {
+    const run = options.store.getRun(runId)
+    if (!run) return
+    const idx = stepIndex.get(runId) ?? 0
+    stepIndex.set(runId, idx + 1)
+    const stored: StoredStep = {
+      id: crypto.randomUUID(),
+      runId,
+      roomId: run.roomId,
+      idx,
+      kind: step.kind,
+      ...(step.tool !== undefined ? { tool: step.tool } : {}),
+      ...(step.callId !== undefined ? { callId: step.callId } : {}),
+      text: step.text,
+      createdAt: step.at,
+    }
+    options.store.appendStep(stored)
+    broadcastRoom(run.roomId, { type: 'run.step', runId, step: stored })
+  })
   options.store
     .failStaleRuns()
     .forEach((run) => broadcastRoom(run.roomId, { type: 'run.changed', run }))
@@ -212,6 +235,22 @@ export function createCoordinator(options: {
           )
         }
       }
+      const stepsRoute = url.pathname.match(
+        /^\/api\/rooms\/([^/]+)\/runs\/([^/]+)\/steps$/,
+      )
+      if (stepsRoute && request.method === 'GET') {
+        const [, roomId, runId] = stepsRoute
+        const stored =
+          runId && runId.length <= 200 ? options.store.getRun(runId) : undefined
+        if (
+          !roomId ||
+          !options.store.getRoom(roomId) ||
+          !stored ||
+          stored.roomId !== roomId
+        )
+          return cors(json({ error: 'Run not found' }, 404))
+        return cors(json({ steps: options.store.listSteps(runId) }))
+      }
       const cancellation = url.pathname.match(
         /^\/api\/rooms\/([^/]+)\/runs\/([^/]+)\/cancel$/,
       )
@@ -245,6 +284,7 @@ export function createCoordinator(options: {
           room,
           messages: options.messages.listMessages(socket.data.roomId),
           runs: options.store.listRuns(socket.data.roomId),
+          latestSteps: [...options.store.latestStepsForActiveRuns(socket.data.roomId).values()],
         })
       },
       message() {},
@@ -258,6 +298,7 @@ export function createCoordinator(options: {
     stop: () => {
       unsubscribe()
       unsubscribeMessages()
+      unsubscribeSteps()
       server.stop(true)
     },
   }

@@ -1,18 +1,20 @@
 import { expect, test } from 'bun:test'
 import { createServer } from 'node:net'
 import { createCoordinator, type SessionAuthenticator } from './coordinator'
-import type { RunControl, RunSummary } from './run-control'
+import type { RunControl, RunSummary, Step } from './run-control'
 import {
   GENERAL_ROOM_ID,
   type RoomMessage,
   type RoomRun,
   type RoomSummary,
   type RoomStore,
+  type StoredStep,
 } from './room-store'
 import { createRoomMessageHub } from './room-hub'
 
 class FakeRunControl implements RunControl {
   private listeners = new Set<(run: RunSummary) => void>()
+  private stepListeners = new Set<(runId: string, step: Step) => void>()
   private runs: RunSummary[] = []
   listRuns() {
     return this.runs
@@ -20,6 +22,10 @@ class FakeRunControl implements RunControl {
   subscribe(listener: (run: RunSummary) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+  subscribeSteps(listener: (runId: string, step: Step) => void) {
+    this.stepListeners.add(listener)
+    return () => this.stepListeners.delete(listener)
   }
   start(task: string, _context: { roomId: string }) {
     const run: RunSummary = {
@@ -47,6 +53,9 @@ class FakeRunControl implements RunControl {
     this.publish(changed)
     return changed
   }
+  emitStep(runId: string, step: Step) {
+    for (const listener of this.stepListeners) listener(runId, step)
+  }
   private publish(run: RunSummary) {
     for (const listener of this.listeners) listener(run)
   }
@@ -55,6 +64,7 @@ class MemoryRoomStore implements RoomStore {
   rooms: RoomSummary[] = [{ id: GENERAL_ROOM_ID, name: 'General' }]
   messages: RoomMessage[] = []
   runs: RoomRun[] = []
+  steps: StoredStep[] = []
   listRooms() {
     return this.rooms
   }
@@ -91,6 +101,26 @@ class MemoryRoomStore implements RoomStore {
   }
   getRun(id: string) {
     return this.runs.find((run) => run.id === id)
+  }
+  appendStep(step: StoredStep) {
+    this.steps.push(step)
+  }
+  listSteps(runId: string) {
+    return this.steps.filter((s) => s.runId === runId).sort((a, b) => a.idx - b.idx)
+  }
+  latestStepsForActiveRuns(roomId: string) {
+    const map = new Map<string, StoredStep>()
+    const activeRunIds = new Set(
+      this.runs
+        .filter((r) => r.roomId === roomId && (r.state === 'preparing' || r.state === 'running'))
+        .map((r) => r.id),
+    )
+    for (const step of this.steps) {
+      if (!activeRunIds.has(step.runId)) continue
+      const existing = map.get(step.runId)
+      if (!existing || step.idx > existing.idx) map.set(step.runId, step)
+    }
+    return map
   }
 }
 const authorized: SessionAuthenticator = {
@@ -480,6 +510,187 @@ test('agent-authored hub post does NOT create a run', async () => {
     expect(store.runs).toHaveLength(0)
     await expectNoEvent(socket)
     socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('step events are persisted and broadcast as run.step to room sockets', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages,
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    // Start a run
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '@software-engineer Do something' }),
+    })
+    expect(response.status).toBe(202)
+    const { run } = (await response.json()) as { run: RoomRun }
+
+    // Create another room to test isolation before opening sockets
+    await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Other' }),
+    })
+    const otherRoom = store.rooms.find((r) => r.name === 'Other')!
+
+    // Open two sockets: one in general room, one in other room
+    const general = await open(`${base.replace('http', 'ws')}/api/rooms/general/stream`)
+    // Consume the snapshot
+    expect((await general.next()).type).toBe('room.snapshot')
+    const other = await open(`${base.replace('http', 'ws')}/api/rooms/${otherRoom.id}/stream`)
+    expect((await other.next()).type).toBe('room.snapshot')
+
+    // Emit two steps
+    const step1: Step = { kind: 'message', text: 'Hello', at: Date.now() }
+    const step2: Step = { kind: 'tool_call', text: '{}', tool: 'shell', callId: 'c1', at: Date.now() }
+    const stepEvent1 = general.next()
+    control.emitStep(run.id, step1)
+    const received1 = await stepEvent1
+    expect(received1).toMatchObject({ type: 'run.step', runId: run.id, step: { idx: 0, kind: 'message', text: 'Hello' } })
+
+    const stepEvent2 = general.next()
+    control.emitStep(run.id, step2)
+    const received2 = await stepEvent2
+    expect(received2).toMatchObject({ type: 'run.step', runId: run.id, step: { idx: 1, kind: 'tool_call', tool: 'shell', callId: 'c1' } })
+
+    // Steps are persisted with sequential idx
+    const persisted = store.listSteps(run.id)
+    expect(persisted).toHaveLength(2)
+    expect(persisted[0]).toMatchObject({ idx: 0, kind: 'message', text: 'Hello' })
+    expect(persisted[1]).toMatchObject({ idx: 1, kind: 'tool_call', tool: 'shell' })
+
+    // Other room socket received no step events
+    await expectNoEvent(other)
+
+    general.socket.close()
+    other.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('room.snapshot includes latestSteps for active runs', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages,
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    // Start a run and emit a step
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '@software-engineer Do something' }),
+    })
+    const { run } = (await response.json()) as { run: RoomRun }
+    // Update run to 'running' so latestStepsForActiveRuns sees it
+    store.updateRun({ ...run, state: 'running' })
+    control.emitStep(run.id, { kind: 'message', text: 'Step A', at: Date.now() })
+
+    // Fresh socket should get latestSteps
+    const socket = await open(`${base.replace('http', 'ws')}/api/rooms/general/stream`)
+    const snapshot = await socket.next()
+    expect(snapshot.type).toBe('room.snapshot')
+    const latestSteps = snapshot.latestSteps as StoredStep[]
+    expect(latestSteps).toHaveLength(1)
+    expect(latestSteps[0]).toMatchObject({ runId: run.id, idx: 0, text: 'Step A' })
+
+    socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched run, 401 without auth', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages,
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    // Start a run in general
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '@software-engineer Do something' }),
+    })
+    const { run } = (await response.json()) as { run: RoomRun }
+    control.emitStep(run.id, { kind: 'message', text: 'First', at: 1000 })
+    control.emitStep(run.id, { kind: 'message', text: 'Second', at: 2000 })
+
+    // Correct request
+    const ok = await fetch(`${base}/api/rooms/general/runs/${run.id}/steps`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(ok.status).toBe(200)
+    const { steps } = (await ok.json()) as { steps: StoredStep[] }
+    expect(steps).toHaveLength(2)
+    expect(steps[0]).toMatchObject({ idx: 0, text: 'First' })
+    expect(steps[1]).toMatchObject({ idx: 1, text: 'Second' })
+
+    // Unknown run
+    expect(
+      (await fetch(`${base}/api/rooms/general/runs/unknown-id/steps`, {
+        headers: { origin: 'http://gui.test' },
+      })).status,
+    ).toBe(404)
+
+    // Run exists but wrong room
+    expect(
+      (await fetch(`${base}/api/rooms/other-room/runs/${run.id}/steps`, {
+        headers: { origin: 'http://gui.test' },
+      })).status,
+    ).toBe(404)
+
+    // No auth — use unauthenticated coordinator
+    const noAuthCoord = createCoordinator({
+      control: new FakeRunControl(),
+      store: new MemoryRoomStore(),
+      messages: createRoomMessageHub(new MemoryRoomStore()),
+      authenticator: { authenticate: async () => undefined },
+      authHandler: async () => new Response('ok'),
+      origin: 'http://gui.test',
+      port: await port(),
+    })
+    try {
+      expect(
+        (await fetch(`http://localhost:${noAuthCoord.port}/api/rooms/general/runs/x/steps`, {
+          headers: { origin: 'http://gui.test' },
+        })).status,
+      ).toBe(401)
+    } finally {
+      noAuthCoord.stop()
+    }
   } finally {
     coordinator.stop()
   }
