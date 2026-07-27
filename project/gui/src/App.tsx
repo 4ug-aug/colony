@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { Bot, Hash, Terminal, Wifi, WifiOff } from 'lucide-react'
 import { authClient, sweatApiUrl } from '#/lib/auth-client'
+import { stepLabel } from '#/step-label'
+import type { Step } from '#/step-label'
 import { Button } from '#/components/ui/button'
 import { MessageComposer } from '#/components/message-composer'
 import type { MessageComposerHandle } from '#/components/message-composer'
@@ -58,10 +60,12 @@ type StreamMessage =
       room: Room
       messages: RoomMessage[]
       runs: RoomRun[]
+      latestSteps: Step[]
     }
   | { type: 'room.created'; room: Room }
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
+  | { type: 'run.step'; runId: string; step: Step }
 
 const terminal = (state: RoomRun['state']) =>
   state === 'succeeded' || state === 'failed' || state === 'cancelled'
@@ -95,6 +99,7 @@ function useRooms() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [runs, setRuns] = useState<RoomRun[]>([])
+  const [latestStepByRun, setLatestStepByRun] = useState<Map<string, Step>>(new Map())
   const [loading, setLoading] = useState(true)
   const [, setDraftVersion] = useState(0)
   const [connection, setConnection] = useState<
@@ -152,6 +157,7 @@ function useRooms() {
           if (event.room.id !== selectedRoomId) return
           setMessages(event.messages)
           setRuns(event.runs)
+          setLatestStepByRun(new Map(event.latestSteps.map((s) => [s.runId, s])))
           setLoading(false)
         }
         if (
@@ -161,6 +167,12 @@ function useRooms() {
           setMessages((current) => upsert(current, event.message))
         if (event.type === 'run.changed' && event.run.roomId === selectedRoomId)
           setRuns((current) => upsert(current, event.run))
+        if (event.type === 'run.step')
+          setLatestStepByRun((current) => {
+            const next = new Map(current)
+            next.set(event.runId, event.step)
+            return next
+          })
       }
       next.onclose = () => {
         if (stopped) return
@@ -207,6 +219,7 @@ function useRooms() {
     room: rooms.find(({ id }) => id === selectedRoomId),
     messages,
     runs,
+    latestStepByRun,
     loading,
     connection,
     error,
@@ -216,6 +229,7 @@ function useRooms() {
       localStorage.setItem(selectedRoomKey, roomId)
       setMessages([])
       setRuns([])
+      setLatestStepByRun(new Map())
       setLoading(true)
       setConnection('connecting')
     },
@@ -312,15 +326,121 @@ function timestamp(value: number) {
   }).format(value)
 }
 
-function RunBadge({ run, onCancel }: { run: RoomRun; onCancel: () => void }) {
-  const label =
-    run.state === 'preparing'
-      ? 'is preparing'
-      : run.state === 'running'
-        ? 'is working'
-        : run.state === 'succeeded'
-          ? 'completed'
-          : run.state
+function StepsPopover({ run, roomId }: { run: RoomRun; roomId: string }) {
+  const [steps, setSteps] = useState<Step[] | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleOpen = async (open: boolean) => {
+    if (!open || steps !== null) return
+    setLoading(true)
+    try {
+      const res = await fetch(
+        sweatApiUrl(`/api/rooms/${roomId}/runs/${run.id}/steps`),
+        { credentials: 'include' },
+      )
+      const data = (await res.json()) as { steps: Step[] }
+      setSteps(data.steps.sort((a, b) => a.idx - b.idx))
+    } catch {
+      setSteps([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Pair tool_call with following tool_result by callId
+  const pairedItems = useMemo(() => {
+    if (!steps) return []
+    const resultByCallId = new Map<string, Step>()
+    for (const s of steps) {
+      if (s.kind === 'tool_result' && s.callId) resultByCallId.set(s.callId, s)
+    }
+    return steps
+      .filter((s) => s.kind !== 'tool_result')
+      .map((s) => {
+        if (s.kind === 'tool_call' && s.callId) {
+          const result = resultByCallId.get(s.callId) ?? null
+          return { call: s, result }
+        }
+        return { call: null, result: null, message: s }
+      })
+  }, [steps])
+
+  return (
+    <Popover onOpenChange={(open) => void handleOpen(open)}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="ghost" size="xs" className="text-muted-foreground">
+          Steps
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 max-h-[28rem] overflow-y-auto p-0">
+        <PopoverHeader className="px-4 pt-4 pb-2">
+          <PopoverTitle>Run steps</PopoverTitle>
+        </PopoverHeader>
+        <div className="px-4 pb-4 space-y-2">
+          {loading && (
+            <p className="py-3 text-xs text-muted-foreground">Loading…</p>
+          )}
+          {!loading && steps !== null && steps.length === 0 && (
+            <p className="py-3 text-xs text-muted-foreground">No steps recorded</p>
+          )}
+          {!loading && pairedItems.map((item) => {
+            if (item.message) {
+              return (
+                <div key={item.message.id} className="rounded-md border bg-muted/40 px-3 py-2 text-xs">
+                  <div className="mb-1 font-medium text-muted-foreground">Reasoning</div>
+                  <div className="whitespace-pre-wrap break-words">{item.message.text}</div>
+                </div>
+              )
+            }
+            if (item.call) {
+              const tool = item.call.tool ?? 'unknown'
+              return (
+                <details key={item.call.id} className="rounded-md border bg-muted/40 px-3 py-2 text-xs group">
+                  <summary className="cursor-pointer font-medium text-muted-foreground list-none flex items-center justify-between">
+                    <span>{tool}{item.result ? ' ✓' : ' (pending)'}</span>
+                    <span className="text-muted-foreground/60 text-[10px] group-open:hidden">expand</span>
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    <div>
+                      <div className="mb-0.5 font-semibold text-muted-foreground/70">Arguments</div>
+                      <div className="whitespace-pre-wrap break-words font-mono">{item.call.text}</div>
+                    </div>
+                    {item.result && (
+                      <div>
+                        <div className="mb-0.5 font-semibold text-muted-foreground/70">Result</div>
+                        <div className="whitespace-pre-wrap break-words font-mono">{item.result.text}</div>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )
+            }
+            return null
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function RunBadge({
+  run,
+  latestStep,
+  onCancel,
+}: {
+  run: RoomRun
+  latestStep: Step | undefined
+  onCancel: () => void
+}) {
+  const label = terminal(run.state)
+    ? run.state === 'succeeded'
+      ? 'completed'
+      : run.state
+    : latestStep
+      ? stepLabel(latestStep)
+      : run.state === 'preparing'
+        ? 'is preparing'
+        : 'is working'
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/60 px-2 py-1">
@@ -340,10 +460,14 @@ function RunBadge({ run, onCancel }: { run: RoomRun; onCancel: () => void }) {
 function Timeline({
   messages,
   runs,
+  latestStepByRun,
+  roomId,
   cancel,
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
+  latestStepByRun: Map<string, Step>
+  roomId: string
   cancel: (runId: string) => void
 }) {
   const items = useMemo(() => {
@@ -403,10 +527,14 @@ function Timeline({
                 <Markdown>{text}</Markdown>
               </div>
               {!isResult && item.run && (
-                <RunBadge
-                  run={item.run}
-                  onCancel={() => cancel(item.run!.id)}
-                />
+                <>
+                  <RunBadge
+                    run={item.run}
+                    latestStep={latestStepByRun.get(item.run.id)}
+                    onCancel={() => cancel(item.run!.id)}
+                  />
+                  <StepsPopover run={item.run} roomId={roomId} />
+                </>
               )}
             </div>
           </article>
@@ -422,6 +550,7 @@ function Dashboard({ user }: { user: Author }) {
     room,
     messages,
     runs,
+    latestStepByRun,
     loading,
     connection,
     error,
@@ -630,6 +759,8 @@ function Dashboard({ user }: { user: Author }) {
                 <Timeline
                   messages={messages}
                   runs={runs}
+                  latestStepByRun={latestStepByRun}
+                  roomId={room?.id ?? ''}
                   cancel={(runId) => void cancel(runId)}
                 />
               )}
