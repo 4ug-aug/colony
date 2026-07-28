@@ -1,5 +1,4 @@
-import type { Step } from './step-label'
-import { stepLabel } from './step-label'
+import { stepLabel, type Step } from './step-label'
 import type { RoomRun } from '#/features/rooms/types'
 
 export type RunState = 'preparing' | 'running' | 'succeeded' | 'failed' | 'cancelled'
