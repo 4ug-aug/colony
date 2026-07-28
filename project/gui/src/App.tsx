@@ -1020,7 +1020,7 @@ function Dashboard({ user }: { user: Author }) {
                       isActive={item.id === room?.id}
                       tooltip={item.name}
                       onClick={() => select(item.id)}
-                      className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:shadow-[inset_3px_0_0_var(--primary)]"
+                      className="data-[active=true]:bg-primary/5"
                     >
                       {item.visibility === 'private' ? <Lock /> : <Hash />}
                       <span>{item.name}</span>
@@ -1101,7 +1101,7 @@ function Dashboard({ user }: { user: Author }) {
               if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150
             }}
           >
-            <div className="mx-auto max-w-3xl">
+            <div className="mx-auto max-w-7xl">
               {loading ? (
                 <p className="py-12 text-center text-sm text-muted-foreground">
                   Loading room…
@@ -1118,7 +1118,7 @@ function Dashboard({ user }: { user: Author }) {
             </div>
           </section>
           <div className="shrink-0 px-4 pb-4 sm:px-6">
-            <div className="mx-auto max-w-3xl rounded-xl border bg-background p-2.5 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
+            <div className="mx-auto max-w-7xl rounded-xl border bg-background p-2.5 shadow-sm">
               <MessageComposer
                 ref={composer}
                 value={draft}
@@ -1130,7 +1130,7 @@ function Dashboard({ user }: { user: Author }) {
             </div>
             {error && (
               <p
-                className="mx-auto mt-2 max-w-3xl text-sm text-destructive"
+                className="mx-auto mt-2 max-w-5xl text-sm text-destructive"
                 role="alert"
               >
                 {error}
