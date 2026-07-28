@@ -99,6 +99,7 @@ function useRooms() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [runs, setRuns] = useState<RoomRun[]>([])
+  const runsRef = useRef<RoomRun[]>([])
   const [latestStepByRun, setLatestStepByRun] = useState<Map<string, Step>>(new Map())
   const [loading, setLoading] = useState(true)
   const [, setDraftVersion] = useState(0)
@@ -156,6 +157,7 @@ function useRooms() {
         if (event.type === 'room.snapshot') {
           if (event.room.id !== selectedRoomId) return
           setMessages(event.messages)
+          runsRef.current = event.runs
           setRuns(event.runs)
           setLatestStepByRun(new Map(event.latestSteps.map((s) => [s.runId, s])))
           setLoading(false)
@@ -165,9 +167,11 @@ function useRooms() {
           event.message.roomId === selectedRoomId
         )
           setMessages((current) => upsert(current, event.message))
-        if (event.type === 'run.changed' && event.run.roomId === selectedRoomId)
+        if (event.type === 'run.changed' && event.run.roomId === selectedRoomId) {
+          runsRef.current = upsert(runsRef.current, event.run)
           setRuns((current) => upsert(current, event.run))
-        if (event.type === 'run.step')
+        }
+        if (event.type === 'run.step' && runsRef.current.some((r) => r.id === event.runId))
           setLatestStepByRun((current) => {
             const next = new Map(current)
             next.set(event.runId, event.step)
@@ -329,9 +333,11 @@ function timestamp(value: number) {
 function StepsPopover({ run, roomId }: { run: RoomRun; roomId: string }) {
   const [steps, setSteps] = useState<Step[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
 
   const handleOpen = async (open: boolean) => {
     if (!open || steps !== null) return
+    setError(false)
     setLoading(true)
     try {
       const res = await fetch(
@@ -341,7 +347,7 @@ function StepsPopover({ run, roomId }: { run: RoomRun; roomId: string }) {
       const data = (await res.json()) as { steps: Step[] }
       setSteps(data.steps.sort((a, b) => a.idx - b.idx))
     } catch {
-      setSteps([])
+      setError(true)
     } finally {
       setLoading(false)
     }
@@ -380,10 +386,13 @@ function StepsPopover({ run, roomId }: { run: RoomRun; roomId: string }) {
           {loading && (
             <p className="py-3 text-xs text-muted-foreground">Loading…</p>
           )}
-          {!loading && steps !== null && steps.length === 0 && (
+          {!loading && error && (
+            <p className="py-3 text-xs text-destructive">Could not load steps</p>
+          )}
+          {!loading && !error && steps !== null && steps.length === 0 && (
             <p className="py-3 text-xs text-muted-foreground">No steps recorded</p>
           )}
-          {!loading && pairedItems.map((item) => {
+          {!loading && !error && pairedItems.map((item) => {
             if (item.message) {
               return (
                 <div key={item.message.id} className="rounded-md border bg-muted/40 px-3 py-2 text-xs">
@@ -423,39 +432,6 @@ function StepsPopover({ run, roomId }: { run: RoomRun; roomId: string }) {
   )
 }
 
-function RunBadge({
-  run,
-  latestStep,
-  onCancel,
-}: {
-  run: RoomRun
-  latestStep: Step | undefined
-  onCancel: () => void
-}) {
-  const label = terminal(run.state)
-    ? run.state === 'succeeded'
-      ? 'completed'
-      : run.state
-    : latestStep
-      ? stepLabel(latestStep)
-      : run.state === 'preparing'
-        ? 'is preparing'
-        : 'is working'
-  return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-      <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/60 px-2 py-1">
-        <Terminal className="size-3" />
-        Software engineer {label}
-      </span>
-      {!terminal(run.state) && (
-        <Button type="button" variant="ghost" size="xs" onClick={onCancel}>
-          Cancel
-        </Button>
-      )}
-      {run.error && <span className="text-destructive">{run.error}</span>}
-    </div>
-  )
-}
 
 function Timeline({
   messages,
@@ -527,14 +503,28 @@ function Timeline({
                 <Markdown>{text}</Markdown>
               </div>
               {!isResult && item.run && (
-                <>
-                  <RunBadge
-                    run={item.run}
-                    latestStep={latestStepByRun.get(item.run.id)}
-                    onCancel={() => cancel(item.run!.id)}
-                  />
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/60 px-2 py-1">
+                    <Terminal className="size-3" />
+                    Software engineer{' '}
+                    {terminal(item.run.state)
+                      ? item.run.state === 'succeeded'
+                        ? 'completed'
+                        : item.run.state
+                      : latestStepByRun.get(item.run.id)
+                        ? stepLabel(latestStepByRun.get(item.run.id)!)
+                        : item.run.state === 'preparing'
+                          ? 'is preparing'
+                          : 'is working'}
+                  </span>
                   <StepsPopover run={item.run} roomId={roomId} />
-                </>
+                  {!terminal(item.run.state) && (
+                    <Button type="button" variant="ghost" size="xs" onClick={() => cancel(item.run!.id)}>
+                      Cancel
+                    </Button>
+                  )}
+                  {item.run.error && <span className="text-destructive">{item.run.error}</span>}
+                </div>
               )}
             </div>
           </article>
