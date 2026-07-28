@@ -95,15 +95,17 @@ export function RoomSidebar({
                 else cancelRoom()
               }}
             >
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  aria-label="Create room"
-                >
-                  +
-                </Button>
+              <PopoverTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    aria-label="Create room"
+                  />
+                }
+              >
+                +
               </PopoverTrigger>
               <PopoverContent side="right" align="start">
                 <PopoverHeader>

@@ -1,6 +1,10 @@
 import { LoaderCircle, X } from 'lucide-react'
 import { Button } from '#/components/ui/button'
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '#/components/ui/hover-card'
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '#/components/ui/hover-card'
 import { AvatarGroup, AvatarGroupCount } from '#/components/ui/avatar'
 import { RunAvatar } from './run-avatar'
 import { terminal, agentName, runStatus } from './run-helpers'
@@ -22,37 +26,51 @@ export function ActiveAgents({
   if (!activeRuns.length) return null
 
   return (
-    <HoverCard openDelay={150} closeDelay={100}>
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          className="mt-2 flex items-center gap-2 rounded-md px-1 py-1 text-sm font-medium outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`${activeRuns.length} ${activeRuns.length === 1 ? 'agent' : 'agents'} working. View status.`}
-        >
-          <AvatarGroup>
-            {activeRuns.slice(0, 3).map((run) => (
-              <RunAvatar key={run.id} run={run} />
-            ))}
-            {activeRuns.length > 3 && (
-              <AvatarGroupCount className="size-6 text-xs">
-                +{activeRuns.length - 3}
-              </AvatarGroupCount>
-            )}
-          </AvatarGroup>
-          <span>
-            {agentName(activeRuns[0].agentId)}
-            {activeRuns.length > 1 && ` +${activeRuns.length - 1}`}
-          </span>
-        </button>
+    <HoverCard>
+      <HoverCardTrigger
+        delay={150}
+        closeDelay={100}
+        render={
+          <button
+            type="button"
+            className="mt-2 flex items-center gap-2 rounded-md px-1 py-1 text-sm font-medium outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={`${activeRuns.length} ${activeRuns.length === 1 ? 'agent' : 'agents'} working. View status.`}
+          />
+        }
+      >
+        <AvatarGroup>
+          {activeRuns.slice(0, 3).map((run) => (
+            <RunAvatar key={run.id} run={run} />
+          ))}
+          {activeRuns.length > 3 && (
+            <AvatarGroupCount className="size-6 text-xs">
+              +{activeRuns.length - 3}
+            </AvatarGroupCount>
+          )}
+        </AvatarGroup>
+        <span>
+          {agentName(activeRuns[0].agentId)}
+          {activeRuns.length > 1 && ` +${activeRuns.length - 1}`}
+        </span>
       </HoverCardTrigger>
-      <HoverCardContent side="top" align="start" sideOffset={8} className="w-96 p-3">
+      <HoverCardContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="w-96 p-3"
+      >
         <h2 className="px-1 pb-1 text-sm font-semibold">Agents working</h2>
         <div>
           {activeRuns.map((run) => (
-            <div key={run.id} className="flex items-center gap-3 rounded-md px-1 py-2">
+            <div
+              key={run.id}
+              className="flex items-center gap-3 rounded-md px-1 py-2"
+            >
               <RunAvatar run={run} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{agentName(run.agentId)}</p>
+                <p className="truncate text-sm font-medium">
+                  {agentName(run.agentId)}
+                </p>
                 <p
                   key={runStatus(run, latestStepByRun.get(run.id))}
                   className="truncate text-xs text-muted-foreground"

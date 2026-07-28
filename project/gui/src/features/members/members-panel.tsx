@@ -162,41 +162,43 @@ export function MembersPanel({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          className="ml-2 flex items-center gap-1 text-muted-foreground"
-          aria-label="Members"
-        >
-          {stackAvatars.length > 0 ? (
-            <span className="flex -space-x-1.5">
-              {stackAvatars.map((m) =>
-                m.image ? (
-                  <img
-                    key={m.id}
-                    src={m.image}
-                    alt=""
-                    className="size-5 rounded-full border-2 border-background object-cover"
-                  />
-                ) : (
-                  <span
-                    key={m.id}
-                    className="flex size-5 items-center justify-center rounded-full border-2 border-background bg-muted text-[9px] font-semibold text-muted-foreground"
-                  >
-                    {m.name.slice(0, 1).toUpperCase()}
-                  </span>
-                ),
-              )}
-            </span>
-          ) : (
-            <Users className="size-3.5" />
-          )}
-          {members.length > 0 && (
-            <span className="text-xs tabular-nums">{members.length}</span>
-          )}
-        </Button>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="ml-2 flex items-center gap-1 text-muted-foreground"
+            aria-label="Members"
+          />
+        }
+      >
+        {stackAvatars.length > 0 ? (
+          <span className="flex -space-x-1.5">
+            {stackAvatars.map((m) =>
+              m.image ? (
+                <img
+                  key={m.id}
+                  src={m.image}
+                  alt=""
+                  className="size-5 rounded-full border-2 border-background object-cover"
+                />
+              ) : (
+                <span
+                  key={m.id}
+                  className="flex size-5 items-center justify-center rounded-full border-2 border-background bg-muted text-[9px] font-semibold text-muted-foreground"
+                >
+                  {m.name.slice(0, 1).toUpperCase()}
+                </span>
+              ),
+            )}
+          </span>
+        ) : (
+          <Users className="size-3.5" />
+        )}
+        {members.length > 0 && (
+          <span className="text-xs tabular-nums">{members.length}</span>
+        )}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-0">
         <PopoverHeader className="px-4 pt-4 pb-2">

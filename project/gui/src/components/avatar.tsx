@@ -38,7 +38,7 @@ export function Avatar({
   if (!details || agent || (!author.email && !author.displayName)) return avatar
   return (
     <HoverCard>
-      <HoverCardTrigger asChild>{avatar}</HoverCardTrigger>
+      <HoverCardTrigger render={avatar} />
       <HoverCardContent className="w-56">
         <p className="font-semibold">{author.name}</p>
         {author.displayName && author.displayName !== author.name && (
