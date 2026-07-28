@@ -36,6 +36,13 @@
       "when": 1785085393260,
       "tag": "0004_run_steps",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1785085393261,
+      "tag": "0005_room_membership",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,7 @@ import {
   type RoomRun,
   type RoomSummary,
   type RoomStore,
+  type RoomUser,
   type StoredStep,
 } from './room-store'
 import { createRoomMessageHub } from './room-hub'
@@ -60,26 +61,62 @@ class FakeRunControl implements RunControl {
     for (const listener of this.listeners) listener(run)
   }
 }
+type MemberRow = { roomId: string; userId: string; addedBy: string; addedAt: number }
 class MemoryRoomStore implements RoomStore {
-  rooms: RoomSummary[] = [{ id: GENERAL_ROOM_ID, name: 'General' }]
+  rooms: RoomSummary[] = [{ id: GENERAL_ROOM_ID, name: 'General', visibility: 'public' }]
   messages: RoomMessage[] = []
   runs: RoomRun[] = []
   steps: StoredStep[] = []
+  members: MemberRow[] = []
+  workspaceUsers: RoomUser[] = []
   listRooms() {
     return this.rooms
   }
   getRoom(id: string) {
     return this.rooms.find((room) => room.id === id)
   }
-  createRoom(room: RoomSummary) {
+  createRoom(room: { id: string; name: string; visibility: 'public' | 'private'; createdBy?: string }) {
     if (
       this.rooms.some(
         (item) => item.name.toLowerCase() === room.name.toLowerCase(),
       )
     )
       return false
-    this.rooms.push(room)
+    this.rooms.push({ id: room.id, name: room.name, visibility: room.visibility, ...(room.createdBy ? { createdBy: room.createdBy } : {}) })
+    if (room.visibility === 'private' && room.createdBy) {
+      this.members.push({ roomId: room.id, userId: room.createdBy, addedBy: room.createdBy, addedAt: Date.now() })
+    }
     return true
+  }
+  canAccessRoom(roomId: string, userId: string): boolean {
+    const room = this.rooms.find((r) => r.id === roomId)
+    if (!room) return false
+    if (room.visibility === 'public') return true
+    return this.members.some((m) => m.roomId === roomId && m.userId === userId)
+  }
+  listRoomsForUser(userId: string): RoomSummary[] {
+    return this.rooms.filter(
+      (r) => r.visibility === 'public' || this.members.some((m) => m.roomId === r.id && m.userId === userId),
+    )
+  }
+  listMembers(roomId: string): RoomUser[] {
+    return this.members
+      .filter((m) => m.roomId === roomId)
+      .map((m) => ({ id: m.userId, name: m.userId }))
+  }
+  isOwner(roomId: string, userId: string): boolean {
+    const room = this.rooms.find((r) => r.id === roomId)
+    return room?.createdBy === userId
+  }
+  addMember(roomId: string, userId: string, addedBy: string): void {
+    if (!this.members.some((m) => m.roomId === roomId && m.userId === userId))
+      this.members.push({ roomId, userId, addedBy, addedAt: Date.now() })
+  }
+  removeMember(roomId: string, userId: string): void {
+    this.members = this.members.filter((m) => !(m.roomId === roomId && m.userId === userId))
+  }
+  listWorkspaceUsers() {
+    return this.workspaceUsers
   }
   listMessages(roomId: string) {
     return this.messages.filter((message) => message.roomId === roomId)
@@ -691,6 +728,696 @@ test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched ru
     } finally {
       noAuthCoord.stop()
     }
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('non-member gets 404 on all private room endpoints', async () => {
+  // user-1 creates a private room; user-2 is not a member
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages,
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    // user-1 creates a private room (becomes creator/member)
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Secret', visibility: 'private' }),
+    })
+    expect(created.status).toBe(201)
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    // Start a run as user-1 so we have a run id
+    const msgResp = await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '@software-engineer Fix it' }),
+    })
+    expect(msgResp.status).toBe(202)
+    const { run } = (await msgResp.json()) as { run: RoomRun }
+
+    // Switch to user-2 who is not a member
+    currentUser = 'user-2'
+
+    expect(
+      (await fetch(`${base}/api/rooms/${room.id}/stream`, {
+        headers: { origin: 'http://gui.test', upgrade: 'websocket' },
+      })).status,
+    ).toBe(404)
+
+    expect(
+      (await fetch(`${base}/api/rooms/${room.id}/messages`, {
+        method: 'POST',
+        headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'hello' }),
+      })).status,
+    ).toBe(404)
+
+    expect(
+      (await fetch(`${base}/api/rooms/${room.id}/runs/${run.id}/steps`, {
+        headers: { origin: 'http://gui.test' },
+      })).status,
+    ).toBe(404)
+
+    expect(
+      (await fetch(`${base}/api/rooms/${room.id}/runs/${run.id}/cancel`, {
+        method: 'POST',
+        headers: { origin: 'http://gui.test' },
+      })).status,
+    ).toBe(404)
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('member of private room can access its endpoints', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages,
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  const wsBase = base.replace('http', 'ws')
+  try {
+    // user-1 creates the private room
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Members Only', visibility: 'private' }),
+    })
+    expect(created.status).toBe(201)
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    // Add user-2 as member directly on store
+    store.addMember(room.id, 'user-2', 'user-1')
+
+    // Switch to user-2
+    currentUser = 'user-2'
+
+    // user-2 can open the websocket stream
+    const socket = await open(`${wsBase}/api/rooms/${room.id}/stream`)
+    const snapshot = await socket.next()
+    expect(snapshot.type).toBe('room.snapshot')
+
+    // user-2 can post messages
+    const msgResp = await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'hello from member' }),
+    })
+    expect(msgResp.status).toBe(201)
+
+    socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('GET /api/rooms omits private rooms the user is not in but includes public ones', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    // user-1 creates a public room and a private room
+    await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Public Room', visibility: 'public' }),
+    })
+    await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Private Room', visibility: 'private' }),
+    })
+
+    // user-2 should see the public room and general, but not the private room
+    currentUser = 'user-2'
+    const resp = await fetch(`${base}/api/rooms`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(resp.status).toBe(200)
+    const { rooms } = (await resp.json()) as { rooms: RoomSummary[] }
+    const names = rooms.map((r) => r.name)
+    expect(names).toContain('General')
+    expect(names).toContain('Public Room')
+    expect(names).not.toContain('Private Room')
+
+    // user-1 should see all three (they own the private room, so they are a member)
+    currentUser = 'user-1'
+    const resp2 = await fetch(`${base}/api/rooms`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    const { rooms: rooms2 } = (await resp2.json()) as { rooms: RoomSummary[] }
+    const names2 = rooms2.map((r) => r.name)
+    expect(names2).toContain('Private Room')
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('POST /api/rooms with private visibility does not emit room.created globally; public does', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  const wsBase = base.replace('http', 'ws')
+  try {
+    // user-2's socket listens on general (a public room user-2 can always access)
+    currentUser = 'user-2'
+    const observerSocket = await open(`${wsBase}/api/rooms/general/stream`)
+    expect((await observerSocket.next()).type).toBe('room.snapshot')
+
+    // Set up the next-event promise BEFORE creating either room so the waiter
+    // queue is empty and the first event to arrive will settle it.
+    const firstEvent = observerSocket.next()
+
+    // user-1 creates a private room — this must NOT broadcast room.created
+    currentUser = 'user-1'
+    const privateResp = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Stealth', visibility: 'private' }),
+    })
+    expect(privateResp.status).toBe(201)
+
+    // user-1 creates a public room — this MUST broadcast room.created
+    const publicResp = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Open', visibility: 'public' }),
+    })
+    expect(publicResp.status).toBe(201)
+    const { room: openRoom } = (await publicResp.json()) as { room: RoomSummary }
+
+    // The first (and only) event user-2's socket receives should be for the public room
+    const event = await firstEvent
+    expect(event).toMatchObject({ type: 'room.created', room: { id: openRoom.id, name: 'Open' } })
+
+    // No further events (the private room never triggered one)
+    await expectNoEvent(observerSocket)
+
+    observerSocket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('POST /api/rooms with invalid visibility returns 400', async () => {
+  const store = new MemoryRoomStore()
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const resp = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Bad Room', visibility: 'secret' }),
+    })
+    expect(resp.status).toBe(400)
+    const body = (await resp.json()) as { error: string }
+    expect(body.error).toBe('Invalid visibility')
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('GET /api/workspace/members returns seeded workspace users', async () => {
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Alice' },
+    { id: 'user-2', name: 'Bob' },
+  ]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const resp = await fetch(`${base}/api/workspace/members`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(resp.status).toBe(200)
+    const { users } = (await resp.json()) as { users: RoomUser[] }
+    expect(users).toHaveLength(2)
+    expect(users.map((u) => u.id)).toContain('user-1')
+    expect(users.map((u) => u.id)).toContain('user-2')
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('GET /api/rooms/:id/members returns members for an accessible room', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [{ id: 'user-1', name: 'Alice' }, { id: 'user-2', name: 'Bob' }]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'VIP', visibility: 'private' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    // user-1 (owner/member) can list members
+    const resp = await fetch(`${base}/api/rooms/${room.id}/members`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(resp.status).toBe(200)
+    const { members } = (await resp.json()) as { members: RoomUser[] }
+    expect(members.map((m) => m.id)).toContain('user-1')
+
+    // user-2 (non-member) gets 404
+    currentUser = 'user-2'
+    expect(
+      (await fetch(`${base}/api/rooms/${room.id}/members`, {
+        headers: { origin: 'http://gui.test' },
+      })).status,
+    ).toBe(404)
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('non-member POST /api/rooms/:id/members returns 404', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [{ id: 'user-1', name: 'Alice' }, { id: 'user-3', name: 'Carol' }]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Secret', visibility: 'private' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    // user-2 is not a member — POST to add should return 404
+    currentUser = 'user-2'
+    const resp = await fetch(`${base}/api/rooms/${room.id}/members`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: 'user-3' }),
+    })
+    expect(resp.status).toBe(404)
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('POST /api/rooms/:id/members on a public room returns 400', async () => {
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [{ id: 'user-1', name: 'Ada' }, { id: 'user-2', name: 'Bob' }]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Open Space', visibility: 'public' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    const resp = await fetch(`${base}/api/rooms/${room.id}/members`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: 'user-2' }),
+    })
+    expect(resp.status).toBe(400)
+    const body = (await resp.json()) as { error: string }
+    expect(body.error).toBe('Room is not private')
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('POST /api/rooms/:id/members with unknown userId returns 400', async () => {
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [{ id: 'user-1', name: 'Ada' }]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Private Club', visibility: 'private' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    const resp = await fetch(`${base}/api/rooms/${room.id}/members`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: 'ghost-user' }),
+    })
+    expect(resp.status).toBe(400)
+    const body = (await resp.json()) as { error: string }
+    expect(body.error).toBe('Unknown user')
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('member adds a workspace user; added user socket gets room.created; room socket gets room.members.changed', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Alice' },
+    { id: 'user-2', name: 'Bob' },
+  ]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  const wsBase = base.replace('http', 'ws')
+  try {
+    // user-1 creates the private room and opens a stream inside it
+    currentUser = 'user-1'
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Exclusive', visibility: 'private' }),
+    })
+    expect(created.status).toBe(201)
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    // user-1 opens the room stream (to receive room.members.changed)
+    const ownerSocket = await open(`${wsBase}/api/rooms/${room.id}/stream`)
+    expect((await ownerSocket.next()).type).toBe('room.snapshot')
+
+    // user-2 opens a socket in the general room (to receive the targeted room.created)
+    currentUser = 'user-2'
+    const user2Socket = await open(`${wsBase}/api/rooms/general/stream`)
+    expect((await user2Socket.next()).type).toBe('room.snapshot')
+
+    // Set up event waiters before the HTTP call
+    const membersChangedEvent = ownerSocket.next()
+    const roomCreatedForUser2 = user2Socket.next()
+
+    // user-1 adds user-2 as a member
+    currentUser = 'user-1'
+    const addResp = await fetch(`${base}/api/rooms/${room.id}/members`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: 'user-2' }),
+    })
+    expect(addResp.status).toBe(201)
+    const { members } = (await addResp.json()) as { members: RoomUser[] }
+    expect(members.map((m) => m.id)).toContain('user-2')
+
+    // owner's room socket should receive room.members.changed
+    expect(await membersChangedEvent).toMatchObject({ type: 'room.members.changed', roomId: room.id })
+
+    // user-2's socket (in general) should receive room.created for the private room
+    expect(await roomCreatedForUser2).toMatchObject({ type: 'room.created', room: { id: room.id } })
+
+    ownerSocket.socket.close()
+    user2Socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('owner removes another member; removed user gets room.removed; room socket gets room.members.changed', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Alice' },
+    { id: 'user-2', name: 'Bob' },
+  ]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  const wsBase = base.replace('http', 'ws')
+  try {
+    // user-1 creates private room
+    currentUser = 'user-1'
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Inner Circle', visibility: 'private' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    // Add user-2 via store directly
+    store.addMember(room.id, 'user-2', 'user-1')
+
+    // user-1 opens the room stream
+    const ownerSocket = await open(`${wsBase}/api/rooms/${room.id}/stream`)
+    expect((await ownerSocket.next()).type).toBe('room.snapshot')
+
+    // user-2 opens the room stream
+    currentUser = 'user-2'
+    const user2Socket = await open(`${wsBase}/api/rooms/${room.id}/stream`)
+    expect((await user2Socket.next()).type).toBe('room.snapshot')
+
+    // Set up event waiters
+    const membersChangedEvent = ownerSocket.next()
+    const removedEvent = user2Socket.next()
+
+    // user-1 removes user-2
+    currentUser = 'user-1'
+    const removeResp = await fetch(`${base}/api/rooms/${room.id}/members/user-2`, {
+      method: 'DELETE',
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(removeResp.status).toBe(200)
+    const body = (await removeResp.json()) as { ok: boolean }
+    expect(body.ok).toBe(true)
+
+    // room socket receives room.members.changed
+    expect(await membersChangedEvent).toMatchObject({ type: 'room.members.changed', roomId: room.id })
+
+    // user-2's socket receives room.removed
+    expect(await removedEvent).toMatchObject({ type: 'room.removed', roomId: room.id })
+
+    ownerSocket.socket.close()
+    user2Socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('non-owner removing another member returns 403', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Alice' },
+    { id: 'user-2', name: 'Bob' },
+    { id: 'user-3', name: 'Carol' },
+  ]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    // user-1 owns the room; user-2 and user-3 are members
+    currentUser = 'user-1'
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Gang', visibility: 'private' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+    store.addMember(room.id, 'user-2', 'user-1')
+    store.addMember(room.id, 'user-3', 'user-1')
+
+    // user-2 (non-owner) tries to remove user-3 → 403
+    currentUser = 'user-2'
+    const resp = await fetch(`${base}/api/rooms/${room.id}/members/user-3`, {
+      method: 'DELETE',
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(resp.status).toBe(403)
+    const body = (await resp.json()) as { error: string }
+    expect(body.error).toBe('Only the room owner can remove members')
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('member removing themselves (leave) is allowed and gets room.removed', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Alice' },
+    { id: 'user-2', name: 'Bob' },
+  ]
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: swappable,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  const wsBase = base.replace('http', 'ws')
+  try {
+    // user-1 creates the room; add user-2 as member
+    currentUser = 'user-1'
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Leavable', visibility: 'private' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+    store.addMember(room.id, 'user-2', 'user-1')
+
+    // user-2 opens room stream
+    currentUser = 'user-2'
+    const user2Socket = await open(`${wsBase}/api/rooms/${room.id}/stream`)
+    expect((await user2Socket.next()).type).toBe('room.snapshot')
+
+    // Set up waiter for room.removed
+    const removedEvent = user2Socket.next()
+
+    // user-2 removes themselves (leave)
+    const leaveResp = await fetch(`${base}/api/rooms/${room.id}/members/user-2`, {
+      method: 'DELETE',
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(leaveResp.status).toBe(200)
+
+    // user-2 receives room.removed
+    expect(await removedEvent).toMatchObject({ type: 'room.removed', roomId: room.id })
+
+    // user-2 is no longer a member
+    expect(store.members.some((m) => m.roomId === room.id && m.userId === 'user-2')).toBe(false)
+
+    user2Socket.socket.close()
   } finally {
     coordinator.stop()
   }

@@ -26,9 +26,11 @@ export type ServerMessage =
   | { type: 'run.changed'; run: RoomRun }
   | { type: 'room.created'; room: ReturnType<RoomStore['listRooms']>[number] }
   | { type: 'run.step'; runId: string; step: StoredStep }
+  | { type: 'room.removed'; roomId: string }
+  | { type: 'room.members.changed'; roomId: string }
 
 const send = (
-  socket: ServerWebSocket<{ roomId: string }>,
+  socket: ServerWebSocket<{ roomId: string; userId: string }>,
   message: ServerMessage,
 ): void => {
   socket.send(JSON.stringify(message))
@@ -73,16 +75,23 @@ async function textFrom(request: Request): Promise<string | undefined> {
     return undefined
   }
 }
-async function roomNameFrom(request: Request): Promise<string | undefined> {
+type RoomBody = { name: string; visibility: 'public' | 'private'; visibilityInvalid?: false } | { visibilityInvalid: true; name?: string; visibility?: never }
+async function roomBodyFrom(request: Request): Promise<RoomBody | undefined> {
   try {
     const body: unknown = await request.json()
-    const name =
-      body && typeof body === 'object'
-        ? (body as Record<string, unknown>).name
-        : undefined
+    const raw =
+      body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined
+    if (!raw) return undefined
+    const name = raw.name
     if (typeof name !== 'string') return undefined
     const trimmed = name.trim()
-    return trimmed.length >= 1 && trimmed.length <= 50 ? trimmed : undefined
+    if (trimmed.length < 1 || trimmed.length > 50) return undefined
+    const rawVisibility = raw.visibility
+    if (rawVisibility !== undefined && rawVisibility !== 'public' && rawVisibility !== 'private')
+      return { visibilityInvalid: true }
+    const visibility: 'public' | 'private' =
+      rawVisibility === 'private' ? 'private' : 'public'
+    return { name: trimmed, visibility }
   } catch {
     return undefined
   }
@@ -97,13 +106,17 @@ export function createCoordinator(options: {
   origin: string
   port?: number
 }) {
-  const sockets = new Set<ServerWebSocket<{ roomId: string }>>()
+  const sockets = new Set<ServerWebSocket<{ roomId: string; userId: string }>>()
   const broadcast = (message: ServerMessage): void => {
     for (const socket of sockets) send(socket, message)
   }
   const broadcastRoom = (roomId: string, message: ServerMessage): void => {
     for (const socket of sockets)
       if (socket.data.roomId === roomId) send(socket, message)
+  }
+  const broadcastToUsers = (userIds: Set<string>, message: ServerMessage): void => {
+    for (const socket of sockets)
+      if (userIds.has(socket.data.userId)) send(socket, message)
   }
   const project = (run: ReturnType<RunControl['listRuns']>[number]): void => {
     const saved = options.store.getRun(run.id)
@@ -139,7 +152,7 @@ export function createCoordinator(options: {
   options.store
     .failStaleRuns()
     .forEach((run) => broadcastRoom(run.roomId, { type: 'run.changed', run }))
-  const server = Bun.serve<{ roomId: string }>({
+  const server = Bun.serve<{ roomId: string; userId: string }>({
     port: options.port ?? 3001,
     async fetch(request, server) {
       const url = new URL(request.url)
@@ -155,7 +168,7 @@ export function createCoordinator(options: {
             status: 204,
             headers: {
               'access-control-allow-headers': 'content-type',
-              'access-control-allow-methods': 'GET, POST, OPTIONS',
+              'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
             },
           }),
         )
@@ -169,27 +182,31 @@ export function createCoordinator(options: {
         request.headers.get('upgrade')?.toLowerCase() === 'websocket'
       ) {
         const roomId = stream[1]!
-        if (!options.store.getRoom(roomId))
+        if (!options.store.canAccessRoom(roomId, user.id))
           return cors(json({ error: 'Room not found' }, 404))
-        return server.upgrade(request, { data: { roomId } })
+        return server.upgrade(request, { data: { roomId, userId: user.id } })
           ? undefined
           : json({ error: 'Upgrade failed' }, 400)
       }
       if (url.pathname === '/api/rooms' && request.method === 'GET')
-        return cors(json({ rooms: options.store.listRooms() }))
+        return cors(json({ rooms: options.store.listRoomsForUser(user.id) }))
       if (url.pathname === '/api/rooms' && request.method === 'POST') {
-        const name = await roomNameFrom(request)
-        if (!name) return cors(json({ error: 'Invalid room name' }, 400))
-        const room = { id: crypto.randomUUID(), name }
+        const body = await roomBodyFrom(request)
+        if (!body) return cors(json({ error: 'Invalid room name' }, 400))
+        if (body.visibilityInvalid) return cors(json({ error: 'Invalid visibility' }, 400))
+        const room = { id: crypto.randomUUID(), name: body.name, visibility: body.visibility, createdBy: user.id }
         if (!options.store.createRoom(room))
           return cors(json({ error: 'Room already exists' }, 409))
-        broadcast({ type: 'room.created', room })
+        if (room.visibility === 'public') {
+          broadcast({ type: 'room.created', room })
+        }
+        // private rooms are delivered to members in B2
         return cors(json({ room }, 201))
       }
       const messages = url.pathname.match(/^\/api\/rooms\/([^/]+)\/messages$/)
       if (messages && request.method === 'POST') {
         const roomId = messages[1]!
-        if (!options.store.getRoom(roomId))
+        if (!options.store.canAccessRoom(roomId, user.id))
           return cors(json({ error: 'Room not found' }, 404))
         const text = await textFrom(request)
         if (!text) return cors(json({ error: 'Invalid message' }, 400))
@@ -244,7 +261,7 @@ export function createCoordinator(options: {
           runId && runId.length <= 200 ? options.store.getRun(runId) : undefined
         if (
           !roomId ||
-          !options.store.getRoom(roomId) ||
+          !options.store.canAccessRoom(roomId, user.id) ||
           !stored ||
           stored.roomId !== roomId
         )
@@ -260,7 +277,7 @@ export function createCoordinator(options: {
           runId && runId.length <= 200 ? options.store.getRun(runId) : undefined
         if (
           !roomId ||
-          !options.store.getRoom(roomId) ||
+          !options.store.canAccessRoom(roomId, user.id) ||
           !stored ||
           stored.roomId !== roomId
         )
@@ -271,6 +288,53 @@ export function createCoordinator(options: {
             ? json({ run: options.store.getRun(runId) })
             : json({ error: 'Run not found' }, 404),
         )
+      }
+      if (url.pathname === '/api/workspace/members' && request.method === 'GET')
+        return cors(json({ users: options.store.listWorkspaceUsers() }))
+      const membersRoute = url.pathname.match(/^\/api\/rooms\/([^/]+)\/members$/)
+      if (membersRoute && request.method === 'GET') {
+        const roomId = membersRoute[1]!
+        if (!options.store.canAccessRoom(roomId, user.id))
+          return cors(json({ error: 'Room not found' }, 404))
+        return cors(json({ members: options.store.listMembers(roomId) }))
+      }
+      if (membersRoute && request.method === 'POST') {
+        const roomId = membersRoute[1]!
+        if (!options.store.canAccessRoom(roomId, user.id))
+          return cors(json({ error: 'Room not found' }, 404))
+        const room = options.store.getRoom(roomId)
+        if (!room) return cors(json({ error: 'Room not found' }, 404))
+        if (room.visibility !== 'private')
+          return cors(json({ error: 'Room is not private' }, 400))
+        let body: { userId?: unknown } | undefined
+        try { body = (await request.json()) as { userId?: unknown } } catch { body = undefined }
+        const userId = body && typeof body.userId === 'string' && body.userId.trim() ? body.userId.trim() : undefined
+        if (!userId) return cors(json({ error: 'Unknown user' }, 400))
+        const workspaceUsers = options.store.listWorkspaceUsers()
+        if (!workspaceUsers.some((u) => u.id === userId))
+          return cors(json({ error: 'Unknown user' }, 400))
+        options.store.addMember(roomId, userId, user.id)
+        const updatedRoom = options.store.getRoom(roomId)!
+        broadcastToUsers(new Set([userId]), { type: 'room.created', room: updatedRoom })
+        broadcastRoom(roomId, { type: 'room.members.changed', roomId })
+        return cors(json({ members: options.store.listMembers(roomId) }, 201))
+      }
+      const memberRoute = url.pathname.match(/^\/api\/rooms\/([^/]+)\/members\/([^/]+)$/)
+      if (memberRoute && request.method === 'DELETE') {
+        const roomId = memberRoute[1]!
+        const targetUserId = memberRoute[2]!
+        if (!options.store.canAccessRoom(roomId, user.id))
+          return cors(json({ error: 'Room not found' }, 404))
+        const room = options.store.getRoom(roomId)
+        if (!room) return cors(json({ error: 'Room not found' }, 404))
+        if (room.visibility !== 'private')
+          return cors(json({ error: 'Room is not private' }, 400))
+        if (targetUserId !== user.id && !options.store.isOwner(roomId, user.id))
+          return cors(json({ error: 'Only the room owner can remove members' }, 403))
+        options.store.removeMember(roomId, targetUserId)
+        broadcastToUsers(new Set([targetUserId]), { type: 'room.removed', roomId })
+        broadcastRoom(roomId, { type: 'room.members.changed', roomId })
+        return cors(json({ ok: true }))
       }
       return cors(json({ error: 'Not found' }, 404))
     },

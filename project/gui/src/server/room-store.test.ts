@@ -8,8 +8,13 @@ import {
 } from './room-store'
 
 const SCHEMA_DDL = `
-  CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL);
-  INSERT INTO room (id, name) VALUES ('general', 'General');
+  CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
+  INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
+  CREATE TABLE room_member (room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
+  CREATE INDEX room_member_user_idx ON room_member (user_id);
+  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT);
+  INSERT INTO user (id, name, email, image) VALUES ('user-1', 'Ada', 'ada@example.com', NULL);
+  INSERT INTO user (id, name, email, image) VALUES ('user-2', 'Bob', 'bob@example.com', 'https://example.com/bob.png');
   CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
   CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, room_id TEXT NOT NULL, idx INTEGER NOT NULL, kind TEXT NOT NULL, tool TEXT, call_id TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -47,8 +52,10 @@ function makeStep(overrides: Partial<StoredStep> = {}): StoredStep {
 test('room store retains history and fails stale runs', () => {
   const sqlite = new Database(':memory:')
   sqlite.exec(`
-    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL);
-    INSERT INTO room (id, name) VALUES ('general', 'General');
+    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
+    INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
+    CREATE TABLE room_member (room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
+    CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT);
     CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
     CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   `)
@@ -99,20 +106,22 @@ test('room store retains history and fails stale runs', () => {
 test('room store creates ordered, isolated rooms', () => {
   const sqlite = new Database(':memory:')
   sqlite.exec(`
-    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
     CREATE UNIQUE INDEX room_name_nocase_unique ON room (name COLLATE NOCASE);
-    INSERT INTO room (id, name) VALUES ('general', 'General');
+    INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
+    CREATE TABLE room_member (room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
+    CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT);
     CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
     CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   `)
   const store = createSqliteRoomStore(sqlite)
-  expect(store.createRoom({ id: 'zebra', name: 'Zebra' })).toBe(true)
-  expect(store.createRoom({ id: 'alpha', name: 'alpha' })).toBe(true)
-  expect(store.createRoom({ id: 'duplicate', name: 'ALPHA' })).toBe(false)
+  expect(store.createRoom({ id: 'zebra', name: 'Zebra', visibility: 'public' })).toBe(true)
+  expect(store.createRoom({ id: 'alpha', name: 'alpha', visibility: 'public' })).toBe(true)
+  expect(store.createRoom({ id: 'duplicate', name: 'ALPHA', visibility: 'public' })).toBe(false)
   expect(store.listRooms()).toEqual([
-    { id: 'general', name: 'General' },
-    { id: 'alpha', name: 'alpha' },
-    { id: 'zebra', name: 'Zebra' },
+    { id: 'general', name: 'General', visibility: 'public' },
+    { id: 'alpha', name: 'alpha', visibility: 'public' },
+    { id: 'zebra', name: 'Zebra', visibility: 'public' },
   ])
   store.createMessage({
     id: 'product-message',
@@ -121,7 +130,7 @@ test('room store creates ordered, isolated rooms', () => {
     text: 'Product',
     createdAt: 1,
   })
-  expect(store.getRoom('alpha')).toEqual({ id: 'alpha', name: 'alpha' })
+  expect(store.getRoom('alpha')).toEqual({ id: 'alpha', name: 'alpha', visibility: 'public' })
   expect(store.listMessages(GENERAL_ROOM_ID)).toEqual([])
   expect(store.listMessages('alpha')).toHaveLength(1)
   store.createMessage({
@@ -224,6 +233,195 @@ test('listSteps is scoped to its run', () => {
   expect(store.listSteps('run-A').map(s => s.id)).toEqual(['step-A'])
   expect(store.listSteps('run-B').map(s => s.id)).toEqual(['step-B'])
   expect(store.listSteps('run-missing')).toEqual([])
+
+  sqlite.close()
+})
+
+test('creating a private room seeds the owner as a member', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'secret', name: 'Secret', visibility: 'private', createdBy: 'user-1' })
+
+  const members = store.listMembers('secret')
+  expect(members).toHaveLength(1)
+  expect(members[0].id).toBe('user-1')
+  expect(members[0].name).toBe('Ada')
+
+  sqlite.close()
+})
+
+test('creating a public room does not seed any member', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'open', name: 'Open', visibility: 'public', createdBy: 'user-1' })
+
+  expect(store.listMembers('open')).toHaveLength(0)
+
+  sqlite.close()
+})
+
+test('canAccessRoom — public room is accessible by any user', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  // general is public and seeded in SCHEMA_DDL
+  expect(store.canAccessRoom(GENERAL_ROOM_ID, 'user-1')).toBe(true)
+  expect(store.canAccessRoom(GENERAL_ROOM_ID, 'user-2')).toBe(true)
+  expect(store.canAccessRoom(GENERAL_ROOM_ID, 'stranger')).toBe(true)
+
+  sqlite.close()
+})
+
+test('canAccessRoom — private room only allows members', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'priv', name: 'Private', visibility: 'private', createdBy: 'user-1' })
+
+  expect(store.canAccessRoom('priv', 'user-1')).toBe(true)  // owner was seeded as member
+  expect(store.canAccessRoom('priv', 'user-2')).toBe(false) // not a member
+  expect(store.canAccessRoom('priv', 'stranger')).toBe(false)
+
+  sqlite.close()
+})
+
+test('canAccessRoom — missing room returns false', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  expect(store.canAccessRoom('no-such-room', 'user-1')).toBe(false)
+
+  sqlite.close()
+})
+
+test('listRoomsForUser hides private rooms you are not in', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'pub', name: 'Public Room', visibility: 'public' })
+  store.createRoom({ id: 'priv1', name: 'Priv1', visibility: 'private', createdBy: 'user-1' })
+  store.createRoom({ id: 'priv2', name: 'Priv2', visibility: 'private', createdBy: 'user-2' })
+
+  const forUser1 = store.listRoomsForUser('user-1')
+  const ids1 = forUser1.map(r => r.id)
+  expect(ids1).toContain(GENERAL_ROOM_ID)
+  expect(ids1).toContain('pub')
+  expect(ids1).toContain('priv1') // owner → member
+  expect(ids1).not.toContain('priv2')
+
+  const forUser2 = store.listRoomsForUser('user-2')
+  const ids2 = forUser2.map(r => r.id)
+  expect(ids2).toContain(GENERAL_ROOM_ID)
+  expect(ids2).toContain('pub')
+  expect(ids2).not.toContain('priv1')
+  expect(ids2).toContain('priv2')
+
+  sqlite.close()
+})
+
+test('listRoomsForUser keeps General first', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'aaa', name: 'AAA', visibility: 'public' })
+  store.createRoom({ id: 'zzz', name: 'ZZZ', visibility: 'public' })
+
+  const rooms = store.listRoomsForUser('user-1')
+  expect(rooms[0].id).toBe(GENERAL_ROOM_ID)
+
+  sqlite.close()
+})
+
+test('addMember is idempotent', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'priv', name: 'Priv', visibility: 'private', createdBy: 'user-1' })
+  // user-1 already a member (seeded); add again — should not throw
+  expect(() => store.addMember('priv', 'user-1', 'user-1')).not.toThrow()
+  expect(store.listMembers('priv')).toHaveLength(1)
+
+  // add user-2
+  store.addMember('priv', 'user-2', 'user-1')
+  expect(store.listMembers('priv')).toHaveLength(2)
+  // add user-2 again — idempotent
+  store.addMember('priv', 'user-2', 'user-1')
+  expect(store.listMembers('priv')).toHaveLength(2)
+
+  sqlite.close()
+})
+
+test('removeMember removes the member', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'priv', name: 'Priv', visibility: 'private', createdBy: 'user-1' })
+  store.addMember('priv', 'user-2', 'user-1')
+  expect(store.listMembers('priv')).toHaveLength(2)
+
+  store.removeMember('priv', 'user-2')
+  expect(store.listMembers('priv')).toHaveLength(1)
+  expect(store.listMembers('priv')[0].id).toBe('user-1')
+
+  sqlite.close()
+})
+
+test('isOwner returns true only for the creator', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'priv', name: 'Priv', visibility: 'private', createdBy: 'user-1' })
+
+  expect(store.isOwner('priv', 'user-1')).toBe(true)
+  expect(store.isOwner('priv', 'user-2')).toBe(false)
+  expect(store.isOwner('no-such-room', 'user-1')).toBe(false)
+
+  sqlite.close()
+})
+
+test('listMembers returns joined user name and image', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  store.createRoom({ id: 'priv', name: 'Priv', visibility: 'private', createdBy: 'user-1' })
+  store.addMember('priv', 'user-2', 'user-1')
+
+  const members = store.listMembers('priv')
+  // user-1 has no image; user-2 has image
+  const ada = members.find(m => m.id === 'user-1')!
+  const bob = members.find(m => m.id === 'user-2')!
+  expect(ada.name).toBe('Ada')
+  expect(ada.image).toBeUndefined()
+  expect(bob.name).toBe('Bob')
+  expect(bob.image).toBe('https://example.com/bob.png')
+
+  sqlite.close()
+})
+
+test('listWorkspaceUsers returns all users ordered by name', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+
+  const users = store.listWorkspaceUsers()
+  expect(users).toHaveLength(2)
+  expect(users[0].id).toBe('user-1') // Ada before Bob
+  expect(users[1].id).toBe('user-2')
+  expect(users[0].image).toBeUndefined()
+  expect(users[1].image).toBe('https://example.com/bob.png')
 
   sqlite.close()
 })
