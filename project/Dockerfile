@@ -8,5 +8,8 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY roles /app/roles
 COPY runtime /app/runtime
+# The container runtime imports the dependency-free Step wire contract only.
+# Do not copy the rest of agents/ — it pulls in the executor/sandbox/MCP graph.
+COPY agents/step.ts /app/agents/step.ts
 
 WORKDIR /work

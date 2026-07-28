@@ -9,7 +9,7 @@ import {
   tool,
 } from "@openai/agents";
 
-import type { Step } from "../agents";
+import type { Step } from "../agents/step";
 import type { CapabilitySessionBinding } from "../mcp/session";
 
 export interface OpenAICompatibleModel {
