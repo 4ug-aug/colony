@@ -392,10 +392,12 @@ function StepsPopover({ run, roomId }: { run: RoomRun; roomId: string }) {
           {!loading && !error && steps !== null && steps.length === 0 && (
             <p className="py-3 text-xs text-muted-foreground">No steps recorded</p>
           )}
-          {!loading && !error && pairedItems.map((item) => {
+          {!loading && !error && pairedItems.map((item, i) => {
+            const enter = 'animate-in fade-in-0 slide-in-from-bottom-1 duration-300'
+            const enterStyle = { animationDelay: `${Math.min(i * 45, 270)}ms`, animationFillMode: 'both' as const }
             if (item.message) {
               return (
-                <div key={item.message.id} className="rounded-md border bg-muted/40 px-3 py-2 text-xs">
+                <div key={item.message.id} className={`rounded-md border bg-muted/40 px-3 py-2 text-xs ${enter}`} style={enterStyle}>
                   <div className="mb-1 font-medium text-muted-foreground">Reasoning</div>
                   <div className="whitespace-pre-wrap break-words">{item.message.text}</div>
                 </div>
@@ -404,7 +406,7 @@ function StepsPopover({ run, roomId }: { run: RoomRun; roomId: string }) {
             if (item.call) {
               const tool = item.call.tool ?? 'unknown'
               return (
-                <details key={item.call.id} className="rounded-md border bg-muted/40 px-3 py-2 text-xs group">
+                <details key={item.call.id} className={`rounded-md border bg-muted/40 px-3 py-2 text-xs group ${enter}`} style={enterStyle}>
                   <summary className="cursor-pointer font-medium text-muted-foreground list-none flex items-center justify-between">
                     <span>{tool}{item.result ? ' ✓' : ' (pending)'}</span>
                     <span className="text-muted-foreground/60 text-[10px] group-open:hidden">expand</span>
@@ -507,15 +509,26 @@ function Timeline({
                   <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/60 px-2 py-1">
                     <Terminal className="size-3" />
                     Software engineer{' '}
-                    {terminal(item.run.state)
-                      ? item.run.state === 'succeeded'
-                        ? 'completed'
-                        : item.run.state
-                      : latestStepByRun.get(item.run.id)
-                        ? stepLabel(latestStepByRun.get(item.run.id)!)
-                        : item.run.state === 'preparing'
-                          ? 'is preparing'
-                          : 'is working'}
+                    {(() => {
+                      const step = latestStepByRun.get(item.run.id)
+                      const label = terminal(item.run.state)
+                        ? item.run.state === 'succeeded'
+                          ? 'completed'
+                          : item.run.state
+                        : step
+                          ? stepLabel(step)
+                          : item.run.state === 'preparing'
+                            ? 'is preparing'
+                            : 'is working'
+                      return (
+                        <span
+                          key={label}
+                          className="inline-block animate-in fade-in slide-in-from-bottom-0.5 duration-300"
+                        >
+                          {label}
+                        </span>
+                      )
+                    })()}
                   </span>
                   <StepsPopover run={item.run} roomId={roomId} />
                   {!terminal(item.run.state) && (

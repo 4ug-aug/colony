@@ -83,9 +83,10 @@ provider credential.
 
 **Run result** contains a terminal outcome and runtime stderr, plus the run's
 ordered **step history** (see `CONTEXT.md`). The runtime streams steps as
-newline-delimited JSON on the container's stdout; the Agents runtime therefore
-no longer populates `RunRecord.stdout`, and the `message` steps are its
-narration record. Steps are the live agent-to-operator channel and the audit
+newline-delimited JSON on the container's stdout; the `message` steps are the
+full narration record, and `RunRecord.stdout` holds only the agent's final
+answer (the last `message` step) so a succeeded run still shows a result
+message in its room. Steps are the live agent-to-operator channel and the audit
 trail; see [ADR 0003](adr/0003-structured-step-stream-over-container-stdout.md).
 V1 still does not collect artifacts.
 

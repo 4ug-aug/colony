@@ -127,7 +127,7 @@ test("trailing stdout line without newline is flushed after exec resolves", asyn
   expect(received[0]).toEqual(step);
 });
 
-test("stdout never reaches onOutput; stderr does; ExecutionResult.stdout is empty", async () => {
+test("raw stdout never reaches onOutput; stderr does; stdout is the final message", async () => {
   const step: Step = { kind: "message", text: "hi", at: 3000 };
   const chunks = [
     { stream: "stdout" as const, text: serializeStep(step) + "\n" },
@@ -142,14 +142,37 @@ test("stdout never reaches onOutput; stderr does; ExecutionResult.stdout is empt
     onOutput: (chunk) => outputChunks.push(chunk),
   });
 
-  // stdout must not appear in onOutput
+  // raw stdout must not appear in onOutput
   expect(outputChunks.every((c) => c.stream !== "stdout")).toBe(true);
   // stderr must appear
   expect(outputChunks).toContainEqual({ stream: "stderr", text: "crash log" });
-  // ExecutionResult.stdout replaced with ""
-  expect(result.stdout).toBe("");
+  // ExecutionResult.stdout carries the agent's final answer (the message step)
+  expect(result.stdout).toBe("hi");
   // stderr preserved
   expect(result.stderr).toBe("err-text");
+});
+
+test("stdout is the LAST message step, and empty when there is no message", async () => {
+  const call: Step = { kind: "tool_call", tool: "shell", text: "{}", callId: "c1", at: 1 };
+  const early: Step = { kind: "message", text: "thinking...", at: 2 };
+  const answer: Step = { kind: "message", text: "the final answer", at: 3 };
+  const runtime = createOpenAIAgentsRuntime();
+
+  const withMessages = await runtime.run(
+    makeSandbox([
+      { stream: "stdout", text: serializeStep(call) + "\n" },
+      { stream: "stdout", text: serializeStep(early) + "\n" },
+      { stream: "stdout", text: serializeStep(answer) + "\n" },
+    ]),
+    { task: "t", definition: minimalDefinition },
+  );
+  expect(withMessages.stdout).toBe("the final answer");
+
+  const toolOnly = await runtime.run(
+    makeSandbox([{ stream: "stdout", text: serializeStep(call) + "\n" }]),
+    { task: "t", definition: minimalDefinition },
+  );
+  expect(toolOnly.stdout).toBe("");
 });
 
 test("malformed stdout lines are silently ignored without throwing", async () => {

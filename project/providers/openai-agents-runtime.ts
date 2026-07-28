@@ -12,10 +12,16 @@ export function createOpenAIAgentsRuntime(options: {
       }
 
       let stdoutBuffer = "";
+      // The agent's final answer is its handoff/result. It arrives as the last
+      // `message` step; capture it as the run's stdout so the room shows the
+      // result. The full narration lives in the steps, not in stdout.
+      let finalMessage = "";
 
       const flushLine = (line: string): void => {
         const step = parseStep(line);
-        if (step) request.onStep?.(step);
+        if (!step) return;
+        if (step.kind === "message") finalMessage = step.text;
+        request.onStep?.(step);
       };
 
       const result = await sandbox.exec({
@@ -57,7 +63,7 @@ export function createOpenAIAgentsRuntime(options: {
         flushLine(stdoutBuffer);
       }
 
-      return { exitCode: result.exitCode, stdout: "", stderr: result.stderr };
+      return { exitCode: result.exitCode, stdout: finalMessage, stderr: result.stderr };
     },
   };
 }

@@ -16,8 +16,10 @@ The step protocol lives in the **runtime adapter, not the platform**: the
 `openai-agents-runtime` provider parses stdout lines into typed `Step`s and
 surfaces them through an `onStep` callback parallel to `onOutput`. A future
 non-Agents-SDK runtime emits the same `Step` shape its own way. Because the
-Agents runtime's narration is now the `message` steps, this runtime no longer
-populates `RunRecord.stdout`.
+full narration is now the `message` steps, `RunRecord.stdout` no longer holds
+the raw stdout dump; instead the provider sets it to the agent's **final
+answer** (the last `message` step, i.e. the runtime's `finalOutput`) so a
+succeeded run still shows a result message in its room.
 
 ## Considered options
 
