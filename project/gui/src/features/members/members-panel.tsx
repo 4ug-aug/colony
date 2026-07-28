@@ -10,9 +10,12 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '#/components/ui/popover'
-import type { Room } from '#/features/rooms/types'
+import type { Author, Room } from '#/features/rooms/types'
 
-type MemberUser = { id: string; name: string; image?: string }
+type MemberUser = Pick<
+  Author,
+  'id' | 'name' | 'image' | 'email' | 'displayName'
+>
 
 export function MembersPanel({
   room,
@@ -44,7 +47,9 @@ export function MembersPanel({
       const data = (await res.json()) as { members: MemberUser[] }
       setMembers(data.members)
     } catch (reason) {
-      setMembersError(reason instanceof Error ? reason.message : 'Could not load members')
+      setMembersError(
+        reason instanceof Error ? reason.message : 'Could not load members',
+      )
     } finally {
       setLoadingMembers(false)
     }
@@ -61,7 +66,9 @@ export function MembersPanel({
       const data = (await res.json()) as { users: MemberUser[] }
       setWorkspaceUsers(data.users)
     } catch (reason) {
-      setWorkspaceError(reason instanceof Error ? reason.message : 'Could not load users')
+      setWorkspaceError(
+        reason instanceof Error ? reason.message : 'Could not load users',
+      )
     } finally {
       setLoadingWorkspace(false)
     }
@@ -71,14 +78,12 @@ export function MembersPanel({
   useEffect(() => {
     if (!open) return
     void fetchMembers()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, membersChangedAt[room.id]])
+  }, [open, room.id, membersChangedAt[room.id]])
 
   // Fetch workspace users lazily when panel opens (once)
   useEffect(() => {
     if (!open) return
     void fetchWorkspaceUsers()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const handleRemove = async (userId: string) => {
@@ -95,7 +100,9 @@ export function MembersPanel({
       }
       await fetchMembers()
     } catch (reason) {
-      setMutateError(reason instanceof Error ? reason.message : 'Could not remove member')
+      setMutateError(
+        reason instanceof Error ? reason.message : 'Could not remove member',
+      )
     } finally {
       setMutating(false)
     }
@@ -115,7 +122,9 @@ export function MembersPanel({
       }
       setOpen(false)
     } catch (reason) {
-      setMutateError(reason instanceof Error ? reason.message : 'Could not leave room')
+      setMutateError(
+        reason instanceof Error ? reason.message : 'Could not leave room',
+      )
       setMutating(false)
     }
   }
@@ -136,7 +145,9 @@ export function MembersPanel({
       }
       await Promise.all([fetchMembers(), fetchWorkspaceUsers()])
     } catch (reason) {
-      setMutateError(reason instanceof Error ? reason.message : 'Could not add member')
+      setMutateError(
+        reason instanceof Error ? reason.message : 'Could not add member',
+      )
     } finally {
       setMutating(false)
     }
@@ -196,49 +207,60 @@ export function MembersPanel({
             <p className="py-2 text-xs text-muted-foreground">Loading…</p>
           )}
           {!loadingMembers && membersError && (
-            <p className="py-2 text-xs text-destructive" role="alert">{membersError}</p>
+            <p className="py-2 text-xs text-destructive" role="alert">
+              {membersError}
+            </p>
           )}
-          {!loadingMembers && !membersError && members.map((member) => {
-            const isMe = member.id === currentUserId
-            return (
-              <div key={member.id} className="flex items-center gap-2 rounded-md px-1 py-1">
-                <Avatar author={member} />
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {member.name}
-                  {isMe && (
-                    <span className="ml-1 text-xs text-muted-foreground">(you)</span>
-                  )}
-                </span>
-                {isMe ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label="Leave room"
-                    disabled={mutating}
-                    onClick={() => void handleLeave()}
-                    title="Leave room"
-                  >
-                    <LogOut className="size-3.5" />
-                  </Button>
-                ) : isOwner ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`Remove ${member.name}`}
-                    disabled={mutating}
-                    onClick={() => void handleRemove(member.id)}
-                    className="text-destructive hover:text-destructive"
-                  >
-                    <X className="size-3.5" />
-                  </Button>
-                ) : null}
-              </div>
-            )
-          })}
+          {!loadingMembers &&
+            !membersError &&
+            members.map((member) => {
+              const isMe = member.id === currentUserId
+              return (
+                <div
+                  key={member.id}
+                  className="flex items-center gap-2 rounded-md px-1 py-1"
+                >
+                  <Avatar author={member} />
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {member.name}
+                    {isMe && (
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        (you)
+                      </span>
+                    )}
+                  </span>
+                  {isMe ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Leave room"
+                      disabled={mutating}
+                      onClick={() => void handleLeave()}
+                      title="Leave room"
+                    >
+                      <LogOut className="size-3.5" />
+                    </Button>
+                  ) : isOwner ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`Remove ${member.name}`}
+                      disabled={mutating}
+                      onClick={() => void handleRemove(member.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  ) : null}
+                </div>
+              )
+            })}
           {mutateError && (
-            <p className="pt-1 text-xs text-destructive" role="alert">{mutateError}</p>
+            <p className="pt-1 text-xs text-destructive" role="alert">
+              {mutateError}
+            </p>
           )}
         </div>
         {/* Add people section */}
@@ -251,10 +273,14 @@ export function MembersPanel({
             <p className="text-xs text-muted-foreground">Loading…</p>
           )}
           {!loadingWorkspace && workspaceError && (
-            <p className="text-xs text-destructive" role="alert">{workspaceError}</p>
+            <p className="text-xs text-destructive" role="alert">
+              {workspaceError}
+            </p>
           )}
           {!loadingWorkspace && !workspaceError && addable.length === 0 && (
-            <p className="text-xs text-muted-foreground">Everyone is already a member.</p>
+            <p className="text-xs text-muted-foreground">
+              Everyone is already a member.
+            </p>
           )}
           {!loadingWorkspace && !workspaceError && addable.length > 0 && (
             <div className="max-h-40 overflow-y-auto space-y-0.5">

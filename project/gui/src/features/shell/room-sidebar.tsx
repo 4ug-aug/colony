@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Bot, Hash, Lock, LogOut } from 'lucide-react'
+import { Bot, Hash, Lock, LogOut, Settings } from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
-import { ModeToggle } from '#/components/mode-toggle'
 import { Avatar } from '#/components/avatar'
+import { ModeToggle } from '#/components/mode-toggle'
 import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 import {
   Popover,
   PopoverContent,
@@ -24,7 +25,8 @@ import {
   SidebarMenuItem,
 } from '#/components/ui/sidebar'
 import type { Author, Room } from '#/features/rooms/types'
-import { WorkspaceSettings } from '#/features/workspace/workspace-settings'
+
+export type DashboardView = 'room' | 'account' | 'workspace'
 
 export function RoomSidebar({
   rooms,
@@ -33,6 +35,9 @@ export function RoomSidebar({
   onCreate,
   createError,
   onMentionAgent,
+  view,
+  onOpenAccount,
+  onOpenWorkspace,
   user,
 }: {
   rooms: Room[]
@@ -41,11 +46,16 @@ export function RoomSidebar({
   onCreate: (name: string, visibility: 'public' | 'private') => Promise<unknown>
   createError: string | undefined
   onMentionAgent: (agentId: string) => void
+  view: DashboardView
+  onOpenAccount: () => void
+  onOpenWorkspace: () => void
   user: Author
 }) {
   const [creating, setCreating] = useState(false)
   const [roomName, setRoomName] = useState('')
-  const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>('public')
+  const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>(
+    'public',
+  )
   const [creatingRoom, setCreatingRoom] = useState(false)
   const roomNameInput = useRef<HTMLInputElement>(null)
 
@@ -103,33 +113,45 @@ export function RoomSidebar({
                   className="mt-3 space-y-2"
                   onSubmit={(event) => void submitRoom(event)}
                 >
-                  <input
+                  <Input
                     ref={roomNameInput}
                     value={roomName}
                     onChange={(event) => setRoomName(event.target.value)}
-                    className="w-full rounded border bg-background px-2 py-1 text-sm"
+                    className="h-8"
                     aria-label="Room name"
                     placeholder="Room name"
                     disabled={creatingRoom}
                     required
                   />
-                  <div className="flex items-center gap-1" role="group" aria-label="Visibility">
-                    <button
+                  <div
+                    className="flex items-center gap-1"
+                    role="group"
+                    aria-label="Visibility"
+                  >
+                    <Button
                       type="button"
                       onClick={() => setRoomVisibility('public')}
                       disabled={creatingRoom}
-                      className={`flex-1 rounded border px-2 py-1 text-xs transition-colors ${roomVisibility === 'public' ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground hover:text-foreground'}`}
+                      size="xs"
+                      variant={
+                        roomVisibility === 'public' ? 'default' : 'outline'
+                      }
+                      className="flex-1"
                     >
                       Public
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
                       onClick={() => setRoomVisibility('private')}
                       disabled={creatingRoom}
-                      className={`flex-1 rounded border px-2 py-1 text-xs transition-colors ${roomVisibility === 'private' ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground hover:text-foreground'}`}
+                      size="xs"
+                      variant={
+                        roomVisibility === 'private' ? 'default' : 'outline'
+                      }
+                      className="flex-1"
                     >
                       Private
-                    </button>
+                    </Button>
                   </div>
                   <div className="flex gap-1">
                     <Button
@@ -162,7 +184,7 @@ export function RoomSidebar({
               {rooms.map((item) => (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton
-                    isActive={item.id === selectedRoomId}
+                    isActive={view === 'room' && item.id === selectedRoomId}
                     tooltip={item.name}
                     onClick={() => onSelect(item.id)}
                     className="data-[active=true]:bg-primary/5"
@@ -191,22 +213,56 @@ export function RoomSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {user.role === 'admin' && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administration</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip="Workspace settings"
+                    isActive={view === 'workspace'}
+                    onClick={onOpenWorkspace}
+                  >
+                    <Settings />
+                    <span>Workspace</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter>
-        <div className="flex items-center gap-2 py-2">
-          <Avatar author={user} />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
-            {user.name}
-          </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <SidebarMenu className="min-w-0 flex-1">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="lg"
+                tooltip="User settings"
+                isActive={view === 'account'}
+                onClick={onOpenAccount}
+              >
+                <Avatar author={user} details={false} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">
+                    {user.name}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    User settings
+                  </span>
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
           <ModeToggle />
-          {user.role === 'admin' && <WorkspaceSettings />}
           <Button
             aria-label="Sign out"
             variant="outline"
             size="icon-sm"
             onClick={() => void authClient.signOut()}
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="size-4" />
           </Button>
         </div>
       </SidebarFooter>

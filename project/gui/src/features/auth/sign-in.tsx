@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { authClient, sweatApiUrl } from '#/lib/auth-client'
 import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 
 type Mode = 'sign-in' | 'setup' | 'invite'
 
@@ -14,20 +15,27 @@ export function SignIn() {
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
   const [setupToken, setSetupToken] = useState('')
+  const [checking, setChecking] = useState(!pathToken)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
 
   useEffect(() => {
     void fetch(sweatApiUrl('/api/admission/status'))
-      .then((response) => response.json() as Promise<{ setupRequired?: boolean }>)
+      .then((response) => {
+        if (!response.ok) throw new Error()
+        return response.json() as Promise<{ setupRequired?: boolean }>
+      })
       .then((status) => {
         if (status.setupRequired && !pathToken) setMode('setup')
       })
-      .catch(() => undefined)
+      .catch(() => setError('Unable to reach the Sweat server.'))
+      .finally(() => setChecking(false))
   }, [pathToken])
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(undefined)
+    setBusy(true)
     try {
       if (mode === 'sign-in') {
         const result = identifier.includes('@')
@@ -54,19 +62,37 @@ export function SignIn() {
         },
       )
       if (!response.ok) {
-        const body = (await response.json()) as { error?: string; message?: string }
-        throw new Error(body.error ?? body.message ?? 'Unable to create account')
+        const body = (await response.json()) as {
+          error?: string
+          message?: string
+        }
+        throw new Error(
+          body.error ?? body.message ?? 'Unable to create account',
+        )
       }
       window.location.reload()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to reach Sweat')
+      setError(
+        reason instanceof Error ? reason.message : 'Unable to reach Sweat',
+      )
+    } finally {
+      setBusy(false)
     }
   }
 
   const admission = mode !== 'sign-in'
+  if (checking)
+    return (
+      <main className="grid min-h-svh place-items-center p-6">
+        <p className="text-sm text-muted-foreground">Connecting to Sweat…</p>
+      </main>
+    )
   return (
-    <main className="mx-auto max-w-sm p-8">
-      <form className="space-y-3" onSubmit={(event) => void submit(event)}>
+    <main className="grid min-h-svh place-items-center p-6">
+      <form
+        className="w-full max-w-sm space-y-4 rounded-xl border bg-card p-6 text-card-foreground shadow-sm"
+        onSubmit={(event) => void submit(event)}
+      >
         <h1 className="text-2xl font-semibold">
           {mode === 'setup'
             ? 'Set up Sweat'
@@ -75,59 +101,75 @@ export function SignIn() {
               : 'Sign in'}
         </h1>
         {mode === 'setup' && (
-          <input
-            className="h-9 w-full rounded-md border bg-background px-3"
+          <Input
             placeholder="Setup token"
+            aria-label="Setup token"
+            autoComplete="off"
             value={setupToken}
             onChange={(event) => setSetupToken(event.target.value)}
+            disabled={busy}
             required
           />
         )}
         {admission && (
           <>
-            <input
-              className="h-9 w-full rounded-md border bg-background px-3"
+            <Input
               type="email"
               placeholder="Email"
+              aria-label="Email"
+              autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
+              disabled={busy}
               required
             />
-            <input
-              className="h-9 w-full rounded-md border bg-background px-3"
+            <Input
               placeholder="Username"
+              aria-label="Username"
+              autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
+              disabled={busy}
+              minLength={3}
+              maxLength={30}
+              pattern="[A-Za-z0-9_]+"
               required
             />
-            <input
-              className="h-9 w-full rounded-md border bg-background px-3"
+            <Input
               placeholder="Display name (optional)"
+              aria-label="Display name"
+              autoComplete="name"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
+              disabled={busy}
             />
           </>
         )}
         {!admission && (
-          <input
-            className="h-9 w-full rounded-md border bg-background px-3"
+          <Input
             placeholder="Email or username"
+            aria-label="Email or username"
+            autoComplete="username"
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
+            disabled={busy}
             required
           />
         )}
-        <input
-          className="h-9 w-full rounded-md border bg-background px-3"
+        <Input
           type="password"
           placeholder="Password"
+          aria-label="Password"
+          autoComplete={admission ? 'new-password' : 'current-password'}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          disabled={busy}
+          minLength={8}
           required
         />
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button className="w-full" type="submit">
-          {admission ? 'Create account' : 'Sign in'}
+        <Button className="w-full" type="submit" disabled={busy}>
+          {busy ? 'Working…' : admission ? 'Create account' : 'Sign in'}
         </Button>
         {mode === 'invite' && (
           <Button
@@ -135,6 +177,7 @@ export function SignIn() {
             variant="link"
             type="button"
             onClick={() => setMode('sign-in')}
+            disabled={busy}
           >
             Back to sign in
           </Button>

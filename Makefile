@@ -1,61 +1,100 @@
 GUI := project/gui
+ROOT_ENV := $(CURDIR)/.env.local
+ENV_FILE ?= $(ROOT_ENV)
+BUN_ENV = --env-file="$(ENV_FILE)"
 SWEAT_DATABASE_PATH ?= $(abspath $(GUI)/sweat.sqlite)
-ADMIN_EMAIL ?= admin@sweat.local
-ADMIN_PASSWORD ?= change-me-now
-MEMBER_EMAIL ?= teammate@sweat.local
-MEMBER_PASSWORD ?= change-me-now
-GUI_ORIGIN ?= http://localhost:3000
-API_ORIGIN ?= http://localhost:3001
 
 export SWEAT_DATABASE_PATH
-export SWEAT_ADMIN_EMAIL := $(ADMIN_EMAIL)
-export SWEAT_ADMIN_PASSWORD := $(ADMIN_PASSWORD)
-export SWEAT_MEMBER_EMAIL := $(MEMBER_EMAIL)
-export SWEAT_MEMBER_PASSWORD := $(MEMBER_PASSWORD)
-export SWEAT_GUI_ORIGIN := $(GUI_ORIGIN)
-export BETTER_AUTH_URL := $(API_ORIGIN)
 
-.PHONY: dev admission-dev dev-seeded setup seed setup-token reset-admin-password agent gui coordinator build check reset
+.DEFAULT_GOAL := help
+.PHONY: help env dev dev-seeded server migrate setup seed rotate-setup-token reset-admin-password agent gui coordinator test build check reset
 
-dev: setup agent
+help:
+	@echo "Sweat development commands"
+	@echo "  make dev                   Start the full stack with first-user setup"
+	@echo "  make dev-seeded            Start the full stack with reusable local accounts"
+	@echo "  make server                Start the complete backend for a separate client"
+	@echo "  make gui                   Start only the browser client"
+	@echo "  make test                  Run tests"
+	@echo "  make check                 Run typecheck, tests, and production build"
+	@echo "  make rotate-setup-token    Replace a lost first-user setup token"
+	@echo "  make reset-admin-password  Prompt for a new administrator password"
+	@echo "  make reset                 Delete the local development database"
+	@echo ""
+	@echo "Configuration: $(ENV_FILE)"
+
+env:
+	@if test -f "$(ENV_FILE)"; then \
+		:; \
+	elif test "$(ENV_FILE)" != "$(ROOT_ENV)"; then \
+		echo "Missing ENV_FILE: $(ENV_FILE)"; exit 2; \
+	elif test -f "$(GUI)/.env.local"; then \
+		cp "$(GUI)/.env.local" "$(ROOT_ENV)"; \
+		echo "Created .env.local from the legacy GUI environment."; \
+	elif test -f "project/.env.local"; then \
+		cp "project/.env.local" "$(ROOT_ENV)"; \
+		echo "Created .env.local from the legacy project environment."; \
+		echo "Add BETTER_AUTH_SECRET before using a persistent workspace."; \
+		exit 2; \
+	else \
+		cp ".env.example" "$(ROOT_ENV)"; \
+		echo "Created .env.local. Add the required model credentials, then rerun make."; \
+		exit 2; \
+	fi
+
+dev: migrate agent
 	@$(MAKE) --no-print-directory -j2 gui coordinator
 
-admission-dev: setup
+dev-seeded: seed agent
 	@$(MAKE) --no-print-directory -j2 gui coordinator
 
-dev-seeded: setup seed agent
-	@$(MAKE) --no-print-directory -j2 gui coordinator
+server: migrate agent
+	@$(MAKE) --no-print-directory coordinator
 
-setup:
-	@cd $(GUI) && bun run db:migrate
+migrate: env
+	@cd $(GUI) && bun $(BUN_ENV) run db:migrate
 
-seed:
-	@cd $(GUI) && bun run seed:admin
+setup: migrate
 
-setup-token:
-	@cd $(GUI) && bun run src/server/setup-token.ts
+seed: migrate
+	@cd $(GUI) && bun $(BUN_ENV) run seed:admin
 
-reset-admin-password:
-	@test -n "$(PASSWORD)" || (echo 'Usage: make reset-admin-password PASSWORD=...'; exit 2)
-	@cd $(GUI) && bun run src/server/reset-admin-password.ts "$(PASSWORD)"
+rotate-setup-token: env
+	@cd $(GUI) && bun $(BUN_ENV) run src/server/rotate-setup-token.ts
 
-agent:
-	@cd project && bun run agent:build
+reset-admin-password: env
+	@if test -z "$${SWEAT_NEW_ADMIN_PASSWORD:-}"; then \
+		test -t 0 || (echo "SWEAT_NEW_ADMIN_PASSWORD is required without an interactive terminal"; exit 2); \
+		printf "New administrator password: "; \
+		stty -echo; \
+		trap 'stty echo' EXIT HUP INT TERM; \
+		IFS= read -r SWEAT_NEW_ADMIN_PASSWORD; \
+		stty echo; \
+		trap - EXIT HUP INT TERM; \
+		printf "\n"; \
+		export SWEAT_NEW_ADMIN_PASSWORD; \
+	fi; \
+	cd $(GUI) && bun $(BUN_ENV) run src/server/reset-admin-password.ts
 
-gui:
-	@cd $(GUI) && bun run dev
+agent: env
+	@cd project && bun $(BUN_ENV) run agent:build
 
-coordinator:
-	@cd $(GUI) && bun --env-file=../.env.local --env-file=.env.local run coordinator
+gui: env
+	@cd $(GUI) && bun $(BUN_ENV) run dev
+
+coordinator: env
+	@cd $(GUI) && bun $(BUN_ENV) run coordinator
 
 build:
 	@cd $(GUI) && bun run build
 
-check:
-	@cd $(GUI) && bun run typecheck
+test:
 	@cd $(GUI) && bun test
+
+check: test
+	@cd $(GUI) && bun run typecheck
 	@cd $(GUI) && bun run build
 
 reset:
-	@test "$(SWEAT_DATABASE_PATH)" != "/" && test "$(SWEAT_DATABASE_PATH)" != "" || (echo "Refusing to reset an unsafe database path"; exit 1)
+	@case "$(SWEAT_DATABASE_PATH)" in "$(CURDIR)/$(GUI)/"*) ;; *) echo "Refusing to reset a database outside $(GUI)"; exit 1;; esac
 	@rm -f -- "$(SWEAT_DATABASE_PATH)" "$(SWEAT_DATABASE_PATH)-shm" "$(SWEAT_DATABASE_PATH)-wal"

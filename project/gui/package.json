@@ -21,6 +21,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@base-ui/react": "^1.6.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tiptap/extension-mention": "^3.29.1",
     "@tiptap/extension-placeholder": "^3",

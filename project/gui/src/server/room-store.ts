@@ -16,7 +16,12 @@ export type RoomUser = {
 export type MessageAuthor =
   | ({ kind: 'user' } & RoomUser)
   | { kind: 'agent'; id: string; name: string; image?: string }
-export type RoomSummary = { id: string; name: string; visibility: 'public' | 'private'; createdBy?: string }
+export type RoomSummary = {
+  id: string
+  name: string
+  visibility: 'public' | 'private'
+  createdBy?: string
+}
 export type RoomMessage = {
   id: string
   roomId: string
@@ -25,11 +30,20 @@ export type RoomMessage = {
   createdAt: number
 }
 
-const AGENT_PARTICIPANTS: Record<string, { id: string; name: string; image?: string }> = {
+const AGENT_PARTICIPANTS: Record<
+  string,
+  { id: string; name: string; image?: string }
+> = {
   'software-engineer': { id: 'software-engineer', name: 'Software engineer' },
 }
-export function agentParticipant(definitionId: string): { id: string; name: string; image?: string } {
-  return AGENT_PARTICIPANTS[definitionId] ?? { id: definitionId, name: definitionId }
+export function agentParticipant(definitionId: string): {
+  id: string
+  name: string
+  image?: string
+} {
+  return (
+    AGENT_PARTICIPANTS[definitionId] ?? { id: definitionId, name: definitionId }
+  )
 }
 export type RoomRun = RunSummary & {
   roomId: string
@@ -52,7 +66,12 @@ export type StoredStep = {
 export interface RoomStore {
   listRooms(): RoomSummary[]
   getRoom(roomId: string): RoomSummary | undefined
-  createRoom(room: { id: string; name: string; visibility: 'public' | 'private'; createdBy?: string }): boolean
+  createRoom(room: {
+    id: string
+    name: string
+    visibility: 'public' | 'private'
+    createdBy?: string
+  }): boolean
   canAccessRoom(roomId: string, userId: string): boolean
   listRoomsForUser(userId: string): RoomSummary[]
   listMembers(roomId: string): RoomUser[]
@@ -98,6 +117,8 @@ type MessageRow = {
   author_name: string
   author_image: string | null
   author_kind: string
+  author_email?: string | null
+  author_display_name?: string | null
   text: string
   created_at: number
 }
@@ -147,9 +168,24 @@ const userFrom = (row: UserRow): RoomUser => ({
 const messageFrom = (row: MessageRow): RoomMessage => ({
   id: row.id,
   roomId: row.room_id,
-  author: row.author_kind === 'agent'
-    ? { kind: 'agent', id: row.author_id, name: row.author_name, ...(row.author_image ? { image: row.author_image } : {}) }
-    : { kind: 'user', id: row.author_id, name: row.author_name, ...(row.author_image ? { image: row.author_image } : {}) },
+  author:
+    row.author_kind === 'agent'
+      ? {
+          kind: 'agent',
+          id: row.author_id,
+          name: row.author_name,
+          ...(row.author_image ? { image: row.author_image } : {}),
+        }
+      : {
+          kind: 'user',
+          id: row.author_id,
+          name: row.author_name,
+          ...(row.author_display_name
+            ? { displayName: row.author_display_name }
+            : {}),
+          ...(row.author_email ? { email: row.author_email } : {}),
+          ...(row.author_image ? { image: row.author_image } : {}),
+        },
   text: row.text,
   createdAt: row.created_at,
 })
@@ -186,16 +222,24 @@ const runFrom = (row: RunRow): RoomRun => ({
 })
 
 export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
-  const hasUsername = (sqlite
-    .prepare('PRAGMA table_info(user)')
-    .all() as { name?: string }[]).some((column) => column.name === 'username')
+  const hasUsername = (
+    sqlite.prepare('PRAGMA table_info(user)').all() as { name?: string }[]
+  ).some((column) => column.name === 'username')
   const userName = hasUsername ? 'COALESCE(u.username, u.name)' : 'u.name'
   const userProfile = hasUsername ? ', u.email, u.name AS display_name' : ''
+  const messageProfile = hasUsername
+    ? ', u.email AS author_email, u.name AS author_display_name'
+    : ''
+  const messageProfileJoin = hasUsername
+    ? " LEFT JOIN user u ON m.author_kind = 'user' AND u.id = m.author_id"
+    : ''
   const messages = (roomId: string): RoomMessage[] =>
     (
       sqlite
         .prepare(
-          'SELECT id, room_id, author_id, author_name, author_image, author_kind, text, created_at FROM room_message WHERE room_id = ? ORDER BY created_at, id',
+          `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${messageProfile}
+           FROM room_message m${messageProfileJoin}
+           WHERE m.room_id = ? ORDER BY m.created_at, m.id`,
         )
         .all(roomId) as MessageRow[]
     ).map(messageFrom)
@@ -225,24 +269,39 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     run.stdout,
     run.stderr,
   ]
-  const ROOM_ORDER = "ORDER BY CASE WHEN id = 'general' THEN 0 ELSE 1 END, name COLLATE NOCASE, id"
+  const ROOM_ORDER =
+    "ORDER BY CASE WHEN id = 'general' THEN 0 ELSE 1 END, name COLLATE NOCASE, id"
   return {
     listRooms: () =>
-      (sqlite
-        .prepare(`SELECT id, name, visibility, created_by FROM room ${ROOM_ORDER}`)
-        .all() as RoomRow[]).map(roomFrom),
+      (
+        sqlite
+          .prepare(
+            `SELECT id, name, visibility, created_by FROM room ${ROOM_ORDER}`,
+          )
+          .all() as RoomRow[]
+      ).map(roomFrom),
     getRoom: (roomId) => {
-      const row = sqlite.prepare('SELECT id, name, visibility, created_by FROM room WHERE id = ?').get(roomId) as RoomRow | undefined
+      const row = sqlite
+        .prepare(
+          'SELECT id, name, visibility, created_by FROM room WHERE id = ?',
+        )
+        .get(roomId) as RoomRow | undefined
       return row ? roomFrom(row) : undefined
     },
     createRoom: (room) => {
       const result = sqlite
-        .prepare('INSERT OR IGNORE INTO room (id, name, visibility, created_by) VALUES (?, ?, ?, ?)')
-        .run(room.id, room.name, room.visibility, room.createdBy ?? null) as { changes?: number }
+        .prepare(
+          'INSERT OR IGNORE INTO room (id, name, visibility, created_by) VALUES (?, ?, ?, ?)',
+        )
+        .run(room.id, room.name, room.visibility, room.createdBy ?? null) as {
+        changes?: number
+      }
       const inserted = result.changes === 1
       if (inserted && room.visibility === 'private' && room.createdBy != null) {
         sqlite
-          .prepare('INSERT OR IGNORE INTO room_member (room_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)')
+          .prepare(
+            'INSERT OR IGNORE INTO room_member (room_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)',
+          )
           .run(room.id, room.createdBy, room.createdBy, Date.now())
       }
       return inserted
@@ -258,29 +317,33 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           END AS can_access
           FROM (SELECT NULL) AS dummy
           LEFT JOIN room r ON r.id = ?
-          LEFT JOIN room_member m ON m.room_id = ? AND m.user_id = ?`
+          LEFT JOIN room_member m ON m.room_id = ? AND m.user_id = ?`,
         )
         .get(roomId, roomId, userId) as { can_access: number } | undefined
       return (row?.can_access ?? 0) === 1
     },
     listRoomsForUser: (userId) =>
-      (sqlite
-        .prepare(
-          `SELECT id, name, visibility, created_by FROM room
+      (
+        sqlite
+          .prepare(
+            `SELECT id, name, visibility, created_by FROM room
            WHERE visibility = 'public'
               OR id IN (SELECT room_id FROM room_member WHERE user_id = ?)
-           ${ROOM_ORDER}`
-        )
-        .all(userId) as RoomRow[]).map(roomFrom),
+           ${ROOM_ORDER}`,
+          )
+          .all(userId) as RoomRow[]
+      ).map(roomFrom),
     listMembers: (roomId) =>
-      (sqlite
-        .prepare(
-          `SELECT u.id, ${userName} AS name, u.image${userProfile} FROM room_member rm
+      (
+        sqlite
+          .prepare(
+            `SELECT u.id, ${userName} AS name, u.image${userProfile} FROM room_member rm
            JOIN user u ON u.id = rm.user_id
            WHERE rm.room_id = ?
-           ORDER BY u.name COLLATE NOCASE, u.id`
-        )
-        .all(roomId) as UserRow[]).map(userFrom),
+           ORDER BY u.name COLLATE NOCASE, u.id`,
+          )
+          .all(roomId) as UserRow[]
+      ).map(userFrom),
     isOwner: (roomId, userId) => {
       const row = sqlite
         .prepare('SELECT created_by FROM room WHERE id = ?')
@@ -289,7 +352,9 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     },
     addMember: (roomId, userId, addedBy) => {
       sqlite
-        .prepare('INSERT OR IGNORE INTO room_member (room_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)')
+        .prepare(
+          'INSERT OR IGNORE INTO room_member (room_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)',
+        )
         .run(roomId, userId, addedBy, Date.now())
     },
     removeMember: (roomId, userId) => {
@@ -298,11 +363,13 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         .run(roomId, userId)
     },
     listWorkspaceUsers: () =>
-      (sqlite
-        .prepare(
-          `SELECT u.id, ${userName} AS name, u.image${userProfile} FROM user u ORDER BY ${userName} COLLATE NOCASE, u.id`,
-        )
-        .all() as UserRow[]).map(userFrom),
+      (
+        sqlite
+          .prepare(
+            `SELECT u.id, ${userName} AS name, u.image${userProfile} FROM user u ORDER BY ${userName} COLLATE NOCASE, u.id`,
+          )
+          .all() as UserRow[]
+      ).map(userFrom),
     listMessages: messages,
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
     createMessage: (message) => {
@@ -378,7 +445,9 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     listSteps: (runId) =>
       (
         sqlite
-          .prepare('SELECT id, run_id, room_id, idx, kind, tool, call_id, text, created_at FROM run_step WHERE run_id = ? ORDER BY idx')
+          .prepare(
+            'SELECT id, run_id, room_id, idx, kind, tool, call_id, text, created_at FROM run_step WHERE run_id = ? ORDER BY idx',
+          )
           .all(runId) as StepRow[]
       ).map(stepFrom),
     latestStepsForActiveRuns: (roomId) => {

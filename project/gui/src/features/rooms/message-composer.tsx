@@ -97,7 +97,14 @@ function suggestionMenu(
       return false
     },
     onExit() {
-      popup?.remove()
+      const leaving = popup
+      if (leaving) {
+        leaving.classList.add('is-leaving')
+        const remove = () => leaving.remove()
+        leaving.addEventListener('animationend', remove, { once: true })
+        // Fallback in case the animation never fires (e.g. reduced motion).
+        setTimeout(remove, 200)
+      }
       popup = undefined
       selected = 0
       current = undefined

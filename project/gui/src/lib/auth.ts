@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth'
+import { APIError } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin } from 'better-auth/plugins/admin'
 import { username } from 'better-auth/plugins/username'
@@ -19,9 +20,23 @@ export const auth = betterAuth({
   trustedOrigins,
   emailAndPassword: {
     enabled: true,
-    // HTTP sign-up is gated by the admission routes; internal seed/setup code
-    // still uses Better Auth's normal email/password account creation.
-    disableSignUp: false,
+    disableSignUp: true,
+  },
+  databaseHooks: {
+    user: {
+      update: {
+        before: async (changes, context) => {
+          if (
+            context &&
+            ('username' in changes || 'displayUsername' in changes)
+          )
+            throw APIError.from('BAD_REQUEST', {
+              code: 'USERNAME_IMMUTABLE',
+              message: 'Username cannot be changed',
+            })
+        },
+      },
+    },
   },
   plugins: [username(), admin()],
 })

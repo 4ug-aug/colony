@@ -8,7 +8,6 @@ export const betterAuthSessionAuthenticator: SessionAuthenticator = {
     if (!session?.user) return undefined
     const account = session.user as typeof session.user & {
       username?: string
-      displayUsername?: string
       role?: string
       banned?: boolean | null
     }
@@ -16,9 +15,7 @@ export const betterAuthSessionAuthenticator: SessionAuthenticator = {
     return {
       id: session.user.id,
       name: account.username ?? session.user.name,
-      ...(account.displayUsername
-        ? { displayName: account.displayUsername }
-        : { displayName: session.user.name }),
+      displayName: session.user.name,
       email: session.user.email,
       ...(account.username ? { username: account.username } : {}),
       ...(account.role ? { role: account.role } : {}),

@@ -64,9 +64,89 @@ the same server API. Tauri adds native affordances such as notifications, tray
 status, deep links, and safe local integration; it does not contain a second
 orchestration implementation.
 
+The Tauri application packages that React interface in the application bundle;
+it does not load its interface from the selected server. The server remains
+authoritative for identity, database initialization and persistence, rooms,
+history, runs, and realtime updates.
+
+On initial startup, the Tauri client asks the person to choose a Sweat server
+and remembers that choice. It connects to one server at a time; changing server
+replaces the current selection rather than introducing a multi-server
+workspace switcher. Desktop clients accept only HTTPS server URLs. A
+self-hosted server may use a locally issued or self-signed certificate, but
+trust in that certificate must be explicit and scoped; the client must never
+disable TLS verification globally. The initial desktop slice relies on the
+operating system trust store and explains certificate failures so the person
+can trust the server certificate or its issuing CA before retrying. The person
+can replace the selected server from the sign-in screen or account menu; doing
+so clears server-specific client state and reconnects instead of retaining a
+list of servers.
+
 The self-hosted server must continue running when desktop clients close. Runs
 belong to the shared workspace, not to the lifetime of a browser tab or
-desktop process.
+desktop process. In the initial desktop slice, closing the window exits the
+client. Reopening it restores durable room and run state; keeping Sweat alive
+in the system tray is a later native affordance. Native notifications are also
+outside this slice. The first packaged client targets macOS only; other desktop
+platforms follow after this boundary is proven. Its deliverable is a locally
+buildable unsigned application package; signing, notarization, and release
+automation begin when Sweat is distributed to external testers.
+
+## Identity direction
+
+Each Sweat server owns its accounts and sessions through Better Auth's built-in
+email-and-password authentication. Accounts do not transfer between servers.
+The username plugin adds a workspace-unique username so a person can sign in
+with either username or email. The username is the person's primary visible
+name throughout the workspace; a hovercard may show the account's display name
+and email as secondary profile details. Usernames cannot be changed in the
+Account admission slice.
+
+Deployed Sweat servers disable open registration. The operator bootstraps the
+workspace by retrieving a random one-time setup token from the fresh server's
+startup output. The first visitor who presents that token chooses their email,
+username, display name, and password and becomes the first workspace
+administrator. The server stores only the token's hash, retains it across
+restarts without automatic expiry, and prints the plaintext only when creating
+or rotating it. While no account exists, the operator may rotate a lost token
+through a server-side command. The setup flow closes permanently after the
+first administrator is created.
+
+Later accounts require a single-use workspace invitation created by an
+administrator and shared manually. The invited person chooses their own
+account details; the administrator chooses a one-, three-, or seven-day
+lifetime, with three days selected by default. Administrators can revoke
+unused invitations; the workspace retains redeemed, expired, and revoked
+invitation states. The initial slice does not send invitation email.
+Development may continue to seed reusable local accounts.
+
+Workspace invitations are unbound bearer links. Whoever possesses a valid link
+may redeem it first, so the interface warns administrators to share links
+privately; Sweat does not imply email ownership without email verification.
+
+The first account remains the sole workspace administrator in this slice.
+Promoting or demoting additional administrators is deferred.
+
+If that administrator loses their password, the server operator uses a
+server-side recovery command that sets a new password and revokes the account's
+existing sessions. Automated reset email and permanent recovery links are
+outside this slice.
+
+Signed-in members can change their own password through Better Auth and revoke
+their other sessions. Changing account email is outside this slice.
+
+The administrator can suspend and restore member accounts through Better
+Auth's admin support. Suspension revokes sessions and blocks sign-in while
+retaining room messages, run attribution, and shared history. Account deletion
+is outside this slice.
+
+Workspace-wide Members and Invitations live under Workspace settings reached
+from the account menu. They remain separate from the membership controls of an
+individual private room.
+
+Sweat deliberately does not own a custom cryptographic authentication
+protocol. Portable-key identity may be revisited as a separate experiment, but
+it is not part of the desktop slice.
 
 ## Current foundation
 
@@ -77,12 +157,13 @@ The current GUI is split into:
 2. a server that owns authentication, persistence, run control, and
    subscriptions.
 
-The current multiplayer slice is one implicit workspace with shared public
+The current multiplayer slice is one implicit workspace with public and private
 rooms. Authenticated people can create and select rooms; **General** remains
-seeded. Each room retains its own durable message history and linked run
-history. A message with the exact leading mention `@software-engineer `
-delegates a bounded run whose progress and result stay in that room and
-survive refreshes and server restarts.
+seeded. Private rooms restrict discovery, history, runs, and realtime updates
+to their members, who can manage membership within the room's policy. Each
+room retains its own durable message history and linked run history. A message
+that mentions `@software-engineer` delegates a bounded run whose progress and
+result stay in that room and survive refreshes and server restarts.
 
 The room experience keeps messages left-aligned as a shared team timeline.
 An active agent is represented by a small status badge below the request, then
@@ -90,8 +171,12 @@ by a normal agent-authored result when it completes. The static client uses an
 inset, rounded main surface so the same API client is ready to become the
 future Tauri shell without taking server responsibility.
 
-Next, add membership and Tauri packaging on top of this shared public-room
-flow.
+The server now initializes its database, admits one first administrator,
+supports email or username login, closes open registration, and lets that
+administrator manage manually shared invitations and account suspension.
+
+The next vertical slice packages the same React interface in Tauri and adds
+first-launch server selection.
 
 ## Deliberate non-goals
 
@@ -101,8 +186,8 @@ flow.
   look present; room activity comes from bounded runs.
 - Do not adopt federation, peer-to-peer protocols, or a universal event model
   before the workspace requires them.
-- Do not add private rooms, room membership, invitations, renaming, or
-  deletion in the current public-room slice.
+- Do not add room renaming or deletion merely as part of account admission or
+  Tauri packaging.
 - Do not add Redis, object storage, or multi-node infrastructure until the
   single-node self-hosted product outgrows simpler storage.
 

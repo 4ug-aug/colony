@@ -39,17 +39,36 @@ test('migrations persist Better Auth sessions across processes', async () => {
           '-e',
           `
       const { auth } = await import('./src/lib/auth.ts');
-      const response = await auth.handler(new Request('http://localhost:3000/api/auth/sign-up/email', {
+      const created = await auth.api.createUser({
+        body: {
+          name: 'Test',
+          email: 'test@example.com',
+          password: 'safe-password',
+          data: { username: 'tester', displayUsername: 'tester' },
+        },
+      });
+      const response = await auth.handler(new Request('http://localhost:3000/api/auth/sign-in/email', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Test', email: 'test@example.com', password: 'safe-password' }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'safe-password' }),
       }));
-      process.stdout.write(JSON.stringify({ status: response.status, cookie: response.headers.get('set-cookie')?.split(';')[0] }));
+      const usernameResponse = await auth.api.signInUsername({
+        body: { username: 'tester', password: 'safe-password' },
+        asResponse: true,
+      });
+      process.stdout.write(JSON.stringify({ created: created.user.username, status: response.status, usernameStatus: usernameResponse.status, cookie: response.headers.get('set-cookie')?.split(';')[0] }));
     `,
         ],
         env,
       ),
-    ) as { status: number; cookie?: string }
+    ) as {
+      created: string
+      status: number
+      usernameStatus: number
+      cookie?: string
+    }
+    expect(signedUp.created).toBe('tester')
     expect(signedUp.status).toBe(200)
+    expect(signedUp.usernameStatus).toBe(200)
     expect(signedUp.cookie).toBeTruthy()
     await run(
       [
@@ -63,6 +82,26 @@ test('migrations persist Better Auth sessions across processes', async () => {
       ],
       { ...env, AUTH_COOKIE: signedUp.cookie! },
     )
+    const immutable = JSON.parse(
+      await run(
+        [
+          'bun',
+          '-e',
+          `
+      const { auth } = await import('./src/lib/auth.ts');
+      const response = await auth.handler(new Request('http://localhost:3001/api/auth/update-user', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: process.env.AUTH_COOKIE, origin: 'http://localhost:3000' },
+        body: JSON.stringify({ username: 'renamed' }),
+      }));
+      process.stdout.write(JSON.stringify({ status: response.status, body: await response.json() }));
+    `,
+        ],
+        { ...env, AUTH_COOKIE: signedUp.cookie! },
+      ),
+    ) as { status: number; body: { code?: string } }
+    expect(immutable.status).toBe(400)
+    expect(immutable.body.code).toBe('USERNAME_IMMUTABLE')
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
@@ -102,6 +141,8 @@ test('seed script creates two reusable local accounts', async () => {
     ...process.env,
     SWEAT_DATABASE_PATH: databasePath,
     BETTER_AUTH_SECRET: 'test-secret-test-secret-test-secret-test-secret',
+    SWEAT_ADMIN_USERNAME: 'captain',
+    SWEAT_MEMBER_USERNAME: 'builder',
   } as Record<string, string>
   try {
     await run(['bun', 'run', 'src/server/migrate.ts'], env)
@@ -119,14 +160,72 @@ test('seed script creates two reusable local accounts', async () => {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ email, password: 'change-me-now' }),
         }));
-        return response.status;
+        const account = await (await auth.$context).internalAdapter.findUserByEmail(email);
+        return { status: response.status, username: account?.user.username, role: account?.user.role };
       }));
       process.stdout.write(JSON.stringify(statuses));
     `,
       ],
       env,
     )
-    expect(JSON.parse(result)).toEqual([200, 200])
+    expect(JSON.parse(result)).toEqual([
+      { status: 200, username: 'captain', role: 'admin' },
+      { status: 200, username: 'builder', role: 'user' },
+    ])
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('administrator recovery hashes the password and revokes sessions', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sweat-recovery-'))
+  const databasePath = join(directory, 'recovery.sqlite')
+  const env = {
+    ...process.env,
+    SWEAT_DATABASE_PATH: databasePath,
+    BETTER_AUTH_SECRET: 'test-secret-test-secret-test-secret-test-secret',
+  } as Record<string, string>
+  try {
+    await run(['bun', 'run', 'src/server/migrate.ts'], env)
+    await run(['bun', 'run', 'src/server/seed-admin.ts'], env)
+    const cookie = await run(
+      [
+        'bun',
+        '-e',
+        `
+      const { auth } = await import('./src/lib/auth.ts');
+      const response = await auth.api.signInEmail({
+        body: { email: 'admin@sweat.local', password: 'change-me-now' },
+        asResponse: true,
+      });
+      process.stdout.write(response.headers.get('set-cookie')?.split(';')[0] ?? '');
+    `,
+      ],
+      env,
+    )
+    await run(['bun', 'run', 'src/server/reset-admin-password.ts'], {
+      ...env,
+      SWEAT_NEW_ADMIN_PASSWORD: 'recovered-password',
+    })
+    const result = JSON.parse(
+      await run(
+        [
+          'bun',
+          '-e',
+          `
+      const { auth } = await import('./src/lib/auth.ts');
+      const oldSession = await auth.api.getSession({ headers: new Headers({ cookie: process.env.AUTH_COOKIE }) });
+      const response = await auth.api.signInEmail({
+        body: { email: 'admin@sweat.local', password: 'recovered-password' },
+        asResponse: true,
+      });
+      process.stdout.write(JSON.stringify({ oldSession: Boolean(oldSession), status: response.status }));
+    `,
+        ],
+        { ...env, AUTH_COOKIE: cookie },
+      ),
+    ) as { oldSession: boolean; status: number }
+    expect(result).toEqual({ oldSession: false, status: 200 })
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

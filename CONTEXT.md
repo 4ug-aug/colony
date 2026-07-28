@@ -6,6 +6,49 @@ software engineering is one possible role, not the platform's default shape.
 
 ## Language
 
+**Sweat server**: A self-hosted deployment authoritative for one workspace,
+including its identity, rooms, history, and runs. A client connects to a Sweat
+server; it does not own the workspace.
+_Avoid_: Backend, instance
+
+**Account**: A person's server-local identity and credentials on one Sweat
+server. Accounts do not transfer between Sweat servers.
+_Avoid_: Global identity, identity key
+
+**Username**: A workspace-unique handle associated with an account, used for
+sign-in and as the person's primary visible name in the workspace.
+_Avoid_: Global username, display name
+
+**Display name**: An optional human-readable account profile label shown with
+the account's email in secondary profile details. It does not identify message
+authors or room members.
+_Avoid_: Username, handle
+
+**Workspace membership**: A Sweat server's authorization for an account to
+participate in its workspace. Authentication proves control of the account;
+membership determines whether that person may enter.
+_Avoid_: Login, identity
+
+**Server operator**: The person or organization that runs a Sweat server and
+controls its deployment configuration. The operator need not participate in
+the workspace.
+_Avoid_: Workspace administrator, member
+
+**Workspace administrator**: An account authorized to manage workspace-wide
+membership and settings. The first administrator is established through the
+server's one-time setup flow.
+_Avoid_: Server operator, room owner
+
+**Workspace invitation**: A single-use authorization created by a workspace
+administrator that lets one person create an account and join the workspace
+before its chosen expiration. It is an unbound bearer credential: possession
+authorizes its first successful redemption.
+_Avoid_: Room invitation, open registration
+
+**Account suspension**: Revocation of an account's workspace access and active
+sessions while retaining its profile and authored history.
+_Avoid_: Account deletion, member removal
+
 **Workspace**: The customer-owned collaborative environment containing people,
 agent definitions, rooms, and their shared work history.
 _Avoid_: Community
@@ -75,7 +118,9 @@ The first intended runtime is a Node/TypeScript agent SDK. Model configuration
 should remain OpenAI-compatible and provider-neutral:
 
 ```ts
-{ baseUrl, apiKey, model }
+{
+  (baseUrl, apiKey, model);
+}
 ```
 
 CLI coding agents (such as Codex or Claude Code) are optional runtime adapters,

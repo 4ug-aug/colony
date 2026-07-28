@@ -10,8 +10,8 @@ export function App() {
       user={{
         id: session.user.id,
         name:
-          (session.user as typeof session.user & { username?: string }).username ??
-          session.user.name,
+          (session.user as typeof session.user & { username?: string })
+            .username ?? session.user.name,
         displayName: session.user.name,
         email: session.user.email,
         role: (session.user as typeof session.user & { role?: string }).role,

@@ -21,7 +21,9 @@ The agent runtime runs **inside** the sandbox container. Models are
 OpenAI-compatible and provider-neutral:
 
 ```ts
-{ baseUrl, apiKey, model }
+{
+  (baseUrl, apiKey, model);
+}
 ```
 
 Do not make a role-specific container entrypoint. Instead, a run declares
@@ -90,46 +92,27 @@ container, filters calls, and revokes the session when the run ends. Roles
 request capabilities; runs grant them. Do not create a generic task
 abstraction until multiple providers prove one is needed.
 
-## Current vertical slice: shared public rooms
+## Current vertical slice: Account admission
 
-The current slice makes one deployment one implicit workspace with a seeded
-`General` room plus user-created shared public rooms. Any authenticated user
-can create, select, and post in any room's durable timeline. A message
-beginning exactly with `@software-engineer ` delegates the remaining text as a
-bounded run; the linked status is visible below the human request, and a
-successful result appears as a later agent-authored message in the same room.
+The delivered room slice provides `General` plus public and member-restricted
+private rooms with durable messages, linked runs, and authorized realtime
+activity.
 
-Target shape:
+The delivered account slice closes workspace registration and establishes the
+server-owned account lifecycle:
 
 ```text
-Static React client -> shared public rooms and room-scoped activity
-                    -> durable room-linked runs
-                    -> existing isolated run executor
+fresh server -> one-time first-administrator setup
+             -> Better Auth email/username + password session
+             -> administrator-created workspace invitation
+             -> invited member joins the existing room experience
 ```
 
-Constraints:
+Read [docs/account-admission.md](docs/account-admission.md) for the agreed flow,
+acceptance checks, and non-goals. The domain language is in `CONTEXT.md`; the
+sourced authentication decision is
+[ADR 0005](docs/adr/0005-better-auth-accounts.md).
 
-- Preserve the static client/server split and current run flow.
-- Keep the contract usable by browser and future Tauri clients.
-- Keep runs server-owned so client shutdown cannot stop them.
-- Keep agent definitions, runs, and sandboxes distinct.
-- Do not adopt a universal event-sourcing model merely to render shared
-  activity.
-
-Acceptance checks:
-
-- Two signed-in browser sessions receive each other's messages and run-status
-  updates only for the selected shared room through the server's realtime
-  connection; both discover newly created rooms.
-- Refreshing either session retains room messages, linked run state, completed
-  agent results, and the selected room; active runs found after restart are
-  reported as failed rather than silently left active.
-- Only the exact leading `@software-engineer ` mention delegates. Ordinary
-  text remains an ordinary message, and a missing delegated task is rejected.
-- The client presents a left-aligned room timeline, status badge beneath an
-  active delegated request, and an inset sidebar with a padded, rounded main
-  surface. It stays a static API client suitable for a future Tauri wrapper.
-
-Do not add private rooms, membership management, invitations, room renaming or
-deletion, presence, reactions, attachments, Tauri packaging, or persistent
-agent processes in this slice.
+Preserve the static client/server split, server-owned runs, and the distinct
+agent-definition/run/sandbox boundaries. The next natural slice is Tauri
+packaging with first-launch server selection.

@@ -39,7 +39,9 @@ test('setup token is created once and only its hash persists', () => {
   expect(
     sqlite.query('SELECT token_hash FROM admission_setup_token').get(),
   ).toEqual({ token_hash: expect.any(String) })
-  const row = sqlite.query('SELECT token_hash FROM admission_setup_token').get() as {
+  const row = sqlite
+    .query('SELECT token_hash FROM admission_setup_token')
+    .get() as {
     token_hash: string
   }
   expect(row.token_hash).not.toBe(first)
@@ -68,11 +70,19 @@ test('invitation lifetime, revocation, expiry, and redemption are durable states
   sqlite
     .query('UPDATE workspace_invitation SET expires_at = 0 WHERE id = ?')
     .run(expired.invitation.id)
-  expect(store.listInvitations().find(({ id }) => id === expired.invitation.id)?.state).toBe('expired')
+  expect(
+    store.listInvitations().find(({ id }) => id === expired.invitation.id)
+      ?.state,
+  ).toBe('expired')
+  expect(store.revokeInvitation(expired.invitation.id)).toBe(false)
   const redeemed = store.createInvitation('admin', 7)
   expect(store.claimInvitation(redeemed.token)?.id).toBe(redeemed.invitation.id)
+  expect(store.revokeInvitation(redeemed.invitation.id)).toBe(false)
   store.redeemInvitation(redeemed.invitation.id)
-  expect(store.listInvitations().find(({ id }) => id === redeemed.invitation.id)?.state).toBe('redeemed')
+  expect(
+    store.listInvitations().find(({ id }) => id === redeemed.invitation.id)
+      ?.state,
+  ).toBe('redeemed')
   sqlite.close()
 })
 
@@ -99,17 +109,25 @@ test('admission endpoints close open signup and enforce the administrator bounda
     CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT, room_id TEXT, idx INTEGER, kind TEXT, tool TEXT, call_id TEXT, text TEXT, created_at INTEGER);
     CREATE TABLE admission_setup_token (id INTEGER PRIMARY KEY, token_hash TEXT NOT NULL, created_at INTEGER NOT NULL, claimed_at INTEGER, redeemed_at INTEGER);
     CREATE TABLE workspace_invitation (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, claimed_at INTEGER, redeemed_at INTEGER, revoked_at INTEGER);
+    INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
   `)
   const admission = createAdmissionStore(sqlite)
   const token = admission.ensureSetupToken()!
-  let administrator = false
-  const signUp = async (body: Record<string, unknown>) => {
+  const createdRoles: string[] = []
+  let suspended = 0
+  const createAccount = async (
+    body: Record<string, unknown>,
+    role: 'admin' | 'user',
+  ) => {
     const id = crypto.randomUUID()
     sqlite
       .query('INSERT INTO user (id, name, email) VALUES (?, ?, ?)')
       .run(id, body.name as string, body.email as string)
-    if (!administrator) administrator = true
-    return Response.json({ user: { id } }, { headers: { 'set-cookie': `sweat=${id}` } })
+    createdRoles.push(role)
+    return Response.json(
+      { user: { id } },
+      { headers: { 'set-cookie': `sweat=${id}` } },
+    )
   }
   const control = {
     listRuns: () => [],
@@ -136,12 +154,16 @@ test('admission endpoints close open signup and enforce the administrator bounda
     port: 0,
     admission: {
       store: admission,
-      setAdministrator: async () => undefined,
-      listUsers: async () => [{ id: 'admin' }],
-      banUser: async () => ({ ok: true }),
+      listUsers: async () => [
+        { id: 'admin', name: 'Admin', email: 'admin@example.com' },
+      ],
+      banUser: async () => {
+        suspended++
+        return { ok: true }
+      },
       unbanUser: async () => ({ ok: true }),
+      createAccount,
     },
-    signUp,
   })
   const request = (path: string, init: RequestInit = {}) =>
     fetch(`http://localhost:${coordinator.port}${path}`, {
@@ -156,27 +178,103 @@ test('admission endpoints close open signup and enforce the administrator bounda
     expect(
       (await request('/api/auth/sign-up/email', { method: 'POST' })).status,
     ).toBe(403)
+    expect(
+      (await request('/api/auth/sign-up/email/', { method: 'POST' })).status,
+    ).toBe(403)
+    expect(
+      (
+        await request('/api/auth/admin/create-user', {
+          method: 'POST',
+          headers: { cookie: 'admin' },
+        })
+      ).status,
+    ).toBe(403)
+    const preflight = await request('/api/admission/setup', {
+      method: 'OPTIONS',
+    })
+    expect(preflight.headers.get('access-control-allow-headers')).toContain(
+      'x-sweat-setup-token',
+    )
     const setup = await request('/api/admission/setup', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-sweat-setup-token': token },
-      body: JSON.stringify({ email: 'admin@example.com', username: 'admin', password: 'password-123' }),
+      headers: {
+        'content-type': 'application/json',
+        'x-sweat-setup-token': token,
+      },
+      body: JSON.stringify({
+        email: 'admin@example.com',
+        username: 'admin',
+        password: 'password-123',
+      }),
     })
     expect(setup.status).toBe(200)
-    expect(administrator).toBe(true)
+    expect(createdRoles).toEqual(['admin'])
     const invitation = await request('/api/workspace/invitations', {
       method: 'POST',
       headers: { cookie: 'admin', 'content-type': 'application/json' },
       body: JSON.stringify({}),
     })
     expect(invitation.status).toBe(201)
-    const created = (await invitation.json()) as { token: string; invitation: { expiresAt: number } }
-    expect(created.invitation.expiresAt - Date.now()).toBeGreaterThan(2 * 24 * 60 * 60 * 1000)
+    const created = (await invitation.json()) as {
+      token: string
+      url: string
+      invitation: { expiresAt: number }
+    }
+    expect(created.url).toStartWith('http://localhost:3000/invite/')
+    expect(created.invitation.expiresAt - Date.now()).toBeGreaterThan(
+      2 * 24 * 60 * 60 * 1000,
+    )
     expect(
-      (await request('/api/workspace/invitations', { headers: { cookie: 'member' } })).status,
+      (
+        await request('/api/workspace/invitations', {
+          headers: { cookie: 'member' },
+        })
+      ).status,
     ).toBe(403)
     expect(
-      (await request('/api/workspace/invitations', { headers: { cookie: 'admin' } })).status,
+      (
+        await request('/api/workspace/invitations', {
+          headers: { cookie: 'admin' },
+        })
+      ).status,
     ).toBe(200)
+    expect(
+      (
+        await request('/api/workspace/settings/members/admin/suspend', {
+          method: 'POST',
+          headers: { cookie: 'admin' },
+        })
+      ).status,
+    ).toBe(400)
+    expect(suspended).toBe(0)
+    const memberSocket = new WebSocket(
+      `ws://localhost:${coordinator.port}/api/rooms/general/stream`,
+      {
+        headers: {
+          origin: 'http://localhost:3000',
+          cookie: 'member',
+        },
+      } as never,
+    )
+    await new Promise<void>((resolve, reject) => {
+      memberSocket.onopen = () => resolve()
+      memberSocket.onerror = () => reject(new Error('socket failed'))
+    })
+    const closed = new Promise<boolean>((resolve) => {
+      memberSocket.onclose = () => resolve(true)
+    })
+    expect(
+      (
+        await request('/api/workspace/settings/members/member/suspend', {
+          method: 'POST',
+          headers: { cookie: 'admin' },
+        })
+      ).status,
+    ).toBe(200)
+    expect(suspended).toBe(1)
+    expect(await Promise.race([closed, Bun.sleep(100).then(() => false)])).toBe(
+      true,
+    )
   } finally {
     coordinator.stop()
     sqlite.close()

@@ -73,7 +73,9 @@ export function createAdmissionStore(sqlite: Sqlite) {
 
   const rotateSetupToken = (): string => {
     if (userCount(sqlite) > 0)
-      throw new Error('Setup is already complete; the setup token cannot rotate')
+      throw new Error(
+        'Setup is already complete; the setup token cannot rotate',
+      )
     const plaintext = token()
     sqlite
       .prepare(
@@ -99,7 +101,9 @@ export function createAdmissionStore(sqlite: Sqlite) {
 
   const releaseSetupToken = (): void => {
     sqlite
-      .prepare('UPDATE admission_setup_token SET claimed_at = NULL WHERE id = 1')
+      .prepare(
+        'UPDATE admission_setup_token SET claimed_at = NULL WHERE id = 1',
+      )
       .run()
   }
 
@@ -113,11 +117,12 @@ export function createAdmissionStore(sqlite: Sqlite) {
 
   const createInvitation = (createdBy: string, days: 1 | 3 | 7) => {
     const plaintext = token()
+    const createdAt = now()
     const invitation: Invitation = {
       id: crypto.randomUUID(),
       createdBy,
-      createdAt: now(),
-      expiresAt: now() + days * 24 * 60 * 60 * 1000,
+      createdAt,
+      expiresAt: createdAt + days * 24 * 60 * 60 * 1000,
       state: 'pending',
     }
     sqlite
@@ -153,13 +158,14 @@ export function createAdmissionStore(sqlite: Sqlite) {
     ).map(invitationFrom)
 
   const claimInvitation = (plaintext: string): Invitation | undefined => {
+    const claimedAt = now()
     const row = sqlite
       .prepare(
         `SELECT id, created_by, created_at, expires_at, revoked_at, redeemed_at
          FROM workspace_invitation
          WHERE token_hash = ? AND claimed_at IS NULL AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
       )
-      .get(hash(plaintext), now()) as
+      .get(hash(plaintext), claimedAt) as
       | {
           id: string
           created_by: string
@@ -172,9 +178,9 @@ export function createAdmissionStore(sqlite: Sqlite) {
     if (!row) return undefined
     const result = sqlite
       .prepare(
-        'UPDATE workspace_invitation SET claimed_at = ? WHERE id = ? AND claimed_at IS NULL AND redeemed_at IS NULL AND revoked_at IS NULL',
+        'UPDATE workspace_invitation SET claimed_at = ? WHERE id = ? AND claimed_at IS NULL AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > ?',
       )
-      .run(now(), row.id)
+      .run(claimedAt, row.id, claimedAt)
     return result.changes === 1 ? invitationFrom(row) : undefined
   }
 
@@ -193,11 +199,12 @@ export function createAdmissionStore(sqlite: Sqlite) {
   }
 
   const revokeInvitation = (id: string): boolean => {
+    const revokedAt = now()
     const result = sqlite
       .prepare(
-        'UPDATE workspace_invitation SET revoked_at = ? WHERE id = ? AND redeemed_at IS NULL AND revoked_at IS NULL',
+        'UPDATE workspace_invitation SET revoked_at = ? WHERE id = ? AND claimed_at IS NULL AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > ?',
       )
-      .run(now(), id)
+      .run(revokedAt, id, revokedAt)
     return result.changes === 1
   }
 
