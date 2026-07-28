@@ -8,6 +8,8 @@ import {
   Runner,
   tool,
 } from "@openai/agents";
+
+import type { Step } from "../agents/step";
 import type { CapabilitySessionBinding } from "../mcp/session";
 
 export interface OpenAICompatibleModel {
@@ -71,7 +73,7 @@ export async function runAgent(
   dependencies: {
     model?: Model;
     modelProvider?: ModelProvider;
-    onTextDelta?: (text: string) => void;
+    onStep?: (step: Step) => void;
   } = {},
 ): Promise<string> {
   const mcpServers = request.capabilitySession
@@ -121,14 +123,45 @@ export async function runAgent(
       tracingDisabled: true,
     }).run(agent, request.task, { maxTurns: 50, stream: true });
 
-    for await (const text of result.toTextStream({
-      compatibleWithNodeStreams: true,
-    })) {
-      dependencies.onTextDelta?.(text);
+    let lastMessageText: string | undefined;
+
+    for await (const event of result) {
+      if (event.type !== "run_item_stream_event") continue;
+      const { name, item } = event;
+      if (name === "message_output_created") {
+        const text = (item as { content: string }).content;
+        lastMessageText = text;
+        dependencies.onStep?.({ kind: "message", text, at: Date.now() });
+      } else if (name === "tool_called") {
+        const toolItem = item as { toolName?: string; callId?: string; rawItem: { arguments: string } };
+        dependencies.onStep?.({
+          kind: "tool_call",
+          tool: toolItem.toolName ?? "",
+          text: toolItem.rawItem.arguments,
+          callId: toolItem.callId,
+          at: Date.now(),
+        });
+      } else if (name === "tool_output") {
+        const outputItem = item as { output: unknown; callId?: string; rawItem: { type?: string; name?: string } };
+        const rawItem = outputItem.rawItem;
+        const toolName = rawItem.type === "function_call_result" && typeof rawItem.name === "string" ? rawItem.name : "";
+        dependencies.onStep?.({
+          kind: "tool_result",
+          tool: toolName,
+          text: String(outputItem.output),
+          callId: outputItem.callId,
+          at: Date.now(),
+        });
+      }
     }
     await result.completed;
 
-    return result.finalOutput ?? "";
+    const finalOutput = result.finalOutput ?? "";
+    if (dependencies.onStep && finalOutput && finalOutput !== lastMessageText) {
+      dependencies.onStep({ kind: "message", text: finalOutput, at: Date.now() });
+    }
+
+    return finalOutput;
   } finally {
     await mcpServers?.close();
   }

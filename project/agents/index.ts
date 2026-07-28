@@ -7,6 +7,7 @@ import type {
 } from "../sandboxes";
 import type { CapabilitySessionBinding, CapabilitySessionFactory } from "../mcp/session";
 import type { McpGrant } from "../mcp/gateway";
+import type { Step } from "./step";
 
 export interface ModelRuntimeConfig {
   baseUrl: string;
@@ -28,6 +29,7 @@ export interface AgentDefinition {
   executionPolicy: {
     maxDurationMs: number;
     maxOutputBytes: number;
+    maxSteps: number;
   };
 }
 
@@ -68,6 +70,11 @@ export function createInMemoryAgentDefinitionResolver(
   return new InMemoryAgentDefinitionResolver(definitions);
 }
 
+// The Step wire contract lives in a dependency-free module so the container
+// image can copy it alone (without the executor/sandbox/MCP graph).
+export { serializeStep, parseStep } from "./step";
+export type { Step, StepKind } from "./step";
+
 export type RunState =
   | "preparing"
   | "running"
@@ -78,6 +85,7 @@ export type RunState =
 export interface RunLimits {
   maxDurationMs: number;
   maxOutputBytes: number;
+  maxSteps: number;
 }
 
 export interface RunInput {
@@ -159,6 +167,7 @@ export interface RuntimeRequest {
   workspace?: string;
   capabilitySession?: CapabilitySessionBinding;
   onOutput?: ExecRequest["onOutput"];
+  onStep?: (step: Step) => void;
 }
 
 export interface AgentProvider {
@@ -175,6 +184,7 @@ export interface StartRunRequest<Input extends RunInput = never> {
   maxDurationMs?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  maxSteps?: number;
 }
 
 export interface RunExecutor<Input extends RunInput = never> {
@@ -182,6 +192,7 @@ export interface RunExecutor<Input extends RunInput = never> {
   getRun(id: string): RunRecord<Input> | undefined;
   listRuns(): RunRecord<Input>[];
   subscribe(listener: (record: RunRecord<Input>) => void): () => void;
+  subscribeSteps(listener: (runId: string, step: Step) => void): () => void;
   cancelRun(id: string): Promise<RunRecord<Input> | undefined>;
 }
 
@@ -227,6 +238,8 @@ export function retainOutput(value: string, maxBytes: number): string {
   return tail(value, maxBytes);
 }
 
+const MAX_STEP_TEXT_BYTES = 16 * 1024;
+
 export function createRunExecutor<Input extends RunInput = never>(dependencies: {
   definitions: AgentDefinitionResolver;
   sandboxes: SandboxProvider;
@@ -244,6 +257,11 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   const active = new Map<string, Promise<void>>();
   const sandboxes = new Map<string, Sandbox>();
   const disposed = new Map<string, Promise<void>>();
+  const stepListeners = new Set<(runId: string, step: Step) => void>();
+
+  const publishStep = (runId: string, step: Step): void => {
+    for (const listener of stepListeners) listener(runId, step);
+  };
 
   const disposeSandbox = (id: string, sandbox: Sandbox): Promise<void> => {
     const existing = disposed.get(id);
@@ -285,6 +303,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       if (cancellation.has(record.id)) return;
 
       store.update(record.id, { state: "running", startedAt: now() });
+      let stepCount = 0;
+      let stepsTruncated = false;
       const runtime = dependencies.runtime.run(sandbox, {
         definition: snapshot(record.definition),
         task: record.task,
@@ -299,6 +319,19 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
               record.effectiveLimits.maxOutputBytes,
             ),
           });
+        },
+        onStep: (step) => {
+          if (stepsTruncated) return;
+          if (stepCount >= record.effectiveLimits.maxSteps) {
+            stepsTruncated = true;
+            const marker: Step = { kind: "message", text: "[steps truncated: reached maxSteps limit]", at: now() };
+            publishStep(record.id, marker);
+            return;
+          }
+          const cap = Math.min(record.effectiveLimits.maxOutputBytes, MAX_STEP_TEXT_BYTES);
+          const bounded: Step = { ...step, text: tail(step.text, cap) };
+          stepCount++;
+          publishStep(record.id, bounded);
         },
       });
       const timeout = new Promise<never>((_, reject) => {
@@ -391,11 +424,15 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       }
       const maxDurationMs = request.maxDurationMs ?? request.timeoutMs ?? definition.executionPolicy.maxDurationMs;
       const maxOutputBytes = request.maxOutputBytes ?? definition.executionPolicy.maxOutputBytes;
+      const maxSteps = request.maxSteps ?? definition.executionPolicy.maxSteps;
       if (!Number.isSafeInteger(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > definition.executionPolicy.maxDurationMs) {
         throw new Error("Requested maxDurationMs must be positive and within the agent definition limit");
       }
       if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes <= 0 || maxOutputBytes > definition.executionPolicy.maxOutputBytes) {
         throw new Error("Requested maxOutputBytes must be positive and within the agent definition limit");
+      }
+      if (!Number.isSafeInteger(maxSteps) || maxSteps <= 0 || maxSteps > definition.executionPolicy.maxSteps) {
+        throw new Error("Requested maxSteps must be positive and within the agent definition limit");
       }
 
       const record: RunRecord<Input> = {
@@ -416,7 +453,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
             }
           : {}),
         ...(request.grantContext !== undefined ? { grantContext: snapshot(request.grantContext) } : {}),
-        effectiveLimits: { maxDurationMs, maxOutputBytes },
+        effectiveLimits: { maxDurationMs, maxOutputBytes, maxSteps },
         stdout: "",
         stderr: "",
         createdAt: now(),
@@ -441,6 +478,11 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
 
     subscribe(listener) {
       return store.subscribe(listener);
+    },
+
+    subscribeSteps(listener) {
+      stepListeners.add(listener);
+      return () => stepListeners.delete(listener);
     },
 
     async cancelRun(id) {

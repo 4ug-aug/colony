@@ -21,6 +21,29 @@ _Avoid_: Prompt
 definition.
 _Avoid_: Task prompt
 
+**Step**: A single recorded event in a run's execution. A run produces an
+ordered **step history**. V1 has three step kinds:
+
+- `message` — assistant narration text the agent writes between tool calls
+  (what the UI may friendlily call "reasoning"; it is not a provider-specific
+  chain-of-thought token stream, which v1 deliberately does not capture).
+- `tool_call` — the agent invokes a tool: tool name and arguments.
+- `tool_result` — the tool returns: its outcome, i.e. "the resource the
+  agent pulled".
+
+A tool invocation is two steps (`tool_call` then `tool_result`), so the live
+indicator can show a call the instant it starts and a tool that never returns
+still leaves a visible record. The live activity indicator shows the latest
+step; the audit view shows the whole history.
+_Avoid_: Event (too generic), Trace, Log line
+
+Step visibility inherits the room's existing shared-room trust boundary: every
+member already sees the run's task and result, so they also see its steps. This
+slice adds no per-user or private-step visibility model. Two hard invariants:
+steps never carry technical credentials (the model API key or MCP session
+token), and step payloads are bounded and truncated like retained output. See
+[ADR 0003](docs/adr/0003-structured-step-stream-over-container-stdout.md).
+
 ## Core boundaries
 
 Keep these three concepts separate:

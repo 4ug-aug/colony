@@ -16,7 +16,7 @@ export const lightAgentDefinition: AgentDefinition = {
   instructions: "Run the supplied task and report the result.",
   requestedCapabilities: [],
   runtime: { image: "alpine:latest" },
-  executionPolicy: { maxDurationMs: 30 * 60 * 1000, maxOutputBytes: 1024 * 1024 },
+  executionPolicy: { maxDurationMs: 30 * 60 * 1000, maxOutputBytes: 1024 * 1024, maxSteps: 500 },
 };
 
 export function createLightAgentExecutor(options: {

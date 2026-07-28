@@ -1,4 +1,4 @@
-import type { RunExecutor, RunInput, RunRecord } from '../../../agents'
+import type { RunExecutor, RunInput, RunRecord, Step } from '../../../agents'
 
 export type RunSummary = Pick<
   RunRecord,
@@ -16,9 +16,12 @@ export type RunSummary = Pick<
   agentId: string
 }
 
+export type { Step }
+
 export interface RunControl {
   listRuns(): RunSummary[]
   subscribe(listener: (run: RunSummary) => void): () => void
+  subscribeSteps(listener: (runId: string, step: Step) => void): () => void
   start(task: string, context: { roomId: string }): string
   cancel(runId: string): Promise<RunSummary | undefined>
 }
@@ -62,6 +65,7 @@ export function createRunControl<Input extends RunInput>(
     listRuns: () => executor.listRuns().map(runSummary),
     subscribe: (listener) =>
       executor.subscribe((run) => listener(runSummary(run))),
+    subscribeSteps: (listener) => executor.subscribeSteps(listener),
     start: (task, context) => {
       const workspaceCap = options?.workspaceCapability
       const hasTools = workspaceCap && workspaceCap.tools.length > 0

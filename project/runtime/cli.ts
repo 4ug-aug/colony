@@ -1,3 +1,4 @@
+import { serializeStep } from "../agents/step";
 import { runAgent } from "./openai-agents";
 
 const required = (name: string): string => {
@@ -28,7 +29,7 @@ try {
         : undefined,
     },
     {
-      onTextDelta: (text) => process.stdout.write(text),
+      onStep: (step) => process.stdout.write(serializeStep(step) + "\n"),
     },
   );
 } catch (error) {

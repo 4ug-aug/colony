@@ -20,7 +20,7 @@ liveTest("a light agent runs in a native Apple container", async () => {
     task: "hello",
     definition: expect.any(Object),
     inputs: [],
-    effectiveLimits: { maxDurationMs: 30 * 60 * 1000, maxOutputBytes: 1024 * 1024 },
+    effectiveLimits: { maxDurationMs: 30 * 60 * 1000, maxOutputBytes: 1024 * 1024, maxSteps: 500 },
     stdout: "light-agent: hello\n",
     stderr: "",
     exitCode: 0,
