@@ -16,7 +16,10 @@ const agents = [
   },
 ]
 
-function suggestionMenu(mentionOpen: { current: boolean }) {
+function suggestionMenu(
+  mentionOpen: { current: boolean },
+  container: { current: HTMLDivElement | null },
+) {
   let popup: HTMLDivElement | undefined
   let selected = 0
   let current:
@@ -57,16 +60,6 @@ function suggestionMenu(mentionOpen: { current: boolean }) {
         return option
       }),
     )
-    const rect = props.clientRect?.()
-    if (rect) {
-      const gap = 6
-      const top =
-        rect.bottom + gap + popup.offsetHeight < window.innerHeight
-          ? rect.bottom + gap
-          : rect.top - popup.offsetHeight - gap
-      popup.style.left = `${Math.min(rect.left, window.innerWidth - popup.offsetWidth - 8)}px`
-      popup.style.top = `${Math.max(8, top)}px`
-    }
   }
   return {
     onStart(props: Parameters<typeof render>[0]) {
@@ -74,7 +67,7 @@ function suggestionMenu(mentionOpen: { current: boolean }) {
       popup.className = 'mention-menu'
       popup.setAttribute('role', 'listbox')
       popup.setAttribute('aria-label', 'Agents')
-      document.body.appendChild(popup)
+      ;(container.current ?? document.body).appendChild(popup)
       render(props)
       mentionOpen.current = true
     },
@@ -131,6 +124,7 @@ export const MessageComposer = forwardRef<
   ref,
 ) {
   const mentionOpen = useRef(false)
+  const containerRef = useRef<HTMLDivElement | null>(null)
   const roomNameRef = useRef(roomName)
   useEffect(() => { roomNameRef.current = roomName }, [roomName])
   const serialize = () => editor.getText()
@@ -152,7 +146,7 @@ export const MessageComposer = forwardRef<
         suggestion: {
           items: ({ query }) =>
             agents.filter((agent) => agent.label.includes(query.toLowerCase())),
-          render: () => suggestionMenu(mentionOpen),
+          render: () => suggestionMenu(mentionOpen, containerRef),
         },
       }),
       Placeholder.configure({
@@ -238,7 +232,7 @@ export const MessageComposer = forwardRef<
   )
 
   return (
-    <>
+    <div ref={containerRef} className="relative">
       <EditorContent editor={editor} />
       <div className="mt-1.5 flex items-center justify-between">
         <div className="flex items-center gap-0.5 text-muted-foreground">
@@ -288,6 +282,6 @@ export const MessageComposer = forwardRef<
           <Send />
         </Button>
       </div>
-    </>
+    </div>
   )
 })
