@@ -34,6 +34,17 @@ export function normalizeModelBaseUrl(baseUrl: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
+export function toolOutputText(output: unknown): string {
+  if (typeof output === "string") return output;
+  try {
+    const json = JSON.stringify(output, null, 2);
+    if (json !== undefined) return json;
+  } catch {
+    // Fall through for circular or otherwise non-JSON values.
+  }
+  return String(output);
+}
+
 function shellEnvironment(): Record<string, string | undefined> {
   const env = { ...Bun.env };
   delete env.SWEAT_MODEL_API_KEY;
@@ -148,7 +159,7 @@ export async function runAgent(
         dependencies.onStep?.({
           kind: "tool_result",
           tool: toolName,
-          text: String(outputItem.output),
+          text: toolOutputText(outputItem.output),
           callId: outputItem.callId,
           at: Date.now(),
         });

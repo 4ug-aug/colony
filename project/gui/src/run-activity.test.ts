@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mergeSteps, pairSteps } from './run-activity'
+import { formatStepText, mergeSteps, pairSteps } from './run-activity'
 import type { Step } from './step-label'
 
 const step = (values: Partial<Step> & Pick<Step, 'id' | 'idx' | 'kind'>): Step => ({
@@ -11,6 +11,15 @@ const step = (values: Partial<Step> & Pick<Step, 'id' | 'idx' | 'kind'>): Step =
 })
 
 describe('run activity', () => {
+  test('formats JSON step text for code blocks', () => {
+    expect(formatStepText('{"text":"Message 1: starting task as requested."}')).toBe(
+      `{
+  "text": "Message 1: starting task as requested."
+}`,
+    )
+    expect(formatStepText('plain text')).toBe('plain text')
+  })
+
   test('merges persisted and live steps without duplicates', () => {
     const first = step({ id: 'first', idx: 0, kind: 'message' })
     const second = step({ id: 'second', idx: 1, kind: 'tool_call' })

@@ -998,7 +998,7 @@ function Dashboard({ user }: { user: Author }) {
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="outline"
                     size="xs"
                     aria-label="Create room"
                   >
@@ -1105,18 +1105,18 @@ function Dashboard({ user }: { user: Author }) {
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
-          <div className="flex items-center gap-2 px-2 py-1">
+          <div className="flex items-center gap-2 py-2">
             <Avatar author={user} />
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {user.name}
             </span>
             <Button
               aria-label="Sign out"
-              variant="ghost"
-              size="icon-xs"
+              variant="outline"
+              size="icon-sm"
               onClick={() => void authClient.signOut()}
             >
-              ↪
+              <LogOut className='h-4 w-4'/>
             </Button>
           </div>
         </SidebarFooter>

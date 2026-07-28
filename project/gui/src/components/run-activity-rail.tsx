@@ -9,7 +9,7 @@ import {
   X,
 } from 'lucide-react'
 import { sweatApiUrl } from '#/lib/auth-client'
-import { mergeSteps, pairSteps } from '#/run-activity'
+import { formatStepText, mergeSteps, pairSteps } from '#/run-activity'
 import { stepLabel } from '#/step-label'
 import type { Step } from '#/step-label'
 import { Markdown } from '#/components/markdown'
@@ -119,7 +119,10 @@ function RunActivityContent({
         <PersonAvatar person={{ name: agentName(run.agentId) }} agent />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">Run activity</h2>
-          <p className="truncate text-xs text-muted-foreground">
+          <p
+            key={status}
+            className="truncate text-xs text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-0.5 duration-300"
+          >
             {agentName(run.agentId)} · {status}
           </p>
         </div>
@@ -182,7 +185,10 @@ function RunActivityContent({
           <div className="space-y-3">
             {items.map(({ step, result }) =>
               step.kind === 'message' ? (
-                <article key={step.id} className="text-sm">
+                <article
+                  key={step.id}
+                  className="text-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300"
+                >
                   <div className="mb-1 flex items-center justify-between text-xs font-medium text-muted-foreground">
                     <span>Reasoning</span>
                     <time>{new Date(step.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
@@ -190,22 +196,31 @@ function RunActivityContent({
                   <p className="whitespace-pre-wrap break-words leading-6">{step.text}</p>
                 </article>
               ) : (
-                <details key={step.id} className="rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+                <details
+                  key={step.id}
+                  className="group rounded-lg border px-3 py-2 text-xs animate-in fade-in-0 slide-in-from-bottom-1 duration-300"
+                >
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium">
-                    <span className="truncate">{step.tool ?? 'Tool call'}</span>
-                    <span className="shrink-0 text-muted-foreground">
+                    <span className="truncate font-mono text-xs">
+                      {step.tool ?? 'Tool call'}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
                       {result ? 'Completed' : 'Pending'}
                     </span>
                   </summary>
-                  <div className="mt-3 space-y-3">
+                  <div className="mt-3 space-y-3 text-xs group-open:animate-in group-open:fade-in-0 group-open:slide-in-from-top-1 group-open:duration-200">
                     <div>
                       <p className="mb-1 font-semibold text-muted-foreground">Arguments</p>
-                      <pre className="whitespace-pre-wrap break-words font-mono">{step.text}</pre>
+                      <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 font-mono text-xs leading-5">
+                        {formatStepText(step.text)}
+                      </pre>
                     </div>
                     {result && (
                       <div>
                         <p className="mb-1 font-semibold text-muted-foreground">Result</p>
-                        <pre className="whitespace-pre-wrap break-words font-mono">{result.text}</pre>
+                        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 font-mono text-xs leading-5">
+                          {formatStepText(result.text)}
+                        </pre>
                       </div>
                     )}
                   </div>
@@ -216,7 +231,7 @@ function RunActivityContent({
         </section>
 
         {run.state === 'succeeded' && (
-          <section className="border-t pt-5">
+          <section className="border-t pt-5 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="size-4 text-primary" />
               Result
@@ -310,7 +325,7 @@ export function RunActivityRail({
   if (inline)
     return (
       <aside
-        className="flex w-[26rem] shrink-0 flex-col border-l bg-background"
+        className="flex w-[26rem] shrink-0 flex-col border-l bg-background animate-in fade-in-0 slide-in-from-right-2 duration-200"
         aria-label="Run activity"
       >
         {content}

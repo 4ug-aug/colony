@@ -1,5 +1,13 @@
 import type { Step } from './step-label'
 
+export function formatStepText(text: string) {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2)
+  } catch {
+    return text
+  }
+}
+
 export function mergeSteps(...groups: Step[][]) {
   const byId = new Map(groups.flat().map((step) => [step.id, step]))
   return [...byId.values()].sort((a, b) => a.idx - b.idx)

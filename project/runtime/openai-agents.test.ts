@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { OpenAIChatCompletionsModel } from "@openai/agents";
 import OpenAI from "openai";
 import type { Step } from "./step";
-import { normalizeModelBaseUrl, runAgent } from "./openai-agents";
+import { normalizeModelBaseUrl, runAgent, toolOutputText } from "./openai-agents";
 
 function completionStream(
   id: string,
@@ -72,6 +72,17 @@ function completionStream(
 test("OpenAI's root URL uses its versioned API path", () => {
   expect(normalizeModelBaseUrl("https://api.openai.com")).toBe(
     "https://api.openai.com/v1",
+  );
+});
+
+test("tool results preserve structured output as JSON", () => {
+  expect(toolOutputText({ ok: true, message: { id: "message-1" } })).toBe(
+    `{
+  "ok": true,
+  "message": {
+    "id": "message-1"
+  }
+}`,
   );
 });
 
