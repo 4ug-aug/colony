@@ -24,6 +24,7 @@ import {
   SidebarMenuItem,
 } from '#/components/ui/sidebar'
 import type { Author, Room } from '#/features/rooms/types'
+import { WorkspaceSettings } from '#/features/workspace/workspace-settings'
 
 export function RoomSidebar({
   rooms,
@@ -198,6 +199,7 @@ export function RoomSidebar({
             {user.name}
           </span>
           <ModeToggle />
+          {user.role === 'admin' && <WorkspaceSettings />}
           <Button
             aria-label="Sign out"
             variant="outline"

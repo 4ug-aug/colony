@@ -1,6 +1,14 @@
 import type { Step } from '#/features/runs/step-label'
 
-export type Author = { id: string; name: string; image?: string; kind?: 'user' | 'agent' }
+export type Author = {
+  id: string
+  name: string
+  image?: string
+  email?: string
+  displayName?: string
+  role?: string
+  kind?: 'user' | 'agent'
+}
 export type Room = { id: string; name: string; visibility: 'public' | 'private'; createdBy?: string }
 export type RoomMessage = {
   id: string

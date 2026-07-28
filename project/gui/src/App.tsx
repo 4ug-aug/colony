@@ -9,7 +9,12 @@ export function App() {
     <Dashboard
       user={{
         id: session.user.id,
-        name: session.user.name,
+        name:
+          (session.user as typeof session.user & { username?: string }).username ??
+          session.user.name,
+        displayName: session.user.name,
+        email: session.user.email,
+        role: (session.user as typeof session.user & { role?: string }).role,
         image: session.user.image ?? undefined,
       }}
     />

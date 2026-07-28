@@ -6,9 +6,23 @@ export const betterAuthSessionAuthenticator: SessionAuthenticator = {
   async authenticate(request): Promise<RoomUser | undefined> {
     const session = await auth.api.getSession({ headers: request.headers })
     if (!session?.user) return undefined
+    const account = session.user as typeof session.user & {
+      username?: string
+      displayUsername?: string
+      role?: string
+      banned?: boolean | null
+    }
+    if (account.banned) return undefined
     return {
       id: session.user.id,
-      name: session.user.name,
+      name: account.username ?? session.user.name,
+      ...(account.displayUsername
+        ? { displayName: account.displayUsername }
+        : { displayName: session.user.name }),
+      email: session.user.email,
+      ...(account.username ? { username: account.username } : {}),
+      ...(account.role ? { role: account.role } : {}),
+      ...(account.banned != null ? { banned: account.banned } : {}),
       ...(session.user.image ? { image: session.user.image } : {}),
     }
   },

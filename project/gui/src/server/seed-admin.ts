@@ -8,11 +8,13 @@ const users = [
     email: process.env.SWEAT_ADMIN_EMAIL ?? 'admin@sweat.local',
     password: process.env.SWEAT_ADMIN_PASSWORD ?? 'change-me-now',
     name: process.env.SWEAT_ADMIN_NAME ?? 'Admin',
+    username: process.env.SWEAT_ADMIN_USERNAME ?? 'admin',
   },
   {
     email: process.env.SWEAT_MEMBER_EMAIL ?? 'teammate@sweat.local',
     password: process.env.SWEAT_MEMBER_PASSWORD ?? 'change-me-now',
     name: process.env.SWEAT_MEMBER_NAME ?? 'Teammate',
+    username: process.env.SWEAT_MEMBER_USERNAME ?? 'teammate',
   },
 ]
 
@@ -25,7 +27,11 @@ for (const seededUser of users) {
   if (existing.length) {
     process.stdout.write(`${seededUser.email} already exists\n`)
   } else {
-    await auth.api.signUpEmail({ body: seededUser })
+    const created = await auth.api.signUpEmail({ body: seededUser })
+    if (seededUser.username === 'admin') {
+      const context = await auth.$context
+      await context.internalAdapter.updateUser(created.user.id, { role: 'admin' })
+    }
     process.stdout.write(`Created ${seededUser.email}\n`)
   }
 }

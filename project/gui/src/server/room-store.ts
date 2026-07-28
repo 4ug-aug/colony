@@ -3,7 +3,16 @@ import type { RunSummary } from './run-control'
 
 export const GENERAL_ROOM_ID = 'general' as const
 
-export type RoomUser = { id: string; name: string; image?: string }
+export type RoomUser = {
+  id: string
+  name: string
+  image?: string
+  email?: string
+  displayName?: string
+  username?: string
+  role?: string
+  banned?: boolean | null
+}
 export type MessageAuthor =
   | ({ kind: 'user' } & RoomUser)
   | { kind: 'agent'; id: string; name: string; image?: string }
@@ -79,6 +88,8 @@ type UserRow = {
   id: string
   name: string
   image: string | null
+  email?: string | null
+  display_name?: string | null
 }
 type MessageRow = {
   id: string
@@ -129,6 +140,8 @@ const roomFrom = (row: RoomRow): RoomSummary => ({
 const userFrom = (row: UserRow): RoomUser => ({
   id: row.id,
   name: row.name,
+  ...(row.display_name != null ? { displayName: row.display_name } : {}),
+  ...(row.email != null ? { email: row.email } : {}),
   ...(row.image != null ? { image: row.image } : {}),
 })
 const messageFrom = (row: MessageRow): RoomMessage => ({
@@ -173,6 +186,11 @@ const runFrom = (row: RunRow): RoomRun => ({
 })
 
 export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
+  const hasUsername = (sqlite
+    .prepare('PRAGMA table_info(user)')
+    .all() as { name?: string }[]).some((column) => column.name === 'username')
+  const userName = hasUsername ? 'COALESCE(u.username, u.name)' : 'u.name'
+  const userProfile = hasUsername ? ', u.email, u.name AS display_name' : ''
   const messages = (roomId: string): RoomMessage[] =>
     (
       sqlite
@@ -257,7 +275,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     listMembers: (roomId) =>
       (sqlite
         .prepare(
-          `SELECT u.id, u.name, u.image FROM room_member rm
+          `SELECT u.id, ${userName} AS name, u.image${userProfile} FROM room_member rm
            JOIN user u ON u.id = rm.user_id
            WHERE rm.room_id = ?
            ORDER BY u.name COLLATE NOCASE, u.id`
@@ -281,7 +299,9 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     },
     listWorkspaceUsers: () =>
       (sqlite
-        .prepare('SELECT id, name, image FROM user ORDER BY name COLLATE NOCASE, id')
+        .prepare(
+          `SELECT u.id, ${userName} AS name, u.image${userProfile} FROM user u ORDER BY ${userName} COLLATE NOCASE, u.id`,
+        )
         .all() as UserRow[]).map(userFrom),
     listMessages: messages,
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),

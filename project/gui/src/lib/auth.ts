@@ -1,5 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { admin } from 'better-auth/plugins/admin'
+import { username } from 'better-auth/plugins/username'
 import { authSchema, db } from '#/lib/database'
 
 const appOrigin = process.env.SWEAT_GUI_ORIGIN ?? 'http://localhost:3000'
@@ -17,5 +19,9 @@ export const auth = betterAuth({
   trustedOrigins,
   emailAndPassword: {
     enabled: true,
+    // HTTP sign-up is gated by the admission routes; internal seed/setup code
+    // still uses Better Auth's normal email/password account creation.
+    disableSignUp: false,
   },
+  plugins: [username(), admin()],
 })

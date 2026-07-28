@@ -9,6 +9,7 @@ import {
   type StoredStep,
 } from './room-store'
 import { createRoomMessageHub, type RoomMessageHub } from './room-hub'
+import type { AdmissionStore } from './admission'
 
 export interface SessionAuthenticator {
   authenticate(request: Request): Promise<RoomUser | undefined>
@@ -105,6 +106,14 @@ export function createCoordinator(options: {
   authHandler: (request: Request) => Promise<Response>
   origin: string
   port?: number
+  admission?: {
+    store: AdmissionStore
+    setAdministrator: (userId: string) => Promise<void>
+    listUsers: () => Promise<unknown[]>
+    banUser: (request: Request, userId: string) => Promise<unknown>
+    unbanUser: (request: Request, userId: string) => Promise<unknown>
+  }
+  signUp?(body: Record<string, unknown>): Promise<Response>
 }) {
   const sockets = new Set<ServerWebSocket<{ roomId: string; userId: string }>>()
   const broadcast = (message: ServerMessage): void => {
@@ -172,8 +181,161 @@ export function createCoordinator(options: {
             },
           }),
         )
+      const admission = options.admission
+      const readBody = async (): Promise<Record<string, unknown> | undefined> => {
+        try {
+          const body: unknown = await request.json()
+          return body && typeof body === 'object'
+            ? (body as Record<string, unknown>)
+            : undefined
+        } catch {
+          return undefined
+        }
+      }
+      const accountBody = (body: Record<string, unknown> | undefined) => {
+        const email = body?.email
+        const username = body?.username
+        const password = body?.password
+        const displayName = body?.displayName
+        if (
+          typeof email !== 'string' ||
+          typeof username !== 'string' ||
+          typeof password !== 'string' ||
+          (displayName !== undefined && typeof displayName !== 'string') ||
+          !email.trim() ||
+          !username.trim()
+        )
+          return undefined
+        const visibleName =
+          (typeof displayName === 'string' && displayName.trim()) || username.trim()
+        return {
+          email: email.trim(),
+          username: username.trim(),
+          password,
+          name: visibleName,
+          displayUsername: visibleName,
+        }
+      }
+      if (url.pathname === '/api/admission/status' && request.method === 'GET')
+        return cors(json({ setupRequired: admission ? !admission.store.hasUsers() : false }))
+      if (
+        url.pathname === '/api/admission/setup' &&
+        request.method === 'POST' &&
+        admission &&
+        options.signUp
+      ) {
+        const account = accountBody(await readBody())
+        const setupToken = request.headers.get('x-sweat-setup-token')
+        if (!account || !setupToken || !admission.store.claimSetupToken(setupToken))
+          return cors(json({ error: 'Invalid or already-used setup token' }, 400))
+        let response: Response
+        try {
+          response = await options.signUp(account)
+        } catch {
+          admission.store.releaseSetupToken()
+          return cors(json({ error: 'Unable to create account' }, 502))
+        }
+        if (!response.ok) {
+          admission.store.releaseSetupToken()
+          return cors(response)
+        }
+        try {
+          const data = (await response.clone().json()) as { user?: { id?: string } }
+          if (!data.user?.id) throw new Error('Missing created user')
+          await admission.setAdministrator(data.user.id)
+          admission.store.redeemSetupToken()
+          return cors(response)
+        } catch {
+          admission.store.releaseSetupToken()
+          return cors(json({ error: 'Unable to finish administrator setup' }, 500))
+        }
+      }
+      const redemption = url.pathname.match(
+        /^\/api\/(?:admission|workspace)\/invitations\/([^/]+)\/redeem$/,
+      )
+      if (redemption && request.method === 'POST' && admission && options.signUp) {
+        const account = accountBody(await readBody())
+        const claimed = account
+          ? admission.store.claimInvitation(redemption[1]!)
+          : undefined
+        if (!account || !claimed)
+          return cors(json({ error: 'Invitation is not redeemable' }, 400))
+        let response: Response
+        try {
+          response = await options.signUp(account)
+        } catch {
+          admission.store.releaseInvitation(claimed.id)
+          return cors(json({ error: 'Unable to create account' }, 502))
+        }
+        if (!response.ok) {
+          admission.store.releaseInvitation(claimed.id)
+          return cors(response)
+        }
+        admission.store.redeemInvitation(claimed.id)
+        return cors(response)
+      }
       if (url.pathname.startsWith('/api/auth/'))
-        return cors(await options.authHandler(request))
+        return cors(
+          url.pathname === '/api/auth/sign-up/email'
+            ? json({ error: 'Account admission is required' }, 403)
+            : await options.authHandler(request),
+        )
+      if (admission && url.pathname === '/api/workspace/invitations') {
+        const user = await options.authenticator.authenticate(request)
+        if (!user) return cors(json({ error: 'Unauthorized' }, 401))
+        if (user.role !== 'admin') return cors(json({ error: 'Forbidden' }, 403))
+        if (request.method === 'GET')
+          return cors(json({ invitations: admission.store.listInvitations() }))
+        if (request.method === 'POST') {
+          const rawDays = (await readBody())?.days
+          const days = rawDays === undefined ? 3 : rawDays
+          if (days !== 1 && days !== 3 && days !== 7)
+            return cors(json({ error: 'Invitation lifetime must be 1, 3, or 7 days' }, 400))
+          const created = admission.store.createInvitation(user.id, days)
+          return cors(
+            json(
+              {
+                ...created,
+                url: `${url.origin}/invite/${created.token}`,
+              },
+              201,
+            ),
+          )
+        }
+      }
+      const revokeInvitation = url.pathname.match(
+        /^\/api\/workspace\/invitations\/([^/]+)$/,
+      )
+      if (admission && revokeInvitation && request.method === 'DELETE') {
+        const user = await options.authenticator.authenticate(request)
+        if (!user) return cors(json({ error: 'Unauthorized' }, 401))
+        if (user.role !== 'admin') return cors(json({ error: 'Forbidden' }, 403))
+        return cors(
+          admission.store.revokeInvitation(revokeInvitation[1]!)
+            ? json({ ok: true })
+            : json({ error: 'Invitation cannot be revoked' }, 400),
+        )
+      }
+      if (admission && url.pathname === '/api/workspace/settings/members') {
+        const user = await options.authenticator.authenticate(request)
+        if (!user) return cors(json({ error: 'Unauthorized' }, 401))
+        if (user.role !== 'admin') return cors(json({ error: 'Forbidden' }, 403))
+        if (request.method === 'GET')
+          return cors(json({ users: await admission.listUsers() }))
+      }
+      const memberAction = url.pathname.match(
+        /^\/api\/workspace\/settings\/members\/([^/]+)\/(suspend|restore)$/,
+      )
+      if (admission && memberAction && request.method === 'POST') {
+        const user = await options.authenticator.authenticate(request)
+        if (!user) return cors(json({ error: 'Unauthorized' }, 401))
+        if (user.role !== 'admin') return cors(json({ error: 'Forbidden' }, 403))
+        const result =
+          memberAction[2] === 'suspend'
+            ? await admission.banUser(request, memberAction[1]!)
+            : await admission.unbanUser(request, memberAction[1]!)
+        return cors(json(result))
+      }
       const user = await options.authenticator.authenticate(request)
       if (!user) return cors(json({ error: 'Unauthorized' }, 401))
       const stream = url.pathname.match(/^\/api\/rooms\/([^/]+)\/stream$/)
@@ -374,11 +536,14 @@ const required = (name: string): string => {
   return value
 }
 if (import.meta.main) {
+  const { fileURLToPath } = await import('node:url')
   // Load the database first: auth and the session authenticator both depend on it.
-  const { sqlite } = await import('../lib/database')
+  const { migrateDatabase, sqlite } = await import('../lib/database')
+  await migrateDatabase(fileURLToPath(new URL('../../drizzle', import.meta.url)))
   const [
     { auth },
     { betterAuthSessionAuthenticator },
+    { createAdmissionStore },
     { createSoftwareEngineerExecutor },
     { softwareEngineerRole },
     { createMcpGateway },
@@ -389,6 +554,7 @@ if (import.meta.main) {
   ] = await Promise.all([
     import('../lib/auth'),
     import('./session-auth'),
+    import('./admission'),
     import('../../../agents/software-engineer'),
     import('../../../roles/software-engineer'),
     import('../../../mcp/gateway'),
@@ -397,6 +563,10 @@ if (import.meta.main) {
     import('../../../mcp/workspace'),
     import('./room-store'),
   ])
+  const admissionStore = createAdmissionStore(sqlite)
+  const setupToken = admissionStore.ensureSetupToken()
+  if (setupToken) process.stdout.write(`Sweat setup token: ${setupToken}\n`)
+  const authContext = await auth.$context
   const store = createSqliteRoomStore(sqlite)
   const messages = createRoomMessageHub(store)
   const workspaceTools =
@@ -445,6 +615,28 @@ if (import.meta.main) {
     authHandler: (request) => auth.handler(request),
     origin: process.env.SWEAT_GUI_ORIGIN ?? 'http://localhost:3000',
     port: Number(process.env.SWEAT_COORDINATOR_PORT ?? 3001),
+    admission: {
+      store: admissionStore,
+      setAdministrator: async (userId) => {
+        await authContext.internalAdapter.updateUser(userId, { role: 'admin' })
+      },
+      listUsers: () => authContext.internalAdapter.listUsers(100),
+      banUser: (request, userId) =>
+        auth.api.banUser({ body: { userId }, headers: request.headers }),
+      unbanUser: (request, userId) =>
+        auth.api.unbanUser({ body: { userId }, headers: request.headers }),
+    },
+    signUp: (body) =>
+      auth.handler(
+        new Request(
+          `${process.env.BETTER_AUTH_URL ?? 'http://localhost:3001'}/api/auth/sign-up/email`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          },
+        ),
+      ),
   })
   process.stdout.write(`Coordinator listening on ${coordinator.port}\n`)
 }

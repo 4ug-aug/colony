@@ -1,4 +1,5 @@
 import { createAuthClient } from 'better-auth/react'
+import { adminClient, usernameClient } from 'better-auth/client/plugins'
 
 const server =
   import.meta.env.VITE_SWEAT_API_URL ??
@@ -7,4 +8,7 @@ const server =
 export const sweatApiUrl = (path = ''): string =>
   new URL(path, `${server.replace(/\/$/, '')}/`).toString()
 
-export const authClient = createAuthClient({ baseURL: sweatApiUrl() })
+export const authClient = createAuthClient({
+  baseURL: sweatApiUrl(),
+  plugins: [usernameClient(), adminClient()],
+})
