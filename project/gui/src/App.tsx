@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { Bot, Hash, Lock, LogOut, Terminal, UserPlus, Users, Wifi, WifiOff, X } from 'lucide-react'
 import { authClient, sweatApiUrl } from '#/lib/auth-client'
+import { messagesAreGrouped } from '#/message-grouping'
 import { stepLabel } from '#/step-label'
 import type { Step } from '#/step-label'
 import { Button } from '#/components/ui/button'
@@ -335,7 +336,9 @@ function Avatar({
     )
   return (
     <div
-      className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground"
+      className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+        agent ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+      }`}
       aria-hidden="true"
     >
       {agent ? (
@@ -747,19 +750,29 @@ function Timeline({
         result: run,
         createdAt: run.completedAt ?? run.createdAt,
       }))
-    return [
+    const sorted = [
       ...messages.map((message) => ({
         id: message.id,
         message,
         createdAt: message.createdAt,
       })),
       ...results,
-    ]
-      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
-      .map((item) => ({
+    ].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    const authorId = (item: (typeof sorted)[number]) =>
+      'result' in item ? 'software-engineer' : item.message.author.id
+    return sorted.map((item, index) => {
+      const previous = sorted[index - 1]
+      return {
         ...item,
         run: 'message' in item ? statuses.get(item.message.id) : undefined,
-      }))
+        grouped: messagesAreGrouped(
+          previous
+            ? { authorId: authorId(previous), createdAt: previous.createdAt }
+            : undefined,
+          { authorId: authorId(item), createdAt: item.createdAt },
+        ),
+      }
+    })
   }, [messages, runs])
 
   if (!items.length)
@@ -769,7 +782,7 @@ function Timeline({
       </p>
     )
   return (
-    <div className="space-y-5">
+    <div>
       {items.map((item) => {
         const isResult = 'result' in item
         const author =
@@ -782,21 +795,30 @@ function Timeline({
             : item.message.text
         const isAgent = isResult || (!isResult && item.message.author.kind === 'agent')
         return (
-          <article className="flex gap-3" key={item.id}>
-            <Avatar author={author} agent={isAgent} />
+          <article
+            className={`flex gap-3 ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}`}
+            key={item.id}
+          >
+            {item.grouped ? (
+              <div className="w-9 shrink-0" aria-hidden="true" />
+            ) : (
+              <Avatar author={author} agent={isAgent} />
+            )}
             <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className="font-semibold">{author.name}</span>
-                <time className="text-xs text-muted-foreground">
-                  {timestamp(item.createdAt)}
-                </time>
-              </div>
-              <div className="mt-0.5 text-sm leading-6">
+              {!item.grouped && (
+                <div className="flex items-baseline gap-2">
+                  <span className="font-semibold">{author.name}</span>
+                  <time className="text-xs text-muted-foreground">
+                    {timestamp(item.createdAt)}
+                  </time>
+                </div>
+              )}
+              <div className={`${item.grouped ? '' : 'mt-0.5'} text-sm leading-6`}>
                 <Markdown>{text}</Markdown>
               </div>
               {!isResult && item.run && (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/60 px-2 py-1">
+                  <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/15 bg-primary/5 px-2 py-1">
                     <Terminal className="size-3" />
                     Software engineer{' '}
                     {(() => {
@@ -998,6 +1020,7 @@ function Dashboard({ user }: { user: Author }) {
                       isActive={item.id === room?.id}
                       tooltip={item.name}
                       onClick={() => select(item.id)}
+                      className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:shadow-[inset_3px_0_0_var(--primary)]"
                     >
                       {item.visibility === 'private' ? <Lock /> : <Hash />}
                       <span>{item.name}</span>
@@ -1071,14 +1094,14 @@ function Dashboard({ user }: { user: Author }) {
         <div className="flex min-h-0 flex-1 flex-col">
           <section
             ref={scrollRef}
-            className="flex-1 overflow-y-auto px-5 py-6 sm:px-8"
+            className="flex-1 overflow-y-auto px-5 py-8 sm:px-8"
             aria-busy={loading}
             onScroll={() => {
               const el = scrollRef.current
               if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150
             }}
           >
-            <div className="mx-auto max-w-4xl">
+            <div className="mx-auto max-w-3xl">
               {loading ? (
                 <p className="py-12 text-center text-sm text-muted-foreground">
                   Loading room…
@@ -1095,7 +1118,7 @@ function Dashboard({ user }: { user: Author }) {
             </div>
           </section>
           <div className="shrink-0 px-4 pb-4 sm:px-6">
-            <div className="mx-auto max-w-4xl rounded-2xl border bg-background p-3 shadow-sm">
+            <div className="mx-auto max-w-3xl rounded-xl border bg-background p-2.5 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
               <MessageComposer
                 ref={composer}
                 value={draft}
@@ -1107,7 +1130,7 @@ function Dashboard({ user }: { user: Author }) {
             </div>
             {error && (
               <p
-                className="mx-auto mt-2 max-w-4xl text-sm text-destructive"
+                className="mx-auto mt-2 max-w-3xl text-sm text-destructive"
                 role="alert"
               >
                 {error}
