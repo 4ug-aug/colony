@@ -155,13 +155,15 @@ export const MessageComposer = forwardRef<
           render: () => suggestionMenu(mentionOpen),
         },
       }),
-      Placeholder.configure({ placeholder: () => `Message #${roomNameRef.current}` }),
+      Placeholder.configure({
+        placeholder: () => `Message #${roomNameRef.current} or mention an agent…`,
+      }),
     ],
     content: value,
     editable: !disabled,
     editorProps: {
       attributes: {
-        class: 'min-h-20 px-1 py-1 text-sm leading-6 outline-none',
+        class: 'min-h-12 max-h-40 overflow-y-auto px-1 py-1 text-sm leading-6 outline-none',
         'aria-label': `Message #${roomName}`,
       },
       handleKeyDown: (_, event) => {
@@ -238,8 +240,8 @@ export const MessageComposer = forwardRef<
   return (
     <>
       <EditorContent editor={editor} />
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-1">
+      <div className="mt-1.5 flex items-center justify-between">
+        <div className="flex items-center gap-0.5 text-muted-foreground">
           {control(
             'Bold',
             editor.isActive('bold'),
