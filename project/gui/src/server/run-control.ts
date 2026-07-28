@@ -1,4 +1,4 @@
-import type { RunExecutor, RunInput, RunRecord, Step } from '../../../agents'
+import type { RunExecutor, RunInput, RunRecord, Step } from '../../../runs'
 
 export type RunSummary = Pick<
   RunRecord,

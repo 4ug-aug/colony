@@ -1,4 +1,4 @@
-import { serializeStep } from "../agents/step";
+import { serializeStep } from "./step";
 import { runAgent } from "./openai-agents";
 
 const required = (name: string): string => {

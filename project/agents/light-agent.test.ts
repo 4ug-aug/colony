@@ -6,7 +6,7 @@ import {
 } from "../sdk/src";
 import { createLightAgentExecutor } from "./light-agent";
 
-test("the light composition runs an agent in an Apple sandbox", async () => {
+test("the light agent runs in an Apple sandbox", async () => {
   const process: CommandRunner = {
     async run(args): Promise<CommandResult> {
       return {

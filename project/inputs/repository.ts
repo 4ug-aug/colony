@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { InputProvisioner, RunInput } from "../agents";
+import type { InputProvisioner, RunInput } from "../runs";
 
 export interface RepositoryInput extends RunInput {
   type: "repository";

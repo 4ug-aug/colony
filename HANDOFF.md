@@ -46,7 +46,8 @@ The implementation is under `project/` and uses Bun/TypeScript.
 - Apple Container SDK wrapper creates disposable sandboxes.
 - `runtime/openai-agents.ts` runs the OpenAI Agents SDK inside the container.
 - `roles/software-engineer.ts` declares the software-engineer role.
-- `composition/software-engineer.ts` composes sandbox, role, and runtime.
+- `agents/software-engineer.ts` defines the agent and wires its sandbox, role,
+  and runtime.
 - The generic Bun image is built from `project/Dockerfile`.
 - The CLI works with any OpenAI-compatible model:
 

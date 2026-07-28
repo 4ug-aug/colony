@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createLightAgentExecutor } from "../composition/light-agent";
+import { createLightAgentExecutor } from "../agents/light-agent";
 import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import { createAppleContainerClient } from "../sdk/src";
 

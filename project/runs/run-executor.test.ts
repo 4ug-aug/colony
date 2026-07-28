@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import {
-  createInMemoryAgentDefinitionResolver,
   createRunExecutor,
-  type AgentDefinition,
   type Step,
 } from "./index";
+import {
+  createInMemoryAgentDefinitionResolver,
+  type AgentDefinition,
+} from "../agents/definition";
 
 const definition: AgentDefinition = {
   id: "test-agent",

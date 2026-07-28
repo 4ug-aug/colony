@@ -1,4 +1,4 @@
-import { createSoftwareEngineerExecutor } from "../composition/software-engineer";
+import { createSoftwareEngineerExecutor } from "../agents/software-engineer";
 import { createGitHubRepositoryCheckoutSource } from "../inputs/github";
 import { createGitHubCliClient, createGitHubMcpUpstream } from "../mcp/github";
 import { createMcpGateway } from "../mcp/gateway";

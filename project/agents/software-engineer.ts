@@ -1,9 +1,11 @@
 import {
-  createInMemoryAgentDefinitionResolver,
   createRunExecutor,
-  type AgentDefinition,
   type RunExecutor,
-} from "../agents";
+} from "../runs";
+import {
+  createInMemoryAgentDefinitionResolver,
+  type AgentDefinition,
+} from "./definition";
 import {
   createRepositoryWorkspaceProvisioner,
   type RepositoryCheckoutSource,

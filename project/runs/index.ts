@@ -7,73 +7,12 @@ import type {
 } from "../sandboxes";
 import type { CapabilitySessionBinding, CapabilitySessionFactory } from "../mcp/session";
 import type { McpGrant } from "../mcp/gateway";
-import type { Step } from "./step";
-
-export interface ModelRuntimeConfig {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-}
-
-export interface AgentDefinition {
-  id: string;
-  instructions: string;
-  requestedCapabilities: readonly {
-    id: string;
-    tools: readonly string[];
-  }[];
-  runtime: {
-    image: string;
-    model?: ModelRuntimeConfig;
-  };
-  executionPolicy: {
-    maxDurationMs: number;
-    maxOutputBytes: number;
-    maxSteps: number;
-  };
-}
-
-export interface AgentDefinitionResolver {
-  resolve(id: string): AgentDefinition | undefined;
-}
+import type { AgentDefinition, AgentDefinitionResolver } from "../agents/definition";
+import type { Step } from "../runtime/step";
 
 const snapshot = <T>(value: T): T => structuredClone(value);
 
-export class InMemoryAgentDefinitionResolver
-  implements AgentDefinitionResolver
-{
-  private readonly definitions: Map<string, AgentDefinition>;
-
-  constructor(definitions: Iterable<AgentDefinition> | ReadonlyMap<string, AgentDefinition>) {
-    if (definitions instanceof Map) {
-      this.definitions = new Map(definitions);
-    } else if (typeof (definitions as ReadonlyMap<string, AgentDefinition>).get === "function") {
-      this.definitions = new Map(
-        (definitions as ReadonlyMap<string, AgentDefinition>).entries(),
-      );
-    } else {
-      this.definitions = new Map(
-        [...(definitions as Iterable<AgentDefinition>)].map((definition) => [definition.id, definition]),
-      );
-    }
-  }
-
-  resolve(id: string): AgentDefinition | undefined {
-    const definition = this.definitions.get(id);
-    return definition ? snapshot(definition) : undefined;
-  }
-}
-
-export function createInMemoryAgentDefinitionResolver(
-  definitions: Iterable<AgentDefinition> | ReadonlyMap<string, AgentDefinition>,
-): AgentDefinitionResolver {
-  return new InMemoryAgentDefinitionResolver(definitions);
-}
-
-// The Step wire contract lives in a dependency-free module so the container
-// image can copy it alone (without the executor/sandbox/MCP graph).
-export { serializeStep, parseStep } from "./step";
-export type { Step, StepKind } from "./step";
+export type { Step, StepKind } from "../runtime/step";
 
 export type RunState =
   | "preparing"

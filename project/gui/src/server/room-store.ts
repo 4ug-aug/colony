@@ -1,4 +1,4 @@
-import type { RunState } from '../../../agents'
+import type { RunState } from '../../../runs'
 import type { RunSummary } from './run-control'
 
 export const GENERAL_ROOM_ID = 'general' as const

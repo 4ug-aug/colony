@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import {
-  serializeStep,
-  parseStep,
-  createInMemoryAgentDefinitionResolver,
   createRunExecutor,
+} from "../runs";
+import {
+  createInMemoryAgentDefinitionResolver,
   type AgentDefinition,
-  type Step,
-} from "./index";
+} from "../agents/definition";
+import { parseStep, serializeStep, type Step } from "./step";
 
 // ── serializeStep / parseStep ─────────────────────────────────────────────────
 

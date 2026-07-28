@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { serializeStep, type Step } from "../agents";
+import { serializeStep, type Step } from "../runtime/step";
 import { createOpenAIAgentsRuntime } from "./openai-agents-runtime";
 
 test("the OpenAI runtime passes the definition and task to its container command", async () => {

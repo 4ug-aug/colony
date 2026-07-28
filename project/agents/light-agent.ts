@@ -1,9 +1,11 @@
 import {
-  createInMemoryAgentDefinitionResolver,
   createRunExecutor,
-  type AgentDefinition,
   type RunExecutor,
-} from "../agents";
+} from "../runs";
+import {
+  createInMemoryAgentDefinitionResolver,
+  type AgentDefinition,
+} from "./definition";
 import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import { createCommandAgentProvider } from "../providers/command-agent";
 import {

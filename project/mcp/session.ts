@@ -1,5 +1,5 @@
 import type { McpGateway, McpGrant } from "./gateway";
-import type { PreparedWorkspace } from "../agents";
+import type { PreparedWorkspace } from "../runs";
 import type { Sandbox } from "../sandboxes";
 
 export interface CapabilitySessionBinding {

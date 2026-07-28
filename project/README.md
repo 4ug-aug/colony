@@ -1,6 +1,6 @@
 # Agent runs
 
-Runs use the generic `RunExecutor` API. A composition registers an agent
+Runs use the generic `RunExecutor` API. An agent factory registers its
 definition, then callers start and poll runs by ID.
 
 ```ts

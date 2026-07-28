@@ -325,7 +325,7 @@ if (import.meta.main) {
   ] = await Promise.all([
     import('../lib/auth'),
     import('./session-auth'),
-    import('../../../composition/software-engineer'),
+    import('../../../agents/software-engineer'),
     import('../../../roles/software-engineer'),
     import('../../../mcp/gateway'),
     import('../../../mcp/http'),

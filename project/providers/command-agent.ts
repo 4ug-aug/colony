@@ -1,4 +1,4 @@
-import type { AgentProvider, RuntimeRequest } from "../agents";
+import type { AgentProvider, RuntimeRequest } from "../runs";
 
 export function createCommandAgentProvider(options: {
   command(request: RuntimeRequest): readonly string[];

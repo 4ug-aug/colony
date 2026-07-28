@@ -1,5 +1,5 @@
-import { parseStep } from "../agents";
-import type { AgentProvider, RuntimeRequest } from "../agents";
+import { parseStep } from "../runtime/step";
+import type { AgentProvider, RuntimeRequest } from "../runs";
 
 export function createOpenAIAgentsRuntime(options: {
   command?: readonly string[];

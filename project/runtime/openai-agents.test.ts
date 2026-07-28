@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { OpenAIChatCompletionsModel } from "@openai/agents";
 import OpenAI from "openai";
-import type { Step } from "../agents";
+import type { Step } from "./step";
 import { normalizeModelBaseUrl, runAgent } from "./openai-agents";
 
 function completionStream(

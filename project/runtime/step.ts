@@ -1,7 +1,5 @@
 // Step wire contract shared between the platform and the container runtime.
-// This module MUST stay dependency-free: the container image copies only this
-// file (not the rest of the agents module, which pulls in the executor,
-// sandbox provider, and MCP gateway).
+// This module stays dependency-free because it runs inside the container.
 
 export type StepKind = 'message' | 'tool_call' | 'tool_result';
 
