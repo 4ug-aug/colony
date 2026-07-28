@@ -34,6 +34,7 @@ import {
 import { MessageComposer } from '#/components/message-composer'
 import type { MessageComposerHandle } from '#/components/message-composer'
 import { Markdown } from '#/components/markdown'
+import { ModeToggle } from '#/components/mode-toggle'
 import {
   Popover,
   PopoverContent,
@@ -1110,13 +1111,14 @@ function Dashboard({ user }: { user: Author }) {
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {user.name}
             </span>
+            <ModeToggle />
             <Button
               aria-label="Sign out"
               variant="outline"
               size="icon-sm"
               onClick={() => void authClient.signOut()}
             >
-              <LogOut className='h-4 w-4'/>
+              <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </SidebarFooter>
