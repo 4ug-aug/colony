@@ -1,11 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Bot, Hash, Lock, LogOut, Terminal, UserPlus, Users, Wifi, WifiOff, X } from 'lucide-react'
+import {
+  Bot,
+  Check,
+  CircleX,
+  Hash,
+  LoaderCircle,
+  Lock,
+  LogOut,
+  UserPlus,
+  Users,
+  Wifi,
+  WifiOff,
+  X,
+} from 'lucide-react'
 import { authClient, sweatApiUrl } from '#/lib/auth-client'
 import { messagesAreGrouped } from '#/message-grouping'
 import { stepLabel } from '#/step-label'
 import type { Step } from '#/step-label'
 import { Button } from '#/components/ui/button'
+import { RunActivityRail } from '#/components/run-activity-rail'
+import {
+  Avatar as AgentAvatar,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+} from '#/components/ui/avatar'
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '#/components/ui/hover-card'
 import { MessageComposer } from '#/components/message-composer'
 import type { MessageComposerHandle } from '#/components/message-composer'
 import { Markdown } from '#/components/markdown'
@@ -104,6 +129,7 @@ function useRooms() {
   const [runs, setRuns] = useState<RoomRun[]>([])
   const runsRef = useRef<RoomRun[]>([])
   const [latestStepByRun, setLatestStepByRun] = useState<Map<string, Step>>(new Map())
+  const [liveStepsByRun, setLiveStepsByRun] = useState<Map<string, Step[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [, setDraftVersion] = useState(0)
   const [connection, setConnection] = useState<
@@ -164,6 +190,9 @@ function useRooms() {
           runsRef.current = event.runs
           setRuns(event.runs)
           setLatestStepByRun(new Map(event.latestSteps.map((s) => [s.runId, s])))
+          setLiveStepsByRun(
+            new Map(event.latestSteps.map((step) => [step.runId, [step]])),
+          )
           setLoading(false)
         }
         if (
@@ -175,12 +204,18 @@ function useRooms() {
           runsRef.current = upsert(runsRef.current, event.run)
           setRuns((current) => upsert(current, event.run))
         }
-        if (event.type === 'run.step' && runsRef.current.some((r) => r.id === event.runId))
+        if (event.type === 'run.step' && runsRef.current.some((r) => r.id === event.runId)) {
           setLatestStepByRun((current) => {
             const next = new Map(current)
             next.set(event.runId, event.step)
             return next
           })
+          setLiveStepsByRun((current) => {
+            const next = new Map(current)
+            next.set(event.runId, upsert(current.get(event.runId) ?? [], event.step))
+            return next
+          })
+        }
         if (event.type === 'room.removed') {
           setRooms((current) => {
             const next = current.filter(({ id }) => id !== event.roomId)
@@ -248,6 +283,7 @@ function useRooms() {
     messages,
     runs,
     latestStepByRun,
+    liveStepsByRun,
     loading,
     connection,
     error,
@@ -259,6 +295,7 @@ function useRooms() {
       setMessages([])
       setRuns([])
       setLatestStepByRun(new Map())
+      setLiveStepsByRun(new Map())
       setLoading(true)
       setConnection('connecting')
     },
@@ -290,6 +327,8 @@ function useRooms() {
         localStorage.setItem(selectedRoomKey, result.room.id)
         setMessages([])
         setRuns([])
+        setLatestStepByRun(new Map())
+        setLiveStepsByRun(new Map())
         setLoading(true)
         setConnection('connecting')
         return result
@@ -357,107 +396,140 @@ function timestamp(value: number) {
   }).format(value)
 }
 
-function StepsPopover({ run, roomId }: { run: RoomRun; roomId: string }) {
-  const [steps, setSteps] = useState<Step[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(false)
+const agentName = (agentId: string) =>
+  agentId === 'software-engineer' ? 'Software engineer' : agentId
 
-  const handleOpen = async (open: boolean) => {
-    if (!open || steps !== null) return
-    setError(false)
-    setLoading(true)
-    try {
-      const res = await fetch(
-        sweatApiUrl(`/api/rooms/${roomId}/runs/${run.id}/steps`),
-        { credentials: 'include' },
-      )
-      const data = (await res.json()) as { steps: Step[] }
-      setSteps(data.steps.sort((a, b) => a.idx - b.idx))
-    } catch {
-      setError(true)
-    } finally {
-      setLoading(false)
-    }
-  }
+function runStatus(run: RoomRun, step?: Step) {
+  if (step) return stepLabel(step)
+  return run.state === 'preparing' ? 'is preparing' : 'is working'
+}
 
-  // Pair tool_call with following tool_result by callId
-  const pairedItems = useMemo(() => {
-    if (!steps) return []
-    const resultByCallId = new Map<string, Step>()
-    for (const s of steps) {
-      if (s.kind === 'tool_result' && s.callId) resultByCallId.set(s.callId, s)
-    }
-    return steps
-      .filter((s) => s.kind !== 'tool_result')
-      .map((s) => {
-        if (s.kind === 'tool_call' && s.callId) {
-          const result = resultByCallId.get(s.callId) ?? null
-          return { call: s, result }
-        }
-        return { call: null, result: null, message: s }
-      })
-  }, [steps])
+function RunAvatar({ run }: { run: RoomRun }) {
+  return (
+    <AgentAvatar size="sm" title={agentName(run.agentId)}>
+      <AvatarFallback className="bg-primary/10 text-primary">
+        <Bot className="size-3" />
+      </AvatarFallback>
+    </AgentAvatar>
+  )
+}
+
+function RunCapsule({
+  run,
+  openRun,
+}: {
+  run: RoomRun
+  openRun: (runId: string) => void
+}) {
+  const state =
+    run.state === 'succeeded'
+      ? 'completed'
+      : run.state === 'failed'
+        ? 'failed'
+        : run.state === 'cancelled'
+          ? 'cancelled'
+          : 'working'
+  return (
+    <button
+      type="button"
+      className="mt-2 inline-flex items-center gap-1.5 rounded-full border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted"
+      aria-label={`View ${agentName(run.agentId)} activity, ${state}`}
+      onClick={() => openRun(run.id)}
+    >
+      <AvatarGroup>
+        <RunAvatar run={run} />
+      </AvatarGroup>
+      {run.state === 'succeeded' ? (
+        <Check className="size-3.5 text-primary" />
+      ) : run.state === 'failed' ? (
+        <CircleX className="size-3.5 text-destructive" />
+      ) : run.state === 'cancelled' ? (
+        <X className="size-3.5" />
+      ) : (
+        <LoaderCircle className="size-3.5 animate-spin" />
+      )}
+      <span>1</span>
+    </button>
+  )
+}
+
+function ActiveAgents({
+  runs,
+  latestStepByRun,
+  cancel,
+  openRun,
+}: {
+  runs: RoomRun[]
+  latestStepByRun: Map<string, Step>
+  cancel: (runId: string) => void
+  openRun: (runId: string) => void
+}) {
+  const activeRuns = runs.filter((run) => !terminal(run.state))
+  if (!activeRuns.length) return null
 
   return (
-    <Popover onOpenChange={(open) => void handleOpen(open)}>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" size="xs" className="text-muted-foreground">
-          Steps
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-96 max-h-[28rem] overflow-y-auto p-0">
-        <PopoverHeader className="px-4 pt-4 pb-2">
-          <PopoverTitle>Run steps</PopoverTitle>
-        </PopoverHeader>
-        <div className="px-4 pb-4 space-y-2">
-          {loading && (
-            <p className="py-3 text-xs text-muted-foreground">Loading…</p>
-          )}
-          {!loading && error && (
-            <p className="py-3 text-xs text-destructive">Could not load steps</p>
-          )}
-          {!loading && !error && steps !== null && steps.length === 0 && (
-            <p className="py-3 text-xs text-muted-foreground">No steps recorded</p>
-          )}
-          {!loading && !error && pairedItems.map((item, i) => {
-            const enter = 'animate-in fade-in-0 slide-in-from-bottom-1 duration-300'
-            const enterStyle = { animationDelay: `${Math.min(i * 45, 270)}ms`, animationFillMode: 'both' as const }
-            if (item.message) {
-              return (
-                <div key={item.message.id} className={`rounded-md border bg-muted/40 px-3 py-2 text-xs ${enter}`} style={enterStyle}>
-                  <div className="mb-1 font-medium text-muted-foreground">Reasoning</div>
-                  <div className="whitespace-pre-wrap break-words">{item.message.text}</div>
-                </div>
-              )
-            }
-            if (item.call) {
-              const tool = item.call.tool ?? 'unknown'
-              return (
-                <details key={item.call.id} className={`rounded-md border bg-muted/40 px-3 py-2 text-xs group ${enter}`} style={enterStyle}>
-                  <summary className="cursor-pointer font-medium text-muted-foreground list-none flex items-center justify-between">
-                    <span>{tool}{item.result ? ' ✓' : ' (pending)'}</span>
-                    <span className="text-muted-foreground/60 text-[10px] group-open:hidden">expand</span>
-                  </summary>
-                  <div className="mt-2 space-y-2">
-                    <div>
-                      <div className="mb-0.5 font-semibold text-muted-foreground/70">Arguments</div>
-                      <div className="whitespace-pre-wrap break-words font-mono">{item.call.text}</div>
-                    </div>
-                    {item.result && (
-                      <div>
-                        <div className="mb-0.5 font-semibold text-muted-foreground/70">Result</div>
-                        <div className="whitespace-pre-wrap break-words font-mono">{item.result.text}</div>
-                      </div>
-                    )}
-                  </div>
-                </details>
-              )
-            }
-            return null
-          })}
+    <HoverCard openDelay={150} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className="mt-2 flex items-center gap-2 rounded-md px-1 py-1 text-sm font-medium outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`${activeRuns.length} ${activeRuns.length === 1 ? 'agent' : 'agents'} working. View status.`}
+        >
+          <AvatarGroup>
+            {activeRuns.slice(0, 3).map((run) => (
+              <RunAvatar key={run.id} run={run} />
+            ))}
+            {activeRuns.length > 3 && (
+              <AvatarGroupCount className="size-6 text-xs">
+                +{activeRuns.length - 3}
+              </AvatarGroupCount>
+            )}
+          </AvatarGroup>
+          <span>
+            {agentName(activeRuns[0].agentId)}
+            {activeRuns.length > 1 && ` +${activeRuns.length - 1}`}
+          </span>
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent side="top" align="start" sideOffset={8} className="w-96 p-3">
+        <h2 className="px-1 pb-1 text-sm font-semibold">Agents working</h2>
+        <div>
+          {activeRuns.map((run) => (
+            <div key={run.id} className="flex items-center gap-3 rounded-md px-1 py-2">
+              <RunAvatar run={run} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{agentName(run.agentId)}</p>
+                <p
+                  key={runStatus(run, latestStepByRun.get(run.id))}
+                  className="truncate text-xs text-muted-foreground"
+                >
+                  {runStatus(run, latestStepByRun.get(run.id))}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="text-muted-foreground"
+                onClick={() => openRun(run.id)}
+              >
+                View activity
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`Cancel ${agentName(run.agentId)}`}
+                onClick={() => cancel(run.id)}
+              >
+                <X />
+              </Button>
+              <LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground" />
+            </div>
+          ))}
         </div>
-      </PopoverContent>
-    </Popover>
+      </HoverCardContent>
+    </HoverCard>
   )
 }
 
@@ -731,15 +803,11 @@ function MembersPanel({
 function Timeline({
   messages,
   runs,
-  latestStepByRun,
-  roomId,
-  cancel,
+  openRun,
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
-  latestStepByRun: Map<string, Step>
-  roomId: string
-  cancel: (runId: string) => void
+  openRun: (runId: string) => void
 }) {
   const items = useMemo(() => {
     const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
@@ -817,39 +885,18 @@ function Timeline({
                 <Markdown>{text}</Markdown>
               </div>
               {!isResult && item.run && (
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/15 bg-primary/5 px-2 py-1">
-                    <Terminal className="size-3" />
-                    Software engineer{' '}
-                    {(() => {
-                      const step = latestStepByRun.get(item.run.id)
-                      const label = terminal(item.run.state)
-                        ? item.run.state === 'succeeded'
-                          ? 'completed'
-                          : item.run.state
-                        : step
-                          ? stepLabel(step)
-                          : item.run.state === 'preparing'
-                            ? 'is preparing'
-                            : 'is working'
-                      return (
-                        <span
-                          key={label}
-                          className="inline-block animate-in fade-in slide-in-from-bottom-0.5 duration-300"
-                        >
-                          {label}
-                        </span>
-                      )
-                    })()}
-                  </span>
-                  <StepsPopover run={item.run} roomId={roomId} />
-                  {!terminal(item.run.state) && (
-                    <Button type="button" variant="ghost" size="xs" onClick={() => cancel(item.run!.id)}>
-                      Cancel
-                    </Button>
-                  )}
-                  {item.run.error && <span className="text-destructive">{item.run.error}</span>}
-                </div>
+                <RunCapsule run={item.run} openRun={openRun} />
+              )}
+              {isResult && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="mt-1 -ml-2 text-muted-foreground"
+                  onClick={() => openRun(item.result.id)}
+                >
+                  Activity
+                </Button>
               )}
             </div>
           </article>
@@ -866,6 +913,7 @@ function Dashboard({ user }: { user: Author }) {
     messages,
     runs,
     latestStepByRun,
+    liveStepsByRun,
     loading,
     connection,
     error,
@@ -882,6 +930,7 @@ function Dashboard({ user }: { user: Author }) {
   const [roomName, setRoomName] = useState('')
   const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>('public')
   const [creatingRoom, setCreatingRoom] = useState(false)
+  const [selectedRunId, setSelectedRunId] = useState<string>()
   const roomNameInput = useRef<HTMLInputElement>(null)
   const composer = useRef<MessageComposerHandle>(null)
   const scrollRef = useRef<HTMLElement>(null)
@@ -924,7 +973,13 @@ function Dashboard({ user }: { user: Author }) {
       el.scrollTop = el.scrollHeight
       atBottomRef.current = true
     }
+    setSelectedRunId(undefined)
   }, [room?.id])
+
+  const selectedRun = runs.find(({ id }) => id === selectedRunId)
+  const triggerMessage = selectedRun
+    ? messages.find(({ id }) => id === selectedRun.triggerMessageId)
+    : undefined
 
   return (
     <SidebarProvider>
@@ -1091,52 +1146,70 @@ function Dashboard({ user }: { user: Author }) {
             {connection}
           </span>
         </header>
-        <div className="flex min-h-0 flex-1 flex-col">
-          <section
-            ref={scrollRef}
-            className="flex-1 overflow-y-auto px-5 py-8 sm:px-8"
-            aria-busy={loading}
-            onScroll={() => {
-              const el = scrollRef.current
-              if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150
-            }}
-          >
-            <div className="mx-auto max-w-7xl">
-              {loading ? (
-                <p className="py-12 text-center text-sm text-muted-foreground">
-                  Loading room…
-                </p>
-              ) : (
-                <Timeline
-                  messages={messages}
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <section
+              ref={scrollRef}
+              className="flex-1 overflow-y-auto px-5 py-8 sm:px-8"
+              aria-busy={loading}
+              onScroll={() => {
+                const el = scrollRef.current
+                if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150
+              }}
+            >
+              <div className="mx-auto max-w-7xl">
+                {loading ? (
+                  <p className="py-12 text-center text-sm text-muted-foreground">
+                    Loading room…
+                  </p>
+                ) : (
+                  <Timeline
+                    messages={messages}
+                    runs={runs}
+                    openRun={setSelectedRunId}
+                  />
+                )}
+              </div>
+            </section>
+            <div className="shrink-0 px-4 pb-4 sm:px-6">
+              <div className="mx-auto max-w-7xl rounded-xl border bg-background p-2.5 shadow-sm">
+                <MessageComposer
+                  ref={composer}
+                  value={draft}
+                  onChange={setDraft}
+                  onSubmit={(text) => void submit(text)}
+                  disabled={loading || !room}
+                  roomName={room?.name ?? 'room'}
+                />
+              </div>
+              <div className="mx-auto max-w-7xl">
+                <ActiveAgents
                   runs={runs}
                   latestStepByRun={latestStepByRun}
-                  roomId={room?.id ?? ''}
                   cancel={(runId) => void cancel(runId)}
+                  openRun={setSelectedRunId}
                 />
+              </div>
+              {error && (
+                <p
+                  className="mx-auto mt-2 max-w-5xl text-sm text-destructive"
+                  role="alert"
+                >
+                  {error}
+                </p>
               )}
             </div>
-          </section>
-          <div className="shrink-0 px-4 pb-4 sm:px-6">
-            <div className="mx-auto max-w-7xl rounded-xl border bg-background p-2.5 shadow-sm">
-              <MessageComposer
-                ref={composer}
-                value={draft}
-                onChange={setDraft}
-                onSubmit={(text) => void submit(text)}
-                disabled={loading || !room}
-                roomName={room?.name ?? 'room'}
-              />
-            </div>
-            {error && (
-              <p
-                className="mx-auto mt-2 max-w-5xl text-sm text-destructive"
-                role="alert"
-              >
-                {error}
-              </p>
-            )}
           </div>
+          {selectedRun && (
+            <RunActivityRail
+              key={selectedRun.id}
+              run={selectedRun}
+              triggerMessage={triggerMessage}
+              liveSteps={liveStepsByRun.get(selectedRun.id) ?? []}
+              onClose={() => setSelectedRunId(undefined)}
+              onCancel={() => void cancel(selectedRun.id)}
+            />
+          )}
         </div>
       </SidebarInset>
     </SidebarProvider>
