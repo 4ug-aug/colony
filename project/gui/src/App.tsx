@@ -2,10 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import {
   Bot,
-  Check,
-  CircleX,
   Hash,
-  LoaderCircle,
   Lock,
   LogOut,
   UserPlus,
@@ -16,21 +13,10 @@ import {
 } from 'lucide-react'
 import { authClient, sweatApiUrl } from '#/lib/auth-client'
 import { messagesAreGrouped } from '#/features/rooms/message-grouping'
-import type { Step } from '#/features/runs/step-label'
-import { terminal, agentName, runStatus } from '#/features/runs/run-helpers'
 import { Button } from '#/components/ui/button'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
-import {
-  Avatar as AgentAvatar,
-  AvatarFallback,
-  AvatarGroup,
-  AvatarGroupCount,
-} from '#/components/ui/avatar'
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '#/components/ui/hover-card'
+import { RunCapsule } from '#/features/runs/run-capsule'
+import { ActiveAgents } from '#/features/runs/active-agents'
 import { MessageComposer } from '#/components/message-composer'
 import type { MessageComposerHandle } from '#/components/message-composer'
 import { Markdown } from '#/components/markdown'
@@ -59,136 +45,6 @@ import {
 import type { Author, Room, RoomMessage, RoomRun } from '#/features/rooms/types'
 import { useRooms } from '#/features/rooms/use-rooms'
 import { Avatar, timestamp } from '#/components/avatar'
-
-function RunAvatar({ run }: { run: RoomRun }) {
-  return (
-    <AgentAvatar size="sm" title={agentName(run.agentId)}>
-      <AvatarFallback className="bg-primary/10 text-primary">
-        <Bot className="size-3" />
-      </AvatarFallback>
-    </AgentAvatar>
-  )
-}
-
-function RunCapsule({
-  run,
-  openRun,
-}: {
-  run: RoomRun
-  openRun: (runId: string) => void
-}) {
-  const state =
-    run.state === 'succeeded'
-      ? 'completed'
-      : run.state === 'failed'
-        ? 'failed'
-        : run.state === 'cancelled'
-          ? 'cancelled'
-          : 'working'
-  return (
-    <button
-      type="button"
-      className="mt-2 inline-flex items-center gap-1.5 rounded-full border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted"
-      aria-label={`View ${agentName(run.agentId)} activity, ${state}`}
-      onClick={() => openRun(run.id)}
-    >
-      <AvatarGroup>
-        <RunAvatar run={run} />
-      </AvatarGroup>
-      {run.state === 'succeeded' ? (
-        <Check className="size-3.5 text-primary" />
-      ) : run.state === 'failed' ? (
-        <CircleX className="size-3.5 text-destructive" />
-      ) : run.state === 'cancelled' ? (
-        <X className="size-3.5" />
-      ) : (
-        <LoaderCircle className="size-3.5 animate-spin" />
-      )}
-      <span>1</span>
-    </button>
-  )
-}
-
-function ActiveAgents({
-  runs,
-  latestStepByRun,
-  cancel,
-  openRun,
-}: {
-  runs: RoomRun[]
-  latestStepByRun: Map<string, Step>
-  cancel: (runId: string) => void
-  openRun: (runId: string) => void
-}) {
-  const activeRuns = runs.filter((run) => !terminal(run.state))
-  if (!activeRuns.length) return null
-
-  return (
-    <HoverCard openDelay={150} closeDelay={100}>
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          className="mt-2 flex items-center gap-2 rounded-md px-1 py-1 text-sm font-medium outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`${activeRuns.length} ${activeRuns.length === 1 ? 'agent' : 'agents'} working. View status.`}
-        >
-          <AvatarGroup>
-            {activeRuns.slice(0, 3).map((run) => (
-              <RunAvatar key={run.id} run={run} />
-            ))}
-            {activeRuns.length > 3 && (
-              <AvatarGroupCount className="size-6 text-xs">
-                +{activeRuns.length - 3}
-              </AvatarGroupCount>
-            )}
-          </AvatarGroup>
-          <span>
-            {agentName(activeRuns[0].agentId)}
-            {activeRuns.length > 1 && ` +${activeRuns.length - 1}`}
-          </span>
-        </button>
-      </HoverCardTrigger>
-      <HoverCardContent side="top" align="start" sideOffset={8} className="w-96 p-3">
-        <h2 className="px-1 pb-1 text-sm font-semibold">Agents working</h2>
-        <div>
-          {activeRuns.map((run) => (
-            <div key={run.id} className="flex items-center gap-3 rounded-md px-1 py-2">
-              <RunAvatar run={run} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{agentName(run.agentId)}</p>
-                <p
-                  key={runStatus(run, latestStepByRun.get(run.id))}
-                  className="truncate text-xs text-muted-foreground"
-                >
-                  {runStatus(run, latestStepByRun.get(run.id))}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                className="text-muted-foreground"
-                onClick={() => openRun(run.id)}
-              >
-                View activity
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`Cancel ${agentName(run.agentId)}`}
-                onClick={() => cancel(run.id)}
-              >
-                <X />
-              </Button>
-              <LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground" />
-            </div>
-          ))}
-        </div>
-      </HoverCardContent>
-    </HoverCard>
-  )
-}
-
 
 type MemberUser = { id: string; name: string; image?: string }
 
