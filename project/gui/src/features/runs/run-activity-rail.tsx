@@ -9,9 +9,10 @@ import {
   X,
 } from 'lucide-react'
 import { sweatApiUrl } from '#/lib/auth-client'
-import { formatStepText, mergeSteps, pairSteps } from '#/run-activity'
-import { stepLabel } from '#/step-label'
-import type { Step } from '#/step-label'
+import { formatStepText, mergeSteps, pairSteps } from './run-activity'
+import { stepLabel } from './step-label'
+import type { Step } from './step-label'
+import { terminal, agentName } from './run-helpers'
 import { Markdown } from '#/components/markdown'
 import {
   Avatar,
@@ -39,12 +40,6 @@ type ActivityRun = {
   output?: string
 }
 type TriggerMessage = { author: Person; text: string }
-
-const terminal = (state: ActivityRun['state']) =>
-  state === 'succeeded' || state === 'failed' || state === 'cancelled'
-
-const agentName = (agentId: string) =>
-  agentId === 'software-engineer' ? 'Software engineer' : agentId
 
 function useInlineRail() {
   const [inline, setInline] = useState(() =>

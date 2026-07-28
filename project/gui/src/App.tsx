@@ -15,11 +15,11 @@ import {
   X,
 } from 'lucide-react'
 import { authClient, sweatApiUrl } from '#/lib/auth-client'
-import { messagesAreGrouped } from '#/message-grouping'
-import { stepLabel } from '#/step-label'
-import type { Step } from '#/step-label'
+import { messagesAreGrouped } from '#/features/rooms/message-grouping'
+import type { Step } from '#/features/runs/step-label'
+import { terminal, agentName, runStatus } from '#/features/runs/run-helpers'
 import { Button } from '#/components/ui/button'
-import { RunActivityRail } from '#/components/run-activity-rail'
+import { RunActivityRail } from '#/features/runs/run-activity-rail'
 import {
   Avatar as AgentAvatar,
   AvatarFallback,
@@ -56,48 +56,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '#/components/ui/sidebar'
-
-type Author = { id: string; name: string; image?: string; kind?: 'user' | 'agent' }
-type Room = { id: string; name: string; visibility: 'public' | 'private'; createdBy?: string }
-type RoomMessage = {
-  id: string
-  roomId: string
-  author: Author
-  text: string
-  createdAt: number
-}
-type RoomRun = {
-  id: string
-  roomId: string
-  triggerMessageId: string
-  requestedBy: Author
-  task: string
-  agentId: string
-  state: 'preparing' | 'running' | 'succeeded' | 'failed' | 'cancelled'
-  createdAt: number
-  startedAt?: number
-  completedAt?: number
-  error?: string
-  stdout: string
-  output?: string
-}
-type StreamMessage =
-  | {
-      type: 'room.snapshot'
-      room: Room
-      messages: RoomMessage[]
-      runs: RoomRun[]
-      latestSteps: Step[]
-    }
-  | { type: 'room.created'; room: Room }
-  | { type: 'message.created'; message: RoomMessage }
-  | { type: 'run.changed'; run: RoomRun }
-  | { type: 'run.step'; runId: string; step: Step }
-  | { type: 'room.removed'; roomId: string }
-  | { type: 'room.members.changed'; roomId: string }
-
-const terminal = (state: RoomRun['state']) =>
-  state === 'succeeded' || state === 'failed' || state === 'cancelled'
+import type { Author, Room, RoomMessage, RoomRun, StreamMessage } from '#/features/rooms/types'
 
 function roomStreamUrl(roomId: string) {
   const url = new URL(sweatApiUrl(`/api/rooms/${roomId}/stream`))
@@ -395,14 +354,6 @@ function timestamp(value: number) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(value)
-}
-
-const agentName = (agentId: string) =>
-  agentId === 'software-engineer' ? 'Software engineer' : agentId
-
-function runStatus(run: RoomRun, step?: Step) {
-  if (step) return stepLabel(step)
-  return run.state === 'preparing' ? 'is preparing' : 'is working'
 }
 
 function RunAvatar({ run }: { run: RoomRun }) {
