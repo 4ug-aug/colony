@@ -59,7 +59,7 @@ export function runSummary<Input extends RunInput>(
 
 export function createRunControl<Input extends RunInput>(
   executor: RunExecutor<Input>,
-  options?: { workspaceCapability?: { tools: readonly string[]; expiresInMs?: number } },
+  options?: { capability?: { tools: readonly string[]; expiresInMs?: number } },
 ): RunControl {
   return {
     listRuns: () => executor.listRuns().map(runSummary),
@@ -67,8 +67,8 @@ export function createRunControl<Input extends RunInput>(
       executor.subscribe((run) => listener(runSummary(run))),
     subscribeSteps: (listener) => executor.subscribeSteps(listener),
     start: (task, context) => {
-      const workspaceCap = options?.workspaceCapability
-      const hasTools = workspaceCap && workspaceCap.tools.length > 0
+      const capability = options?.capability
+      const hasTools = capability && capability.tools.length > 0
       return executor.startRun({
         agentDefinitionId: 'software-engineer',
         task,
@@ -76,8 +76,8 @@ export function createRunControl<Input extends RunInput>(
           ? {
               grantContext: { roomId: context.roomId },
               capabilityGrant: {
-                tools: [...workspaceCap.tools],
-                expiresAt: new Date(Date.now() + (workspaceCap.expiresInMs ?? 30 * 60 * 1000)),
+                tools: [...capability.tools],
+                expiresAt: new Date(Date.now() + (capability.expiresInMs ?? 30 * 60 * 1000)),
               },
             }
           : {}),

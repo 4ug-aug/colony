@@ -501,6 +501,7 @@ if (import.meta.main) {
     { createMcpGatewayHttpServer },
     { createCapabilitySessionFactory },
     { createWorkspaceMcpUpstream },
+    { createLinearMcpUpstream },
     { agentParticipant },
   ] = await Promise.all([
     import('../lib/auth'),
@@ -512,16 +513,22 @@ if (import.meta.main) {
     import('../../../mcp/http'),
     import('../../../mcp/session'),
     import('../../../mcp/workspace'),
+    import('../../../mcp/linear'),
     import('./room-store'),
   ])
   const admissionStore = createAdmissionStore(sqlite)
   const authContext = await auth.$context
   const store = createSqliteRoomStore(sqlite)
   const messages = createRoomMessageHub(store)
-  const workspaceTools =
-    softwareEngineerRole.requestedCapabilities.find(
-      (c) => c.id === 'workspace.room',
-    )?.tools ?? []
+  const capabilityTools = (id: string): readonly string[] =>
+    softwareEngineerRole.requestedCapabilities.find((c) => c.id === id)
+      ?.tools ?? []
+  const workspaceTools = capabilityTools('workspace.room')
+  // Linear is opt-in: only wire the upstream and grant its tools when a token is
+  // configured, so the gateway never advertises tools it cannot actually serve.
+  const linearAccessToken = process.env.LINEAR_MCP_API_KEY
+  const linearTools = linearAccessToken ? capabilityTools('linear.issues') : []
+  const grantedTools = [...workspaceTools, ...linearTools]
   const capabilityUrl = (u: string): string =>
     u.replace(
       'http://0.0.0.0',
@@ -536,8 +543,8 @@ if (import.meta.main) {
             throw new Error(
               'A room id is required for the workspace capability',
             )
-          return createMcpGateway({
-            upstream: createWorkspaceMcpUpstream({
+          const upstreams = [
+            createWorkspaceMcpUpstream({
               port: {
                 listMessages: (id) => messages.listMessages(id),
                 postMessage: (input) => {
@@ -547,7 +554,12 @@ if (import.meta.main) {
               roomId,
               agent: agentParticipant('software-engineer'),
             }),
-          })
+          ]
+          if (linearAccessToken)
+            upstreams.push(
+              createLinearMcpUpstream({ accessToken: linearAccessToken }),
+            )
+          return createMcpGateway({ upstreams })
         },
         createEndpoint: (gateway) => {
           const server = createMcpGatewayHttpServer({
@@ -568,7 +580,7 @@ if (import.meta.main) {
       },
       ...(capabilities ? { capabilities } : {}),
     }),
-    { workspaceCapability: { tools: workspaceTools } },
+    { capability: { tools: grantedTools } },
   )
   const coordinator = createCoordinator({
     control,
