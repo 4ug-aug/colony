@@ -1,4 +1,5 @@
-import type { RunExecutor, RunInput, RunRecord, Step } from '../../../runs'
+import type { RunInput, RunRecord, Step } from '../../../runs'
+import type { SoftwareEngineerExecutor } from '../../../agents/software-engineer'
 
 export type RunSummary = Pick<
   RunRecord,
@@ -23,7 +24,10 @@ export interface RunControl {
   subscribeSteps(listener: (runId: string, step: Step) => void): () => void
   start<Output>(
     task: string,
-    context: { roomId: string; onCreate: (run: RunSummary) => NonNullable<Output> },
+    context: {
+      roomId: string
+      onCreate: (run: RunSummary) => NonNullable<Output>
+    },
   ): NonNullable<Output>
   cancel(runId: string): Promise<RunSummary | undefined>
 }
@@ -59,10 +63,12 @@ export function runSummary<Input extends RunInput>(
   }
 }
 
-export function createRunControl<Input extends RunInput>(
-  executor: RunExecutor<Input>,
-  options?: { capability?: { tools: readonly string[]; expiresInMs?: number } },
-): RunControl {
+type RunControlExecutor = Pick<
+  SoftwareEngineerExecutor,
+  'startRun' | 'subscribe' | 'subscribeSteps' | 'cancelRun'
+>
+
+export function createRunControl(executor: RunControlExecutor): RunControl {
   return {
     subscribe: (listener) =>
       executor.subscribe((run) => listener(runSummary(run))),
@@ -75,25 +81,15 @@ export function createRunControl<Input extends RunInput>(
       },
     ): NonNullable<Output> => {
       let created: NonNullable<Output> | undefined
-      const capability = options?.capability
-      const hasTools = capability && capability.tools.length > 0
       executor.startRun({
-        agentDefinitionId: 'software-engineer',
         task,
+        grantContext: { roomId: context.roomId },
         onCreate: (run) => {
           const registered = context.onCreate(runSummary(run))
-          if (registered === undefined) throw new Error('Agent run was not created')
+          if (registered === undefined)
+            throw new Error('Agent run was not created')
           created = registered
         },
-        ...(hasTools
-          ? {
-              grantContext: { roomId: context.roomId },
-              capabilityGrant: {
-                tools: [...capability.tools],
-                expiresAt: new Date(Date.now() + (capability.expiresInMs ?? 30 * 60 * 1000)),
-              },
-            }
-          : {}),
       })
       if (created === undefined) throw new Error('Agent run was not created')
       return created

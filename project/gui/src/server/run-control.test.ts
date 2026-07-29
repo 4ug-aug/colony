@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test'
 import { createRunControl } from './run-control'
-import type { RunExecutor, StartRunRequest } from '../../../runs'
+import type {
+  SoftwareEngineerExecutor,
+  SoftwareEngineerStartRunRequest,
+} from '../../../agents/software-engineer'
 
 function captureExecutor(
-  capture: (request: StartRunRequest) => void,
-): RunExecutor {
+  capture: (request: SoftwareEngineerStartRunRequest) => void,
+): SoftwareEngineerExecutor {
   return {
     startRun: (request) => {
       capture(request)
@@ -16,7 +19,9 @@ function captureExecutor(
         createdAt: 0,
         stdout: '',
         stderr: '',
-      } as Parameters<NonNullable<StartRunRequest['onCreate']>>[0])
+      } as Parameters<
+        NonNullable<SoftwareEngineerStartRunRequest['onCreate']>
+      >[0])
       return 'run-1'
     },
     getRun: () => undefined,
@@ -27,34 +32,16 @@ function captureExecutor(
   }
 }
 
-test('grants every configured capability tool, not just workspace tools', () => {
-  let request: StartRunRequest | undefined
+test('passes room context without assembling infrastructure concerns', () => {
+  let request: SoftwareEngineerStartRunRequest | undefined
   const control = createRunControl(
     captureExecutor((value) => {
       request = value
     }),
-    { capability: { tools: ['workspace.post_message', 'linear.get_issue'] } },
   )
 
   control.start('summarize ORI-198', { roomId: 'room-1', onCreate: () => true })
 
-  expect(request?.capabilityGrant?.tools).toEqual([
-    'workspace.post_message',
-    'linear.get_issue',
-  ])
+  expect(request?.task).toBe('summarize ORI-198')
   expect(request?.grantContext).toEqual({ roomId: 'room-1' })
-})
-
-test('omits the capability grant when no tools are configured', () => {
-  let request: StartRunRequest | undefined
-  const control = createRunControl(
-    captureExecutor((value) => {
-      request = value
-    }),
-    { capability: { tools: [] } },
-  )
-
-  control.start('summarize the room', { roomId: 'room-1', onCreate: () => true })
-
-  expect(request?.capabilityGrant).toBeUndefined()
 })

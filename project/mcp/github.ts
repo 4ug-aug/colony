@@ -4,7 +4,7 @@ import { createMcpGateway, type McpGateway, type McpTool, type McpUpstream } fro
 const tools: readonly McpTool[] = [
   {
     name: "github.create_pull_request",
-    description: "Publish this run's committed branch and create or update its pull request. It is safe to retry after a timeout. Do not use git push or configure a remote: GitHub authentication remains host-side.",
+    description: "Publish the workspace's committed HEAD under this run's platform-assigned remote branch, then create or update its pull request. The local branch name does not matter. It is safe to retry after a timeout. Do not use git push or configure a remote: GitHub authentication remains host-side.",
     inputSchema: {
       type: "object",
       properties: {
@@ -30,6 +30,7 @@ const tools: readonly McpTool[] = [
 type PullRequestRequest = { title: string; body?: string };
 type Change = { path: string; deleted: boolean };
 type RemoteBranch = { sha: string; tree: string };
+type WorkspaceState = { commits: readonly string[]; head: string; tree: string };
 type PullRequestChecksRequest = { number: number };
 
 const checkWaitMs = 4 * 60_000;
@@ -125,20 +126,32 @@ async function materializeTree(options: {
   }));
 }
 
-async function workspaceCommits(options: {
+async function workspaceState(options: {
   workspace: string;
-  branch: string;
   baseCommit: string;
-}): Promise<readonly string[]> {
-  const branch = (await git(options.workspace, ["branch", "--show-current"])).trim();
-  if (branch !== options.branch) throw new Error(`Run must remain on branch ${options.branch}`);
+}): Promise<WorkspaceState> {
   if ((await git(options.workspace, ["status", "--porcelain"])).trim()) {
     throw new Error("Commit workspace changes before creating a pull request");
   }
-  return (await git(options.workspace, ["rev-list", "--reverse", `${options.baseCommit}..${options.branch}`]))
+  const head = (await git(options.workspace, ["rev-parse", "HEAD"])).trim();
+  let mergeBase: string;
+  try {
+    mergeBase = (await git(options.workspace, ["merge-base", options.baseCommit, head])).trim();
+  } catch {
+    throw new Error("Workspace HEAD must descend from the prepared base commit");
+  }
+  if (mergeBase !== options.baseCommit) {
+    throw new Error("Workspace HEAD must descend from the prepared base commit");
+  }
+  const commits = (await git(options.workspace, ["rev-list", "--reverse", `${options.baseCommit}..${head}`]))
     .trim()
     .split("\n")
     .filter(Boolean);
+  return {
+    commits,
+    head,
+    tree: (await git(options.workspace, ["rev-parse", `${head}^{tree}`])).trim(),
+  };
 }
 
 function hasStatus(error: unknown, status: number): boolean {
@@ -256,13 +269,12 @@ export function createGitHubMcpUpstream(options: {
       }
       if (name !== "github.create_pull_request") throw new Error(`Unknown GitHub tool: ${name}`);
       const input = parsePullRequestRequest(args);
-      const commits = await workspaceCommits(options);
-      if (!commits.length) throw new Error("Run branch has no commits to publish");
+      const workspace = await workspaceState(options);
+      if (!workspace.commits.length) throw new Error("Workspace HEAD has no commits to publish");
       await options.verify?.();
-      const expectedTree = (await git(options.workspace, ["rev-parse", `${options.branch}^{tree}`])).trim();
       const branch = await remoteBranch({ octokit: options.octokit, repository, branch: options.branch });
       if (branch) {
-        if (branch.tree === expectedTree) {
+        if (branch.tree === workspace.tree) {
           const pullRequest = await existingPullRequest({
             octokit: options.octokit, repository, branch: options.branch, base: options.base,
           });
@@ -275,12 +287,12 @@ export function createGitHubMcpUpstream(options: {
             base: options.base,
           })).data;
         }
-        const changed = changes(await git(options.workspace, ["diff", "--name-status", "-z", options.baseCommit, options.branch]));
+        const changed = changes(await git(options.workspace, ["diff", "--name-status", "-z", options.baseCommit, workspace.head]));
         const tree = await options.octokit.rest.git.createTree({
           ...repository,
           base_tree: branch.tree,
           tree: await materializeTree({
-            octokit: options.octokit, repository, workspace: options.workspace, commit: options.branch, changed,
+            octokit: options.octokit, repository, workspace: options.workspace, commit: workspace.head, changed,
           }),
         });
         const next = await options.octokit.rest.git.createCommit({
@@ -318,7 +330,7 @@ export function createGitHubMcpUpstream(options: {
       });
       let remoteCommit = head.data.object.sha;
       let remoteTree = commit.data.tree.sha;
-      for (const localCommit of commits) {
+      for (const localCommit of workspace.commits) {
         const localParent = (await git(options.workspace, ["rev-parse", `${localCommit}^`])).trim();
         const changed = changes(await git(options.workspace, ["diff", "--name-status", "-z", localParent, localCommit]));
         const tree = await options.octokit.rest.git.createTree({
@@ -345,7 +357,7 @@ export function createGitHubMcpUpstream(options: {
         });
       } catch (error) {
         const branch = await remoteBranch({ octokit: options.octokit, repository, branch: options.branch });
-        if (!hasStatus(error, 422) || !branch || branch.tree !== expectedTree) throw error;
+        if (!hasStatus(error, 422) || !branch || branch.tree !== workspace.tree) throw error;
       }
       try {
         return (await options.octokit.rest.pulls.create({

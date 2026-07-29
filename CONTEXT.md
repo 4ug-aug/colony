@@ -172,11 +172,11 @@ outputs only when another run must reliably consume a prior run's result.
 ## Software-engineer repository runs
 
 A **Git workspace** is the software-engineer role's prepared repository input:
-a Git working directory seeded at the resolved base revision on a
-platform-assigned run branch. The sandbox may inspect, edit, test, and commit
-that branch, but receives no Git provider credential. A GitHub capability
-adapter scoped to the run's repository may publish only that run branch and
-open its pull request.
+a Git working directory seeded at the resolved base revision. The sandbox may
+inspect, edit, test, create local branches, and commit, but receives no Git
+provider credential. A GitHub capability adapter accepts only a clean `HEAD`
+descended from that base, publishes it under the platform-assigned remote run
+branch, and opens its pull request in the scoped repository.
 
 ## Sub-agents
 

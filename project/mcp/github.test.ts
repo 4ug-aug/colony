@@ -32,8 +32,9 @@ async function branchWithChange(): Promise<{ directory: string; baseCommit: stri
   return { directory, baseCommit };
 }
 
-test("GitHub publishes only the committed run branch", async () => {
+test("GitHub publishes committed HEAD under the assigned remote run branch", async () => {
   const workspace = await branchWithChange();
+  await git(workspace.directory, ["branch", "--move", "oriant-198-poem-2"]);
   const requests: Array<{ url: string; method?: string; body?: string }> = [];
   const responses = [
     { object: { sha: "base-commit" } }, { tree: { sha: "base-tree" } },
@@ -66,7 +67,7 @@ test("GitHub publishes only the committed run branch", async () => {
   try {
     await expect(gateway.listTools(session.token)).resolves.toMatchObject([{
       name: "github.create_pull_request",
-      description: expect.stringContaining("Publish this run's committed branch"),
+      description: expect.stringContaining("committed HEAD"),
     }]);
     await expect(gateway.callTool(session.token, "github.create_pull_request", {
       title: "Change", body: "Done",
@@ -269,6 +270,32 @@ test("GitHub refuses to publish uncommitted workspace edits", async () => {
   try {
     await expect(gateway.callTool(session.token, "github.create_pull_request", { title: "Change" }))
       .rejects.toThrow("Commit workspace changes");
+  } finally {
+    await rm(workspace.directory, { force: true, recursive: true });
+  }
+});
+
+test("GitHub refuses to publish a HEAD outside the prepared history", async () => {
+  const workspace = await branchWithChange();
+  await git(workspace.directory, ["checkout", "--orphan", "unrelated"]);
+  await Bun.write(join(workspace.directory, "README.md"), "unrelated\n");
+  await git(workspace.directory, ["add", "README.md"]);
+  await git(workspace.directory, ["commit", "--quiet", "--message", "Unrelated"]);
+  const gateway = createGitHubMcpGateway({
+    octokit: new Octokit({ auth: "secret" }),
+    repository: "acme/product",
+    workspace: workspace.directory,
+    branch: "sweat/run-1",
+    baseCommit: workspace.baseCommit,
+    base: "main",
+  });
+  const session = gateway.createSession({
+    tools: ["github.create_pull_request"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  try {
+    await expect(gateway.callTool(session.token, "github.create_pull_request", { title: "Change" }))
+      .rejects.toThrow("must descend from the prepared base commit");
   } finally {
     await rm(workspace.directory, { force: true, recursive: true });
   }

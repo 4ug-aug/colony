@@ -27,6 +27,11 @@ invite-only workspace. On first successful server startup, copy the one-time
 setup token printed by the coordinator into the browser to create the
 administrator.
 
+To give room-launched software engineers a repository workspace, authenticate
+the host GitHub CLI and set `SWEAT_GITHUB_REPOSITORY`. Also set
+`SWEAT_VERIFY_COMMAND` to grant pull-request publishing; the command must pass
+inside the sandbox before a branch is published.
+
 For local two-user testing, `make dev-seeded` performs the same complete startup
 and creates
 `admin@sweat.local` and `teammate@sweat.local`; both use the password

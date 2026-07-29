@@ -1,6 +1,7 @@
 export * from "./agents/definition";
 export * from "./agents/light-agent";
 export * from "./agents/software-engineer";
+export * from "./agents/software-engineer-adapters";
 export * from "./inputs/github";
 export * from "./inputs/repository";
 export * from "./mcp/gateway";

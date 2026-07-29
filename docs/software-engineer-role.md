@@ -13,7 +13,7 @@ Linear issue
   -> prepare repository workspace
   -> start generic runtime in the workspace
   -> inspect, edit, and test
-  -> create branch, commit, and PR through the GitHub grant
+  -> commit and create a PR through the GitHub grant
   -> return run result and revoke session
 ```
 
@@ -62,6 +62,12 @@ The software-engineer definition should contain instructions and request
 capabilities such as `linear.issues` and `github.pull-requests`. It may state
 the expected handoff, but it does not choose checkout mechanics, credential
 handling, MCP transport, cleanup, retries, or scheduling.
+
+The configured software-engineer module binds infrastructure adapters to every
+run. A GitHub adapter owns its repository input, checkout source, resource
+scope, and pull-request upstream together. Callers supply only the task and
+run-specific context; they must not assemble repository inputs or capability
+grants independently.
 
 Those are generic run concerns. A future researcher can use an uploaded
 artifact instead of `repository`; a support-triage role can receive a ticket

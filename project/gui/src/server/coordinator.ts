@@ -32,17 +32,24 @@ export interface SessionAuthenticator {
 const realtimeTicketSecret = randomBytes(32)
 const realtimeTicketTtlMs = 30_000
 export const mintRealtimeTicket = (userId: string): string => {
-  const body = Buffer.from(`${userId}|${Date.now() + realtimeTicketTtlMs}`).toString('base64url')
-  const sig = createHmac('sha256', realtimeTicketSecret).update(body).digest('base64url')
+  const body = Buffer.from(
+    `${userId}|${Date.now() + realtimeTicketTtlMs}`,
+  ).toString('base64url')
+  const sig = createHmac('sha256', realtimeTicketSecret)
+    .update(body)
+    .digest('base64url')
   return `${body}.${sig}`
 }
 export const verifyRealtimeTicket = (ticket: string): string | undefined => {
   const [body, sig] = ticket.split('.')
   if (!body || !sig) return undefined
-  const expected = createHmac('sha256', realtimeTicketSecret).update(body).digest('base64url')
+  const expected = createHmac('sha256', realtimeTicketSecret)
+    .update(body)
+    .digest('base64url')
   const sigBuf = Buffer.from(sig)
   const expBuf = Buffer.from(expected)
-  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) return undefined
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf))
+    return undefined
   const [userId, expiry] = Buffer.from(body, 'base64url').toString().split('|')
   if (!userId || !expiry || Date.now() > Number(expiry)) return undefined
   return userId
@@ -500,80 +507,37 @@ if (import.meta.main) {
     { betterAuthSessionAuthenticator },
     { createAdmissionStore },
     { createSoftwareEngineerExecutor },
-    { softwareEngineerRole },
-    { createMcpGateway },
+    {
+      createGitHubSoftwareEngineerAdapter,
+      createLinearSoftwareEngineerAdapter,
+      createWorkspaceSoftwareEngineerAdapter,
+    },
+    { createGitHubCliClient },
     { createMcpGatewayHttpServer },
-    { createCapabilitySessionFactory },
-    { createWorkspaceMcpUpstream },
-    { createLinearMcpUpstream },
     { agentParticipant },
   ] = await Promise.all([
     import('../lib/auth'),
     import('./session-auth'),
     import('./admission'),
     import('../../../agents/software-engineer'),
-    import('../../../roles/software-engineer'),
-    import('../../../mcp/gateway'),
+    import('../../../agents/software-engineer-adapters'),
+    import('../../../mcp/github'),
     import('../../../mcp/http'),
-    import('../../../mcp/session'),
-    import('../../../mcp/workspace'),
-    import('../../../mcp/linear'),
     import('./room-store'),
   ])
   const admissionStore = createAdmissionStore(sqlite)
   const authContext = await auth.$context
   const store = createSqliteRoomStore(sqlite)
   const messages = createRoomMessageHub(store)
-  const capabilityTools = (id: string): readonly string[] =>
-    softwareEngineerRole.requestedCapabilities.find((c) => c.id === id)
-      ?.tools ?? []
-  const workspaceTools = capabilityTools('workspace.room')
-  // Linear is opt-in: only wire the upstream and grant its tools when a token is
-  // configured, so the gateway never advertises tools it cannot actually serve.
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
-  const linearTools = linearAccessToken ? capabilityTools('linear.issues') : []
-  const grantedTools = [...workspaceTools, ...linearTools]
+  const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
+  const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
+  const github = githubRepository ? await createGitHubCliClient() : undefined
   const capabilityUrl = (u: string): string =>
     u.replace(
       'http://0.0.0.0',
       process.env.SWEAT_MCP_HOST ?? 'http://host.container.internal',
     )
-  const capabilities = workspaceTools.length
-    ? createCapabilitySessionFactory({
-        createGateway: ({ grantContext }) => {
-          const roomId = (grantContext as { roomId?: string } | undefined)
-            ?.roomId
-          if (!roomId)
-            throw new Error(
-              'A room id is required for the workspace capability',
-            )
-          const upstreams = [
-            createWorkspaceMcpUpstream({
-              port: {
-                listMessages: (id) => messages.listMessages(id),
-                postMessage: (input) => {
-                  messages.postMessage(input)
-                },
-              },
-              roomId,
-              agent: agentParticipant('software-engineer'),
-            }),
-          ]
-          if (linearAccessToken)
-            upstreams.push(
-              createLinearMcpUpstream({ accessToken: linearAccessToken }),
-            )
-          return createMcpGateway({ upstreams })
-        },
-        createEndpoint: (gateway) => {
-          const server = createMcpGatewayHttpServer({
-            gateway,
-            hostname: '0.0.0.0',
-          })
-          return { url: capabilityUrl(server.url), close: server.close }
-        },
-      })
-    : undefined
   const control = createRunControl(
     createSoftwareEngineerExecutor({
       image: process.env.SWEAT_AGENT_IMAGE,
@@ -582,9 +546,42 @@ if (import.meta.main) {
         apiKey: required('LLM_API_KEY'),
         model: required('LLM_MODEL'),
       },
-      ...(capabilities ? { capabilities } : {}),
+      adapters: [
+        createWorkspaceSoftwareEngineerAdapter({
+          port: {
+            listMessages: (id) => messages.listMessages(id),
+            postMessage: (input) => {
+              messages.postMessage(input)
+            },
+          },
+          agent: agentParticipant('software-engineer'),
+        }),
+        ...(linearAccessToken
+          ? [
+              createLinearSoftwareEngineerAdapter({
+                accessToken: linearAccessToken,
+              }),
+            ]
+          : []),
+        ...(github && githubRepository
+          ? [
+              createGitHubSoftwareEngineerAdapter({
+                octokit: github,
+                repository: githubRepository,
+                base: githubBase,
+                verifyCommand: process.env.SWEAT_VERIFY_COMMAND,
+              }),
+            ]
+          : []),
+      ],
+      createCapabilityEndpoint: (gateway) => {
+        const server = createMcpGatewayHttpServer({
+          gateway,
+          hostname: '0.0.0.0',
+        })
+        return { url: capabilityUrl(server.url), close: server.close }
+      },
     }),
-    { capability: { tools: grantedTools } },
   )
   const coordinator = createCoordinator({
     control,

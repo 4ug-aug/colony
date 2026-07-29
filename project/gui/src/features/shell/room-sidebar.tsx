@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { Bot, Hash, Lock, LogOut, Settings, Trash2 } from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
-import { ModeToggle } from '#/components/mode-toggle'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import {
@@ -15,6 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '#/components/ui/alert-dialog'
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -285,11 +285,13 @@ export function RoomSidebar({
                 isActive={view === 'account'}
                 onClick={onOpenAccount}
               >
-                <img
-                  className="size-9 shrink-0 rounded-full bg-white object-contain p-1"
-                  src="/app-icon.png"
-                  alt=""
-                />
+                <Avatar>
+                  <AvatarImage src="/app-icon.png" alt="" className="bg-white p-1" />
+                  <AvatarFallback>
+                    {user.name?.[0] ?? "U"}
+                  </AvatarFallback>
+                </Avatar>
+           
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">
                     {user.name}
@@ -301,7 +303,6 @@ export function RoomSidebar({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
-          <ModeToggle />
           <Button
             aria-label="Sign out"
             variant="outline"
