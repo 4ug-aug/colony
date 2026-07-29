@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { Bot, Hash, Lock, LogOut, Settings, Trash2 } from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
-import { Avatar } from '#/components/avatar'
 import { ModeToggle } from '#/components/mode-toggle'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
@@ -286,7 +285,11 @@ export function RoomSidebar({
                 isActive={view === 'account'}
                 onClick={onOpenAccount}
               >
-                <Avatar author={user} details={false} />
+                <img
+                  className="size-9 shrink-0 rounded-full bg-white object-contain p-1"
+                  src="/app-icon.png"
+                  alt=""
+                />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">
                     {user.name}
