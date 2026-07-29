@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Octokit } from "octokit";
@@ -161,6 +161,60 @@ test("GitHub syncs an existing run branch before returning its pull request", as
     await rm(workspace.directory, { force: true, recursive: true });
   }
 });
+
+test("GitHub preserves binary data, executable modes, and symlinks when syncing", async () => {
+  const workspace = await branchWithChange();
+  await Bun.write(join(workspace.directory, "image.bin"), new Uint8Array([0, 255, 128, 10]));
+  await Bun.write(join(workspace.directory, "script.sh"), "#!/bin/sh\necho hi\n");
+  await chmod(join(workspace.directory, "script.sh"), 0o755);
+  await symlink("README.md", join(workspace.directory, "readme-link"));
+  await git(workspace.directory, ["add", "image.bin", "script.sh", "readme-link"]);
+  await git(workspace.directory, ["commit", "--quiet", "--message", "Add special files"]);
+  const requests: Array<{ url: string; body?: string }> = [];
+  const gateway = createGitHubMcpGateway({
+    octokit: new Octokit({
+      auth: "secret",
+      request: {
+        fetch: async (url: string, init?: RequestInit) => {
+          requests.push({ url, body: typeof init?.body === "string" ? init.body : undefined });
+          if (url.includes("git/ref/heads%2Fsweat%2Frun-1")) return Response.json({ object: { sha: "run-commit" } });
+          if (url.includes("git/commits/run-commit")) return Response.json({ tree: { sha: "old-tree" } });
+          if (url.includes("git/blobs")) return Response.json({ sha: `blob-${requests.length}` });
+          if (url.includes("git/trees")) return Response.json({ sha: "new-tree" });
+          if (url.includes("git/commits")) return Response.json({ sha: "synced-commit" });
+          if (url.includes("git/refs/heads%2Fsweat%2Frun-1")) return Response.json({});
+          if (url.includes("pulls?")) return Response.json([{ number: 12 }]);
+          throw new Error(`Unexpected GitHub request: ${url}`);
+        },
+      },
+    }),
+    repository: "acme/product",
+    workspace: workspace.directory,
+    branch: "sweat/run-1",
+    baseCommit: workspace.baseCommit,
+    base: "main",
+  });
+  const session = gateway.createSession({
+    tools: ["github.create_pull_request"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  try {
+    await expect(gateway.callTool(session.token, "github.create_pull_request", { title: "Change" })).resolves.toEqual({ number: 12 });
+    const blobs = requests.filter(({ url }) => url.includes("git/blobs")).map(({ body }) => JSON.parse(body!));
+    expect(blobs).toEqual(expect.arrayContaining([
+      { content: "AP+ACg==", encoding: "base64" },
+      { content: Buffer.from("README.md").toString("base64"), encoding: "base64" },
+    ]));
+    const tree = JSON.parse(requests.find(({ url }) => url.includes("git/trees"))!.body!).tree;
+    expect(tree).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "image.bin", mode: "100644", type: "blob" }),
+      expect.objectContaining({ path: "script.sh", mode: "100755", type: "blob" }),
+      expect.objectContaining({ path: "readme-link", mode: "120000", type: "blob" }),
+    ]));
+  } finally {
+    await rm(workspace.directory, { force: true, recursive: true });
+  }
+}, 10_000);
 
 test("GitHub returns failed pull request checks", async () => {
   const gateway = createGitHubMcpGateway({

@@ -19,10 +19,12 @@ export type RunSummary = Pick<
 export type { Step }
 
 export interface RunControl {
-  listRuns(): RunSummary[]
   subscribe(listener: (run: RunSummary) => void): () => void
   subscribeSteps(listener: (runId: string, step: Step) => void): () => void
-  start(task: string, context: { roomId: string }): string
+  start<Output>(
+    task: string,
+    context: { roomId: string; onCreate: (run: RunSummary) => NonNullable<Output> },
+  ): NonNullable<Output>
   cancel(runId: string): Promise<RunSummary | undefined>
 }
 
@@ -62,16 +64,27 @@ export function createRunControl<Input extends RunInput>(
   options?: { capability?: { tools: readonly string[]; expiresInMs?: number } },
 ): RunControl {
   return {
-    listRuns: () => executor.listRuns().map(runSummary),
     subscribe: (listener) =>
       executor.subscribe((run) => listener(runSummary(run))),
     subscribeSteps: (listener) => executor.subscribeSteps(listener),
-    start: (task, context) => {
+    start: <Output>(
+      task: string,
+      context: {
+        roomId: string
+        onCreate: (run: RunSummary) => NonNullable<Output>
+      },
+    ): NonNullable<Output> => {
+      let created: NonNullable<Output> | undefined
       const capability = options?.capability
       const hasTools = capability && capability.tools.length > 0
-      return executor.startRun({
+      executor.startRun({
         agentDefinitionId: 'software-engineer',
         task,
+        onCreate: (run) => {
+          const registered = context.onCreate(runSummary(run))
+          if (registered === undefined) throw new Error('Agent run was not created')
+          created = registered
+        },
         ...(hasTools
           ? {
               grantContext: { roomId: context.roomId },
@@ -82,6 +95,8 @@ export function createRunControl<Input extends RunInput>(
             }
           : {}),
       })
+      if (created === undefined) throw new Error('Agent run was not created')
+      return created
     },
     cancel: async (runId) => {
       const run = await executor.cancelRun(runId)

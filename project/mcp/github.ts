@@ -61,6 +61,10 @@ function repositoryParts(repository: string): { owner: string; repo: string } {
 }
 
 async function git(directory: string, args: readonly string[]): Promise<string> {
+  return new TextDecoder().decode(await gitBytes(directory, args));
+}
+
+async function gitBytes(directory: string, args: readonly string[]): Promise<Uint8Array> {
   const process = Bun.spawn(["git", "-C", directory, ...args], {
     env: { PATH: Bun.env.PATH },
     stdout: "pipe",
@@ -68,7 +72,7 @@ async function git(directory: string, args: readonly string[]): Promise<string> 
   });
   const [exitCode, stdout, stderr] = await Promise.all([
     process.exited,
-    new Response(process.stdout).text(),
+    new Response(process.stdout).bytes(),
     new Response(process.stderr).text(),
   ]);
   if (exitCode) throw new Error(stderr.trim() || `git ${args[0]} failed`);
@@ -85,6 +89,40 @@ function changes(value: string): readonly Change[] {
     output.push({ path, deleted: status.startsWith("D") });
   }
   return output;
+}
+
+type TreeItem = NonNullable<Parameters<Octokit["rest"]["git"]["createTree"]>[0]>["tree"][number];
+type TreeMode = NonNullable<TreeItem["mode"]>;
+type TreeType = NonNullable<TreeItem["type"]>;
+
+async function materializeTree(options: {
+  octokit: Octokit;
+  repository: { owner: string; repo: string };
+  workspace: string;
+  commit: string;
+  changed: readonly Change[];
+}): Promise<TreeItem[]> {
+  return Promise.all(options.changed.map(async (file): Promise<TreeItem> => {
+    if (file.deleted) return { path: file.path, sha: null };
+    const entry = new TextDecoder().decode(await gitBytes(options.workspace, ["ls-tree", "-z", options.commit, "--", file.path]));
+    const match = /^(040000|100644|100755|120000|160000) (blob|tree|commit) ([0-9a-f]+)\t/.exec(entry);
+    if (!match) throw new Error(`Git tree entry not found for ${file.path}`);
+    const [, rawMode, rawType, sha] = match;
+    const mode = rawMode as TreeMode;
+    const type = rawType as TreeType;
+    if (type !== "blob") return { path: file.path, mode, type, sha };
+    const content = Buffer.from(await gitBytes(options.workspace, ["show", `${options.commit}:${file.path}`])).toString("base64");
+    return {
+      path: file.path,
+      mode,
+      type,
+      sha: (await options.octokit.rest.git.createBlob({
+        ...options.repository,
+        content,
+        encoding: "base64",
+      })).data.sha,
+    };
+  }));
 }
 
 async function workspaceCommits(options: {
@@ -241,18 +279,9 @@ export function createGitHubMcpUpstream(options: {
         const tree = await options.octokit.rest.git.createTree({
           ...repository,
           base_tree: branch.tree,
-          tree: await Promise.all(changed.map(async (file) => file.deleted
-            ? { path: file.path, mode: "100644" as const, type: "blob" as const, sha: null }
-            : {
-                path: file.path,
-                mode: "100644" as const,
-                type: "blob" as const,
-                sha: (await options.octokit.rest.git.createBlob({
-                  ...repository,
-                  content: await git(options.workspace, ["show", `${options.branch}:${file.path}`]),
-                  encoding: "utf-8",
-                })).data.sha,
-              })),
+          tree: await materializeTree({
+            octokit: options.octokit, repository, workspace: options.workspace, commit: options.branch, changed,
+          }),
         });
         const next = await options.octokit.rest.git.createCommit({
           ...repository,
@@ -295,18 +324,9 @@ export function createGitHubMcpUpstream(options: {
         const tree = await options.octokit.rest.git.createTree({
           ...repository,
           base_tree: remoteTree,
-          tree: await Promise.all(changed.map(async (file) => file.deleted
-            ? { path: file.path, mode: "100644" as const, type: "blob" as const, sha: null }
-            : {
-                path: file.path,
-                mode: "100644" as const,
-                type: "blob" as const,
-                sha: (await options.octokit.rest.git.createBlob({
-                  ...repository,
-                  content: await git(options.workspace, ["show", `${localCommit}:${file.path}`]),
-                  encoding: "utf-8",
-                })).data.sha,
-              })),
+          tree: await materializeTree({
+            octokit: options.octokit, repository, workspace: options.workspace, commit: localCommit, changed,
+          }),
         });
         const next = await options.octokit.rest.git.createCommit({
           ...repository,

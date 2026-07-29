@@ -124,6 +124,7 @@ export interface StartRunRequest<Input extends RunInput = never> {
   timeoutMs?: number;
   maxOutputBytes?: number;
   maxSteps?: number;
+  onCreate?: (record: RunRecord<Input>) => void;
 }
 
 export interface RunExecutor<Input extends RunInput = never> {
@@ -397,6 +398,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         stderr: "",
         createdAt: now(),
       };
+      request.onCreate?.(snapshot(record));
       store.create(record);
       const operation = execute(record);
       active.set(record.id, operation);

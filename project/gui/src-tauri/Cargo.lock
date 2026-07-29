@@ -3,6 +3,21 @@
 version = 3
 
 [[package]]
+name = "Sweat"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-http",
+ "tauri-plugin-log",
+ "tauri-plugin-store",
+ "tauri-plugin-websocket",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -63,21 +78,6 @@ name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
-
-[[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "log",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-http",
- "tauri-plugin-log",
- "tauri-plugin-store",
- "tauri-plugin-websocket",
-]
 
 [[package]]
 name = "atk"

@@ -10,6 +10,11 @@
     "beforeBuildCommand": "bun run build"
   },
   "app": {
+    "trayIcon": {
+      "iconPath": "icons/tray-icon.png",
+      "iconAsTemplate": true,
+      "tooltip": "Sweat"
+    },
     "windows": [
       {
         "title": "Sweat",

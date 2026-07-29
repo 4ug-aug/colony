@@ -1,125 +1,52 @@
-# Sweat handoff
+## Verdict
 
-You are continuing work on **Sweat**, a self-hostable agent orchestration
-platform. It launches isolated, on-demand agents for many possible roles;
-`software-engineer` is one role, not the platform's central abstraction.
+Not approvable under the thermo-nuclear bar. Tests are strong, but several structural boundaries are unsafe or misleading.
 
-Read `CONTEXT.md` and `docs/architecture.md` before changing code. They are
-the source of truth for the design decisions below.
+## Findings
 
-## Architecture to preserve
+1. P0 — GitHub publishing silently corrupts some repositories.
+    project/mcp/github.ts:240 and project/mcp/github.ts:292 duplicate handwritten Git-tree reconstruction. Both decode every file as UTF-8 and force mode 100644. Binary files,
+    executables, and symlinks will be published incorrectly.
 
-Keep these separate:
+    Extract one tree-materialization path using raw bytes/base64 and the actual Git object mode/type. Add binary, executable, and symlink tests.
 
-```text
-Agent definition -> instructions, requested capabilities, runtime/image
-Run/job           -> task, inputs, granted capabilities
-Sandbox           -> disposable execution environment
-```
+2. P1 — Runs have two owners and creation is non-atomic.
+    project/gui/src/server/coordinator.ts:314 starts the in-memory run, looks it up again, then separately persists its projection. Execution is already scheduled by project/runs/
+    index.ts:400. If SQLite insertion fails, the API returns 502 while an orphan sandbox continues running; subsequent events are discarded by project/gui/src/server/
+    coordinator.ts:180.
 
-The agent runtime runs **inside** the sandbox container. Models are
-OpenAI-compatible and provider-neutral:
+    Give runs one canonical store, or make durable registration part of startRun before scheduling. Return the created summary directly and delete the listRuns().find(...)
+    compensation.
 
-```ts
-{
-  (baseUrl, apiKey, model);
-}
-```
+3. P1 — Output limits do not actually limit process memory.
+    project/sdk/src/index.ts:25 accumulates complete stdout/stderr without bounds. project/runs/index.ts:252 only bounds the stored projection after chunks are already retained,
+    and final output is truncated only at project/runs/index.ts:330. A noisy container can exhaust host memory despite maxOutputBytes.
 
-Do not make a role-specific container entrypoint. Instead, a run declares
-generic inputs and the orchestrator invokes deterministic preparation
-entrypoints before the generic runtime starts.
+    Enforce a byte-bounded ring buffer at the command-reader boundary.
 
-For repository work, that means a generic `repository` input such as:
+4. P1 — There is no canonical client/server protocol.
+    The server contract in project/gui/src/server/coordinator.ts:47 is manually duplicated and weakened in project/gui/src/features/rooms/types.ts:3. Author.kind becomes optional,
+    run fields drift, and incoming messages are blindly cast after JSON.parse in project/gui/src/features/rooms/use-rooms.ts:94. The server also imports authorization logic from a
+    UI feature at project/gui/src/server/coordinator.ts:17.
 
-```ts
-{ provider: "github", repository: "acme/product", revision: "main" }
-```
+    Move domain and wire types into one dependency-free shared module, decode the stream once at the boundary, and place authorization policy outside features/.
 
-The repository checkout provisioner materializes that exact revision in the
-run workspace. The software-engineer role receives the prepared workspace; it
-does not choose whether or how to clone it. A revision may be a branch, tag,
-or commit SHA. Pinning a commit makes the run reproducible.
+5. P1 — The coordinator is a growing composition-root/router/domain monolith.
+    project/gui/src/server/coordinator.ts:143 owns CORS, tickets, routing, authorization, room membership, run projection, WebSockets, and process bootstrap. Its mirrored
+    integration test is already 1,507 lines.
 
-## Current implementation
+    Move bootstrap from project/gui/src/server/coordinator.ts:487 into main.ts; use the existing admission-handler pattern for room/run HTTP handling. Keep the coordinator as
+    transport wiring.
 
-The implementation is under `project/` and uses Bun/TypeScript.
+6. P1 — SQLite invariants are asserted rather than enforced.
+    project/gui/src/server/room-store.ts:101 claims database strings are valid unions, while project/gui/src/server/room-store.ts:193 casts step kinds and unknown author kinds
+    silently become users. The migrations have no CHECK constraints. Private-room creation also writes the room and owner membership separately at project/gui/src/server/room-
+    store.ts:292.
 
-- Apple Container SDK wrapper creates disposable sandboxes.
-- `runtime/openai-agents.ts` runs the OpenAI Agents SDK inside the container.
-- `roles/software-engineer.ts` declares the software-engineer role.
-- `agents/software-engineer.ts` defines the agent and wires its sandbox, role,
-  and runtime.
-- The generic Bun image is built from `project/Dockerfile`.
-- The CLI works with any OpenAI-compatible model:
+    Add native SQLite constraints for states/kinds/visibility and a transaction for multi-write invariants.
 
-  ```bash
-  cd project
-  bun run agent:build
-  LLM_BASE_URL=https://api.openai.com/v1 \
-  LLM_API_KEY=... \
-  LLM_MODEL=... \
-  bun run agent:software-engineer -- "Investigate this task and report your findings."
-  ```
+7. P1 — The advertised quality gate is materially incomplete.
+    Makefile:91 runs only GUI tests, omitting roughly half the suite; make check omits lint, formatting, root typecheck, and Cargo. bun run lint currently reports 81 errors, while
+    formatting scans ignored build artifacts and fails. Root TypeScript checking also fails on dependency declarations unless skipLibCheck is supplied.
 
-When `LINEAR_MCP_API_KEY` is set, the CLI keeps it on the host, creates a
-run-scoped gateway session, and passes only the short-lived session binding to
-the container.
-
-Apple Container needs a host-service DNS rule to reach the host gateway. Set
-it up once (the rule is removed after a macOS restart):
-
-```bash
-sudo container system dns create host.container.internal --localhost 203.0.113.113
-```
-
-Use `SWEAT_MCP_HOST` to override the advertised host for another local
-forwarding setup.
-
-## Capability model
-
-MCP capabilities must be composed through this boundary:
-
-```text
-Tenant connection -> provider credential held by the deployment
-Run grant         -> narrow allowed actions/resources/expiry
-MCP session       -> short-lived token given to the container
-```
-
-The repository has a composable MCP gateway core, HTTP transport, and Linear
-upstream adapter. The gateway keeps provider credentials outside the
-container, filters calls, and revokes the session when the run ends. Roles
-request capabilities; runs grant them. Do not create a generic task
-abstraction until multiple providers prove one is needed.
-
-## Current vertical slice: Account admission
-
-The delivered room slice provides `General` plus public and member-restricted
-private rooms with durable messages, linked runs, and authorized realtime
-activity.
-
-The delivered account slice closes workspace registration and establishes the
-server-owned account lifecycle:
-
-```text
-fresh server -> one-time first-administrator setup
-             -> Better Auth email/username + password session
-             -> administrator-created workspace invitation
-             -> invited member joins the existing room experience
-```
-
-Read [docs/account-admission.md](docs/account-admission.md) for the agreed flow,
-acceptance checks, and non-goals. The domain language is in `CONTEXT.md`; the
-sourced authentication decision is
-[ADR 0005](docs/adr/0005-better-auth-accounts.md).
-
-Preserve the static client/server split, server-owned runs, and the distinct
-agent-definition/run/sandbox boundaries.
-
-Tauri packaging with first-launch server selection is delivered (macOS-first).
-The desktop app wraps the same React client and runs its HTTP through Tauri's
-native cookie jar; the realtime WebSocket authenticates with a short-lived
-`/api/realtime-ticket` fetched over that HTTP path. A self-hosted server needs no
-HTTPS. See [ADR 0006](docs/adr/0006-tauri-packaging.md) and
-`project/gui/README.md`. The next natural slice is the deferred native
-affordances (notifications, tray status, deep links).
+    Make one root check run the root test suite, both TypeScript projects, configured lint/format checks, production build, and Cargo tests.

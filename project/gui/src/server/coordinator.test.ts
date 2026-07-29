@@ -34,7 +34,7 @@ class FakeRunControl implements RunControl {
     this.stepListeners.add(listener)
     return () => this.stepListeners.delete(listener)
   }
-  start(task: string, _context: { roomId: string }) {
+  start<Output>(task: string, context: { roomId: string; onCreate: (run: RunSummary) => Output }): Output {
     const run: RunSummary = {
       id: crypto.randomUUID(),
       task,
@@ -44,9 +44,10 @@ class FakeRunControl implements RunControl {
       stdout: '',
       stderr: '',
     }
+    const created = context.onCreate(run)
     this.runs = [...this.runs, run]
     this.publish(run)
-    return run.id
+    return created
   }
   async cancel(id: string) {
     const run = this.runs.find((item) => item.id === id)

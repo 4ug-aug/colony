@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Ban,
-  Bot,
   CheckCircle2,
   CircleX,
   LoaderCircle,
@@ -9,6 +8,7 @@ import {
   X,
 } from 'lucide-react'
 import { sweatApiUrl } from '#/lib/auth-client'
+import { AgentAnt } from '#/components/avatar'
 import { formatStepText, mergeSteps, pairSteps } from './run-activity'
 import { stepLabel } from './step-label'
 import type { Step } from './step-label'
@@ -59,7 +59,7 @@ function PersonAvatar({ person, agent = false }: { person: Person; agent?: boole
     <Avatar>
       {person.image && <AvatarImage src={person.image} alt="" />}
       <AvatarFallback className={agent ? 'bg-primary/10 text-primary' : undefined}>
-        {agent ? <Bot className="size-4" /> : person.name.slice(0, 1).toUpperCase()}
+        {agent ? <AgentAnt className="size-6" /> : person.name.slice(0, 1).toUpperCase()}
       </AvatarFallback>
     </Avatar>
   )

@@ -1,6 +1,10 @@
 import type { ServerWebSocket } from 'bun'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { createRunControl, type RunControl } from './run-control'
+import {
+  createRunControl,
+  type RunControl,
+  type RunSummary,
+} from './run-control'
 import {
   createSqliteRoomStore,
   type RoomMessage,
@@ -177,7 +181,7 @@ export function createCoordinator(options: {
     for (const socket of sockets)
       if (userIds.has(socket.data.userId)) send(socket, message)
   }
-  const project = (run: ReturnType<RunControl['listRuns']>[number]): void => {
+  const project = (run: RunSummary): void => {
     const saved = options.store.getRun(run.id)
     if (!saved) return
     const changed = { ...saved, ...run }
@@ -311,19 +315,19 @@ export function createCoordinator(options: {
         })
         if (!task) return cors(json({ message }, 201))
         try {
-          const runId = options.control.start(task, { roomId })
-          const source = options.control
-            .listRuns()
-            .find((run) => run.id === runId)
-          if (!source) throw new Error('Agent run was not created')
-          const run: RoomRun = {
-            ...source,
+          const run = options.control.start(task, {
             roomId,
-            triggerMessageId: message.id,
-            requestedBy: user,
-          }
-          options.store.createRun(run)
-          broadcastRoom(roomId, { type: 'run.changed', run })
+            onCreate: (source) => {
+              const run: RoomRun = {
+                ...source,
+                roomId,
+                triggerMessageId: message.id,
+                requestedBy: user,
+              }
+              options.store.createRun(run)
+              return run
+            },
+          })
           return cors(json({ message, run }, 202))
         } catch (error) {
           return cors(

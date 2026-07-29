@@ -1,10 +1,15 @@
-import { Bot } from 'lucide-react'
 import type { Author } from '#/features/rooms/types'
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from '#/components/ui/hover-card'
+
+// The ant PNG is black with transparency; this CSS mask keeps its silhouette
+// while letting the surrounding text colour recolour it per avatar context.
+export function AgentAnt({ className = '' }: { className?: string }) {
+  return <span aria-hidden="true" className={`agent-ant ${className}`} />
+}
 
 export function Avatar({
   author,
@@ -29,7 +34,7 @@ export function Avatar({
       aria-hidden="true"
     >
       {agent ? (
-        <Bot className="size-4" />
+        <AgentAnt className="size-8" />
       ) : (
         author.name.slice(0, 1).toUpperCase()
       )}

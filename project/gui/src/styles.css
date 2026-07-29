@@ -258,6 +258,14 @@ pre code {
   font-size: 0.55rem;
 }
 
+.agent-ant {
+  display: block;
+  flex: none;
+  background-color: currentColor;
+  mask: url('/no-bg-ant-worker.png') center / contain no-repeat;
+  -webkit-mask: url('/no-bg-ant-worker.png') center / contain no-repeat;
+}
+
 .mention-menu button span:last-child {
   display: flex;
   align-items: baseline;

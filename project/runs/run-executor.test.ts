@@ -40,6 +40,23 @@ test("startRun records preparation before asynchronous execution and snapshots r
   await waitFor(() => executor.getRun(id)?.state === "succeeded");
 });
 
+test("startRun registers durably before it schedules execution", () => {
+  let sandboxes = 0;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => { sandboxes++; throw new Error("must not run"); } },
+    runtime: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+  });
+
+  expect(() => executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "do not start",
+    onCreate: () => { throw new Error("SQLite unavailable"); },
+  })).toThrow("SQLite unavailable");
+  expect(executor.listRuns()).toEqual([]);
+  expect(sandboxes).toBe(0);
+});
+
 test("lists and publishes run transitions", async () => {
   let release!: () => void;
   const pending = new Promise<void>((resolve) => { release = resolve; });
