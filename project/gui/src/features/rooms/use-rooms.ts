@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { sweatApiUrl } from '#/lib/auth-client'
+import { apiFetch, connectRoomStream } from '#/lib/api-transport'
+import type { RoomStreamHandle } from '#/lib/api-transport'
 import type { Room, RoomMessage, RoomRun, StreamMessage } from './types'
 import type { Step } from '#/features/runs/step-label'
-
-function roomStreamUrl(roomId: string) {
-  const url = new URL(sweatApiUrl(`/api/rooms/${roomId}/stream`))
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return url.toString()
-}
 
 function upsert<T extends { id: string }>(items: T[], item: T) {
   const index = items.findIndex(({ id }) => id === item.id)
@@ -43,11 +38,11 @@ export function useRooms() {
   const [error, setError] = useState<string>()
   const [createError, setCreateError] = useState<string>()
   const [membersChangedAt, setMembersChangedAt] = useState<Record<string, number>>({})
-  const socket = useRef<WebSocket | undefined>(undefined)
+  const socket = useRef<RoomStreamHandle | undefined>(undefined)
   const drafts = useRef<Record<string, string>>({})
 
   useEffect(() => {
-    void fetch(sweatApiUrl('/api/rooms'), { credentials: 'include' })
+    void apiFetch('/api/rooms')
       .then(async (response) => {
         if (!response.ok) throw new Error('Unable to load rooms')
         const result = (await response.json()) as { rooms: Room[] }
@@ -74,86 +69,91 @@ export function useRooms() {
     let stopped = false
     let attempts = 0
     let retry: ReturnType<typeof setTimeout> | undefined
+
     const connect = () => {
       if (stopped) return
-      const next = new WebSocket(roomStreamUrl(selectedRoomId))
-      socket.current = next
-      next.onopen = () => {
-        attempts = 0
-        setConnection('connected')
-      }
-      next.onmessage = ({ data }) => {
-        const event = JSON.parse(data) as StreamMessage
-        if (stopped) return
-        if (event.type === 'room.created') {
-          setRooms((current) => orderedRooms(upsert(current, event.room)))
-          return
-        }
-        if (event.type === 'room.snapshot') {
-          if (event.room.id !== selectedRoomId) return
-          setMessages(event.messages)
-          runsRef.current = event.runs
-          setRuns(event.runs)
-          setLatestStepByRun(new Map(event.latestSteps.map((s) => [s.runId, s])))
-          setLiveStepsByRun(
-            new Map(event.latestSteps.map((step) => [step.runId, [step]])),
+      const handle = connectRoomStream(selectedRoomId, {
+        onOpen() {
+          attempts = 0
+          setConnection('connected')
+        },
+        onMessage(data) {
+          const event = JSON.parse(data) as StreamMessage
+          if (stopped) return
+          if (event.type === 'room.created') {
+            setRooms((current) => orderedRooms(upsert(current, event.room)))
+            return
+          }
+          if (event.type === 'room.snapshot') {
+            if (event.room.id !== selectedRoomId) return
+            setMessages(event.messages)
+            runsRef.current = event.runs
+            setRuns(event.runs)
+            setLatestStepByRun(new Map(event.latestSteps.map((s) => [s.runId, s])))
+            setLiveStepsByRun(
+              new Map(event.latestSteps.map((step) => [step.runId, [step]])),
+            )
+            setLoading(false)
+          }
+          if (
+            event.type === 'message.created' &&
+            event.message.roomId === selectedRoomId
           )
-          setLoading(false)
-        }
-        if (
-          event.type === 'message.created' &&
-          event.message.roomId === selectedRoomId
-        )
-          setMessages((current) => upsert(current, event.message))
-        if (event.type === 'run.changed' && event.run.roomId === selectedRoomId) {
-          runsRef.current = upsert(runsRef.current, event.run)
-          setRuns((current) => upsert(current, event.run))
-        }
-        if (event.type === 'run.step' && runsRef.current.some((r) => r.id === event.runId)) {
-          setLatestStepByRun((current) => {
-            const next = new Map(current)
-            next.set(event.runId, event.step)
-            return next
-          })
-          setLiveStepsByRun((current) => {
-            const next = new Map(current)
-            next.set(event.runId, upsert(current.get(event.runId) ?? [], event.step))
-            return next
-          })
-        }
-        if (event.type === 'room.removed') {
-          setRooms((current) => {
-            const next = current.filter(({ id }) => id !== event.roomId)
-            setSelectedRoomId((currentId) => {
-              if (currentId !== event.roomId) return currentId
-              const fallback =
-                next.find(({ id }) => id === 'general') ?? next.at(0)
-              const fallbackId = fallback?.id
-              if (fallbackId) localStorage.setItem(selectedRoomKey, fallbackId)
-              return fallbackId
+            setMessages((current) => upsert(current, event.message))
+          if (event.type === 'run.changed' && event.run.roomId === selectedRoomId) {
+            runsRef.current = upsert(runsRef.current, event.run)
+            setRuns((current) => upsert(current, event.run))
+          }
+          if (event.type === 'run.step' && runsRef.current.some((r) => r.id === event.runId)) {
+            setLatestStepByRun((current) => {
+              const next = new Map(current)
+              next.set(event.runId, event.step)
+              return next
             })
-            return next
-          })
-        }
-        if (event.type === 'room.members.changed') {
-          setMembersChangedAt((current) => ({
-            ...current,
-            [event.roomId]: Date.now(),
-          }))
-        }
-      }
-      next.onclose = () => {
-        if (stopped) return
-        if (attempts++ >= 5) {
-          setConnection('disconnected')
-          setError('Coordinator unavailable')
-          return
-        }
-        setConnection('reconnecting')
-        retry = setTimeout(connect, Math.min(1_000 * 2 ** attempts, 10_000))
-      }
-      next.onerror = () => next.close()
+            setLiveStepsByRun((current) => {
+              const next = new Map(current)
+              next.set(event.runId, upsert(current.get(event.runId) ?? [], event.step))
+              return next
+            })
+          }
+          if (event.type === 'room.removed') {
+            setRooms((current) => {
+              const next = current.filter(({ id }) => id !== event.roomId)
+              setSelectedRoomId((currentId) => {
+                if (currentId !== event.roomId) return currentId
+                const fallback =
+                  next.find(({ id }) => id === 'general') ?? next.at(0)
+                const fallbackId = fallback?.id
+                if (fallbackId) localStorage.setItem(selectedRoomKey, fallbackId)
+                return fallbackId
+              })
+              return next
+            })
+          }
+          if (event.type === 'room.members.changed') {
+            setMembersChangedAt((current) => ({
+              ...current,
+              [event.roomId]: Date.now(),
+            }))
+          }
+        },
+        onClose() {
+          if (stopped) return
+          if (attempts++ >= 5) {
+            setConnection('disconnected')
+            setError('Coordinator unavailable')
+            return
+          }
+          setConnection('reconnecting')
+          retry = setTimeout(connect, Math.min(1_000 * 2 ** attempts, 10_000))
+        },
+        onError() {
+          socket.current?.close()
+        },
+      })
+      socket.current = handle
     }
+
     connect()
     return () => {
       stopped = true
@@ -167,9 +167,8 @@ export function useRooms() {
     body?: unknown,
   ): Promise<T | undefined> => {
     try {
-      const response = await fetch(sweatApiUrl(path), {
+      const response = await apiFetch(path, {
         method: 'POST',
-        credentials: 'include',
         headers: body ? { 'content-type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       })
@@ -213,9 +212,8 @@ export function useRooms() {
     },
     create: async (name: string, visibility: 'public' | 'private' = 'public') => {
       try {
-        const response = await fetch(sweatApiUrl('/api/rooms'), {
+        const response = await apiFetch('/api/rooms', {
           method: 'POST',
-          credentials: 'include',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ name, visibility }),
         })

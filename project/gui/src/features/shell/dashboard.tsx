@@ -9,14 +9,11 @@ import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MembersPanel } from '#/features/members/members-panel'
 import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '#/components/ui/sidebar'
+import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import type { Author } from '#/features/rooms/types'
 import { AccountSettingsPage } from '#/features/account/account-settings'
 import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
+import { WindowToolbar, titleBarVars } from './window-toolbar'
 
 export function Dashboard({ user }: { user: Author }) {
   const {
@@ -70,7 +67,8 @@ export function Dashboard({ user }: { user: Author }) {
     : undefined
 
   return (
-    <SidebarProvider>
+    <SidebarProvider style={titleBarVars()}>
+      <WindowToolbar />
       <RoomSidebar
         rooms={rooms}
         selectedRoomId={room?.id}
@@ -95,9 +93,8 @@ export function Dashboard({ user }: { user: Author }) {
         }}
         user={user}
       />
-      <SidebarInset className="h-[calc(100svh-1rem)] overflow-hidden border border-border/70 bg-background">
+      <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger />
           {view === 'account' ? (
             <UserRound className="size-4 text-muted-foreground" />
           ) : view === 'workspace' ? (

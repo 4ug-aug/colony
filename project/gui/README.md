@@ -9,12 +9,12 @@ public rooms. Private rooms are discoverable and accessible only to their
 members. Mention `@software-engineer` in a message to start a bounded run; its
 status and successful result appear in that room's shared history. Realtime
 messages and run updates are room-scoped. The client is an inset, left-aligned
-room UI and remains ready for a future Tauri wrapper without embedding server
-logic.
+room UI. The same client runs in the browser and inside the Tauri desktop shell
+without embedding server logic.
 
 Workspace admission is closed after the first administrator is created.
 Administrators can create single-use invitations and suspend or restore
-members. Room renaming/deletion and Tauri packaging remain deferred.
+members. Room renaming/deletion remains deferred.
 
 From the repository root:
 
@@ -55,6 +55,24 @@ make server
 # Terminal 2
 make gui
 ```
+
+## Desktop app (Tauri)
+
+The desktop app wraps this same React client and talks to a self-hosted
+coordinator over HTTP and WebSocket. It needs the Rust toolchain (`rustup`) and,
+on macOS, the Xcode command-line tools. From `project/gui`:
+
+```bash
+bun run tauri:dev     # launch the desktop window against the Vite dev server
+bun run tauri:build   # produce a macOS .app / .dmg
+```
+
+On first launch the app asks for the Sweat server URL (for local development,
+`http://localhost:3001` with a coordinator running) and remembers it. Unlike the
+browser client, the desktop app runs its HTTP through Tauri's native cookie jar
+and authenticates the realtime WebSocket with a short-lived ticket, so the
+server does not need HTTPS. See
+[ADR 0006](../../docs/adr/0006-tauri-packaging.md).
 
 Useful checks:
 

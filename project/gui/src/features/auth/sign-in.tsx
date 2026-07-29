@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { authClient, sweatApiUrl } from '#/lib/auth-client'
+import { authClient } from '#/lib/auth-client'
+import { apiFetch } from '#/lib/api-transport'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 
@@ -20,7 +21,7 @@ export function SignIn() {
   const [error, setError] = useState<string>()
 
   useEffect(() => {
-    void fetch(sweatApiUrl('/api/admission/status'))
+    void apiFetch('/api/admission/status')
       .then((response) => {
         if (!response.ok) throw new Error()
         return response.json() as Promise<{ setupRequired?: boolean }>
@@ -45,15 +46,12 @@ export function SignIn() {
         return
       }
       const token = mode === 'setup' ? setupToken : pathToken
-      const response = await fetch(
-        sweatApiUrl(
-          mode === 'setup'
-            ? '/api/admission/setup'
-            : `/api/workspace/invitations/${token}/redeem`,
-        ),
+      const response = await apiFetch(
+        mode === 'setup'
+          ? '/api/admission/setup'
+          : `/api/workspace/invitations/${token}/redeem`,
         {
           method: 'POST',
-          credentials: 'include',
           headers: {
             'content-type': 'application/json',
             ...(mode === 'setup' ? { 'x-sweat-setup-token': token ?? '' } : {}),

@@ -114,5 +114,12 @@ sourced authentication decision is
 [ADR 0005](docs/adr/0005-better-auth-accounts.md).
 
 Preserve the static client/server split, server-owned runs, and the distinct
-agent-definition/run/sandbox boundaries. The next natural slice is Tauri
-packaging with first-launch server selection.
+agent-definition/run/sandbox boundaries.
+
+Tauri packaging with first-launch server selection is delivered (macOS-first).
+The desktop app wraps the same React client and runs its HTTP through Tauri's
+native cookie jar; the realtime WebSocket authenticates with a short-lived
+`/api/realtime-ticket` fetched over that HTTP path. A self-hosted server needs no
+HTTPS. See [ADR 0006](docs/adr/0006-tauri-packaging.md) and
+`project/gui/README.md`. The next natural slice is the deferred native
+affordances (notifications, tray status, deep links).

@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test'
 import { createServer } from 'node:net'
-import { createCoordinator, type SessionAuthenticator } from './coordinator'
+import {
+  allowedOrigin,
+  createCoordinator,
+  mintRealtimeTicket,
+  verifyRealtimeTicket,
+  type SessionAuthenticator,
+} from './coordinator'
 import type { RunControl, RunSummary, Step } from './run-control'
 import {
   GENERAL_ROOM_ID,
@@ -1421,4 +1427,25 @@ test('member removing themselves (leave) is allowed and gets room.removed', asyn
   } finally {
     coordinator.stop()
   }
+})
+
+test('allowedOrigin permits tauri://localhost regardless of configured origin', () => {
+  expect(allowedOrigin('tauri://localhost', 'http://localhost:3000')).toBe('tauri://localhost')
+  expect(allowedOrigin('tauri://localhost', 'https://app.example.com')).toBe('tauri://localhost')
+})
+
+test('allowedOrigin rejects disallowed origins', () => {
+  expect(allowedOrigin('https://evil.example', 'http://localhost:3000')).toBeUndefined()
+  expect(allowedOrigin('https://evil.example', 'https://app.example.com')).toBeUndefined()
+})
+
+test('a realtime ticket round-trips to its user id', () => {
+  expect(verifyRealtimeTicket(mintRealtimeTicket('user_abc'))).toBe('user_abc')
+})
+
+test('verifyRealtimeTicket rejects tampered and malformed tickets', () => {
+  const ticket = mintRealtimeTicket('user_abc')
+  expect(verifyRealtimeTicket(ticket.slice(0, -2) + 'xx')).toBeUndefined()
+  expect(verifyRealtimeTicket('not-a-ticket')).toBeUndefined()
+  expect(verifyRealtimeTicket('')).toBeUndefined()
 })

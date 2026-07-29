@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { LogOut, UserPlus, Users, X } from 'lucide-react'
-import { sweatApiUrl } from '#/lib/auth-client'
+import { apiFetch } from '#/lib/api-transport'
 import { Avatar } from '#/components/avatar'
 import { Button } from '#/components/ui/button'
 import {
@@ -40,9 +40,7 @@ export function MembersPanel({
     setLoadingMembers(true)
     setMembersError(undefined)
     try {
-      const res = await fetch(sweatApiUrl(`/api/rooms/${room.id}/members`), {
-        credentials: 'include',
-      })
+      const res = await apiFetch(`/api/rooms/${room.id}/members`)
       if (!res.ok) throw new Error('Could not load members')
       const data = (await res.json()) as { members: MemberUser[] }
       setMembers(data.members)
@@ -59,9 +57,7 @@ export function MembersPanel({
     setLoadingWorkspace(true)
     setWorkspaceError(undefined)
     try {
-      const res = await fetch(sweatApiUrl('/api/workspace/members'), {
-        credentials: 'include',
-      })
+      const res = await apiFetch('/api/workspace/members')
       if (!res.ok) throw new Error('Could not load users')
       const data = (await res.json()) as { users: MemberUser[] }
       setWorkspaceUsers(data.users)
@@ -90,10 +86,9 @@ export function MembersPanel({
     setMutating(true)
     setMutateError(undefined)
     try {
-      const res = await fetch(
-        sweatApiUrl(`/api/rooms/${room.id}/members/${userId}`),
-        { method: 'DELETE', credentials: 'include' },
-      )
+      const res = await apiFetch(`/api/rooms/${room.id}/members/${userId}`, {
+        method: 'DELETE',
+      })
       if (!res.ok) {
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? 'Could not remove member')
@@ -112,9 +107,9 @@ export function MembersPanel({
     setMutating(true)
     setMutateError(undefined)
     try {
-      const res = await fetch(
-        sweatApiUrl(`/api/rooms/${room.id}/members/${currentUserId}`),
-        { method: 'DELETE', credentials: 'include' },
+      const res = await apiFetch(
+        `/api/rooms/${room.id}/members/${currentUserId}`,
+        { method: 'DELETE' },
       )
       if (!res.ok) {
         const data = (await res.json()) as { error?: string }
@@ -133,9 +128,8 @@ export function MembersPanel({
     setMutating(true)
     setMutateError(undefined)
     try {
-      const res = await fetch(sweatApiUrl(`/api/rooms/${room.id}/members`), {
+      const res = await apiFetch(`/api/rooms/${room.id}/members`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ userId }),
       })

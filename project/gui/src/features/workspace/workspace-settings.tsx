@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { sweatApiUrl } from '#/lib/auth-client'
+import { apiFetch } from '#/lib/api-transport'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import {
@@ -42,12 +42,8 @@ export function WorkspaceSettingsPage({
   const load = async () => {
     setError(undefined)
     const [memberResponse, invitationResponse] = await Promise.all([
-      fetch(sweatApiUrl('/api/workspace/settings/members'), {
-        credentials: 'include',
-      }),
-      fetch(sweatApiUrl('/api/workspace/invitations'), {
-        credentials: 'include',
-      }),
+      apiFetch('/api/workspace/settings/members'),
+      apiFetch('/api/workspace/invitations'),
     ])
     if (!memberResponse.ok || !invitationResponse.ok)
       throw new Error('Could not load workspace settings')
@@ -82,9 +78,8 @@ export function WorkspaceSettingsPage({
 
   const createInvitation = () =>
     mutate(async () => {
-      const response = await fetch(sweatApiUrl('/api/workspace/invitations'), {
+      const response = await apiFetch('/api/workspace/invitations', {
         method: 'POST',
-        credentials: 'include',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ days }),
       })
@@ -115,9 +110,9 @@ export function WorkspaceSettingsPage({
         )
       )
         return
-      const response = await fetch(
-        sweatApiUrl(`/api/workspace/settings/members/${member.id}/${action}`),
-        { method: 'POST', credentials: 'include' },
+      const response = await apiFetch(
+        `/api/workspace/settings/members/${member.id}/${action}`,
+        { method: 'POST' },
       )
       if (!response.ok) throw new Error(`Could not ${action} member`)
       await load()
@@ -126,13 +121,9 @@ export function WorkspaceSettingsPage({
   const revoke = (id: string) =>
     mutate(async () => {
       if (!window.confirm('Revoke this invitation link?')) return
-      const response = await fetch(
-        sweatApiUrl(`/api/workspace/invitations/${id}`),
-        {
-          method: 'DELETE',
-          credentials: 'include',
-        },
-      )
+      const response = await apiFetch(`/api/workspace/invitations/${id}`, {
+        method: 'DELETE',
+      })
       if (!response.ok) throw new Error('Could not revoke invitation')
       await load()
     })

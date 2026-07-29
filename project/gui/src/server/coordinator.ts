@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from 'bun'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createRunControl, type RunControl } from './run-control'
 import {
   createSqliteRoomStore,
@@ -16,6 +17,30 @@ import {
 
 export interface SessionAuthenticator {
   authenticate(request: Request): Promise<RoomUser | undefined>
+}
+
+// Short-lived, single-process HMAC ticket used to authenticate the realtime
+// WebSocket. The desktop client authenticates over HTTP (cookie jar), fetches a
+// ticket, and passes it in the stream URL — the WebSocket transport cannot carry
+// the HTTP session, so the ticket bridges an already-authenticated HTTP request
+// to the upgrade.
+const realtimeTicketSecret = randomBytes(32)
+const realtimeTicketTtlMs = 30_000
+export const mintRealtimeTicket = (userId: string): string => {
+  const body = Buffer.from(`${userId}|${Date.now() + realtimeTicketTtlMs}`).toString('base64url')
+  const sig = createHmac('sha256', realtimeTicketSecret).update(body).digest('base64url')
+  return `${body}.${sig}`
+}
+export const verifyRealtimeTicket = (ticket: string): string | undefined => {
+  const [body, sig] = ticket.split('.')
+  if (!body || !sig) return undefined
+  const expected = createHmac('sha256', realtimeTicketSecret).update(body).digest('base64url')
+  const sigBuf = Buffer.from(sig)
+  const expBuf = Buffer.from(expected)
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) return undefined
+  const [userId, expiry] = Buffer.from(body, 'base64url').toString().split('|')
+  if (!userId || !expiry || Date.now() > Number(expiry)) return undefined
+  return userId
 }
 
 export type ServerMessage =
@@ -52,11 +77,12 @@ const withCors = (response: Response, origin: string): Response => {
     headers,
   })
 }
-const allowedOrigin = (
+export const allowedOrigin = (
   origin: string | null,
   configured: string,
 ): string | undefined => {
   if (origin === configured) return origin
+  if (origin === 'tauri://localhost') return origin
   if (
     new URL(configured).hostname === 'localhost' &&
     origin !== null &&
@@ -211,20 +237,28 @@ export function createCoordinator(options: {
       if (admissionResponse) return cors(admissionResponse)
       if (url.pathname.startsWith('/api/auth/'))
         return cors(await options.authHandler(request))
-      const user = await options.authenticator.authenticate(request)
-      if (!user) return cors(json({ error: 'Unauthorized' }, 401))
       const stream = url.pathname.match(/^\/api\/rooms\/([^/]+)\/stream$/)
       if (
         stream &&
         request.headers.get('upgrade')?.toLowerCase() === 'websocket'
       ) {
         const roomId = stream[1]!
-        if (!options.store.canAccessRoom(roomId, user.id))
+        // Authenticate the upgrade by realtime ticket (desktop) or session (browser).
+        const ticket = url.searchParams.get('ticket')
+        const userId =
+          (ticket ? verifyRealtimeTicket(ticket) : undefined) ??
+          (await options.authenticator.authenticate(request))?.id
+        if (!userId) return cors(json({ error: 'Unauthorized' }, 401))
+        if (!options.store.canAccessRoom(roomId, userId))
           return cors(json({ error: 'Room not found' }, 404))
-        return server.upgrade(request, { data: { roomId, userId: user.id } })
+        return server.upgrade(request, { data: { roomId, userId } })
           ? undefined
           : json({ error: 'Upgrade failed' }, 400)
       }
+      const user = await options.authenticator.authenticate(request)
+      if (!user) return cors(json({ error: 'Unauthorized' }, 401))
+      if (url.pathname === '/api/realtime-ticket' && request.method === 'GET')
+        return cors(json({ ticket: mintRealtimeTicket(user.id) }))
       if (url.pathname === '/api/rooms' && request.method === 'GET')
         return cors(json({ rooms: options.store.listRoomsForUser(user.id) }))
       if (url.pathname === '/api/rooms' && request.method === 'POST') {
