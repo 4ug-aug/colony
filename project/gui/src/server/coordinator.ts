@@ -14,6 +14,7 @@ import {
   createAdmissionHttpHandler,
   type AdmissionOptions,
 } from './admission-http'
+import { canDeleteRoom } from '#/features/rooms/permissions'
 
 export interface SessionAuthenticator {
   authenticate(request: Request): Promise<RoomUser | undefined>
@@ -279,6 +280,16 @@ export function createCoordinator(options: {
         }
         // private rooms are delivered to members in B2
         return cors(json({ room }, 201))
+      }
+      const roomRoute = url.pathname.match(/^\/api\/rooms\/([^/]+)$/)
+      if (roomRoute && request.method === 'DELETE') {
+        const room = options.store.getRoom(roomRoute[1]!)
+        if (!room) return cors(json({ error: 'Room not found' }, 404))
+        if (!canDeleteRoom(user, room))
+          return cors(json({ error: 'Forbidden' }, 403))
+        options.store.deleteRoom(room.id)
+        broadcast({ type: 'room.removed', roomId: room.id })
+        return cors(json({ ok: true }))
       }
       const messages = url.pathname.match(/^\/api\/rooms\/([^/]+)\/messages$/)
       if (messages && request.method === 'POST') {

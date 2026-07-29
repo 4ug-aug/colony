@@ -10,6 +10,7 @@ const connection = await (async () => {
       import('drizzle-orm/bun-sqlite'),
     ])
     const sqlite = new Database(databasePath, { create: true })
+    sqlite.exec('PRAGMA foreign_keys = ON')
     sqlite.exec('PRAGMA journal_mode = WAL')
     sqlite.exec('PRAGMA busy_timeout = 5000')
     return { sqlite, db: drizzle(sqlite, { schema: authSchema }) }
@@ -20,6 +21,7 @@ const connection = await (async () => {
     import('drizzle-orm/better-sqlite3'),
   ])
   const sqlite = new Database(databasePath)
+  sqlite.pragma('foreign_keys = ON')
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('busy_timeout = 5000')
   return { sqlite, db: drizzle(sqlite, { schema: authSchema }) }

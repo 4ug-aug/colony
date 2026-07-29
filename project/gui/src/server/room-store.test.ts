@@ -529,6 +529,27 @@ test('isOwner returns true only for the creator', () => {
   sqlite.close()
 })
 
+test('deleteRoom removes the room and its records', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
+    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade);
+    INSERT INTO room VALUES ('room-1', 'Room', 'public', 'user-1');
+    INSERT INTO room_message VALUES ('message-1', 'room-1');
+  `)
+  const store = createSqliteRoomStore(sqlite)
+
+  expect(store.deleteRoom('room-1')).toBe(true)
+  expect(store.getRoom('room-1')).toBeUndefined()
+  expect(
+    sqlite.prepare('SELECT COUNT(*) AS count FROM room_message').get(),
+  ).toEqual({ count: 0 })
+  expect(store.deleteRoom('room-1')).toBe(false)
+
+  sqlite.close()
+})
+
 test('member and message profiles use username with durable secondary details', () => {
   const sqlite = new Database(':memory:')
   sqlite.exec(SCHEMA_DDL)

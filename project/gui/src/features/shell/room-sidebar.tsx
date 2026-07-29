@@ -1,11 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Bot, Hash, Lock, LogOut, Settings } from 'lucide-react'
+import { Bot, Hash, Lock, LogOut, Settings, Trash2 } from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
 import { Avatar } from '#/components/avatar'
 import { ModeToggle } from '#/components/mode-toggle'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '#/components/ui/alert-dialog'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '#/components/ui/context-menu'
+import { toast } from '#/components/ui/toast'
 import {
   Popover,
   PopoverContent,
@@ -25,6 +43,7 @@ import {
   SidebarMenuItem,
 } from '#/components/ui/sidebar'
 import type { Author, Room } from '#/features/rooms/types'
+import { canDeleteRoom } from '#/features/rooms/permissions'
 
 export type DashboardView = 'room' | 'account' | 'workspace'
 
@@ -33,6 +52,7 @@ export function RoomSidebar({
   selectedRoomId,
   onSelect,
   onCreate,
+  onDelete,
   createError,
   onMentionAgent,
   view,
@@ -44,6 +64,7 @@ export function RoomSidebar({
   selectedRoomId: string | undefined
   onSelect: (roomId: string) => void
   onCreate: (name: string, visibility: 'public' | 'private') => Promise<unknown>
+  onDelete: (roomId: string) => Promise<unknown>
   createError: string | undefined
   onMentionAgent: (agentId: string) => void
   view: DashboardView
@@ -57,6 +78,7 @@ export function RoomSidebar({
     'public',
   )
   const [creatingRoom, setCreatingRoom] = useState(false)
+  const [roomToDelete, setRoomToDelete] = useState<Room>()
   const roomNameInput = useRef<HTMLInputElement>(null)
 
   const submitRoom = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -185,15 +207,34 @@ export function RoomSidebar({
             <SidebarMenu>
               {rooms.map((item) => (
                 <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    isActive={view === 'room' && item.id === selectedRoomId}
-                    tooltip={item.name}
-                    onClick={() => onSelect(item.id)}
-                    className="data-[active=true]:bg-primary/5"
-                  >
-                    {item.visibility === 'private' ? <Lock /> : <Hash />}
-                    <span>{item.name}</span>
-                  </SidebarMenuButton>
+                  <ContextMenu disabled={!canDeleteRoom(user, item)}>
+                    <ContextMenuTrigger
+                      render={
+                        <SidebarMenuButton
+                          isActive={
+                            view === 'room' && item.id === selectedRoomId
+                          }
+                          tooltip={item.name}
+                          onClick={() => onSelect(item.id)}
+                          className="data-[active=true]:bg-primary/5"
+                        />
+                      }
+                    >
+                      {item.visibility === 'private' ? <Lock /> : <Hash />}
+                      <span>{item.name}</span>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuGroup>
+                        <ContextMenuItem
+                          variant="destructive"
+                          onClick={() => setRoomToDelete(item)}
+                        >
+                          <Trash2 />
+                          Delete room
+                        </ContextMenuItem>
+                      </ContextMenuGroup>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
@@ -268,6 +309,42 @@ export function RoomSidebar({
           </Button>
         </div>
       </SidebarFooter>
+      <AlertDialog
+        open={roomToDelete !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setRoomToDelete(undefined)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {roomToDelete?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the room and all of its messages.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const room = roomToDelete
+                if (!room) return
+                void onDelete(room.id).then((result) => {
+                  if (!result) return
+                  setRoomToDelete(undefined)
+                  toast.add({
+                    type: 'success',
+                    title: 'Room deleted',
+                    description: `${room.name} and its messages were permanently deleted.`,
+                  })
+                })
+              }}
+            >
+              Delete room
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sidebar>
   )
 }

@@ -29,6 +29,7 @@ export function Dashboard({ user }: { user: Author }) {
     createError,
     select,
     create,
+    remove,
     send,
     cancel,
     draft,
@@ -81,6 +82,7 @@ export function Dashboard({ user }: { user: Author }) {
           if (result) setView('room')
           return result
         }}
+        onDelete={remove}
         createError={createError}
         onMentionAgent={(agentId) => {
           setView('room')

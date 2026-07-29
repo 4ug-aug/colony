@@ -72,6 +72,7 @@ export interface RoomStore {
     visibility: 'public' | 'private'
     createdBy?: string
   }): boolean
+  deleteRoom(roomId: string): boolean
   canAccessRoom(roomId: string, userId: string): boolean
   listRoomsForUser(userId: string): RoomSummary[]
   listMembers(roomId: string): RoomUser[]
@@ -306,6 +307,12 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       }
       return inserted
     },
+    deleteRoom: (roomId) =>
+      ((
+        sqlite.prepare('DELETE FROM room WHERE id = ?').run(roomId) as {
+          changes?: number
+        }
+      ).changes ?? 0) > 0,
     canAccessRoom: (roomId, userId) => {
       const row = sqlite
         .prepare(

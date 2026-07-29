@@ -94,6 +94,12 @@ class MemoryRoomStore implements RoomStore {
     }
     return true
   }
+  deleteRoom(roomId: string) {
+    const exists = this.rooms.some((room) => room.id === roomId)
+    this.rooms = this.rooms.filter((room) => room.id !== roomId)
+    this.members = this.members.filter((member) => member.roomId !== roomId)
+    return exists
+  }
   canAccessRoom(roomId: string, userId: string): boolean {
     const room = this.rooms.find((r) => r.id === roomId)
     if (!room) return false
@@ -449,6 +455,56 @@ test('room endpoints require a session', async () => {
       },
     )
     expect(response.status).toBe(401)
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('only a room creator or administrator can delete it', async () => {
+  let currentUser: RoomUser = { id: 'user-1', name: 'Owner' }
+  const store = new MemoryRoomStore()
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: { authenticate: async () => currentUser },
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  const remove = (roomId: string) =>
+    fetch(`${base}/api/rooms/${roomId}`, {
+      method: 'DELETE',
+      headers: { origin: 'http://gui.test' },
+    })
+  try {
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Owned room' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    currentUser = { id: 'user-2', name: 'Member' }
+    expect((await remove(room.id)).status).toBe(403)
+    expect(store.getRoom(room.id)).toBeDefined()
+
+    currentUser = { id: 'admin', name: 'Admin', role: 'admin' }
+    expect((await remove(GENERAL_ROOM_ID)).status).toBe(403)
+    expect(store.getRoom(GENERAL_ROOM_ID)).toBeDefined()
+    expect((await remove(room.id)).status).toBe(200)
+    expect(store.getRoom(room.id)).toBeUndefined()
+
+    const creatorOwnedRoom = {
+      id: 'creator-owned-room',
+      name: 'Creator owned room',
+      visibility: 'public' as const,
+      createdBy: 'user-1',
+    }
+    store.createRoom(creatorOwnedRoom)
+    currentUser = { id: 'user-1', name: 'Owner' }
+    expect((await remove(creatorOwnedRoom.id)).status).toBe(200)
   } finally {
     coordinator.stop()
   }

@@ -19,6 +19,7 @@ export function ServerSelection({ onConnected }: { onConnected: () => void }) {
       // since apiFetch depends on a configured base
       const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
       const response = await tauriFetch(`${normalized}/api/admission/status`)
+      await response.arrayBuffer()
       if (!response.ok && response.status !== 404) {
         // Accept any non-network-error (2xx or even known server error codes)
         throw new Error('Unexpected response')

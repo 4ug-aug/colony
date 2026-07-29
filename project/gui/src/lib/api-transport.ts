@@ -7,6 +7,17 @@ import { sweatApiUrl } from '#/lib/auth-client'
 
 // ---- HTTP transport ----
 
+async function detachTauriResponse(response: Response): Promise<Response> {
+  const bytes = await response.arrayBuffer()
+  const detached = new Response(bytes.byteLength ? bytes : null, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+  Object.defineProperty(detached, 'url', { value: response.url })
+  return detached
+}
+
 export async function apiFetch(
   path: string,
   init?: RequestInit,
@@ -15,7 +26,9 @@ export async function apiFetch(
 
   if (isTauriRuntime()) {
     const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
-    return tauriFetch(url, { credentials: 'include', ...init })
+    return detachTauriResponse(
+      await tauriFetch(url, { credentials: 'include', ...init }),
+    )
   }
 
   return window.fetch(url, { credentials: 'include', ...init })
@@ -41,7 +54,9 @@ export async function betterAuthFetch(
 
   if (isTauriRuntime()) {
     const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
-    return tauriFetch(url, { credentials: 'include', ...merged })
+    return detachTauriResponse(
+      await tauriFetch(url, { credentials: 'include', ...merged }),
+    )
   }
 
   return window.fetch(url, { credentials: 'include', ...merged })

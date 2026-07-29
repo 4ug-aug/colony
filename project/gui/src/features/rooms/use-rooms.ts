@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch, connectRoomStream } from '#/lib/api-transport'
 import type { RoomStreamHandle } from '#/lib/api-transport'
 import type { Room, RoomMessage, RoomRun, StreamMessage } from './types'
@@ -40,6 +40,20 @@ export function useRooms() {
   const [membersChangedAt, setMembersChangedAt] = useState<Record<string, number>>({})
   const socket = useRef<RoomStreamHandle | undefined>(undefined)
   const drafts = useRef<Record<string, string>>({})
+
+  const forgetRoom = useCallback((roomId: string) => {
+    setRooms((current) => {
+      const next = current.filter(({ id }) => id !== roomId)
+      setSelectedRoomId((currentId) => {
+        if (currentId !== roomId) return currentId
+        const fallback = next.find(({ id }) => id === 'general') ?? next.at(0)
+        const fallbackId = fallback?.id
+        if (fallbackId) localStorage.setItem(selectedRoomKey, fallbackId)
+        return fallbackId
+      })
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     void apiFetch('/api/rooms')
@@ -117,18 +131,7 @@ export function useRooms() {
             })
           }
           if (event.type === 'room.removed') {
-            setRooms((current) => {
-              const next = current.filter(({ id }) => id !== event.roomId)
-              setSelectedRoomId((currentId) => {
-                if (currentId !== event.roomId) return currentId
-                const fallback =
-                  next.find(({ id }) => id === 'general') ?? next.at(0)
-                const fallbackId = fallback?.id
-                if (fallbackId) localStorage.setItem(selectedRoomKey, fallbackId)
-                return fallbackId
-              })
-              return next
-            })
+            forgetRoom(event.roomId)
           }
           if (event.type === 'room.members.changed') {
             setMembersChangedAt((current) => ({
@@ -160,15 +163,16 @@ export function useRooms() {
       if (retry) clearTimeout(retry)
       socket.current?.close()
     }
-  }, [selectedRoomId])
+  }, [forgetRoom, selectedRoomId])
 
-  const post = async <T,>(
+  const request = async <T,>(
     path: string,
     body?: unknown,
+    method = 'POST',
   ): Promise<T | undefined> => {
     try {
       const response = await apiFetch(path, {
-        method: 'POST',
+        method,
         headers: body ? { 'content-type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       })
@@ -241,10 +245,19 @@ export function useRooms() {
         )
       }
     },
+    remove: async (roomId: string) => {
+      const result = await request<{ ok: true }>(
+        `/api/rooms/${roomId}`,
+        undefined,
+        'DELETE',
+      )
+      if (result) forgetRoom(roomId)
+      return result
+    },
     createError,
     send: async (text: string) => {
       if (!selectedRoomId) return
-      const result = await post<{ message: RoomMessage; run?: RoomRun }>(
+      const result = await request<{ message: RoomMessage; run?: RoomRun }>(
         `/api/rooms/${selectedRoomId}/messages`,
         { text },
       )
@@ -256,7 +269,7 @@ export function useRooms() {
     },
     cancel: (runId: string) =>
       selectedRoomId
-        ? post(`/api/rooms/${selectedRoomId}/runs/${runId}/cancel`)
+        ? request(`/api/rooms/${selectedRoomId}/runs/${runId}/cancel`)
         : undefined,
   }
 }
