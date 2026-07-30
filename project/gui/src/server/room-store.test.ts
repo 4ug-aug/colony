@@ -12,12 +12,13 @@ const SCHEMA_DDL = `
   INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
   CREATE TABLE room_member (room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
   CREATE INDEX room_member_user_idx ON room_member (user_id);
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, username TEXT);
+  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, username TEXT, banned INTEGER);
   INSERT INTO user (id, name, email, image, username) VALUES ('user-1', 'Ada Lovelace', 'ada@example.com', NULL, 'ada');
   INSERT INTO user (id, name, email, image, username) VALUES ('user-2', 'Bob Builder', 'bob@example.com', 'https://example.com/bob.png', 'bob');
   CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
   CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, room_id TEXT NOT NULL, idx INTEGER NOT NULL, kind TEXT NOT NULL, tool TEXT, call_id TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL);
+  CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE cascade, kind TEXT NOT NULL, source_id TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
 `
 
 function makeRun(overrides: Partial<RoomRun> = {}): RoomRun {
@@ -502,10 +503,19 @@ test('removeMember removes the member', () => {
   })
   store.addMember('priv', 'user-2', 'user-1')
   expect(store.listMembers('priv')).toHaveLength(2)
+  store.createAttention({
+    id: 'attention-1',
+    roomId: 'priv',
+    recipientId: 'user-2',
+    kind: 'mention',
+    sourceId: 'message-1',
+    createdAt: 1,
+  })
 
   store.removeMember('priv', 'user-2')
   expect(store.listMembers('priv')).toHaveLength(1)
   expect(store.listMembers('priv')[0].id).toBe('user-1')
+  expect(store.listAttentionCounts('user-2').size).toBe(0)
 
   sqlite.close()
 })
@@ -601,6 +611,66 @@ test('listWorkspaceUsers returns all users ordered by name', () => {
   expect(users[1].id).toBe('user-2')
   expect(users[0].image).toBeUndefined()
   expect(users[1].image).toBe('https://example.com/bob.png')
+
+  sqlite.close()
+})
+
+test('mentionable accounts are active and scoped to the room', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  sqlite.exec(`
+    INSERT INTO user (id, name, username, banned)
+    VALUES ('user-3', 'Suspended', 'suspended', 1);
+  `)
+  const store = createSqliteRoomStore(sqlite)
+
+  expect(
+    store
+      .listMentionableAccounts(GENERAL_ROOM_ID)
+      .map(({ username }) => username),
+  ).toEqual(['ada', 'bob'])
+
+  store.createRoom({
+    id: 'private',
+    name: 'Private',
+    visibility: 'private',
+    createdBy: 'user-1',
+  })
+  expect(
+    store.listMentionableAccounts('private').map(({ username }) => username),
+  ).toEqual(['ada'])
+  store.addMember('private', 'user-2', 'user-1')
+  expect(
+    store.listMentionableAccounts('private').map(({ username }) => username),
+  ).toEqual(['ada', 'bob'])
+
+  sqlite.close()
+})
+
+test('attention is idempotent, countable, and acknowledged per room', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec('PRAGMA foreign_keys = ON;')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  const attention = {
+    id: 'attention-1',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'mention' as const,
+    sourceId: 'message-1',
+    createdAt: 1,
+  }
+
+  expect(store.createAttention(attention)).toBe(true)
+  expect(
+    store.createAttention({ ...attention, id: 'attention-duplicate' }),
+  ).toBe(false)
+  expect(store.listMentionRecipientIds('message-1')).toEqual(['user-2'])
+  expect(store.listAttentionCounts('user-2').get(GENERAL_ROOM_ID)).toBe(1)
+
+  store.acknowledgeRoomAttention(GENERAL_ROOM_ID, 'user-2', 2)
+  expect(store.listAttentionCounts('user-2').size).toBe(0)
+  expect(store.listMentionRecipientIds('message-1')).toEqual(['user-2'])
 
   sqlite.close()
 })

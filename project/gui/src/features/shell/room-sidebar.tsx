@@ -38,6 +38,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
@@ -224,7 +225,16 @@ export function RoomSidebar({
                           isActive={
                             view === 'room' && item.id === selectedRoomId
                           }
-                          tooltip={item.name}
+                          tooltip={
+                            item.attentionCount
+                              ? `${item.name} · ${item.attentionCount} need attention`
+                              : item.name
+                          }
+                          aria-label={
+                            item.attentionCount
+                              ? `${item.name}, ${item.attentionCount} need attention`
+                              : item.name
+                          }
                           onClick={() => onSelect(item.id)}
                           className="data-[active=true]:bg-primary/5"
                         />
@@ -245,6 +255,17 @@ export function RoomSidebar({
                       </ContextMenuGroup>
                     </ContextMenuContent>
                   </ContextMenu>
+                  {item.attentionCount > 0 && (
+                    <>
+                      <SidebarMenuBadge aria-hidden="true">
+                        {item.attentionCount > 99 ? '99+' : item.attentionCount}
+                      </SidebarMenuBadge>
+                      <span
+                        aria-hidden="true"
+                        className="absolute top-1 right-1 hidden size-2 rounded-full bg-primary group-data-[collapsible=icon]:block"
+                      />
+                    </>
+                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

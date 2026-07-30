@@ -24,6 +24,17 @@ the account's email in secondary profile details. It does not identify message
 authors or room members.
 _Avoid_: Username, handle
 
+**Account mention**: An exact `@username` reference in a room message that
+directs another account's attention to that room. Agent identifiers share the
+same visible `@` syntax but are not account mentions.
+_Avoid_: Notification, assignment
+
+**Attention**: A durable, account-directed reason to return to a room, created
+by an account mention or by a terminal run relevant to that account.
+Acknowledging attention clears its room badge without changing or deleting the
+shared record.
+_Avoid_: Unread message, notification
+
 **Workspace membership**: A Sweat server's authorization for an account to
 participate in its workspace. Authentication proves control of the account;
 membership determines whether that person may enter.

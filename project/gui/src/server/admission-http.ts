@@ -1,5 +1,6 @@
 import type { AdmissionStore } from './admission'
 import type { RoomUser } from './room-store'
+import { AGENT_MENTION_HANDLES } from './attention'
 
 type AccountInput = {
   email: string
@@ -60,6 +61,7 @@ const accountFrom = (
     !username.trim()
   )
     return undefined
+  if (AGENT_MENTION_HANDLES.has(username.trim().toLowerCase())) return undefined
   return {
     email: email.trim(),
     username: username.trim(),

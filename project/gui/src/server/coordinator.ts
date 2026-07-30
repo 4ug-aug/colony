@@ -9,6 +9,7 @@ import {
   createSqliteRoomStore,
   type RoomMessage,
   type RoomRun,
+  type RoomSummary,
   type RoomStore,
   type RoomUser,
   type StoredStep,
@@ -19,6 +20,7 @@ import {
   type AdmissionOptions,
 } from './admission-http'
 import { canDeleteRoom } from '#/features/rooms/permissions'
+import { mentionedAccounts } from './attention'
 
 export interface SessionAuthenticator {
   authenticate(request: Request): Promise<RoomUser | undefined>
@@ -55,23 +57,38 @@ export const verifyRealtimeTicket = (ticket: string): string | undefined => {
   return userId
 }
 
-export type ServerMessage =
+export type RoomServerMessage =
   | {
       type: 'room.snapshot'
-      room: ReturnType<RoomStore['listRooms']>[number]
+      room: WorkspaceRoom
       messages: RoomMessage[]
       runs: RoomRun[]
       latestSteps: StoredStep[]
     }
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
-  | { type: 'room.created'; room: ReturnType<RoomStore['listRooms']>[number] }
   | { type: 'run.step'; runId: string; step: StoredStep }
-  | { type: 'room.removed'; roomId: string }
   | { type: 'room.members.changed'; roomId: string }
+export type WorkspaceRoom = RoomSummary & { attentionCount: number }
+export type WorkspaceServerMessage =
+  | { type: 'workspace.snapshot'; rooms: WorkspaceRoom[] }
+  | { type: 'room.created'; room: WorkspaceRoom }
+  | { type: 'room.removed'; roomId: string }
+  | {
+      type: 'attention.changed'
+      roomId: string
+      roomName: string
+      attentionCount: number
+      kind?: 'mention' | 'run_terminal'
+    }
+export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
+
+type SocketData =
+  | { scope: 'room'; roomId: string; userId: string }
+  | { scope: 'workspace'; userId: string }
 
 const send = (
-  socket: ServerWebSocket<{ roomId: string; userId: string }>,
+  socket: ServerWebSocket<SocketData>,
   message: ServerMessage,
 ): void => {
   socket.send(JSON.stringify(message))
@@ -161,7 +178,7 @@ export function createCoordinator(options: {
   port?: number
   admission?: AdmissionOptions
 }) {
-  const sockets = new Set<ServerWebSocket<{ roomId: string; userId: string }>>()
+  const sockets = new Set<ServerWebSocket<SocketData>>()
   const admissionHandler = options.admission
     ? createAdmissionHttpHandler({
         ...options.admission,
@@ -174,19 +191,109 @@ export function createCoordinator(options: {
         },
       })
     : undefined
-  const broadcast = (message: ServerMessage): void => {
-    for (const socket of sockets) send(socket, message)
+  const roomsFor = (userId: string): WorkspaceRoom[] => {
+    const counts = options.store.listAttentionCounts(userId)
+    return options.store.listRoomsForUser(userId).map((room) => ({
+      ...room,
+      attentionCount: counts.get(room.id) ?? 0,
+    }))
   }
-  const broadcastRoom = (roomId: string, message: ServerMessage): void => {
+  const broadcastWorkspace = (message: WorkspaceServerMessage): void => {
     for (const socket of sockets)
-      if (socket.data.roomId === roomId) send(socket, message)
+      if (socket.data.scope === 'workspace') send(socket, message)
   }
-  const broadcastToUsers = (
+  const broadcastRoom = (roomId: string, message: RoomServerMessage): void => {
+    for (const socket of sockets)
+      if (socket.data.scope === 'room' && socket.data.roomId === roomId)
+        send(socket, message)
+  }
+  const broadcastWorkspaceToUsers = (
     userIds: Set<string>,
-    message: ServerMessage,
+    message: WorkspaceServerMessage,
   ): void => {
     for (const socket of sockets)
-      if (userIds.has(socket.data.userId)) send(socket, message)
+      if (socket.data.scope === 'workspace' && userIds.has(socket.data.userId))
+        send(socket, message)
+  }
+  const broadcastAttention = (
+    userId: string,
+    roomId: string,
+    kind?: 'mention' | 'run_terminal',
+  ): void => {
+    const attentionCount =
+      options.store.listAttentionCounts(userId).get(roomId) ?? 0
+    broadcastWorkspaceToUsers(new Set([userId]), {
+      type: 'attention.changed',
+      roomId,
+      roomName: options.store.getRoom(roomId)?.name ?? 'Room',
+      attentionCount,
+      ...(kind ? { kind } : {}),
+    })
+  }
+  const createAttention = (
+    roomId: string,
+    recipientId: string,
+    kind: 'mention' | 'run_terminal',
+    sourceId: string,
+    createdAt: number,
+  ): void => {
+    if (
+      options.store.createAttention({
+        id: crypto.randomUUID(),
+        roomId,
+        recipientId,
+        kind,
+        sourceId,
+        createdAt,
+      })
+    )
+      broadcastAttention(recipientId, roomId, kind)
+  }
+  const sendSnapshot = (socket: ServerWebSocket<SocketData>): void => {
+    if (socket.data.scope === 'workspace') {
+      send(socket, {
+        type: 'workspace.snapshot',
+        rooms: roomsFor(socket.data.userId),
+      })
+      return
+    }
+    const room = options.store.getRoom(socket.data.roomId)
+    if (!room) return socket.close()
+    send(socket, {
+      type: 'room.snapshot',
+      room: {
+        ...room,
+        attentionCount:
+          options.store
+            .listAttentionCounts(socket.data.userId)
+            .get(room.id) ?? 0,
+      },
+      messages: options.messages.listMessages(socket.data.roomId),
+      runs: options.store.listRuns(socket.data.roomId),
+      latestSteps: [
+        ...options.store
+          .latestStepsForActiveRuns(socket.data.roomId)
+          .values(),
+      ],
+    })
+  }
+  const notifyRunTerminal = (run: RoomRun): void => {
+    const eligible = new Set(
+      options.store.listMentionableAccounts(run.roomId).map(({ id }) => id),
+    )
+    const recipients = new Set([
+      run.requestedBy.id,
+      ...options.store.listMentionRecipientIds(run.triggerMessageId),
+    ])
+    for (const recipientId of recipients)
+      if (eligible.has(recipientId))
+        createAttention(
+          run.roomId,
+          recipientId,
+          'run_terminal',
+          run.id,
+          run.completedAt ?? Date.now(),
+        )
   }
   const project = (run: RunSummary): void => {
     const saved = options.store.getRun(run.id)
@@ -194,11 +301,34 @@ export function createCoordinator(options: {
     const changed = { ...saved, ...run }
     options.store.updateRun(changed)
     broadcastRoom(changed.roomId, { type: 'run.changed', run: changed })
+    if (
+      changed.state === 'succeeded' ||
+      changed.state === 'failed' ||
+      changed.state === 'cancelled'
+    )
+      notifyRunTerminal(changed)
   }
   const unsubscribe = options.control.subscribe(project)
-  const unsubscribeMessages = options.messages.subscribe((event) =>
-    broadcastRoom(event.message.roomId, event),
-  )
+  const unsubscribeMessages = options.messages.subscribe((event) => {
+    broadcastRoom(event.message.roomId, event)
+    for (const account of mentionedAccounts(
+      event.message.text,
+      options.store.listMentionableAccounts(event.message.roomId),
+    )) {
+      if (
+        event.message.author.kind === 'user' &&
+        event.message.author.id === account.id
+      )
+        continue
+      createAttention(
+        event.message.roomId,
+        account.id,
+        'mention',
+        event.message.id,
+        event.message.createdAt,
+      )
+    }
+  })
   const stepIndex = new Map<string, number>()
   const unsubscribeSteps = options.control.subscribeSteps((runId, step) => {
     const run = options.store.getRun(runId)
@@ -219,10 +349,11 @@ export function createCoordinator(options: {
     options.store.appendStep(stored)
     broadcastRoom(run.roomId, { type: 'run.step', runId, step: stored })
   })
-  options.store
-    .failStaleRuns()
-    .forEach((run) => broadcastRoom(run.roomId, { type: 'run.changed', run }))
-  const server = Bun.serve<{ roomId: string; userId: string }>({
+  options.store.failStaleRuns().forEach((run) => {
+    broadcastRoom(run.roomId, { type: 'run.changed', run })
+    notifyRunTerminal(run)
+  })
+  const server = Bun.serve<SocketData>({
     port: options.port ?? 3001,
     async fetch(request, server) {
       const url = new URL(request.url)
@@ -250,20 +381,29 @@ export function createCoordinator(options: {
       if (url.pathname.startsWith('/api/auth/'))
         return cors(await options.authHandler(request))
       const stream = url.pathname.match(/^\/api\/rooms\/([^/]+)\/stream$/)
+      const workspaceStream = url.pathname === '/api/workspace/stream'
       if (
-        stream &&
+        (stream || workspaceStream) &&
         request.headers.get('upgrade')?.toLowerCase() === 'websocket'
       ) {
-        const roomId = stream[1]!
         // Authenticate the upgrade by realtime ticket (desktop) or session (browser).
         const ticket = url.searchParams.get('ticket')
         const userId =
           (ticket ? verifyRealtimeTicket(ticket) : undefined) ??
           (await options.authenticator.authenticate(request))?.id
         if (!userId) return cors(json({ error: 'Unauthorized' }, 401))
+        if (workspaceStream)
+          return server.upgrade(request, {
+            data: { scope: 'workspace', userId },
+          })
+            ? undefined
+            : json({ error: 'Upgrade failed' }, 400)
+        const roomId = stream![1]!
         if (!options.store.canAccessRoom(roomId, userId))
           return cors(json({ error: 'Room not found' }, 404))
-        return server.upgrade(request, { data: { roomId, userId } })
+        return server.upgrade(request, {
+          data: { scope: 'room', roomId, userId },
+        })
           ? undefined
           : json({ error: 'Upgrade failed' }, 400)
       }
@@ -272,7 +412,7 @@ export function createCoordinator(options: {
       if (url.pathname === '/api/realtime-ticket' && request.method === 'GET')
         return cors(json({ ticket: mintRealtimeTicket(user.id) }))
       if (url.pathname === '/api/rooms' && request.method === 'GET')
-        return cors(json({ rooms: options.store.listRoomsForUser(user.id) }))
+        return cors(json({ rooms: roomsFor(user.id) }))
       if (url.pathname === '/api/rooms' && request.method === 'POST') {
         const body = await roomBodyFrom(request)
         if (!body) return cors(json({ error: 'Invalid room name' }, 400))
@@ -286,11 +426,17 @@ export function createCoordinator(options: {
         }
         if (!options.store.createRoom(room))
           return cors(json({ error: 'Room already exists' }, 409))
-        if (room.visibility === 'public') {
-          broadcast({ type: 'room.created', room })
-        }
-        // private rooms are delivered to members in B2
-        return cors(json({ room }, 201))
+        if (room.visibility === 'public')
+          broadcastWorkspace({
+            type: 'room.created',
+            room: { ...room, attentionCount: 0 },
+          })
+        else
+          broadcastWorkspaceToUsers(new Set([user.id]), {
+            type: 'room.created',
+            room: { ...room, attentionCount: 0 },
+          })
+        return cors(json({ room: { ...room, attentionCount: 0 } }, 201))
       }
       const roomRoute = url.pathname.match(/^\/api\/rooms\/([^/]+)$/)
       if (roomRoute && request.method === 'DELETE') {
@@ -298,8 +444,14 @@ export function createCoordinator(options: {
         if (!room) return cors(json({ error: 'Room not found' }, 404))
         if (!canDeleteRoom(user, room))
           return cors(json({ error: 'Forbidden' }, 403))
+        const recipients =
+          room.visibility === 'private'
+            ? new Set(options.store.listMembers(room.id).map(({ id }) => id))
+            : undefined
         options.store.deleteRoom(room.id)
-        broadcast({ type: 'room.removed', roomId: room.id })
+        const removed = { type: 'room.removed' as const, roomId: room.id }
+        if (recipients) broadcastWorkspaceToUsers(recipients, removed)
+        else broadcastWorkspace(removed)
         return cors(json({ ok: true }))
       }
       const messages = url.pathname.match(/^\/api\/rooms\/([^/]+)\/messages$/)
@@ -390,6 +542,32 @@ export function createCoordinator(options: {
       }
       if (url.pathname === '/api/workspace/members' && request.method === 'GET')
         return cors(json({ users: options.store.listWorkspaceUsers() }))
+      const mentionablesRoute = url.pathname.match(
+        /^\/api\/rooms\/([^/]+)\/mentionable-accounts$/,
+      )
+      if (mentionablesRoute && request.method === 'GET') {
+        const roomId = mentionablesRoute[1]!
+        if (!options.store.canAccessRoom(roomId, user.id))
+          return cors(json({ error: 'Room not found' }, 404))
+        return cors(
+          json({
+            accounts: options.store
+              .listMentionableAccounts(roomId)
+              .filter(({ id }) => id !== user.id),
+          }),
+        )
+      }
+      const acknowledgeRoute = url.pathname.match(
+        /^\/api\/rooms\/([^/]+)\/attention\/acknowledge$/,
+      )
+      if (acknowledgeRoute && request.method === 'POST') {
+        const roomId = acknowledgeRoute[1]!
+        if (!options.store.canAccessRoom(roomId, user.id))
+          return cors(json({ error: 'Room not found' }, 404))
+        options.store.acknowledgeRoomAttention(roomId, user.id, Date.now())
+        broadcastAttention(user.id, roomId)
+        return cors(json({ attentionCount: 0 }))
+      }
       const membersRoute = url.pathname.match(
         /^\/api\/rooms\/([^/]+)\/members$/,
       )
@@ -423,9 +601,9 @@ export function createCoordinator(options: {
           return cors(json({ error: 'Unknown user' }, 400))
         options.store.addMember(roomId, userId, user.id)
         const updatedRoom = options.store.getRoom(roomId)!
-        broadcastToUsers(new Set([userId]), {
+        broadcastWorkspaceToUsers(new Set([userId]), {
           type: 'room.created',
-          room: updatedRoom,
+          room: { ...updatedRoom, attentionCount: 0 },
         })
         broadcastRoom(roomId, { type: 'room.members.changed', roomId })
         return cors(json({ members: options.store.listMembers(roomId) }, 201))
@@ -447,7 +625,7 @@ export function createCoordinator(options: {
             json({ error: 'Only the room owner can remove members' }, 403),
           )
         options.store.removeMember(roomId, targetUserId)
-        broadcastToUsers(new Set([targetUserId]), {
+        broadcastWorkspaceToUsers(new Set([targetUserId]), {
           type: 'room.removed',
           roomId,
         })
@@ -459,21 +637,11 @@ export function createCoordinator(options: {
     websocket: {
       open(socket) {
         sockets.add(socket)
-        const room = options.store.getRoom(socket.data.roomId)
-        if (!room) return socket.close()
-        send(socket, {
-          type: 'room.snapshot',
-          room,
-          messages: options.messages.listMessages(socket.data.roomId),
-          runs: options.store.listRuns(socket.data.roomId),
-          latestSteps: [
-            ...options.store
-              .latestStepsForActiveRuns(socket.data.roomId)
-              .values(),
-          ],
-        })
+        sendSnapshot(socket)
       },
-      message() {},
+      message(socket, message) {
+        if (message.toString() === 'snapshot') sendSnapshot(socket)
+      },
       close(socket) {
         sockets.delete(socket)
       },

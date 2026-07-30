@@ -11,6 +11,7 @@ import type { RunControl, RunSummary, Step } from './run-control'
 import {
   GENERAL_ROOM_ID,
   type RoomMessage,
+  type RoomAttention,
   type RoomRun,
   type RoomSummary,
   type RoomStore,
@@ -34,7 +35,10 @@ class FakeRunControl implements RunControl {
     this.stepListeners.add(listener)
     return () => this.stepListeners.delete(listener)
   }
-  start<Output>(task: string, context: { roomId: string; onCreate: (run: RunSummary) => Output }): Output {
+  start<Output>(
+    task: string,
+    context: { roomId: string; onCreate: (run: RunSummary) => Output },
+  ): Output {
     const run: RunSummary = {
       id: crypto.randomUUID(),
       task,
@@ -64,16 +68,31 @@ class FakeRunControl implements RunControl {
   emitStep(runId: string, step: Step) {
     for (const listener of this.stepListeners) listener(runId, step)
   }
+  finish(id: string, state: 'succeeded' | 'failed') {
+    const run = this.runs.find((item) => item.id === id)
+    if (!run) throw new Error('run not found')
+    const changed = { ...run, state, completedAt: Date.now() }
+    this.runs = this.runs.map((item) => (item.id === id ? changed : item))
+    this.publish(changed)
+  }
   private publish(run: RunSummary) {
     for (const listener of this.listeners) listener(run)
   }
 }
-type MemberRow = { roomId: string; userId: string; addedBy: string; addedAt: number }
+type MemberRow = {
+  roomId: string
+  userId: string
+  addedBy: string
+  addedAt: number
+}
 class MemoryRoomStore implements RoomStore {
-  rooms: RoomSummary[] = [{ id: GENERAL_ROOM_ID, name: 'General', visibility: 'public' }]
+  rooms: RoomSummary[] = [
+    { id: GENERAL_ROOM_ID, name: 'General', visibility: 'public' },
+  ]
   messages: RoomMessage[] = []
   runs: RoomRun[] = []
   steps: StoredStep[] = []
+  attentions: (RoomAttention & { acknowledgedAt?: number })[] = []
   members: MemberRow[] = []
   workspaceUsers: RoomUser[] = []
   listRooms() {
@@ -82,16 +101,31 @@ class MemoryRoomStore implements RoomStore {
   getRoom(id: string) {
     return this.rooms.find((room) => room.id === id)
   }
-  createRoom(room: { id: string; name: string; visibility: 'public' | 'private'; createdBy?: string }) {
+  createRoom(room: {
+    id: string
+    name: string
+    visibility: 'public' | 'private'
+    createdBy?: string
+  }) {
     if (
       this.rooms.some(
         (item) => item.name.toLowerCase() === room.name.toLowerCase(),
       )
     )
       return false
-    this.rooms.push({ id: room.id, name: room.name, visibility: room.visibility, ...(room.createdBy ? { createdBy: room.createdBy } : {}) })
+    this.rooms.push({
+      id: room.id,
+      name: room.name,
+      visibility: room.visibility,
+      ...(room.createdBy ? { createdBy: room.createdBy } : {}),
+    })
     if (room.visibility === 'private' && room.createdBy) {
-      this.members.push({ roomId: room.id, userId: room.createdBy, addedBy: room.createdBy, addedAt: Date.now() })
+      this.members.push({
+        roomId: room.id,
+        userId: room.createdBy,
+        addedBy: room.createdBy,
+        addedAt: Date.now(),
+      })
     }
     return true
   }
@@ -99,6 +133,9 @@ class MemoryRoomStore implements RoomStore {
     const exists = this.rooms.some((room) => room.id === roomId)
     this.rooms = this.rooms.filter((room) => room.id !== roomId)
     this.members = this.members.filter((member) => member.roomId !== roomId)
+    this.attentions = this.attentions.filter(
+      (attention) => attention.roomId !== roomId,
+    )
     return exists
   }
   canAccessRoom(roomId: string, userId: string): boolean {
@@ -109,7 +146,9 @@ class MemoryRoomStore implements RoomStore {
   }
   listRoomsForUser(userId: string): RoomSummary[] {
     return this.rooms.filter(
-      (r) => r.visibility === 'public' || this.members.some((m) => m.roomId === r.id && m.userId === userId),
+      (r) =>
+        r.visibility === 'public' ||
+        this.members.some((m) => m.roomId === r.id && m.userId === userId),
     )
   }
   listMembers(roomId: string): RoomUser[] {
@@ -126,10 +165,28 @@ class MemoryRoomStore implements RoomStore {
       this.members.push({ roomId, userId, addedBy, addedAt: Date.now() })
   }
   removeMember(roomId: string, userId: string): void {
-    this.members = this.members.filter((m) => !(m.roomId === roomId && m.userId === userId))
+    this.members = this.members.filter(
+      (m) => !(m.roomId === roomId && m.userId === userId),
+    )
+    this.attentions = this.attentions.filter(
+      (attention) =>
+        attention.roomId !== roomId || attention.recipientId !== userId,
+    )
   }
   listWorkspaceUsers() {
     return this.workspaceUsers
+  }
+  listMentionableAccounts(roomId: string) {
+    const room = this.getRoom(roomId)
+    if (!room) return []
+    return this.workspaceUsers.filter(
+      (user) =>
+        !user.banned &&
+        (room.visibility === 'public' ||
+          this.members.some(
+            (member) => member.roomId === roomId && member.userId === user.id,
+          )),
+    )
   }
   listMessages(roomId: string) {
     return this.messages.filter((message) => message.roomId === roomId)
@@ -139,6 +196,50 @@ class MemoryRoomStore implements RoomStore {
   }
   createMessage(message: RoomMessage) {
     this.messages.push(message)
+  }
+  createAttention(attention: RoomAttention) {
+    if (
+      this.attentions.some(
+        (item) =>
+          item.recipientId === attention.recipientId &&
+          item.kind === attention.kind &&
+          item.sourceId === attention.sourceId,
+      )
+    )
+      return false
+    this.attentions.push(attention)
+    return true
+  }
+  listMentionRecipientIds(messageId: string) {
+    return this.attentions
+      .filter(
+        (attention) =>
+          attention.kind === 'mention' && attention.sourceId === messageId,
+      )
+      .map(({ recipientId }) => recipientId)
+      .sort()
+  }
+  listAttentionCounts(userId: string) {
+    const counts = new Map<string, number>()
+    for (const attention of this.attentions) {
+      if (
+        attention.recipientId !== userId ||
+        attention.acknowledgedAt !== undefined ||
+        !this.canAccessRoom(attention.roomId, userId)
+      )
+        continue
+      counts.set(attention.roomId, (counts.get(attention.roomId) ?? 0) + 1)
+    }
+    return counts
+  }
+  acknowledgeRoomAttention(roomId: string, userId: string, at: number) {
+    this.attentions = this.attentions.map((attention) =>
+      attention.roomId === roomId &&
+      attention.recipientId === userId &&
+      attention.acknowledgedAt === undefined
+        ? { ...attention, acknowledgedAt: at }
+        : attention,
+    )
   }
   createRun(run: RoomRun) {
     this.runs.push(run)
@@ -156,13 +257,19 @@ class MemoryRoomStore implements RoomStore {
     this.steps.push(step)
   }
   listSteps(runId: string) {
-    return this.steps.filter((s) => s.runId === runId).sort((a, b) => a.idx - b.idx)
+    return this.steps
+      .filter((s) => s.runId === runId)
+      .sort((a, b) => a.idx - b.idx)
   }
   latestStepsForActiveRuns(roomId: string) {
     const map = new Map<string, StoredStep>()
     const activeRunIds = new Set(
       this.runs
-        .filter((r) => r.roomId === roomId && (r.state === 'preparing' || r.state === 'running'))
+        .filter(
+          (r) =>
+            r.roomId === roomId &&
+            (r.state === 'preparing' || r.state === 'running'),
+        )
         .map((r) => r.id),
     )
     for (const step of this.steps) {
@@ -332,6 +439,153 @@ test('two clients receive durable room messages and agent runs', async () => {
   }
 })
 
+test('mentions and terminal runs create durable directed attention', async () => {
+  let currentUser = 'user-1'
+  const users: RoomUser[] = [
+    { id: 'user-1', name: 'ada', username: 'ada' },
+    { id: 'user-2', name: 'bob', username: 'bob' },
+  ]
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = users
+  const control = new FakeRunControl()
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: {
+      authenticate: async () => users.find(({ id }) => id === currentUser),
+    },
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  const wsBase = base.replace('http', 'ws')
+  try {
+    currentUser = 'user-1'
+    const requester = await open(`${wsBase}/api/workspace/stream`)
+    expect((await requester.next()).type).toBe('workspace.snapshot')
+    currentUser = 'user-2'
+    let reviewer = await open(`${wsBase}/api/workspace/stream`)
+    expect((await reviewer.next()).type).toBe('workspace.snapshot')
+
+    currentUser = 'user-1'
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: '@software-engineer Fix it. @bob please review.',
+      }),
+    })
+    const run = ((await response.json()) as { run: RoomRun }).run
+    expect(await reviewer.next()).toMatchObject({
+      type: 'attention.changed',
+      roomId: GENERAL_ROOM_ID,
+      roomName: 'General',
+      attentionCount: 1,
+      kind: 'mention',
+    })
+    reviewer.socket.close()
+    currentUser = 'user-2'
+    reviewer = await open(`${wsBase}/api/workspace/stream`)
+    expect(await reviewer.next()).toMatchObject({
+      type: 'workspace.snapshot',
+      rooms: [
+        expect.objectContaining({
+          id: GENERAL_ROOM_ID,
+          attentionCount: 1,
+        }),
+      ],
+    })
+
+    control.finish(run.id, 'succeeded')
+    expect(await requester.next()).toMatchObject({
+      type: 'attention.changed',
+      attentionCount: 1,
+      kind: 'run_terminal',
+    })
+    expect(await reviewer.next()).toMatchObject({
+      type: 'attention.changed',
+      attentionCount: 2,
+    })
+
+    currentUser = 'user-2'
+    const acknowledged = reviewer.next()
+    const acknowledgeResponse = await fetch(
+      `${base}/api/rooms/general/attention/acknowledge`,
+      { method: 'POST', headers: { origin: 'http://gui.test' } },
+    )
+    expect(acknowledgeResponse.status).toBe(200)
+    expect(await acknowledged).toMatchObject({
+      type: 'attention.changed',
+      attentionCount: 0,
+    })
+    expect(store.listMentionRecipientIds(run.triggerMessageId)).toEqual([
+      'user-2',
+    ])
+    const mentionables = (await (
+      await fetch(`${base}/api/rooms/general/mentionable-accounts`, {
+        headers: { origin: 'http://gui.test' },
+      })
+    ).json()) as { accounts: RoomUser[] }
+    expect(mentionables.accounts.map(({ id }) => id)).toEqual(['user-1'])
+
+    control.finish(run.id, 'failed')
+    await expectNoEvent(requester)
+    await expectNoEvent(reviewer)
+
+    requester.socket.close()
+    reviewer.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('failed and cancelled runs notify their requester', async () => {
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
+  const control = new FakeRunControl()
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  const start = async (task: string) => {
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: `@software-engineer ${task}` }),
+    })
+    return ((await response.json()) as { run: RoomRun }).run
+  }
+  try {
+    const failed = await start('Fail')
+    control.finish(failed.id, 'failed')
+    expect(store.listAttentionCounts('user-1').get(GENERAL_ROOM_ID)).toBe(1)
+
+    store.acknowledgeRoomAttention(GENERAL_ROOM_ID, 'user-1', Date.now())
+    const cancelled = await start('Cancel')
+    await fetch(`${base}/api/rooms/general/runs/${cancelled.id}/cancel`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(store.listAttentionCounts('user-1').get(GENERAL_ROOM_ID)).toBe(1)
+  } finally {
+    coordinator.stop()
+  }
+})
+
 test('rooms are created once and streams stay isolated', async () => {
   const control = new FakeRunControl()
   const store = new MemoryRoomStore()
@@ -350,7 +604,11 @@ test('rooms are created once and streams stay isolated', async () => {
       `${base.replace('http', 'ws')}/api/rooms/general/stream`,
     )
     expect((await general.next()).type).toBe('room.snapshot')
-    const createdEvent = general.next()
+    const workspace = await open(
+      `${base.replace('http', 'ws')}/api/workspace/stream`,
+    )
+    expect((await workspace.next()).type).toBe('workspace.snapshot')
+    const createdEvent = workspace.next()
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
       headers: {
@@ -390,6 +648,13 @@ test('rooms are created once and streams stay isolated', async () => {
       `${base.replace('http', 'ws')}/api/rooms/${room.id}/stream`,
     )
     expect(await product.next()).toMatchObject({ type: 'room.snapshot', room })
+    product.socket.send('snapshot')
+    expect(
+      await Promise.race([
+        product.next(),
+        Bun.sleep(100).then(() => ({ type: 'timeout' })),
+      ]),
+    ).toMatchObject({ type: 'room.snapshot', room })
     const productMessage = product.next()
     const sent = await fetch(`${base}/api/rooms/${room.id}/messages`, {
       method: 'POST',
@@ -431,6 +696,7 @@ test('rooms are created once and streams stay isolated', async () => {
       ).status,
     ).toBe(404)
     general.socket.close()
+    workspace.socket.close()
     product.socket.close()
   } finally {
     coordinator.stop()
@@ -482,7 +748,10 @@ test('only a room creator or administrator can delete it', async () => {
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Owned room' }),
     })
     const { room } = (await created.json()) as { room: RoomSummary }
@@ -548,6 +817,7 @@ test('localhost Vite ports are allowed when the configured GUI is localhost', as
 
 test('hub post by non-HTTP caller broadcasts message.created to subscribed socket', async () => {
   const store = new MemoryRoomStore()
+  store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const coordinator = createCoordinator({
@@ -561,20 +831,39 @@ test('hub post by non-HTTP caller broadcasts message.created to subscribed socke
   })
   const base = `http://localhost:${coordinator.port}`
   try {
-    const socket = await open(`${base.replace('http', 'ws')}/api/rooms/general/stream`)
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
     expect((await socket.next()).type).toBe('room.snapshot')
+    const workspace = await open(
+      `${base.replace('http', 'ws')}/api/workspace/stream`,
+    )
+    expect((await workspace.next()).type).toBe('workspace.snapshot')
     const pending = socket.next()
+    const attention = workspace.next()
     messages.postMessage({
       roomId: GENERAL_ROOM_ID,
-      author: { kind: 'agent', id: 'software-engineer', name: 'Software engineer' },
-      text: 'Agent says hello',
+      author: {
+        kind: 'agent',
+        id: 'software-engineer',
+        name: 'Software engineer',
+      },
+      text: 'Agent says hello to @ada',
     })
     const event = await pending
     expect(event).toMatchObject({
       type: 'message.created',
-      message: { roomId: GENERAL_ROOM_ID, text: 'Agent says hello' },
+      message: {
+        roomId: GENERAL_ROOM_ID,
+        text: 'Agent says hello to @ada',
+      },
+    })
+    expect(await attention).toMatchObject({
+      type: 'attention.changed',
+      attentionCount: 1,
     })
     socket.socket.close()
+    workspace.socket.close()
   } finally {
     coordinator.stop()
   }
@@ -595,12 +884,18 @@ test('agent-authored hub post does NOT create a run', async () => {
   })
   const base = `http://localhost:${coordinator.port}`
   try {
-    const socket = await open(`${base.replace('http', 'ws')}/api/rooms/general/stream`)
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
     expect((await socket.next()).type).toBe('room.snapshot')
     const pending = socket.next()
     messages.postMessage({
       roomId: GENERAL_ROOM_ID,
-      author: { kind: 'agent', id: 'software-engineer', name: 'Software engineer' },
+      author: {
+        kind: 'agent',
+        id: 'software-engineer',
+        name: 'Software engineer',
+      },
       text: '@software-engineer do something',
     })
     const event = await pending
@@ -633,7 +928,10 @@ test('step events are persisted and broadcast as run.step to room sockets', asyn
     // Start a run
     const response = await fetch(`${base}/api/rooms/general/messages`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ text: '@software-engineer Do something' }),
     })
     expect(response.status).toBe(202)
@@ -642,36 +940,65 @@ test('step events are persisted and broadcast as run.step to room sockets', asyn
     // Create another room to test isolation before opening sockets
     await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Other' }),
     })
     const otherRoom = store.rooms.find((r) => r.name === 'Other')!
 
     // Open two sockets: one in general room, one in other room
-    const general = await open(`${base.replace('http', 'ws')}/api/rooms/general/stream`)
+    const general = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
     // Consume the snapshot
     expect((await general.next()).type).toBe('room.snapshot')
-    const other = await open(`${base.replace('http', 'ws')}/api/rooms/${otherRoom.id}/stream`)
+    const other = await open(
+      `${base.replace('http', 'ws')}/api/rooms/${otherRoom.id}/stream`,
+    )
     expect((await other.next()).type).toBe('room.snapshot')
 
     // Emit two steps
     const step1: Step = { kind: 'message', text: 'Hello', at: Date.now() }
-    const step2: Step = { kind: 'tool_call', text: '{}', tool: 'shell', callId: 'c1', at: Date.now() }
+    const step2: Step = {
+      kind: 'tool_call',
+      text: '{}',
+      tool: 'shell',
+      callId: 'c1',
+      at: Date.now(),
+    }
     const stepEvent1 = general.next()
     control.emitStep(run.id, step1)
     const received1 = await stepEvent1
-    expect(received1).toMatchObject({ type: 'run.step', runId: run.id, step: { idx: 0, kind: 'message', text: 'Hello' } })
+    expect(received1).toMatchObject({
+      type: 'run.step',
+      runId: run.id,
+      step: { idx: 0, kind: 'message', text: 'Hello' },
+    })
 
     const stepEvent2 = general.next()
     control.emitStep(run.id, step2)
     const received2 = await stepEvent2
-    expect(received2).toMatchObject({ type: 'run.step', runId: run.id, step: { idx: 1, kind: 'tool_call', tool: 'shell', callId: 'c1' } })
+    expect(received2).toMatchObject({
+      type: 'run.step',
+      runId: run.id,
+      step: { idx: 1, kind: 'tool_call', tool: 'shell', callId: 'c1' },
+    })
 
     // Steps are persisted with sequential idx
     const persisted = store.listSteps(run.id)
     expect(persisted).toHaveLength(2)
-    expect(persisted[0]).toMatchObject({ idx: 0, kind: 'message', text: 'Hello' })
-    expect(persisted[1]).toMatchObject({ idx: 1, kind: 'tool_call', tool: 'shell' })
+    expect(persisted[0]).toMatchObject({
+      idx: 0,
+      kind: 'message',
+      text: 'Hello',
+    })
+    expect(persisted[1]).toMatchObject({
+      idx: 1,
+      kind: 'tool_call',
+      tool: 'shell',
+    })
 
     // Other room socket received no step events
     await expectNoEvent(other)
@@ -701,21 +1028,34 @@ test('room.snapshot includes latestSteps for active runs', async () => {
     // Start a run and emit a step
     const response = await fetch(`${base}/api/rooms/general/messages`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ text: '@software-engineer Do something' }),
     })
     const { run } = (await response.json()) as { run: RoomRun }
     // Update run to 'running' so latestStepsForActiveRuns sees it
     store.updateRun({ ...run, state: 'running' })
-    control.emitStep(run.id, { kind: 'message', text: 'Step A', at: Date.now() })
+    control.emitStep(run.id, {
+      kind: 'message',
+      text: 'Step A',
+      at: Date.now(),
+    })
 
     // Fresh socket should get latestSteps
-    const socket = await open(`${base.replace('http', 'ws')}/api/rooms/general/stream`)
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
     const snapshot = await socket.next()
     expect(snapshot.type).toBe('room.snapshot')
     const latestSteps = snapshot.latestSteps as StoredStep[]
     expect(latestSteps).toHaveLength(1)
-    expect(latestSteps[0]).toMatchObject({ runId: run.id, idx: 0, text: 'Step A' })
+    expect(latestSteps[0]).toMatchObject({
+      runId: run.id,
+      idx: 0,
+      text: 'Step A',
+    })
 
     socket.socket.close()
   } finally {
@@ -741,7 +1081,10 @@ test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched ru
     // Start a run in general
     const response = await fetch(`${base}/api/rooms/general/messages`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ text: '@software-engineer Do something' }),
     })
     const { run } = (await response.json()) as { run: RoomRun }
@@ -760,16 +1103,20 @@ test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched ru
 
     // Unknown run
     expect(
-      (await fetch(`${base}/api/rooms/general/runs/unknown-id/steps`, {
-        headers: { origin: 'http://gui.test' },
-      })).status,
+      (
+        await fetch(`${base}/api/rooms/general/runs/unknown-id/steps`, {
+          headers: { origin: 'http://gui.test' },
+        })
+      ).status,
     ).toBe(404)
 
     // Run exists but wrong room
     expect(
-      (await fetch(`${base}/api/rooms/other-room/runs/${run.id}/steps`, {
-        headers: { origin: 'http://gui.test' },
-      })).status,
+      (
+        await fetch(`${base}/api/rooms/other-room/runs/${run.id}/steps`, {
+          headers: { origin: 'http://gui.test' },
+        })
+      ).status,
     ).toBe(404)
 
     // No auth — use unauthenticated coordinator
@@ -784,9 +1131,14 @@ test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched ru
     })
     try {
       expect(
-        (await fetch(`http://localhost:${noAuthCoord.port}/api/rooms/general/runs/x/steps`, {
-          headers: { origin: 'http://gui.test' },
-        })).status,
+        (
+          await fetch(
+            `http://localhost:${noAuthCoord.port}/api/rooms/general/runs/x/steps`,
+            {
+              headers: { origin: 'http://gui.test' },
+            },
+          )
+        ).status,
       ).toBe(401)
     } finally {
       noAuthCoord.stop()
@@ -819,7 +1171,10 @@ test('non-member gets 404 on all private room endpoints', async () => {
     // user-1 creates a private room (becomes creator/member)
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Secret', visibility: 'private' }),
     })
     expect(created.status).toBe(201)
@@ -828,7 +1183,10 @@ test('non-member gets 404 on all private room endpoints', async () => {
     // Start a run as user-1 so we have a run id
     const msgResp = await fetch(`${base}/api/rooms/${room.id}/messages`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ text: '@software-engineer Fix it' }),
     })
     expect(msgResp.status).toBe(202)
@@ -838,30 +1196,41 @@ test('non-member gets 404 on all private room endpoints', async () => {
     currentUser = 'user-2'
 
     expect(
-      (await fetch(`${base}/api/rooms/${room.id}/stream`, {
-        headers: { origin: 'http://gui.test', upgrade: 'websocket' },
-      })).status,
+      (
+        await fetch(`${base}/api/rooms/${room.id}/stream`, {
+          headers: { origin: 'http://gui.test', upgrade: 'websocket' },
+        })
+      ).status,
     ).toBe(404)
 
     expect(
-      (await fetch(`${base}/api/rooms/${room.id}/messages`, {
-        method: 'POST',
-        headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
-        body: JSON.stringify({ text: 'hello' }),
-      })).status,
+      (
+        await fetch(`${base}/api/rooms/${room.id}/messages`, {
+          method: 'POST',
+          headers: {
+            origin: 'http://gui.test',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ text: 'hello' }),
+        })
+      ).status,
     ).toBe(404)
 
     expect(
-      (await fetch(`${base}/api/rooms/${room.id}/runs/${run.id}/steps`, {
-        headers: { origin: 'http://gui.test' },
-      })).status,
+      (
+        await fetch(`${base}/api/rooms/${room.id}/runs/${run.id}/steps`, {
+          headers: { origin: 'http://gui.test' },
+        })
+      ).status,
     ).toBe(404)
 
     expect(
-      (await fetch(`${base}/api/rooms/${room.id}/runs/${run.id}/cancel`, {
-        method: 'POST',
-        headers: { origin: 'http://gui.test' },
-      })).status,
+      (
+        await fetch(`${base}/api/rooms/${room.id}/runs/${run.id}/cancel`, {
+          method: 'POST',
+          headers: { origin: 'http://gui.test' },
+        })
+      ).status,
     ).toBe(404)
   } finally {
     coordinator.stop()
@@ -891,7 +1260,10 @@ test('member of private room can access its endpoints', async () => {
     // user-1 creates the private room
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Members Only', visibility: 'private' }),
     })
     expect(created.status).toBe(201)
@@ -911,7 +1283,10 @@ test('member of private room can access its endpoints', async () => {
     // user-2 can post messages
     const msgResp = await fetch(`${base}/api/rooms/${room.id}/messages`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ text: 'hello from member' }),
     })
     expect(msgResp.status).toBe(201)
@@ -942,12 +1317,18 @@ test('GET /api/rooms omits private rooms the user is not in but includes public 
     // user-1 creates a public room and a private room
     await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Public Room', visibility: 'public' }),
     })
     await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Private Room', visibility: 'private' }),
     })
 
@@ -994,10 +1375,10 @@ test('POST /api/rooms with private visibility does not emit room.created globall
   const base = `http://localhost:${coordinator.port}`
   const wsBase = base.replace('http', 'ws')
   try {
-    // user-2's socket listens on general (a public room user-2 can always access)
+    // user-2's workspace stream receives room discovery changes.
     currentUser = 'user-2'
-    const observerSocket = await open(`${wsBase}/api/rooms/general/stream`)
-    expect((await observerSocket.next()).type).toBe('room.snapshot')
+    const observerSocket = await open(`${wsBase}/api/workspace/stream`)
+    expect((await observerSocket.next()).type).toBe('workspace.snapshot')
 
     // Set up the next-event promise BEFORE creating either room so the waiter
     // queue is empty and the first event to arrive will settle it.
@@ -1007,7 +1388,10 @@ test('POST /api/rooms with private visibility does not emit room.created globall
     currentUser = 'user-1'
     const privateResp = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Stealth', visibility: 'private' }),
     })
     expect(privateResp.status).toBe(201)
@@ -1015,15 +1399,23 @@ test('POST /api/rooms with private visibility does not emit room.created globall
     // user-1 creates a public room — this MUST broadcast room.created
     const publicResp = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Open', visibility: 'public' }),
     })
     expect(publicResp.status).toBe(201)
-    const { room: openRoom } = (await publicResp.json()) as { room: RoomSummary }
+    const { room: openRoom } = (await publicResp.json()) as {
+      room: RoomSummary
+    }
 
     // The first (and only) event user-2's socket receives should be for the public room
     const event = await firstEvent
-    expect(event).toMatchObject({ type: 'room.created', room: { id: openRoom.id, name: 'Open' } })
+    expect(event).toMatchObject({
+      type: 'room.created',
+      room: { id: openRoom.id, name: 'Open' },
+    })
 
     // No further events (the private room never triggered one)
     await expectNoEvent(observerSocket)
@@ -1049,7 +1441,10 @@ test('POST /api/rooms with invalid visibility returns 400', async () => {
   try {
     const resp = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Bad Room', visibility: 'secret' }),
     })
     expect(resp.status).toBe(400)
@@ -1096,7 +1491,10 @@ test('GET /api/rooms/:id/members returns members for an accessible room', async 
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
   const store = new MemoryRoomStore()
-  store.workspaceUsers = [{ id: 'user-1', name: 'Alice' }, { id: 'user-2', name: 'Bob' }]
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Alice' },
+    { id: 'user-2', name: 'Bob' },
+  ]
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
     store,
@@ -1110,7 +1508,10 @@ test('GET /api/rooms/:id/members returns members for an accessible room', async 
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'VIP', visibility: 'private' }),
     })
     const { room } = (await created.json()) as { room: RoomSummary }
@@ -1126,9 +1527,11 @@ test('GET /api/rooms/:id/members returns members for an accessible room', async 
     // user-2 (non-member) gets 404
     currentUser = 'user-2'
     expect(
-      (await fetch(`${base}/api/rooms/${room.id}/members`, {
-        headers: { origin: 'http://gui.test' },
-      })).status,
+      (
+        await fetch(`${base}/api/rooms/${room.id}/members`, {
+          headers: { origin: 'http://gui.test' },
+        })
+      ).status,
     ).toBe(404)
   } finally {
     coordinator.stop()
@@ -1141,7 +1544,10 @@ test('non-member POST /api/rooms/:id/members returns 404', async () => {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
   const store = new MemoryRoomStore()
-  store.workspaceUsers = [{ id: 'user-1', name: 'Alice' }, { id: 'user-3', name: 'Carol' }]
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Alice' },
+    { id: 'user-3', name: 'Carol' },
+  ]
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
     store,
@@ -1155,7 +1561,10 @@ test('non-member POST /api/rooms/:id/members returns 404', async () => {
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Secret', visibility: 'private' }),
     })
     const { room } = (await created.json()) as { room: RoomSummary }
@@ -1164,7 +1573,10 @@ test('non-member POST /api/rooms/:id/members returns 404', async () => {
     currentUser = 'user-2'
     const resp = await fetch(`${base}/api/rooms/${room.id}/members`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ userId: 'user-3' }),
     })
     expect(resp.status).toBe(404)
@@ -1175,7 +1587,10 @@ test('non-member POST /api/rooms/:id/members returns 404', async () => {
 
 test('POST /api/rooms/:id/members on a public room returns 400', async () => {
   const store = new MemoryRoomStore()
-  store.workspaceUsers = [{ id: 'user-1', name: 'Ada' }, { id: 'user-2', name: 'Bob' }]
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Ada' },
+    { id: 'user-2', name: 'Bob' },
+  ]
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
     store,
@@ -1189,14 +1604,20 @@ test('POST /api/rooms/:id/members on a public room returns 400', async () => {
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Open Space', visibility: 'public' }),
     })
     const { room } = (await created.json()) as { room: RoomSummary }
 
     const resp = await fetch(`${base}/api/rooms/${room.id}/members`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ userId: 'user-2' }),
     })
     expect(resp.status).toBe(400)
@@ -1223,14 +1644,20 @@ test('POST /api/rooms/:id/members with unknown userId returns 400', async () => 
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Private Club', visibility: 'private' }),
     })
     const { room } = (await created.json()) as { room: RoomSummary }
 
     const resp = await fetch(`${base}/api/rooms/${room.id}/members`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ userId: 'ghost-user' }),
     })
     expect(resp.status).toBe(400)
@@ -1267,7 +1694,10 @@ test('member adds a workspace user; added user socket gets room.created; room so
     currentUser = 'user-1'
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Exclusive', visibility: 'private' }),
     })
     expect(created.status).toBe(201)
@@ -1277,10 +1707,10 @@ test('member adds a workspace user; added user socket gets room.created; room so
     const ownerSocket = await open(`${wsBase}/api/rooms/${room.id}/stream`)
     expect((await ownerSocket.next()).type).toBe('room.snapshot')
 
-    // user-2 opens a socket in the general room (to receive the targeted room.created)
+    // user-2 opens the workspace stream to receive targeted room discovery.
     currentUser = 'user-2'
-    const user2Socket = await open(`${wsBase}/api/rooms/general/stream`)
-    expect((await user2Socket.next()).type).toBe('room.snapshot')
+    const user2Socket = await open(`${wsBase}/api/workspace/stream`)
+    expect((await user2Socket.next()).type).toBe('workspace.snapshot')
 
     // Set up event waiters before the HTTP call
     const membersChangedEvent = ownerSocket.next()
@@ -1290,7 +1720,10 @@ test('member adds a workspace user; added user socket gets room.created; room so
     currentUser = 'user-1'
     const addResp = await fetch(`${base}/api/rooms/${room.id}/members`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ userId: 'user-2' }),
     })
     expect(addResp.status).toBe(201)
@@ -1298,10 +1731,16 @@ test('member adds a workspace user; added user socket gets room.created; room so
     expect(members.map((m) => m.id)).toContain('user-2')
 
     // owner's room socket should receive room.members.changed
-    expect(await membersChangedEvent).toMatchObject({ type: 'room.members.changed', roomId: room.id })
+    expect(await membersChangedEvent).toMatchObject({
+      type: 'room.members.changed',
+      roomId: room.id,
+    })
 
     // user-2's socket (in general) should receive room.created for the private room
-    expect(await roomCreatedForUser2).toMatchObject({ type: 'room.created', room: { id: room.id } })
+    expect(await roomCreatedForUser2).toMatchObject({
+      type: 'room.created',
+      room: { id: room.id },
+    })
 
     ownerSocket.socket.close()
     user2Socket.socket.close()
@@ -1336,7 +1775,10 @@ test('owner removes another member; removed user gets room.removed; room socket 
     currentUser = 'user-1'
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Inner Circle', visibility: 'private' }),
     })
     const { room } = (await created.json()) as { room: RoomSummary }
@@ -1352,29 +1794,41 @@ test('owner removes another member; removed user gets room.removed; room socket 
     currentUser = 'user-2'
     const user2Socket = await open(`${wsBase}/api/rooms/${room.id}/stream`)
     expect((await user2Socket.next()).type).toBe('room.snapshot')
+    const user2Workspace = await open(`${wsBase}/api/workspace/stream`)
+    expect((await user2Workspace.next()).type).toBe('workspace.snapshot')
 
     // Set up event waiters
     const membersChangedEvent = ownerSocket.next()
-    const removedEvent = user2Socket.next()
+    const removedEvent = user2Workspace.next()
 
     // user-1 removes user-2
     currentUser = 'user-1'
-    const removeResp = await fetch(`${base}/api/rooms/${room.id}/members/user-2`, {
-      method: 'DELETE',
-      headers: { origin: 'http://gui.test' },
-    })
+    const removeResp = await fetch(
+      `${base}/api/rooms/${room.id}/members/user-2`,
+      {
+        method: 'DELETE',
+        headers: { origin: 'http://gui.test' },
+      },
+    )
     expect(removeResp.status).toBe(200)
     const body = (await removeResp.json()) as { ok: boolean }
     expect(body.ok).toBe(true)
 
     // room socket receives room.members.changed
-    expect(await membersChangedEvent).toMatchObject({ type: 'room.members.changed', roomId: room.id })
+    expect(await membersChangedEvent).toMatchObject({
+      type: 'room.members.changed',
+      roomId: room.id,
+    })
 
     // user-2's socket receives room.removed
-    expect(await removedEvent).toMatchObject({ type: 'room.removed', roomId: room.id })
+    expect(await removedEvent).toMatchObject({
+      type: 'room.removed',
+      roomId: room.id,
+    })
 
     ownerSocket.socket.close()
     user2Socket.socket.close()
+    user2Workspace.socket.close()
   } finally {
     coordinator.stop()
   }
@@ -1406,7 +1860,10 @@ test('non-owner removing another member returns 403', async () => {
     currentUser = 'user-1'
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Gang', visibility: 'private' }),
     })
     const { room } = (await created.json()) as { room: RoomSummary }
@@ -1453,32 +1910,43 @@ test('member removing themselves (leave) is allowed and gets room.removed', asyn
     currentUser = 'user-1'
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
-      headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'Leavable', visibility: 'private' }),
     })
     const { room } = (await created.json()) as { room: RoomSummary }
     store.addMember(room.id, 'user-2', 'user-1')
 
-    // user-2 opens room stream
+    // user-2 opens the workspace stream.
     currentUser = 'user-2'
-    const user2Socket = await open(`${wsBase}/api/rooms/${room.id}/stream`)
-    expect((await user2Socket.next()).type).toBe('room.snapshot')
+    const user2Socket = await open(`${wsBase}/api/workspace/stream`)
+    expect((await user2Socket.next()).type).toBe('workspace.snapshot')
 
     // Set up waiter for room.removed
     const removedEvent = user2Socket.next()
 
     // user-2 removes themselves (leave)
-    const leaveResp = await fetch(`${base}/api/rooms/${room.id}/members/user-2`, {
-      method: 'DELETE',
-      headers: { origin: 'http://gui.test' },
-    })
+    const leaveResp = await fetch(
+      `${base}/api/rooms/${room.id}/members/user-2`,
+      {
+        method: 'DELETE',
+        headers: { origin: 'http://gui.test' },
+      },
+    )
     expect(leaveResp.status).toBe(200)
 
     // user-2 receives room.removed
-    expect(await removedEvent).toMatchObject({ type: 'room.removed', roomId: room.id })
+    expect(await removedEvent).toMatchObject({
+      type: 'room.removed',
+      roomId: room.id,
+    })
 
     // user-2 is no longer a member
-    expect(store.members.some((m) => m.roomId === room.id && m.userId === 'user-2')).toBe(false)
+    expect(
+      store.members.some((m) => m.roomId === room.id && m.userId === 'user-2'),
+    ).toBe(false)
 
     user2Socket.socket.close()
   } finally {
@@ -1487,13 +1955,21 @@ test('member removing themselves (leave) is allowed and gets room.removed', asyn
 })
 
 test('allowedOrigin permits tauri://localhost regardless of configured origin', () => {
-  expect(allowedOrigin('tauri://localhost', 'http://localhost:3000')).toBe('tauri://localhost')
-  expect(allowedOrigin('tauri://localhost', 'https://app.example.com')).toBe('tauri://localhost')
+  expect(allowedOrigin('tauri://localhost', 'http://localhost:3000')).toBe(
+    'tauri://localhost',
+  )
+  expect(allowedOrigin('tauri://localhost', 'https://app.example.com')).toBe(
+    'tauri://localhost',
+  )
 })
 
 test('allowedOrigin rejects disallowed origins', () => {
-  expect(allowedOrigin('https://evil.example', 'http://localhost:3000')).toBeUndefined()
-  expect(allowedOrigin('https://evil.example', 'https://app.example.com')).toBeUndefined()
+  expect(
+    allowedOrigin('https://evil.example', 'http://localhost:3000'),
+  ).toBeUndefined()
+  expect(
+    allowedOrigin('https://evil.example', 'https://app.example.com'),
+  ).toBeUndefined()
 })
 
 test('a realtime ticket round-trips to its user id', () => {

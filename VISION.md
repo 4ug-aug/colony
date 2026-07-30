@@ -175,8 +175,14 @@ The server now initializes its database, admits one first administrator,
 supports email or username login, closes open registration, and lets that
 administrator manage manually shared invitations and account suspension.
 
-The next vertical slice packages the same React interface in Tauri and adds
-first-launch server selection.
+The same React interface is now packaged in Tauri for macOS with first-launch
+server selection, native HTTP session handling, and authenticated realtime
+connections to the selected Sweat server.
+
+The current vertical slice adds a team attention loop: people can mention
+teammates in rooms, directed attention remains visible across sessions, and
+requesters plus mentioned teammates are brought back when delegated runs
+finish.
 
 ## Deliberate non-goals
 

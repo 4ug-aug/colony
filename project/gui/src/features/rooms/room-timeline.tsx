@@ -10,10 +10,12 @@ export function Timeline({
   messages,
   runs,
   openRun,
+  mentionHandles,
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
   openRun: (runId: string) => void
+  mentionHandles: string[]
 }) {
   const items = useMemo(() => {
     const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
@@ -67,7 +69,8 @@ export function Timeline({
           'result' in item
             ? (item.result.output ?? item.result.stdout) || 'Completed.'
             : item.message.text
-        const isAgent = isResult || (!isResult && item.message.author.kind === 'agent')
+        const isAgent =
+          isResult || (!isResult && item.message.author.kind === 'agent')
         return (
           <article
             className={`flex gap-3 ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}`}
@@ -87,8 +90,10 @@ export function Timeline({
                   </time>
                 </div>
               )}
-              <div className={`${item.grouped ? '' : 'mt-0.5'} text-sm leading-6`}>
-                <Markdown>{text}</Markdown>
+              <div
+                className={`${item.grouped ? '' : 'mt-0.5'} text-sm leading-6`}
+              >
+                <Markdown mentions={mentionHandles}>{text}</Markdown>
               </div>
               {!isResult && item.run && (
                 <RunCapsule run={item.run} openRun={openRun} />

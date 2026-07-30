@@ -87,6 +87,8 @@ future Tauri shell. The client does not own room state or execution.
 ## Current support
 
 - Static Vite/React client using an explicit HTTP/WebSocket server boundary.
+- Tauri macOS packaging of the same React client, including first-launch server
+  selection and authenticated native HTTP/WebSocket transports.
 - Server-owned Better Auth, SQLite persistence, and run control.
 - Closed workspace admission with one-time administrator setup, username
   login, single-use invitations, and member suspension.
@@ -114,14 +116,14 @@ the software-engineer CLI enables it when `LINEAR_MCP_API_KEY` is configured.
 ## Deliberately not built yet
 
 - Room renaming and room deletion.
-- Tauri packaging and native desktop affordances.
+- Native notifications, tray status, and deep links.
 - Gateway HTTP/MCP transport and local encrypted connection storage.
 - Run scheduler, capability-grant policy, and resource-level authorization.
 - Sub-agent scheduling and shared artifact handoff.
 
 ## Current delivered slice
 
-The Account admission slice adds first-administrator setup, closed
-registration, email or username login, single-use invitations, account
-suspension, and operator recovery to the existing public/private room
-experience. Tauri packaging follows it.
+Tauri packaging and first-launch server selection now follow the delivered
+Account admission slice. The current multiplayer slice adds durable,
+account-directed room attention for teammate mentions and terminal run
+handoffs.

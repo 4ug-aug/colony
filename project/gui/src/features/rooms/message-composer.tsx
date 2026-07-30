@@ -6,13 +6,23 @@ import { AtSign, Bold, Code, Italic, List, Send } from 'lucide-react'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '#/components/ui/button'
+import type { MentionableAccount } from './types'
 
-const agents = [
+type MentionItem = {
+  id: string
+  label: string
+  name: string
+  description: string
+  kind: 'account' | 'agent'
+}
+
+const agents: MentionItem[] = [
   {
     id: 'software-engineer',
     label: 'software-engineer',
     name: 'Software engineer',
     description: 'Build, debug, and review code',
+    kind: 'agent',
   },
 ]
 
@@ -24,49 +34,69 @@ function suggestionMenu(
   let selected = 0
   let current:
     | {
-        items: typeof agents
-        command: (item: (typeof agents)[number]) => void
+        items: MentionItem[]
+        command: (item: MentionItem) => void
         clientRect?: (() => DOMRect | null) | null
       }
     | undefined
   const render = (props: {
-    items: typeof agents
-    command: (item: (typeof agents)[number]) => void
+    items: MentionItem[]
+    command: (item: MentionItem) => void
     clientRect?: (() => DOMRect | null) | null
   }) => {
     current = props
     if (!popup) return
-    popup.replaceChildren(
-      ...props.items.map((agent, index) => {
-        const option = document.createElement('button')
-        option.type = 'button'
-        option.className = index === selected ? 'is-selected' : ''
-        option.setAttribute('role', 'option')
-        option.setAttribute('aria-selected', String(index === selected))
-        const icon = document.createElement('span')
-        icon.className = 'mention-menu-icon'
-        icon.textContent = '</>'
-        const copy = document.createElement('span')
-        const name = document.createElement('strong')
-        name.textContent = agent.name
-        const description = document.createElement('small')
-        description.textContent = agent.description
-        copy.append(name, description)
-        option.append(icon, copy)
-        option.onmousedown = (event) => {
-          event.preventDefault()
-          props.command(agent)
-        }
-        return option
-      }),
-    )
+    const groups = [
+      { kind: 'account' as const, label: 'People' },
+      { kind: 'agent' as const, label: 'Agents' },
+    ].flatMap(({ kind, label }) => {
+      const items = props.items
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => item.kind === kind)
+      if (!items.length) return []
+      const group = document.createElement('div')
+      group.className = 'mention-menu-group'
+      group.setAttribute('role', 'group')
+      group.setAttribute('aria-label', label)
+      const heading = document.createElement('div')
+      heading.className = 'mention-menu-heading'
+      heading.textContent = label
+      heading.setAttribute('aria-hidden', 'true')
+      group.append(
+        heading,
+        ...items.map(({ item, index }) => {
+          const option = document.createElement('button')
+          option.type = 'button'
+          option.className = index === selected ? 'is-selected' : ''
+          option.setAttribute('role', 'option')
+          option.setAttribute('aria-selected', String(index === selected))
+          const icon = document.createElement('span')
+          icon.className = 'mention-menu-icon'
+          icon.textContent = item.kind === 'agent' ? '</>' : '@'
+          const copy = document.createElement('span')
+          const name = document.createElement('strong')
+          name.textContent = item.name
+          const description = document.createElement('small')
+          description.textContent = item.description
+          copy.append(name, description)
+          option.append(icon, copy)
+          option.onmousedown = (event) => {
+            event.preventDefault()
+            props.command(item)
+          }
+          return option
+        }),
+      )
+      return group
+    })
+    popup.replaceChildren(...groups)
   }
   return {
     onStart(props: Parameters<typeof render>[0]) {
       popup = document.createElement('div')
       popup.className = 'mention-menu'
       popup.setAttribute('role', 'listbox')
-      popup.setAttribute('aria-label', 'Agents')
+      popup.setAttribute('aria-label', 'People and agents')
       ;(container.current ?? document.body).appendChild(popup)
       render(props)
       mentionOpen.current = true
@@ -125,15 +155,32 @@ export const MessageComposer = forwardRef<
     onSubmit: (value: string) => void
     disabled: boolean
     roomName: string
+    mentionableAccounts: MentionableAccount[]
   }
 >(function MessageComposer(
-  { value, onChange, onSubmit, disabled, roomName },
+  { value, onChange, onSubmit, disabled, roomName, mentionableAccounts },
   ref,
 ) {
   const mentionOpen = useRef(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const roomNameRef = useRef(roomName)
-  useEffect(() => { roomNameRef.current = roomName }, [roomName])
+  const mentionItems = useRef<MentionItem[]>([])
+  mentionItems.current = [
+    ...mentionableAccounts.map((account) => {
+      const username = account.username ?? account.name
+      return {
+        id: username,
+        label: username,
+        name: `@${username}`,
+        description: account.displayName ?? 'Teammate',
+        kind: 'account' as const,
+      }
+    }),
+    ...agents,
+  ]
+  useEffect(() => {
+    roomNameRef.current = roomName
+  }, [roomName])
   const serialize = () => editor.getText()
   const submit = () => {
     const text = serialize()
@@ -152,19 +199,23 @@ export const MessageComposer = forwardRef<
         renderText: ({ node }) => `@${node.attrs.id}`,
         suggestion: {
           items: ({ query }) =>
-            agents.filter((agent) => agent.label.includes(query.toLowerCase())),
+            mentionItems.current.filter((item) =>
+              item.label.toLowerCase().includes(query.toLowerCase()),
+            ),
           render: () => suggestionMenu(mentionOpen, containerRef),
         },
       }),
       Placeholder.configure({
-        placeholder: () => `Message #${roomNameRef.current} or mention an agent…`,
+        placeholder: () =>
+          `Message #${roomNameRef.current} or mention someone…`,
       }),
     ],
     content: value,
     editable: !disabled,
     editorProps: {
       attributes: {
-        class: 'min-h-12 max-h-40 overflow-y-auto px-1 py-1 text-sm leading-6 outline-none',
+        class:
+          'min-h-12 max-h-40 overflow-y-auto px-1 py-1 text-sm leading-6 outline-none',
         'aria-label': `Message #${roomName}`,
       },
       handleKeyDown: (_, event) => {
@@ -271,7 +322,7 @@ export const MessageComposer = forwardRef<
             type="button"
             variant="ghost"
             size="icon-xs"
-            aria-label="Mention an agent"
+            aria-label="Mention a teammate or agent"
             onClick={() => editor.chain().focus().insertContent('@').run()}
             disabled={disabled}
           >

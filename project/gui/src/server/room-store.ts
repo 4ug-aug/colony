@@ -29,6 +29,15 @@ export type RoomMessage = {
   text: string
   createdAt: number
 }
+export type AttentionKind = 'mention' | 'run_terminal'
+export type RoomAttention = {
+  id: string
+  roomId: string
+  recipientId: string
+  kind: AttentionKind
+  sourceId: string
+  createdAt: number
+}
 
 const AGENT_PARTICIPANTS: Record<
   string,
@@ -80,9 +89,14 @@ export interface RoomStore {
   addMember(roomId: string, userId: string, addedBy: string): void
   removeMember(roomId: string, userId: string): void
   listWorkspaceUsers(): RoomUser[]
+  listMentionableAccounts(roomId: string): RoomUser[]
   listMessages(roomId: string): RoomMessage[]
   listRuns(roomId: string): RoomRun[]
   createMessage(message: RoomMessage): void
+  createAttention(attention: RoomAttention): boolean
+  listMentionRecipientIds(messageId: string): string[]
+  listAttentionCounts(userId: string): Map<string, number>
+  acknowledgeRoomAttention(roomId: string, userId: string, at: number): void
   createRun(run: RoomRun): void
   updateRun(run: RoomRun): void
   failStaleRuns(): RoomRun[]
@@ -107,6 +121,7 @@ type RoomRow = {
 type UserRow = {
   id: string
   name: string
+  username?: string | null
   image: string | null
   email?: string | null
   display_name?: string | null
@@ -162,6 +177,7 @@ const roomFrom = (row: RoomRow): RoomSummary => ({
 const userFrom = (row: UserRow): RoomUser => ({
   id: row.id,
   name: row.name,
+  ...(row.username != null ? { username: row.username } : {}),
   ...(row.display_name != null ? { displayName: row.display_name } : {}),
   ...(row.email != null ? { email: row.email } : {}),
   ...(row.image != null ? { image: row.image } : {}),
@@ -223,11 +239,16 @@ const runFrom = (row: RunRow): RoomRun => ({
 })
 
 export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
-  const hasUsername = (
-    sqlite.prepare('PRAGMA table_info(user)').all() as { name?: string }[]
-  ).some((column) => column.name === 'username')
+  const userColumns = sqlite.prepare('PRAGMA table_info(user)').all() as {
+    name?: string
+  }[]
+  const hasUsername = userColumns.some((column) => column.name === 'username')
+  const hasBanned = userColumns.some((column) => column.name === 'banned')
+  const activeUser = hasBanned ? 'AND COALESCE(u.banned, 0) = 0' : ''
   const userName = hasUsername ? 'COALESCE(u.username, u.name)' : 'u.name'
-  const userProfile = hasUsername ? ', u.email, u.name AS display_name' : ''
+  const userProfile = hasUsername
+    ? ', u.username, u.email, u.name AS display_name'
+    : ''
   const messageProfile = hasUsername
     ? ', u.email AS author_email, u.name AS author_display_name'
     : ''
@@ -368,6 +389,11 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       sqlite
         .prepare('DELETE FROM room_member WHERE room_id = ? AND user_id = ?')
         .run(roomId, userId)
+      sqlite
+        .prepare(
+          'DELETE FROM room_attention WHERE room_id = ? AND recipient_id = ?',
+        )
+        .run(roomId, userId)
     },
     listWorkspaceUsers: () =>
       (
@@ -376,6 +402,20 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
             `SELECT u.id, ${userName} AS name, u.image${userProfile} FROM user u ORDER BY ${userName} COLLATE NOCASE, u.id`,
           )
           .all() as UserRow[]
+      ).map(userFrom),
+    listMentionableAccounts: (roomId) =>
+      (
+        sqlite
+          .prepare(
+            `SELECT u.id, ${userName} AS name, u.image${userProfile}
+             FROM user u
+             JOIN room r ON r.id = ?
+             LEFT JOIN room_member rm ON rm.room_id = r.id AND rm.user_id = u.id
+             WHERE (r.visibility = 'public' OR rm.user_id IS NOT NULL)
+               ${activeUser}
+             ORDER BY ${userName} COLLATE NOCASE, u.id`,
+          )
+          .all(roomId) as UserRow[]
       ).map(userFrom),
     listMessages: messages,
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
@@ -394,6 +434,52 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           message.text,
           message.createdAt,
         )
+    },
+    createAttention: (attention) =>
+      ((
+        sqlite
+          .prepare(
+            'INSERT OR IGNORE INTO room_attention (id, room_id, recipient_id, kind, source_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          )
+          .run(
+            attention.id,
+            attention.roomId,
+            attention.recipientId,
+            attention.kind,
+            attention.sourceId,
+            attention.createdAt,
+          ) as { changes?: number }
+      ).changes ?? 0) === 1,
+    listMentionRecipientIds: (messageId) =>
+      (
+        sqlite
+          .prepare(
+            "SELECT recipient_id FROM room_attention WHERE kind = 'mention' AND source_id = ? ORDER BY recipient_id",
+          )
+          .all(messageId) as { recipient_id: string }[]
+      ).map(({ recipient_id }) => recipient_id),
+    listAttentionCounts: (userId) => {
+      const rows = sqlite
+        .prepare(
+          `SELECT a.room_id, COUNT(*) AS count
+           FROM room_attention a
+           JOIN room r ON r.id = a.room_id
+           LEFT JOIN room_member rm
+             ON rm.room_id = r.id AND rm.user_id = a.recipient_id
+           WHERE a.recipient_id = ?
+             AND a.acknowledged_at IS NULL
+             AND (r.visibility = 'public' OR rm.user_id IS NOT NULL)
+           GROUP BY a.room_id`,
+        )
+        .all(userId) as { room_id: string; count: number }[]
+      return new Map(rows.map(({ room_id, count }) => [room_id, count]))
+    },
+    acknowledgeRoomAttention: (roomId, userId, at) => {
+      sqlite
+        .prepare(
+          'UPDATE room_attention SET acknowledged_at = ? WHERE room_id = ? AND recipient_id = ? AND acknowledged_at IS NULL',
+        )
+        .run(at, roomId, userId)
     },
     createRun: (run) => {
       sqlite

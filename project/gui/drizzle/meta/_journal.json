@@ -50,6 +50,13 @@
       "when": 1785085393262,
       "tag": "0006_account_admission",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785085393263,
+      "tag": "0007_room_attention",
+      "breakpoints": true
     }
   ]
 }

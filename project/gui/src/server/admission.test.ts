@@ -107,6 +107,7 @@ test('admission endpoints close open signup and enforce the administrator bounda
     CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
     CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
     CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT, room_id TEXT, idx INTEGER, kind TEXT, tool TEXT, call_id TEXT, text TEXT, created_at INTEGER);
+    CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL, recipient_id TEXT NOT NULL, kind TEXT NOT NULL, source_id TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
     CREATE TABLE admission_setup_token (id INTEGER PRIMARY KEY, token_hash TEXT NOT NULL, created_at INTEGER NOT NULL, claimed_at INTEGER, redeemed_at INTEGER);
     CREATE TABLE workspace_invitation (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, claimed_at INTEGER, redeemed_at INTEGER, revoked_at INTEGER);
     INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
@@ -195,6 +196,22 @@ test('admission endpoints close open signup and enforce the administrator bounda
     expect(preflight.headers.get('access-control-allow-headers')).toContain(
       'x-sweat-setup-token',
     )
+    expect(
+      (
+        await request('/api/admission/setup', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-sweat-setup-token': token,
+          },
+          body: JSON.stringify({
+            email: 'agent@example.com',
+            username: 'software-engineer',
+            password: 'password-123',
+          }),
+        })
+      ).status,
+    ).toBe(400)
     const setup = await request('/api/admission/setup', {
       method: 'POST',
       headers: {

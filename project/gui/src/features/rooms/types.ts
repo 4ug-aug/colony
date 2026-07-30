@@ -6,10 +6,24 @@ export type Author = {
   image?: string
   email?: string
   displayName?: string
+  username?: string
   role?: string
   kind?: 'user' | 'agent'
 }
-export type Room = { id: string; name: string; visibility: 'public' | 'private'; createdBy?: string }
+export type Room = {
+  id: string
+  name: string
+  visibility: 'public' | 'private'
+  createdBy?: string
+  attentionCount: number
+}
+export type MentionableAccount = {
+  id: string
+  name: string
+  username?: string
+  displayName?: string
+  image?: string
+}
 export type RoomMessage = {
   id: string
   roomId: string
@@ -32,7 +46,7 @@ export type RoomRun = {
   stdout: string
   output?: string
 }
-export type StreamMessage =
+export type RoomStreamMessage =
   | {
       type: 'room.snapshot'
       room: Room
@@ -40,9 +54,18 @@ export type StreamMessage =
       runs: RoomRun[]
       latestSteps: Step[]
     }
-  | { type: 'room.created'; room: Room }
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
   | { type: 'run.step'; runId: string; step: Step }
-  | { type: 'room.removed'; roomId: string }
   | { type: 'room.members.changed'; roomId: string }
+export type WorkspaceStreamMessage =
+  | { type: 'workspace.snapshot'; rooms: Room[] }
+  | { type: 'room.created'; room: Room }
+  | { type: 'room.removed'; roomId: string }
+  | {
+      type: 'attention.changed'
+      roomId: string
+      roomName: string
+      attentionCount: number
+      kind?: 'mention' | 'run_terminal'
+    }

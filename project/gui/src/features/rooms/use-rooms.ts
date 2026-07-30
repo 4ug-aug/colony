@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiFetch, connectRoomStream } from '#/lib/api-transport'
-import type { RoomStreamHandle } from '#/lib/api-transport'
-import type { Room, RoomMessage, RoomRun, StreamMessage } from './types'
+import {
+  apiFetch,
+  connectRoomStream,
+  connectWorkspaceStream,
+} from '#/lib/api-transport'
+import type { RealtimeStreamHandle } from '#/lib/api-transport'
+import type {
+  MentionableAccount,
+  Room,
+  RoomMessage,
+  RoomRun,
+  RoomStreamMessage,
+  WorkspaceStreamMessage,
+} from './types'
 import type { Step } from '#/features/runs/step-label'
+import { toast } from '#/components/ui/toast'
 
 function upsert<T extends { id: string }>(items: T[], item: T) {
   const index = items.findIndex(({ id }) => id === item.id)
@@ -22,14 +34,31 @@ function orderedRooms(rooms: Room[]) {
 
 const selectedRoomKey = 'sweat.selected-room'
 
+function playMentionSound() {
+  const context = new AudioContext()
+  const oscillator = context.createOscillator()
+  const gain = context.createGain()
+  oscillator.frequency.value = 880
+  gain.gain.setValueAtTime(0.06, context.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.18)
+  oscillator.connect(gain).connect(context.destination)
+  oscillator.addEventListener('ended', () => void context.close())
+  oscillator.start()
+  oscillator.stop(context.currentTime + 0.18)
+}
+
 export function useRooms() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [runs, setRuns] = useState<RoomRun[]>([])
   const runsRef = useRef<RoomRun[]>([])
-  const [latestStepByRun, setLatestStepByRun] = useState<Map<string, Step>>(new Map())
-  const [liveStepsByRun, setLiveStepsByRun] = useState<Map<string, Step[]>>(new Map())
+  const [latestStepByRun, setLatestStepByRun] = useState<Map<string, Step>>(
+    new Map(),
+  )
+  const [liveStepsByRun, setLiveStepsByRun] = useState<Map<string, Step[]>>(
+    new Map(),
+  )
   const [loading, setLoading] = useState(true)
   const [, setDraftVersion] = useState(0)
   const [connection, setConnection] = useState<
@@ -37,8 +66,15 @@ export function useRooms() {
   >('connecting')
   const [error, setError] = useState<string>()
   const [createError, setCreateError] = useState<string>()
-  const [membersChangedAt, setMembersChangedAt] = useState<Record<string, number>>({})
-  const socket = useRef<RoomStreamHandle | undefined>(undefined)
+  const [membersChangedAt, setMembersChangedAt] = useState<
+    Record<string, number>
+  >({})
+  const [mentionableAccounts, setMentionableAccounts] = useState<
+    MentionableAccount[]
+  >([])
+  const roomSocket = useRef<RealtimeStreamHandle | undefined>(undefined)
+  const workspaceSocket = useRef<RealtimeStreamHandle | undefined>(undefined)
+  const selectedRoomRef = useRef<string | undefined>(undefined)
   const drafts = useRef<Record<string, string>>({})
 
   const forgetRoom = useCallback((roomId: string) => {
@@ -55,28 +91,117 @@ export function useRooms() {
     })
   }, [])
 
+  const acknowledge = useCallback(async (roomId: string) => {
+    const response = await apiFetch(
+      `/api/rooms/${roomId}/attention/acknowledge`,
+      { method: 'POST' },
+    )
+    if (!response.ok) return
+    setRooms((current) =>
+      current.map((room) =>
+        room.id === roomId ? { ...room, attentionCount: 0 } : room,
+      ),
+    )
+  }, [])
+
   useEffect(() => {
+    selectedRoomRef.current = selectedRoomId
+  }, [selectedRoomId])
+
+  useEffect(() => {
+    let stopped = false
+    let attempts = 0
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const selectFrom = (nextRooms: Room[]) => {
+      setSelectedRoomId((current) => {
+        if (current && nextRooms.some(({ id }) => id === current))
+          return current
+        const saved = localStorage.getItem(selectedRoomKey)
+        return nextRooms.some(({ id }) => id === saved)
+          ? saved!
+          : (nextRooms.find(({ id }) => id === 'general') ?? nextRooms.at(0))
+              ?.id
+      })
+    }
+    const connect = () => {
+      if (stopped) return
+      workspaceSocket.current = connectWorkspaceStream({
+        onOpen() {
+          attempts = 0
+        },
+        onMessage(data) {
+          const event = JSON.parse(data) as WorkspaceStreamMessage
+          if (stopped) return
+          if (event.type === 'workspace.snapshot') {
+            const next = orderedRooms(event.rooms)
+            setRooms(next)
+            selectFrom(next)
+          }
+          if (event.type === 'room.created')
+            setRooms((current) => orderedRooms(upsert(current, event.room)))
+          if (event.type === 'room.removed') forgetRoom(event.roomId)
+          if (event.type === 'attention.changed') {
+            const alreadyViewing =
+              selectedRoomRef.current === event.roomId &&
+              document.visibilityState === 'visible'
+            setRooms((current) =>
+              current.map((room) =>
+                room.id === event.roomId
+                  ? { ...room, attentionCount: event.attentionCount }
+                  : room,
+                ),
+            )
+            if (
+              event.kind === 'mention' &&
+              event.attentionCount > 0 &&
+              !alreadyViewing
+            ) {
+              toast.add({
+                type: 'info',
+                title: 'You were mentioned',
+                description: `New mention in ${event.roomName}`,
+              })
+              playMentionSound()
+            }
+            if (
+              event.attentionCount > 0 &&
+              alreadyViewing
+            )
+              void acknowledge(event.roomId)
+          }
+        },
+        onClose() {
+          if (stopped) return
+          retry = setTimeout(connect, Math.min(1_000 * 2 ** attempts++, 10_000))
+        },
+        onError() {
+          workspaceSocket.current?.close()
+        },
+      })
+    }
+
     void apiFetch('/api/rooms')
       .then(async (response) => {
         if (!response.ok) throw new Error('Unable to load rooms')
         const result = (await response.json()) as { rooms: Room[] }
-        setRooms(orderedRooms(result.rooms))
-        const saved = localStorage.getItem(selectedRoomKey)
-        setSelectedRoomId(
-          result.rooms.some(({ id }) => id === saved)
-            ? saved!
-            : (
-                result.rooms.find(({ id }) => id === 'general') ??
-                result.rooms.at(0)
-              )?.id,
-        )
+        if (stopped) return
+        const next = orderedRooms(result.rooms)
+        setRooms(next)
+        selectFrom(next)
       })
       .catch((reason) =>
         setError(
           reason instanceof Error ? reason.message : 'Unable to load rooms',
         ),
       )
-  }, [])
+      .finally(connect)
+
+    return () => {
+      stopped = true
+      if (retry) clearTimeout(retry)
+      workspaceSocket.current?.close()
+    }
+  }, [acknowledge, forgetRoom])
 
   useEffect(() => {
     if (!selectedRoomId) return
@@ -92,33 +217,42 @@ export function useRooms() {
           setConnection('connected')
         },
         onMessage(data) {
-          const event = JSON.parse(data) as StreamMessage
+          const event = JSON.parse(data) as RoomStreamMessage
           if (stopped) return
-          if (event.type === 'room.created') {
-            setRooms((current) => orderedRooms(upsert(current, event.room)))
-            return
-          }
           if (event.type === 'room.snapshot') {
             if (event.room.id !== selectedRoomId) return
             setMessages(event.messages)
             runsRef.current = event.runs
             setRuns(event.runs)
-            setLatestStepByRun(new Map(event.latestSteps.map((s) => [s.runId, s])))
+            setLatestStepByRun(
+              new Map(event.latestSteps.map((s) => [s.runId, s])),
+            )
             setLiveStepsByRun(
               new Map(event.latestSteps.map((step) => [step.runId, [step]])),
             )
             setLoading(false)
+            if (
+              event.room.attentionCount > 0 &&
+              document.visibilityState === 'visible'
+            )
+              void acknowledge(selectedRoomId)
           }
           if (
             event.type === 'message.created' &&
             event.message.roomId === selectedRoomId
           )
             setMessages((current) => upsert(current, event.message))
-          if (event.type === 'run.changed' && event.run.roomId === selectedRoomId) {
+          if (
+            event.type === 'run.changed' &&
+            event.run.roomId === selectedRoomId
+          ) {
             runsRef.current = upsert(runsRef.current, event.run)
             setRuns((current) => upsert(current, event.run))
           }
-          if (event.type === 'run.step' && runsRef.current.some((r) => r.id === event.runId)) {
+          if (
+            event.type === 'run.step' &&
+            runsRef.current.some((r) => r.id === event.runId)
+          ) {
             setLatestStepByRun((current) => {
               const next = new Map(current)
               next.set(event.runId, event.step)
@@ -126,12 +260,12 @@ export function useRooms() {
             })
             setLiveStepsByRun((current) => {
               const next = new Map(current)
-              next.set(event.runId, upsert(current.get(event.runId) ?? [], event.step))
+              next.set(
+                event.runId,
+                upsert(current.get(event.runId) ?? [], event.step),
+              )
               return next
             })
-          }
-          if (event.type === 'room.removed') {
-            forgetRoom(event.roomId)
           }
           if (event.type === 'room.members.changed') {
             setMembersChangedAt((current) => ({
@@ -151,21 +285,50 @@ export function useRooms() {
           retry = setTimeout(connect, Math.min(1_000 * 2 ** attempts, 10_000))
         },
         onError() {
-          socket.current?.close()
+          roomSocket.current?.close()
         },
       })
-      socket.current = handle
+      roomSocket.current = handle
     }
 
     connect()
     return () => {
       stopped = true
       if (retry) clearTimeout(retry)
-      socket.current?.close()
+      roomSocket.current?.close()
     }
-  }, [forgetRoom, selectedRoomId])
+  }, [acknowledge, selectedRoomId])
 
-  const request = async <T,>(
+  useEffect(() => {
+    if (!selectedRoomId) return
+    let stopped = false
+    void apiFetch(`/api/rooms/${selectedRoomId}/mentionable-accounts`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Unable to load mentions')
+        const result = (await response.json()) as {
+          accounts: MentionableAccount[]
+        }
+        if (!stopped) setMentionableAccounts(result.accounts)
+      })
+      .catch(() => {
+        if (!stopped) setMentionableAccounts([])
+      })
+    return () => {
+      stopped = true
+    }
+  }, [membersChangedAt, selectedRoomId])
+
+  useEffect(() => {
+    const onVisible = () => {
+      const roomId = selectedRoomRef.current
+      if (document.visibilityState === 'visible' && roomId)
+        void acknowledge(roomId)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [acknowledge])
+
+  const request = async <T>(
     path: string,
     body?: unknown,
     method = 'POST',
@@ -196,6 +359,7 @@ export function useRooms() {
     connection,
     error,
     membersChangedAt,
+    mentionableAccounts,
     select: (roomId: string) => {
       if (roomId === selectedRoomId) return
       setSelectedRoomId(roomId)
@@ -204,6 +368,7 @@ export function useRooms() {
       setRuns([])
       setLatestStepByRun(new Map())
       setLiveStepsByRun(new Map())
+      setMentionableAccounts([])
       setLoading(true)
       setConnection('connecting')
     },
@@ -214,7 +379,10 @@ export function useRooms() {
         setDraftVersion((version) => version + 1)
       }
     },
-    create: async (name: string, visibility: 'public' | 'private' = 'public') => {
+    create: async (
+      name: string,
+      visibility: 'public' | 'private' = 'public',
+    ) => {
       try {
         const response = await apiFetch('/api/rooms', {
           method: 'POST',

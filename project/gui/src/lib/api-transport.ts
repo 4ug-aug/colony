@@ -49,7 +49,12 @@ export async function betterAuthFetch(
 
   const merged: RequestInit =
     input instanceof Request
-      ? { method: input.method, headers: input.headers, body: input.body, ...init }
+      ? {
+          method: input.method,
+          headers: input.headers,
+          body: input.body,
+          ...init,
+        }
       : { ...init }
 
   if (isTauriRuntime()) {
@@ -64,23 +69,23 @@ export async function betterAuthFetch(
 
 // ---- WebSocket transport ----
 
-export interface RoomStreamHandlers {
+export interface RealtimeStreamHandlers {
   onOpen?: () => void
   onMessage: (data: string) => void
   onClose?: () => void
   onError?: () => void
 }
 
-export interface RoomStreamHandle {
+export interface RealtimeStreamHandle {
   close(): void
 }
 
-export function connectRoomStream(
-  roomId: string,
-  handlers: RoomStreamHandlers,
-): RoomStreamHandle {
+function connectRealtimeStream(
+  path: string,
+  handlers: RealtimeStreamHandlers,
+): RealtimeStreamHandle {
   // Build ws/wss URL from the http/https sweatApiUrl
-  const httpUrl = sweatApiUrl(`/api/rooms/${roomId}/stream`)
+  const httpUrl = sweatApiUrl(path)
   const wsUrl = httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:')
 
   if (!isTauriRuntime()) {
@@ -94,12 +99,16 @@ export function connectRoomStream(
 
   // Tauri path: async connect, track early close
   let closed = false
-  let tauriWs: { disconnect(): Promise<void> } | undefined
+  let tauriWs:
+    | {
+        disconnect(): Promise<void>
+        send(message: string): Promise<void>
+      }
+    | undefined
 
   const connectAsync = async () => {
-    const TauriWebSocket = (
-      await import('@tauri-apps/plugin-websocket')
-    ).default
+    const TauriWebSocket = (await import('@tauri-apps/plugin-websocket'))
+      .default
     // The Rust WebSocket client sends no Origin header, but the coordinator
     // gates every request on an allowed Origin before authenticating. Send the
     // webview origin (tauri://localhost) so the upgrade passes the CORS gate.
@@ -124,8 +133,6 @@ export function connectRoomStream(
       return
     }
 
-    handlers.onOpen?.()
-
     ws.addListener((msg) => {
       if (msg.type === 'Text') {
         handlers.onMessage(msg.data as string)
@@ -133,10 +140,12 @@ export function connectRoomStream(
         handlers.onClose?.()
       }
     })
+    await ws.send('snapshot')
+    handlers.onOpen?.()
   }
 
   void connectAsync().catch((err: unknown) => {
-    console.error('room stream connect failed:', err)
+    console.error('realtime stream connect failed:', err)
     handlers.onError?.()
   })
 
@@ -147,3 +156,11 @@ export function connectRoomStream(
     },
   }
 }
+
+export const connectRoomStream = (
+  roomId: string,
+  handlers: RealtimeStreamHandlers,
+) => connectRealtimeStream(`/api/rooms/${roomId}/stream`, handlers)
+
+export const connectWorkspaceStream = (handlers: RealtimeStreamHandlers) =>
+  connectRealtimeStream('/api/workspace/stream', handlers)

@@ -246,6 +246,17 @@ pre code {
   font: inherit;
 }
 
+.mention-menu-group + .mention-menu-group {
+  margin-top: 0.35rem;
+}
+
+.mention-menu-heading {
+  padding: 0.35rem 0.5rem 0.2rem;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
 .mention-menu-icon {
   display: grid;
   width: 1.35rem;

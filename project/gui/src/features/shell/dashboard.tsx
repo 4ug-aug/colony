@@ -35,6 +35,7 @@ export function Dashboard({ user }: { user: Author }) {
     draft,
     setDraft,
     membersChangedAt,
+    mentionableAccounts,
   } = useRooms()
   const [view, setView] = useState<DashboardView>('room')
   const [selectedRunId, setSelectedRunId] = useState<string>()
@@ -165,6 +166,12 @@ export function Dashboard({ user }: { user: Author }) {
                       messages={messages}
                       runs={runs}
                       openRun={setSelectedRunId}
+                      mentionHandles={[
+                        user.name,
+                        ...mentionableAccounts.map(
+                          (account) => account.username ?? account.name,
+                        ),
+                      ]}
                     />
                   )}
                 </div>
@@ -178,6 +185,7 @@ export function Dashboard({ user }: { user: Author }) {
                     onSubmit={(text) => void submit(text)}
                     disabled={loading || !room}
                     roomName={room?.name ?? 'room'}
+                    mentionableAccounts={mentionableAccounts}
                   />
                 </div>
                 <div className="mx-auto max-w-7xl">
