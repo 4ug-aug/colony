@@ -5,6 +5,7 @@ import { Input } from '#/components/ui/input'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -150,9 +151,11 @@ export function WorkspaceSettingsPage({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="1">1 day</SelectItem>
-              <SelectItem value="3">3 days</SelectItem>
-              <SelectItem value="7">7 days</SelectItem>
+              <SelectGroup>
+                <SelectItem value="1">1 day</SelectItem>
+                <SelectItem value="3">3 days</SelectItem>
+                <SelectItem value="7">7 days</SelectItem>
+              </SelectGroup>
             </SelectContent>
           </Select>
           <Button

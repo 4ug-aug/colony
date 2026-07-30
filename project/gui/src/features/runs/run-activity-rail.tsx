@@ -169,7 +169,7 @@ function RunActivityContent({
             <div className="flex items-center gap-2">
               <p className="text-sm text-destructive">{error}</p>
               <Button type="button" variant="ghost" size="xs" onClick={onRetry}>
-                <RotateCw />
+                <RotateCw data-icon="inline-start" />
                 Retry
               </Button>
             </div>

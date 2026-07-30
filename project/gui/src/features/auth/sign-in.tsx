@@ -17,7 +17,7 @@ export function SignIn() {
   const [password, setPassword] = useState('')
   const [setupToken, setSetupToken] = useState('')
   const [checking, setChecking] = useState(!pathToken)
-  const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
 
   useEffect(() => {
@@ -36,7 +36,7 @@ export function SignIn() {
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(undefined)
-    setBusy(true)
+    setPending(true)
     try {
       if (mode === 'sign-in') {
         const result = identifier.includes('@')
@@ -74,7 +74,7 @@ export function SignIn() {
         reason instanceof Error ? reason.message : 'Unable to reach Sweat',
       )
     } finally {
-      setBusy(false)
+      setPending(false)
     }
   }
 
@@ -105,7 +105,7 @@ export function SignIn() {
             autoComplete="off"
             value={setupToken}
             onChange={(event) => setSetupToken(event.target.value)}
-            disabled={busy}
+            disabled={pending}
             required
           />
         )}
@@ -118,7 +118,7 @@ export function SignIn() {
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              disabled={busy}
+              disabled={pending}
               required
             />
             <Input
@@ -127,7 +127,7 @@ export function SignIn() {
               autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              disabled={busy}
+              disabled={pending}
               minLength={3}
               maxLength={30}
               pattern="[A-Za-z0-9_]+"
@@ -139,7 +139,7 @@ export function SignIn() {
               autoComplete="name"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              disabled={busy}
+              disabled={pending}
             />
           </>
         )}
@@ -150,7 +150,7 @@ export function SignIn() {
             autoComplete="username"
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
-            disabled={busy}
+            disabled={pending}
             required
           />
         )}
@@ -161,13 +161,13 @@ export function SignIn() {
           autoComplete={admission ? 'new-password' : 'current-password'}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          disabled={busy}
+          disabled={pending}
           minLength={8}
           required
         />
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button className="w-full" type="submit" disabled={busy}>
-          {busy ? 'Working…' : admission ? 'Create account' : 'Sign in'}
+        <Button className="w-full" type="submit" disabled={pending}>
+          {pending ? 'Working…' : admission ? 'Create account' : 'Sign in'}
         </Button>
         {mode === 'invite' && (
           <Button
@@ -175,7 +175,7 @@ export function SignIn() {
             variant="link"
             type="button"
             onClick={() => setMode('sign-in')}
-            disabled={busy}
+            disabled={pending}
           >
             Back to sign in
           </Button>

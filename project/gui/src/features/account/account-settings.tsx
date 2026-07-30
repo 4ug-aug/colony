@@ -9,13 +9,13 @@ import type { Author } from '#/features/rooms/types'
 export function AccountSettingsPage({ user }: { user: Author }) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState<'password' | 'sessions'>()
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
 
   const changePassword = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setBusy(true)
+    setPending('password')
     setError(undefined)
     setMessage(undefined)
     try {
@@ -31,12 +31,12 @@ export function AccountSettingsPage({ user }: { user: Author }) {
     } catch {
       setError('Could not change password.')
     } finally {
-      setBusy(false)
+      setPending(undefined)
     }
   }
 
   const revokeOtherSessions = async () => {
-    setBusy(true)
+    setPending('sessions')
     setError(undefined)
     setMessage(undefined)
     try {
@@ -46,7 +46,7 @@ export function AccountSettingsPage({ user }: { user: Author }) {
     } catch {
       setError('Could not sign out other sessions.')
     } finally {
-      setBusy(false)
+      setPending(undefined)
     }
   }
 
@@ -85,7 +85,7 @@ export function AccountSettingsPage({ user }: { user: Author }) {
             aria-label="Current password"
             value={currentPassword}
             onChange={(event) => setCurrentPassword(event.target.value)}
-            disabled={busy}
+            disabled={pending !== undefined}
             required
           />
           <Input
@@ -95,12 +95,17 @@ export function AccountSettingsPage({ user }: { user: Author }) {
             aria-label="New password"
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
-            disabled={busy}
+            disabled={pending !== undefined}
             minLength={8}
             required
           />
-          <Button type="submit" size="sm" disabled={busy}>
-            Change password
+          <Button
+            type="submit"
+            size="sm"
+            aria-busy={pending === 'password'}
+            disabled={pending !== undefined}
+          >
+            {pending === 'password' ? 'Changing…' : 'Change password'}
           </Button>
         </form>
         <Button
@@ -108,10 +113,11 @@ export function AccountSettingsPage({ user }: { user: Author }) {
           variant="outline"
           size="sm"
           className="mt-4"
-          disabled={busy}
+          aria-busy={pending === 'sessions'}
+          disabled={pending !== undefined}
           onClick={() => void revokeOtherSessions()}
         >
-          Sign out other sessions
+          {pending === 'sessions' ? 'Signing out…' : 'Sign out other sessions'}
         </Button>
         {error && (
           <p className="mt-2 text-xs text-destructive" role="alert">

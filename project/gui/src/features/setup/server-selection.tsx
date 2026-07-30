@@ -5,13 +5,13 @@ import { Input } from '#/components/ui/input'
 
 export function ServerSelection({ onConnected }: { onConnected: () => void }) {
   const [url, setUrl] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(undefined)
-    setBusy(true)
+    setPending(true)
     try {
       // Normalize: strip trailing slash
       const normalized = url.trim().replace(/\/$/, '')
@@ -29,7 +29,7 @@ export function ServerSelection({ onConnected }: { onConnected: () => void }) {
     } catch {
       setError("Couldn't reach a Sweat server at that address.")
     } finally {
-      setBusy(false)
+      setPending(false)
     }
   }
 
@@ -50,12 +50,12 @@ export function ServerSelection({ onConnected }: { onConnected: () => void }) {
           autoComplete="url"
           value={url}
           onChange={(event) => setUrl(event.target.value)}
-          disabled={busy}
+          disabled={pending}
           required
         />
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button className="w-full" type="submit" disabled={busy}>
-          {busy ? 'Connecting…' : 'Connect'}
+        <Button className="w-full" type="submit" disabled={pending}>
+          {pending ? 'Connecting…' : 'Connect'}
         </Button>
       </form>
     </main>

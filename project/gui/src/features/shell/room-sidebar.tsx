@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '#/components/ui/alert-dialog'
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -40,9 +40,11 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from '#/components/ui/sidebar'
 import type { Author, Room } from '#/features/rooms/types'
 import { canDeleteRoom } from '#/features/rooms/permissions'
+import { isTauriRuntime } from '#/lib/server-config'
 
 export type DashboardView = 'room' | 'account' | 'workspace'
 
@@ -76,16 +78,16 @@ export function RoomSidebar({
   const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>(
     'public',
   )
-  const [creatingRoom, setCreatingRoom] = useState(false)
+  const [pending, setPending] = useState(false)
   const [roomToDelete, setRoomToDelete] = useState<Room>()
   const roomNameInput = useRef<HTMLInputElement>(null)
 
   const submitRoom = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!roomName.trim()) return
-    setCreatingRoom(true)
+    setPending(true)
     const result = await onCreate(roomName.trim(), roomVisibility)
-    setCreatingRoom(false)
+    setPending(false)
     if (result) {
       setRoomName('')
       setRoomVisibility('public')
@@ -103,8 +105,15 @@ export function RoomSidebar({
     if (creating) roomNameInput.current?.focus()
   }, [creating])
 
-  return (
-    <Sidebar variant="inset" collapsible="icon">
+  return [
+    !isTauriRuntime() && (
+      <SidebarTrigger
+        key="mobile-trigger"
+        className="fixed top-3 left-3 z-30 md:hidden"
+        title="Open navigation"
+      />
+    ),
+    <Sidebar key="sidebar" variant="inset" collapsible="icon">
       <SidebarContent>
         <SidebarGroup>
           <div className="flex items-center justify-between pr-2">
@@ -143,8 +152,10 @@ export function RoomSidebar({
                     className="h-8"
                     aria-label="Room name"
                     placeholder="Room name"
-                    disabled={creatingRoom}
+                    disabled={pending}
                     required
+                    pattern={'.*\\S.*'}
+                    title="Room name cannot be blank"
                   />
                   <div
                     className="flex items-center gap-1"
@@ -154,7 +165,7 @@ export function RoomSidebar({
                     <Button
                       type="button"
                       onClick={() => setRoomVisibility('public')}
-                      disabled={creatingRoom}
+                      disabled={pending}
                       size="xs"
                       variant={
                         roomVisibility === 'public' ? 'default' : 'outline'
@@ -166,7 +177,7 @@ export function RoomSidebar({
                     <Button
                       type="button"
                       onClick={() => setRoomVisibility('private')}
-                      disabled={creatingRoom}
+                      disabled={pending}
                       size="xs"
                       variant={
                         roomVisibility === 'private' ? 'default' : 'outline'
@@ -180,9 +191,9 @@ export function RoomSidebar({
                     <Button
                       type="submit"
                       size="xs"
-                      disabled={creatingRoom || !roomName.trim()}
+                      disabled={pending || !roomName.trim()}
                     >
-                      Create
+                      {pending ? 'Creating…' : 'Create'}
                     </Button>
                     <Button
                       type="button"
@@ -286,12 +297,14 @@ export function RoomSidebar({
                 onClick={onOpenAccount}
               >
                 <Avatar>
-                  <AvatarImage src="/app-icon.png" alt="" className="bg-white p-1" />
-                  <AvatarFallback>
-                    {user.name?.[0] ?? "U"}
-                  </AvatarFallback>
+                  <AvatarImage
+                    src="/app-icon.png"
+                    alt=""
+                    className="bg-white p-1"
+                  />
+                  <AvatarFallback>{user.name.slice(0, 1)}</AvatarFallback>
                 </Avatar>
-           
+
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">
                     {user.name}
@@ -349,6 +362,6 @@ export function RoomSidebar({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Sidebar>
-  )
+    </Sidebar>,
+  ]
 }
