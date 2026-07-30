@@ -119,13 +119,14 @@
 html,
 body,
 #root {
-  min-height: 100%;
+  height: 100%;
+  overscroll-behavior: none;
 }
 
 body {
   margin: 0;
   font-family: var(--font-sans);
-  overflow-x: hidden;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
