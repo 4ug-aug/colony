@@ -14,8 +14,15 @@ import type { Author } from '#/features/rooms/types'
 import { AccountSettingsPage } from '#/features/account/account-settings'
 import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 
-export function Dashboard({ user }: { user: Author }) {
+export function Dashboard({
+  user,
+  onChangeServer,
+}: {
+  user: Author
+  onChangeServer: () => void
+}) {
   const {
     rooms,
     room,
@@ -134,7 +141,7 @@ export function Dashboard({ user }: { user: Author }) {
         </header>
         {view === 'account' && (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <AccountSettingsPage user={user} />
+            <AccountSettingsPage user={user} onChangeServer={onChangeServer} />
           </div>
         )}
         {view === 'workspace' && user.role === 'admin' && (
@@ -158,9 +165,12 @@ export function Dashboard({ user }: { user: Author }) {
               >
                 <div className="mx-auto max-w-7xl">
                   {loading ? (
-                    <p className="py-12 text-center text-sm text-muted-foreground">
-                      Loading room…
-                    </p>
+                    <div
+                      className="flex justify-center py-12 text-sm text-muted-foreground"
+                      role="status"
+                    >
+                      <BrailleLoader text="Loading room…" />
+                    </div>
                   ) : (
                     <Timeline
                       messages={messages}

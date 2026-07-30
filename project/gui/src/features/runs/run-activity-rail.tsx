@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Ban,
-  CheckCircle2,
-  CircleX,
-  LoaderCircle,
-  RotateCw,
-  X,
-} from 'lucide-react'
+import { Ban, CheckCircle2, CircleX, RotateCw, X } from 'lucide-react'
 import { sweatApiUrl } from '#/lib/auth-client'
 import { AgentAnt } from '#/components/avatar'
 import { formatStepText, mergeSteps, pairSteps } from './run-activity'
@@ -14,12 +7,9 @@ import { stepLabel } from './step-label'
 import type { Step } from './step-label'
 import { terminal, agentName } from './run-helpers'
 import { Markdown } from '#/components/markdown'
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from '#/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import {
   Sheet,
   SheetContent,
@@ -42,8 +32,8 @@ type ActivityRun = {
 type TriggerMessage = { author: Person; text: string }
 
 function useInlineRail() {
-  const [inline, setInline] = useState(() =>
-    window.matchMedia('(min-width: 1024px)').matches,
+  const [inline, setInline] = useState(
+    () => window.matchMedia('(min-width: 1024px)').matches,
   )
   useEffect(() => {
     const query = window.matchMedia('(min-width: 1024px)')
@@ -54,12 +44,24 @@ function useInlineRail() {
   return inline
 }
 
-function PersonAvatar({ person, agent = false }: { person: Person; agent?: boolean }) {
+function PersonAvatar({
+  person,
+  agent = false,
+}: {
+  person: Person
+  agent?: boolean
+}) {
   return (
     <Avatar>
       {person.image && <AvatarImage src={person.image} alt="" />}
-      <AvatarFallback className={agent ? 'bg-primary/10 text-primary' : undefined}>
-        {agent ? <AgentAnt className="size-6" /> : person.name.slice(0, 1).toUpperCase()}
+      <AvatarFallback
+        className={agent ? 'bg-primary/10 text-primary' : undefined}
+      >
+        {agent ? (
+          <AgentAnt className="size-6" />
+        ) : (
+          person.name.slice(0, 1).toUpperCase()
+        )}
       </AvatarFallback>
     </Avatar>
   )
@@ -143,7 +145,8 @@ function RunActivityContent({
           const element = scrollRef.current
           if (element)
             atBottom.current =
-              element.scrollHeight - element.scrollTop - element.clientHeight < 80
+              element.scrollHeight - element.scrollTop - element.clientHeight <
+              80
         }}
       >
         <section className="flex gap-3 border-b pb-5">
@@ -163,7 +166,9 @@ function RunActivityContent({
             Activity
           </h3>
           {loading && !steps.length && (
-            <p className="text-sm text-muted-foreground">Loading activity…</p>
+            <p className="text-sm text-muted-foreground" role="status">
+              <BrailleLoader text="Loading activity" />
+            </p>
           )}
           {error && !steps.length && (
             <div className="flex items-center gap-2">
@@ -175,7 +180,9 @@ function RunActivityContent({
             </div>
           )}
           {!loading && !error && !items.length && (
-            <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
+            <p className="text-sm text-muted-foreground">
+              No activity recorded yet.
+            </p>
           )}
           <div className="space-y-3">
             {items.map(({ step, result }) =>
@@ -186,9 +193,16 @@ function RunActivityContent({
                 >
                   <div className="mb-1 flex items-center justify-between text-xs font-medium text-muted-foreground">
                     <span>Reasoning</span>
-                    <time>{new Date(step.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
+                    <time>
+                      {new Date(step.createdAt).toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </time>
                   </div>
-                  <p className="whitespace-pre-wrap break-words leading-6">{step.text}</p>
+                  <p className="whitespace-pre-wrap break-words leading-6">
+                    {step.text}
+                  </p>
                 </article>
               ) : (
                 <details
@@ -205,14 +219,18 @@ function RunActivityContent({
                   </summary>
                   <div className="mt-3 space-y-3 text-xs group-open:animate-in group-open:fade-in-0 group-open:slide-in-from-top-1 group-open:duration-200">
                     <div>
-                      <p className="mb-1 font-semibold text-muted-foreground">Arguments</p>
+                      <p className="mb-1 font-semibold text-muted-foreground">
+                        Arguments
+                      </p>
                       <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 font-mono text-xs leading-5">
                         {formatStepText(step.text)}
                       </pre>
                     </div>
                     {result && (
                       <div>
-                        <p className="mb-1 font-semibold text-muted-foreground">Result</p>
+                        <p className="mb-1 font-semibold text-muted-foreground">
+                          Result
+                        </p>
                         <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 font-mono text-xs leading-5">
                           {formatStepText(result.text)}
                         </pre>
@@ -248,8 +266,7 @@ function RunActivityContent({
         )}
         {!terminal(run.state) && (
           <div className="flex items-center gap-2 border-t pt-5 text-sm text-muted-foreground">
-            <LoaderCircle className="size-4 animate-spin" />
-            {status}
+            <BrailleLoader text={status} />
           </div>
         )}
       </div>
@@ -296,7 +313,11 @@ export function RunActivityRail({
       })
       .catch((reason) => {
         if (!controller.signal.aborted)
-          setError(reason instanceof Error ? reason.message : 'Could not load run activity')
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : 'Could not load run activity',
+          )
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)

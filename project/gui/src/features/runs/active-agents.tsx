@@ -1,4 +1,4 @@
-import { LoaderCircle, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Button } from '#/components/ui/button'
 import {
   HoverCard,
@@ -96,7 +96,6 @@ export function ActiveAgents({
               >
                 <X />
               </Button>
-              <LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground" />
             </div>
           ))}
         </div>

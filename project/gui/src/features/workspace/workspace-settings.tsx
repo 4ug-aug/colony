@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '#/lib/api-transport'
 import { Button } from '#/components/ui/button'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Input } from '#/components/ui/input'
 import {
   Select,
@@ -134,6 +135,13 @@ export function WorkspaceSettingsPage({
       {error && (
         <p className="text-sm text-destructive" role="alert">
           {error}
+        </p>
+      )}
+      {(loading || busy) && (
+        <p className="text-sm text-muted-foreground" role="status">
+          <BrailleLoader
+            text={loading ? 'Loading workspace settings' : 'Saving changes'}
+          />
         </p>
       )}
       <section className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">

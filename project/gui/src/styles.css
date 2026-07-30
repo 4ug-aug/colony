@@ -43,7 +43,7 @@
 }
 
 .dark {
-  --background: oklch(0.1755 0 0);
+  --background: oklch(0.210 0 0);
   --foreground: oklch(0.986 0.002 67.8);
   --card: oklch(0.214 0.009 43.1);
   --card-foreground: oklch(0.986 0.002 67.8);
@@ -129,6 +129,66 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.entry-form {
+  animation: entry-form-in 160ms ease-out;
+}
+
+.entry-form--exiting {
+  animation: entry-form-out 140ms ease-in forwards;
+}
+
+@keyframes entry-form-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+}
+
+@keyframes entry-form-out {
+  to {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+}
+
+@media (min-width: 768px) {
+  .entry-shell-frame--exiting {
+    animation: entry-shell-out 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  @keyframes entry-shell-out {
+    0%,
+    18% {
+      grid-template-columns: minmax(0, 1.15fr) minmax(22rem, 0.85fr);
+      opacity: 1;
+    }
+    74% {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 0fr);
+      opacity: 1;
+    }
+    to {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 0fr);
+      opacity: 0;
+    }
+  }
+}
+
+@media (max-width: 767px) {
+  .entry-shell-frame--exiting {
+    animation: entry-shell-out 500ms ease-out forwards;
+  }
+
+  @keyframes entry-shell-out {
+    0%,
+    30% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
 }
 
 a {
@@ -226,6 +286,9 @@ pre code {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .entry-form,
+  .entry-form--exiting,
+  .entry-shell-frame--exiting,
   .mention-menu,
   .mention-menu.is-leaving {
     animation: none;

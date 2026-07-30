@@ -3,6 +3,7 @@ import { LogOut, UserPlus, Users, X } from 'lucide-react'
 import { apiFetch } from '#/lib/api-transport'
 import { Avatar } from '#/components/avatar'
 import { Button } from '#/components/ui/button'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import {
   Popover,
   PopoverContent,
@@ -200,7 +201,9 @@ export function MembersPanel({
         </PopoverHeader>
         <div className="px-4 pb-4 space-y-1">
           {loadingMembers && (
-            <p className="py-2 text-xs text-muted-foreground">Loading…</p>
+            <p className="py-2 text-xs text-muted-foreground" role="status">
+              <BrailleLoader text="Loading members" />
+            </p>
           )}
           {!loadingMembers && membersError && (
             <p className="py-2 text-xs text-destructive" role="alert">
@@ -266,7 +269,9 @@ export function MembersPanel({
             Add people
           </div>
           {loadingWorkspace && (
-            <p className="text-xs text-muted-foreground">Loading…</p>
+            <p className="text-xs text-muted-foreground" role="status">
+              <BrailleLoader text="Loading workspace members" />
+            </p>
           )}
           {!loadingWorkspace && workspaceError && (
             <p className="text-xs text-destructive" role="alert">

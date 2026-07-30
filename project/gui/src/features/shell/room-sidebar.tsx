@@ -3,6 +3,7 @@ import type { SubmitEvent } from 'react'
 import { Bot, Hash, Lock, LogOut, Settings, Trash2 } from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
 import { Button } from '#/components/ui/button'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Input } from '#/components/ui/input'
 import {
   AlertDialog,
@@ -194,7 +195,11 @@ export function RoomSidebar({
                       size="xs"
                       disabled={pending || !roomName.trim()}
                     >
-                      {pending ? 'Creating…' : 'Create'}
+                      {pending ? (
+                        <BrailleLoader text="Creating room" />
+                      ) : (
+                        'Create'
+                      )}
                     </Button>
                     <Button
                       type="button"

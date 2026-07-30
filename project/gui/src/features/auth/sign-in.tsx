@@ -3,11 +3,17 @@ import type { SubmitEvent } from 'react'
 import { authClient } from '#/lib/auth-client'
 import { apiFetch } from '#/lib/api-transport'
 import { Button } from '#/components/ui/button'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Input } from '#/components/ui/input'
+import {
+  clearServerConfig,
+  currentServerBase,
+  isTauriRuntime,
+} from '#/lib/server-config'
 
 type Mode = 'sign-in' | 'setup' | 'invite'
 
-export function SignIn() {
+export function SignIn({ onChangeServer }: { onChangeServer: () => void }) {
   const pathToken = window.location.pathname.match(/^\/invite\/([^/]+)$/)?.[1]
   const [mode, setMode] = useState<Mode>(pathToken ? 'invite' : 'sign-in')
   const [identifier, setIdentifier] = useState('')
@@ -68,7 +74,8 @@ export function SignIn() {
           body.error ?? body.message ?? 'Unable to create account',
         )
       }
-      window.location.reload()
+      const result = await authClient.signIn.email({ email, password })
+      if (result.error) setError(result.error.message)
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : 'Unable to reach Sweat',
@@ -81,106 +88,142 @@ export function SignIn() {
   const admission = mode !== 'sign-in'
   if (checking)
     return (
-      <main className="grid min-h-svh place-items-center p-6">
-        <p className="text-sm text-muted-foreground">Connecting to Sweat…</p>
-      </main>
+      <p className="entry-form text-sm text-muted-foreground">
+        <BrailleLoader text="Connecting to Sweat" />
+      </p>
     )
   return (
-    <main className="grid min-h-svh place-items-center p-6">
-      <form
-        className="w-full max-w-sm space-y-4 rounded-xl border bg-card p-6 text-card-foreground shadow-sm"
-        onSubmit={(event) => void submit(event)}
-      >
+    <form
+      key={mode}
+      className="entry-form flex flex-col gap-4"
+      onSubmit={(event) => void submit(event)}
+    >
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <img
+          src="/app-icon.png"
+          alt=""
+          className="size-7 rounded-md bg-white p-1"
+        />
+        Sweat
+      </div>
+      <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">
           {mode === 'setup'
             ? 'Set up Sweat'
             : mode === 'invite'
               ? 'Join workspace'
-              : 'Sign in'}
+              : 'Welcome back'}
         </h1>
-        {mode === 'setup' && (
-          <Input
-            placeholder="Setup token"
-            aria-label="Setup token"
-            autoComplete="off"
-            value={setupToken}
-            onChange={(event) => setSetupToken(event.target.value)}
-            disabled={pending}
-            required
-          />
-        )}
-        {admission && (
-          <>
-            <Input
-              type="email"
-              placeholder="Email"
-              aria-label="Email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              disabled={pending}
-              required
-            />
-            <Input
-              placeholder="Username"
-              aria-label="Username"
-              autoComplete="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              disabled={pending}
-              minLength={3}
-              maxLength={30}
-              pattern="[A-Za-z0-9_]+"
-              required
-            />
-            <Input
-              placeholder="Display name (optional)"
-              aria-label="Display name"
-              autoComplete="name"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-              disabled={pending}
-            />
-          </>
-        )}
-        {!admission && (
-          <Input
-            placeholder="Email or username"
-            aria-label="Email or username"
-            autoComplete="username"
-            value={identifier}
-            onChange={(event) => setIdentifier(event.target.value)}
-            disabled={pending}
-            required
-          />
-        )}
+        <p className="text-sm text-muted-foreground">
+          {mode === 'setup'
+            ? 'Create the first administrator for this workspace.'
+            : mode === 'invite'
+              ? 'Create your account to join this workspace.'
+              : 'Sign in to your Sweat workspace.'}
+        </p>
+      </div>
+      {mode === 'setup' && (
         <Input
-          type="password"
-          placeholder="Password"
-          aria-label="Password"
-          autoComplete={admission ? 'new-password' : 'current-password'}
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          placeholder="Setup token"
+          aria-label="Setup token"
+          autoComplete="off"
+          value={setupToken}
+          onChange={(event) => setSetupToken(event.target.value)}
           disabled={pending}
-          minLength={8}
           required
         />
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button className="w-full" type="submit" disabled={pending}>
-          {pending ? 'Working…' : admission ? 'Create account' : 'Sign in'}
-        </Button>
-        {mode === 'invite' && (
-          <Button
-            className="w-full"
-            variant="link"
-            type="button"
-            onClick={() => setMode('sign-in')}
+      )}
+      {admission && (
+        <>
+          <Input
+            type="email"
+            placeholder="Email"
+            aria-label="Email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             disabled={pending}
-          >
-            Back to sign in
-          </Button>
+            required
+          />
+          <Input
+            placeholder="Username"
+            aria-label="Username"
+            autoComplete="username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            disabled={pending}
+            minLength={3}
+            maxLength={30}
+            pattern="[A-Za-z0-9_]+"
+            required
+          />
+          <Input
+            placeholder="Display name (optional)"
+            aria-label="Display name"
+            autoComplete="name"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            disabled={pending}
+          />
+        </>
+      )}
+      {!admission && (
+        <Input
+          placeholder="Email or username"
+          aria-label="Email or username"
+          autoComplete="username"
+          value={identifier}
+          onChange={(event) => setIdentifier(event.target.value)}
+          disabled={pending}
+          required
+        />
+      )}
+      <Input
+        type="password"
+        placeholder="Password"
+        aria-label="Password"
+        autoComplete={admission ? 'new-password' : 'current-password'}
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        disabled={pending}
+        minLength={8}
+        required
+      />
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Button className="w-full" type="submit" disabled={pending}>
+        {pending ? (
+          <BrailleLoader text={admission ? 'Creating account' : 'Signing in'} />
+        ) : admission ? (
+          'Create account'
+        ) : (
+          'Sign in'
         )}
-      </form>
-    </main>
+      </Button>
+      {mode === 'invite' && (
+        <Button
+          variant="link"
+          type="button"
+          onClick={() => setMode('sign-in')}
+          disabled={pending}
+        >
+          Back to sign in
+        </Button>
+      )}
+      {mode === 'sign-in' && isTauriRuntime() && currentServerBase() && (
+        <div className="flex min-w-0 items-center gap-3 rounded-lg bg-muted px-3 py-2">
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {currentServerBase()}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() => void clearServerConfig().finally(onChangeServer)}
+          >
+            Change
+          </Button>
+        </div>
+      )}
+    </form>
   )
 }
