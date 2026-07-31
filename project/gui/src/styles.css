@@ -154,6 +154,10 @@ body {
 }
 
 @media (min-width: 768px) {
+  .entry-shell-frame {
+    grid-template-columns: minmax(0, 1.15fr) minmax(22rem, 0.85fr);
+  }
+
   .entry-shell-frame--exiting {
     animation: entry-shell-out 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
