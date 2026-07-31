@@ -17,9 +17,9 @@ Workspace admission is specified in
 
 The implementation lives in [`project/`](./project/).
 
-Copy `.env.example` to `.env.local` and add the model credentials and a stable
-`BETTER_AUTH_SECRET`. This root file is the only environment file used by the
-development commands. Existing installations are migrated automatically from
+Copy `.env.example` to `.env.local` and add a stable `BETTER_AUTH_SECRET`.
+After setup, an administrator configures the model provider in Workspace Settings.
+This root file is the only environment file used by the development commands. Existing installations are migrated automatically from
 the former `project/gui/.env.local` location.
 
 `make dev` migrates the database, builds the agent image, and starts an empty

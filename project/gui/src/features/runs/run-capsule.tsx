@@ -1,4 +1,5 @@
-import { Check, CircleX, LoaderCircle, X } from 'lucide-react'
+import { Check, CircleX, X } from 'lucide-react'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import { AvatarGroup } from '#/components/ui/avatar'
 import { RunAvatar } from './run-avatar'
 import { agentName } from './run-helpers'
@@ -22,7 +23,7 @@ export function RunCapsule({
   return (
     <button
       type="button"
-      className="mt-2 inline-flex items-center gap-1.5 rounded-full border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted"
+      className="mt-2 inline-flex items-center gap-1.5 rounded-md border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
       aria-label={`View ${agentName(run.agentId)} activity, ${state}`}
       onClick={() => openRun(run.id)}
     >
@@ -36,7 +37,7 @@ export function RunCapsule({
       ) : run.state === 'cancelled' ? (
         <X className="size-3.5" />
       ) : (
-        <LoaderCircle className="size-3.5 animate-spin" />
+        <BrailleLoader text="Working" className="[&_svg]:size-3.5" />
       )}
       <span>1</span>
     </button>

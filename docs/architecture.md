@@ -73,9 +73,7 @@ future Tauri shell. The client does not own room state or execution.
   a narrowly scoped session.
 - Use a provider-maintained SDK for provider integrations when one exists. The
   adapter owns only Sweat-specific scoping and orchestration.
-- Start connection setup and run creation with a CLI. The self-hosted product
-  will provide a UI for tenant connection setup, agent definitions, grants,
-  and runs; both surfaces use the same platform APIs and configuration model.
+- Configure tenant connections and start runs through the self-hosted product UI.
 - Keep the frontend a static client of an explicit server API so browser and
   Tauri clients share the same product boundary.
 - Keep collaborative runs server-owned so they continue independently of any
@@ -110,8 +108,7 @@ MCP session       -> short-lived token presented by the agent container
 
 The gateway is the agent-facing MCP server. It keeps the Linear key out of
 agent containers, proxies approved calls to Linear, audits them, and revokes
-the session when a run ends. Capability-session binding is optional per run;
-the software-engineer CLI enables it when `LINEAR_MCP_API_KEY` is configured.
+the session when a run ends.
 
 ## Deliberately not built yet
 

@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Hash, Lock, Settings, UserRound, Wifi, WifiOff } from 'lucide-react'
+import {
+  ArrowDown,
+  Hash,
+  Lock,
+  Settings,
+  UserRound,
+  Wifi,
+  WifiOff,
+} from 'lucide-react'
 import { useRooms } from '#/features/rooms/use-rooms'
 import { RoomSidebar } from './room-sidebar'
 import type { DashboardView } from './room-sidebar'
@@ -15,6 +23,9 @@ import { AccountSettingsPage } from '#/features/account/account-settings'
 import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
 import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Button } from '#/components/ui/button'
+
+const bottomScrollThreshold = 150
 
 export function Dashboard({
   user,
@@ -49,6 +60,7 @@ export function Dashboard({
   const composer = useRef<MessageComposerHandle>(null)
   const scrollRef = useRef<HTMLElement>(null)
   const atBottomRef = useRef(true)
+  const [atBottom, setAtBottom] = useState(true)
 
   const submit = async (text: string) => {
     if (!text.trim()) return
@@ -66,6 +78,7 @@ export function Dashboard({
     if (el) {
       el.scrollTop = el.scrollHeight
       atBottomRef.current = true
+      setAtBottom(true)
     }
     setSelectedRunId(undefined)
   }, [room?.id])
@@ -151,41 +164,66 @@ export function Dashboard({
         )}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
-            <div className="flex min-w-0 flex-1 flex-col">
-              <section
-                ref={scrollRef}
-                className="flex-1 overflow-y-auto px-5 py-8 sm:px-8"
-                aria-busy={loading}
-                onScroll={() => {
-                  const el = scrollRef.current
-                  if (el)
-                    atBottomRef.current =
-                      el.scrollHeight - el.scrollTop - el.clientHeight < 150
-                }}
-              >
-                <div className="mx-auto max-w-7xl">
-                  {loading ? (
-                    <div
-                      className="flex justify-center py-12 text-sm text-muted-foreground"
-                      role="status"
-                    >
-                      <BrailleLoader text="Loading room…" />
-                    </div>
-                  ) : (
-                    <Timeline
-                      messages={messages}
-                      runs={runs}
-                      openRun={setSelectedRunId}
-                      mentionHandles={[
-                        user.name,
-                        ...mentionableAccounts.map(
-                          (account) => account.username ?? account.name,
-                        ),
-                      ]}
-                    />
-                  )}
-                </div>
-              </section>
+            <div className="relative flex min-w-0 flex-1 flex-col">
+              <div className="relative min-h-0 flex-1">
+                <section
+                  ref={scrollRef}
+                  className="h-full overflow-y-auto px-5 py-8 sm:px-8"
+                  aria-busy={loading}
+                  onScroll={() => {
+                    const el = scrollRef.current
+                    if (el) {
+                      const nextAtBottom =
+                        el.scrollHeight - el.scrollTop - el.clientHeight <
+                        bottomScrollThreshold
+                      atBottomRef.current = nextAtBottom
+                      setAtBottom(nextAtBottom)
+                    }
+                  }}
+                >
+                  <div className="mx-auto max-w-7xl">
+                    {loading ? (
+                      <div
+                        className="flex justify-center py-12 text-sm text-muted-foreground"
+                        role="status"
+                      >
+                        <BrailleLoader text="Loading room…" />
+                      </div>
+                    ) : (
+                      <Timeline
+                        messages={messages}
+                        runs={runs}
+                        openRun={setSelectedRunId}
+                        mentionHandles={[
+                          user.name,
+                          ...mentionableAccounts.map(
+                            (account) => account.username ?? account.name,
+                          ),
+                        ]}
+                      />
+                    )}
+                  </div>
+                </section>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-hidden={atBottom}
+                  tabIndex={atBottom ? -1 : 0}
+                  data-visible={!atBottom}
+                  className="scroll-to-bottom-button absolute right-5 bottom-4 rounded-sm bg-background/95 shadow-md sm:right-8"
+                  onClick={() => {
+                    const el = scrollRef.current
+                    el?.scrollTo({
+                      top: el.scrollHeight,
+                      behavior: 'smooth',
+                    })
+                  }}
+                >
+                  To the bottom
+                  <ArrowDown data-icon="inline-end" />
+                </Button>
+              </div>
               <div className="shrink-0 px-4 pb-4 sm:px-6">
                 <div className="mx-auto max-w-7xl rounded-xl border bg-background p-2.5 shadow-sm">
                   <MessageComposer

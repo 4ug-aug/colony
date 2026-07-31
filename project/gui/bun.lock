@@ -6,6 +6,7 @@
       "name": "gui",
       "dependencies": {
         "@base-ui/react": "^1.6.0",
+        "@dot-loaders/react": "^0.1.0",
         "@paper-design/shaders-react": "^0.0.78",
         "@tailwindcss/vite": "^4.1.18",
         "@tauri-apps/api": "^2",
@@ -109,6 +110,12 @@
     "@better-fetch/fetch": ["@better-fetch/fetch@1.3.1", "", {}, "sha512-ABkD1WhyfPZprKRQI3bhATjeiFuNWC9PXhfGWqL+sg/gKrM977oFrYkdb4msM3hgUGonr7KlOsOFT5TU2rht9g=="],
 
     "@date-fns/tz": ["@date-fns/tz@1.5.0", "", {}, "sha512-lwYN/vDPeNRULcepoE/LO2Pgx+7/RV+S9ARfbc9lr2DtGkOD7pAiruHvbR1RX3Qyf6ja47EWJDMsNK5vK08DJg=="],
+
+    "@dot-loaders/core": ["@dot-loaders/core@0.1.0", "", {}, "sha512-0SzDzZ53ax4fLLneSuDaXsAPV+5ORB59ABfIjLzyTOT7GYYCxsBbXUuzieqW1Bm9O3JPWLbWDcBmpWp3D1FN7g=="],
+
+    "@dot-loaders/presets": ["@dot-loaders/presets@0.1.0", "", { "dependencies": { "@dot-loaders/core": "0.1.0" } }, "sha512-BqXsqz4TMCeCO8gWBizkvBsHkNHIa/TEuP0OtTNlFIuhREeumPkpA7X7ATsGZ4fXjuLeN342aMciXtk8zldbYQ=="],
+
+    "@dot-loaders/react": ["@dot-loaders/react@0.1.0", "", { "dependencies": { "@dot-loaders/core": "0.1.0", "@dot-loaders/presets": "0.1.0" }, "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" } }, "sha512-iN3yCRA6Vwf3z2/dsqQiA0PCS4XBsezxJk7RJp87ezSk4VLm1hGQN9Fy2p5rtJr036KzVMCLmwLNDKOZ7/45XA=="],
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
 

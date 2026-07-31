@@ -11,17 +11,6 @@ export interface WorkspaceRoomPort {
   postMessage(input: { roomId: string; author: WorkspaceAuthor; text: string }): void;
 }
 
-const friendlyTimeFormat = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "UTC",
-});
-
-/** Human-friendly absolute timestamp, e.g. "Jul 27, 2026, 2:32 PM UTC". */
-export function formatFriendlyTime(createdAt: number): string {
-  return `${friendlyTimeFormat.format(new Date(createdAt))} UTC`;
-}
-
 const relativeDivisions: [ms: number, unit: Intl.RelativeTimeFormatUnit][] = [
   [1000 * 60 * 60 * 24 * 365, "year"],
   [1000 * 60 * 60 * 24 * 30, "month"],
@@ -45,6 +34,13 @@ export function formatRelativeTime(createdAt: number, now: number): string {
   return relativeTimeFormat.format(0, "second");
 }
 
+export function formatWorkspaceTranscript(messages: readonly WorkspaceMessage[], now: number): string {
+  if (!messages.length) return "No workspace messages.";
+  return messages.map(({ author, text, createdAt }) =>
+    `[${author.name} · ${author.kind} · ${formatRelativeTime(createdAt, now)}]\n${text}`,
+  ).join("\n\n");
+}
+
 export function createWorkspaceMcpUpstream(options: {
   port: WorkspaceRoomPort;
   roomId: string;
@@ -58,7 +54,7 @@ export function createWorkspaceMcpUpstream(options: {
         {
           name: "workspace.read_messages",
           description:
-            "Read recent messages in the current room. Each message includes a friendly `time` (e.g. \"Jul 27, 2026, 2:32 PM UTC\") and `relativeTime` (e.g. \"5 minutes ago\") alongside the raw `createdAt` epoch milliseconds.",
+            "Read recent messages in the current room as a chronological, human-readable transcript. Each entry is headed by author, role, and relative time.",
           inputSchema: { type: "object", properties: { limit: { type: "number" } } },
         },
         {
@@ -80,12 +76,9 @@ export function createWorkspaceMcpUpstream(options: {
         const messages = options.port
           .listMessages(options.roomId)
           .slice(-limit)
-          .map((message) => ({
-            ...message,
-            time: formatFriendlyTime(message.createdAt),
-            relativeTime: formatRelativeTime(message.createdAt, at),
-          }));
-        return { messages };
+        return {
+          content: [{ type: "text", text: formatWorkspaceTranscript(messages, at) }],
+        };
       }
       if (name === "workspace.post_message") {
         const text = typeof args.text === "string" ? args.text.trim() : "";

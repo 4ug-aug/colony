@@ -191,6 +191,25 @@ body {
   }
 }
 
+.scroll-to-bottom-button {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0.5rem);
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out,
+    visibility 0s linear 200ms;
+  visibility: hidden;
+}
+
+.scroll-to-bottom-button[data-visible='true'] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition-delay: 0s;
+  visibility: visible;
+}
+
 a {
   color: var(--primary);
   text-decoration-color: color-mix(in oklab, var(--primary) 40%, transparent);

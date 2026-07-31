@@ -1,6 +1,7 @@
 import type { AdmissionStore } from './admission'
 import type { RoomUser } from './room-store'
 import { AGENT_MENTION_HANDLES } from './attention'
+import type { LlmConfigInput, PublicLlmConfig } from './llm-config'
 
 type AccountInput = {
   email: string
@@ -27,6 +28,10 @@ export type AdmissionOptions = {
   listUsers: () => Promise<WorkspaceAccount[]>
   banUser: (request: Request, userId: string) => Promise<unknown>
   unbanUser: (request: Request, userId: string) => Promise<unknown>
+  llm?: {
+    public(): PublicLlmConfig
+    save(input: LlmConfigInput): PublicLlmConfig
+  }
 }
 
 const json = (body: unknown, status = 200): Response =>
@@ -185,6 +190,34 @@ export function createAdmissionHttpHandler(
       return user instanceof Response
         ? user
         : json({ users: await options.listUsers() })
+    }
+
+    if (url.pathname === '/api/workspace/settings/llm' && options.llm) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      if (request.method === 'GET') return json(options.llm.public())
+      if (request.method === 'POST') {
+        const body = await readBody(request)
+        try {
+          return json(
+            options.llm.save({
+              baseUrl: typeof body?.baseUrl === 'string' ? body.baseUrl : '',
+              model: typeof body?.model === 'string' ? body.model : '',
+              ...(typeof body?.apiKey === 'string'
+                ? { apiKey: body.apiKey }
+                : {}),
+            }),
+          )
+        } catch (error) {
+          return json(
+            {
+              error:
+                error instanceof Error ? error.message : 'Invalid LLM provider',
+            },
+            400,
+          )
+        }
+      }
     }
 
     const memberAction = url.pathname.match(

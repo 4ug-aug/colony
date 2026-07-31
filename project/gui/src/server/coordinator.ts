@@ -177,6 +177,7 @@ export function createCoordinator(options: {
   origin: string
   port?: number
   admission?: AdmissionOptions
+  agentReady?: () => boolean
 }) {
   const sockets = new Set<ServerWebSocket<SocketData>>()
   const admissionHandler = options.admission
@@ -467,6 +468,8 @@ export function createCoordinator(options: {
           : undefined
         if (mention.test(text) && !task)
           return cors(json({ error: 'Agent task is required' }, 400))
+        if (task && options.agentReady && !options.agentReady())
+          return cors(json({ error: 'LLM provider is not configured' }, 409))
         const message = options.messages.postMessage({
           roomId,
           author: { kind: 'user', ...user },
@@ -658,11 +661,6 @@ export function createCoordinator(options: {
   }
 }
 
-const required = (name: string): string => {
-  const value = process.env[name]
-  if (!value) throw new Error(`${name} is required`)
-  return value
-}
 if (import.meta.main) {
   const { fileURLToPath } = await import('node:url')
   // Load the database first: auth and the session authenticator both depend on it.
@@ -674,6 +672,7 @@ if (import.meta.main) {
     { auth },
     { betterAuthSessionAuthenticator },
     { createAdmissionStore },
+    { createWorkspaceLlmConfig },
     { createSoftwareEngineerExecutor },
     {
       createGitHubSoftwareEngineerAdapter,
@@ -687,6 +686,7 @@ if (import.meta.main) {
     import('../lib/auth'),
     import('./session-auth'),
     import('./admission'),
+    import('./llm-config'),
     import('../../../agents/software-engineer'),
     import('../../../agents/software-engineer-adapters'),
     import('../../../mcp/github'),
@@ -694,6 +694,7 @@ if (import.meta.main) {
     import('./room-store'),
   ])
   const admissionStore = createAdmissionStore(sqlite)
+  const llm = createWorkspaceLlmConfig(sqlite)
   const authContext = await auth.$context
   const store = createSqliteRoomStore(sqlite)
   const messages = createRoomMessageHub(store)
@@ -709,11 +710,7 @@ if (import.meta.main) {
   const control = createRunControl(
     createSoftwareEngineerExecutor({
       image: process.env.SWEAT_AGENT_IMAGE,
-      model: {
-        baseUrl: required('LLM_BASE_URL'),
-        apiKey: required('LLM_API_KEY'),
-        model: required('LLM_MODEL'),
-      },
+      model: () => llm.model(),
       adapters: [
         createWorkspaceSoftwareEngineerAdapter({
           port: {
@@ -761,6 +758,7 @@ if (import.meta.main) {
     port: Number(process.env.SWEAT_COORDINATOR_PORT ?? 3001),
     admission: {
       store: admissionStore,
+      llm,
       listUsers: () => authContext.internalAdapter.listUsers(100),
       banUser: (request, userId) =>
         auth.api.banUser({ body: { userId }, headers: request.headers }),
@@ -788,6 +786,7 @@ if (import.meta.main) {
         return signedIn.ok ? signedIn : created
       },
     },
+    agentReady: () => llm.public().configured,
   })
   process.stdout.write(`Coordinator listening on ${coordinator.port}\n`)
   const setupToken = admissionStore.ensureSetupToken()

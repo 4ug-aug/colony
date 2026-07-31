@@ -116,6 +116,9 @@ test('admission endpoints close open signup and enforce the administrator bounda
   const token = admission.ensureSetupToken()!
   const createdRoles: string[] = []
   let suspended = 0
+  let llm: { configured: boolean; baseUrl?: string; model?: string } = {
+    configured: false,
+  }
   const createAccount = async (
     body: Record<string, unknown>,
     role: 'admin' | 'user',
@@ -155,6 +158,11 @@ test('admission endpoints close open signup and enforce the administrator bounda
     port: 0,
     admission: {
       store: admission,
+      llm: {
+        public: () => llm,
+        save: ({ baseUrl, model }) =>
+          (llm = { configured: true, baseUrl, model }),
+      },
       listUsers: async () => [
         { id: 'admin', name: 'Admin', email: 'admin@example.com' },
       ],
@@ -226,6 +234,28 @@ test('admission endpoints close open signup and enforce the administrator bounda
     })
     expect(setup.status).toBe(200)
     expect(createdRoles).toEqual(['admin'])
+    expect(
+      (
+        await request('/api/workspace/settings/llm', {
+          headers: { cookie: 'member' },
+        })
+      ).status,
+    ).toBe(403)
+    const savedLlm = await request('/api/workspace/settings/llm', {
+      method: 'POST',
+      headers: { cookie: 'admin', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        baseUrl: 'https://models.example/v1',
+        model: 'test-model',
+        apiKey: 'secret',
+      }),
+    })
+    expect(savedLlm.status).toBe(200)
+    expect(await savedLlm.json()).toEqual({
+      configured: true,
+      baseUrl: 'https://models.example/v1',
+      model: 'test-model',
+    })
     const invitation = await request('/api/workspace/invitations', {
       method: 'POST',
       headers: { cookie: 'admin', 'content-type': 'application/json' },

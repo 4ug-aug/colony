@@ -61,12 +61,13 @@ test("a configured adapter binds its repository and capabilities to every run", 
       },
     },
   };
+  let configuredModel = {
+    baseUrl: "https://models.example/v1",
+    apiKey: "test-key",
+    model: "test-model",
+  };
   const executor = createSoftwareEngineerExecutor({
-    model: {
-      baseUrl: "https://models.example/v1",
-      apiKey: "test-key",
-      model: "test-model",
-    },
+    model: () => configuredModel,
     adapters: [adapter],
     createCapabilityEndpoint: () => ({
       url: "http://capabilities.example/mcp",
@@ -77,6 +78,7 @@ test("a configured adapter binds its repository and capabilities to every run", 
   });
 
   const id = executor.startRun({ task: "fix the issue" });
+  configuredModel = { ...configuredModel, model: "changed-after-start" };
   while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
     await Bun.sleep(0);
   }
@@ -85,6 +87,7 @@ test("a configured adapter binds its repository and capabilities to every run", 
   const containerRun = calls.find(({ args }) => args[0] === "run")!;
   const containerExec = calls.find(({ args }) => args[0] === "exec")!;
   expect(run.inputs).toEqual([adapter.repository!.input]);
+  expect(run.definition.runtime.model?.model).toBe("test-model");
   expect(run.capabilityGrant?.tools).toEqual([
     "github.create_pull_request",
     "github.wait_for_pull_request_checks",
@@ -100,11 +103,11 @@ test("a configured adapter binds its repository and capabilities to every run", 
 test("a repository-scoped capability cannot be configured without its repository", () => {
   expect(() =>
     createSoftwareEngineerExecutor({
-      model: {
+      model: () => ({
         baseUrl: "https://models.example/v1",
         apiKey: "test-key",
         model: "test-model",
-      },
+      }),
       adapters: [
         {
           capability: {

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@dot-loaders/react": "^0.1.0",
     "@paper-design/shaders-react": "^0.0.78",
     "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/api": "^2",

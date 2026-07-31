@@ -4,10 +4,7 @@ import {
   type StartRunRequest,
   type PreparedWorkspace,
 } from "../runs";
-import {
-  createInMemoryAgentDefinitionResolver,
-  type AgentDefinition,
-} from "./definition";
+import { type AgentDefinition } from "./definition";
 import {
   createRepositoryWorkspaceProvisioner,
   type RepositoryCheckoutSource,
@@ -66,7 +63,7 @@ export type SoftwareEngineerExecutor = Omit<
 };
 
 export function createSoftwareEngineerExecutor(options: {
-  model: OpenAICompatibleModel;
+  model: () => OpenAICompatibleModel;
   image?: string;
   adapters?: readonly SoftwareEngineerAdapter[];
   createCapabilityEndpoint?: (gateway: ReturnType<typeof createMcpGateway>) => {
@@ -147,12 +144,20 @@ export function createSoftwareEngineerExecutor(options: {
     requestedCapabilities: softwareEngineerRole.requestedCapabilities,
     runtime: {
       image: options.image ?? Bun.env.SWEAT_AGENT_IMAGE ?? "sweat-agent:latest",
-      model: options.model,
     },
     executionPolicy: defaultLimits,
   };
   const executor = createRunExecutor<RepositoryInput>({
-    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    definitions: {
+      resolve(id) {
+        return id === definition.id
+          ? {
+              ...definition,
+              runtime: { ...definition.runtime, model: options.model() },
+            }
+          : undefined;
+      },
+    },
     sandboxes: createAppleContainerSandboxProvider({
       container,
       createId: options.createId,

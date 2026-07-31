@@ -38,7 +38,7 @@ env:
 		exit 2; \
 	else \
 		cp ".env.example" "$(ROOT_ENV)"; \
-		echo "Created .env.local. Add the required model credentials, then rerun make."; \
+		echo "Created .env.local. Add BETTER_AUTH_SECRET, then rerun make."; \
 		exit 2; \
 	fi
 

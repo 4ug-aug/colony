@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Ban, CheckCircle2, CircleX, RotateCw, X } from 'lucide-react'
+import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
 import { sweatApiUrl } from '#/lib/auth-client'
-import { AgentAnt } from '#/components/avatar'
 import { formatStepText, mergeSteps, pairSteps } from './run-activity'
 import { stepLabel } from './step-label'
 import type { Step } from './step-label'
@@ -10,6 +9,7 @@ import { Markdown } from '#/components/markdown'
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
+import { RunActivitySplitHeader } from './run-activity-dither'
 import {
   Sheet,
   SheetContent,
@@ -44,25 +44,11 @@ function useInlineRail() {
   return inline
 }
 
-function PersonAvatar({
-  person,
-  agent = false,
-}: {
-  person: Person
-  agent?: boolean
-}) {
+function PersonAvatar({ person }: { person: Person }) {
   return (
     <Avatar>
       {person.image && <AvatarImage src={person.image} alt="" />}
-      <AvatarFallback
-        className={agent ? 'bg-primary/10 text-primary' : undefined}
-      >
-        {agent ? (
-          <AgentAnt className="size-6" />
-        ) : (
-          person.name.slice(0, 1).toUpperCase()
-        )}
-      </AvatarFallback>
+      <AvatarFallback>{person.name.slice(0, 1).toUpperCase()}</AvatarFallback>
     </Avatar>
   )
 }
@@ -112,32 +98,13 @@ function RunActivityContent({
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
-        <PersonAvatar person={{ name: agentName(run.agentId) }} agent />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold">Run activity</h2>
-          <p
-            key={status}
-            className="truncate text-xs text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-0.5 duration-300"
-          >
-            {agentName(run.agentId)} · {status}
-          </p>
-        </div>
-        {!terminal(run.state) && (
-          <Button type="button" variant="ghost" size="xs" onClick={onCancel}>
-            Cancel
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close run activity"
-          onClick={onClose}
-        >
-          <X />
-        </Button>
-      </header>
+      <RunActivitySplitHeader
+        agent={agentName(run.agentId)}
+        state={run.state}
+        status={status}
+        onClose={onClose}
+        onCancel={onCancel}
+      />
       <div
         ref={scrollRef}
         className="min-h-0 flex-1 overflow-y-auto p-4"

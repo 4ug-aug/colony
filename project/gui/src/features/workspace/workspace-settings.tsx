@@ -26,6 +26,11 @@ type Invitation = {
   expiresAt: number
   state: 'pending' | 'expired' | 'revoked' | 'redeemed'
 }
+type LlmConfig = {
+  configured: boolean
+  baseUrl?: string
+  model?: string
+}
 
 export function WorkspaceSettingsPage({
   currentUserId,
@@ -40,20 +45,31 @@ export function WorkspaceSettingsPage({
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
+  const [llm, setLlm] = useState<LlmConfig>({ configured: false })
+  const [baseUrl, setBaseUrl] = useState('')
+  const [model, setModel] = useState('')
+  const [apiKey, setApiKey] = useState('')
 
   const load = async () => {
     setError(undefined)
-    const [memberResponse, invitationResponse] = await Promise.all([
-      apiFetch('/api/workspace/settings/members'),
-      apiFetch('/api/workspace/invitations'),
-    ])
-    if (!memberResponse.ok || !invitationResponse.ok)
+    const [memberResponse, invitationResponse, llmResponse] = await Promise.all(
+      [
+        apiFetch('/api/workspace/settings/members'),
+        apiFetch('/api/workspace/invitations'),
+        apiFetch('/api/workspace/settings/llm'),
+      ],
+    )
+    if (!memberResponse.ok || !invitationResponse.ok || !llmResponse.ok)
       throw new Error('Could not load workspace settings')
     setMembers(((await memberResponse.json()) as { users: Member[] }).users)
     setInvitations(
       ((await invitationResponse.json()) as { invitations: Invitation[] })
         .invitations,
     )
+    const config = (await llmResponse.json()) as LlmConfig
+    setLlm(config)
+    setBaseUrl(config.baseUrl ?? '')
+    setModel(config.model ?? '')
   }
 
   useEffect(() => {
@@ -130,8 +146,24 @@ export function WorkspaceSettingsPage({
       await load()
     })
 
+  const saveLlm = () =>
+    mutate(async () => {
+      const response = await apiFetch('/api/workspace/settings/llm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ baseUrl, model, apiKey }),
+      })
+      const result = (await response.json()) as LlmConfig & { error?: string }
+      if (!response.ok)
+        throw new Error(result.error ?? 'Could not save provider')
+      setLlm(result)
+      setBaseUrl(result.baseUrl ?? '')
+      setModel(result.model ?? '')
+      setApiKey('')
+    })
+
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-6 sm:p-8">
+    <div className="mx-auto w-full max-w-full space-y-6 p-4 sm:p-8">
       {error && (
         <p className="text-sm text-destructive" role="alert">
           {error}
@@ -144,7 +176,48 @@ export function WorkspaceSettingsPage({
           />
         </p>
       )}
-      <section className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
+      <section className="border-b pb-4">
+        <h2 className="font-semibold">LLM provider</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Configure the OpenAI-compatible provider used for new agent runs.
+        </p>
+        <div className="mt-4 grid max-w-xl gap-3">
+          <Input
+            aria-label="LLM base URL"
+            disabled={busy || loading}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder="https://api.openai.com/v1"
+            value={baseUrl}
+          />
+          <Input
+            aria-label="LLM model"
+            disabled={busy || loading}
+            onChange={(event) => setModel(event.target.value)}
+            placeholder="gpt-4.1-mini"
+            value={model}
+          />
+          <Input
+            aria-label="LLM API key"
+            disabled={busy || loading}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder={
+              llm.configured ? 'Leave blank to keep current key' : 'API key'
+            }
+            type="password"
+            value={apiKey}
+          />
+          <div className="flex items-center gap-3">
+            <Button disabled={busy || loading} onClick={() => void saveLlm()}>
+              Save provider
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              {llm.configured ? 'Configured' : 'Not configured'}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b pb-4">
         <h2 className="font-semibold">Invitation links</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Create a single-use link to invite someone to this workspace.
@@ -219,14 +292,14 @@ export function WorkspaceSettingsPage({
         </div>
       </section>
 
-      <section className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
+      <section>
         <h2 className="font-semibold">Members</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-muted-foreground mb-4">
           Suspend or restore workspace access.
         </p>
-        <div className="mt-4 divide-y">
+        <div className="border rounded-md divide-y">  
           {members.map((member) => (
-            <div key={member.id} className="flex items-center gap-3 py-3">
+            <div key={member.id} className="flex items-center gap-3 p-3">
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">
                   {member.username ?? member.name}

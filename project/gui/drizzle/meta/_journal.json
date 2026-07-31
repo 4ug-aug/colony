@@ -57,6 +57,13 @@
       "when": 1785085393263,
       "tag": "0007_room_attention",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785085393264,
+      "tag": "0008_workspace_llm_config",
+      "breakpoints": true
     }
   ]
 }

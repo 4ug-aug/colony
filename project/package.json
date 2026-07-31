@@ -6,7 +6,6 @@
   "exports": "./index.ts",
   "scripts": {
     "agent:build": "container build -t sweat-agent:latest .",
-    "agent:software-engineer": "bun run cli/software-engineer.ts",
     "test": "bun test",
     "test:e2e": "RUN_CONTAINER_E2E=1 bun test e2e/light-agent.e2e.test.ts"
   },
