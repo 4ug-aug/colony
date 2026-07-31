@@ -37,6 +37,7 @@ test("listTools() returns workspace.read_messages and workspace.post_message", a
   });
   const tools = await upstream.listTools();
   expect(tools.map((t) => t.name)).toEqual(["workspace.read_messages", "workspace.post_message"]);
+  expect(tools[1]?.description).toContain("Do not use this for your final result");
 });
 
 test("read_messages returns a chronological, compact transcript", async () => {

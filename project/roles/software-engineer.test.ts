@@ -17,4 +17,7 @@ test("the software engineer requests scoped issue and pull request tools", () =>
     tools: ["github.create_pull_request", "github.wait_for_pull_request_checks"],
   });
   expect(softwareEngineerRole.instructions).toContain("Make at most two repair attempts");
+  expect(softwareEngineerRole.instructions).toContain(
+    "Do not use it to deliver your final result",
+  );
 });

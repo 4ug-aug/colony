@@ -129,7 +129,7 @@ export async function runAgent(
         new OpenAIProvider({
           apiKey: request.model.apiKey,
           baseURL: normalizeModelBaseUrl(request.model.baseUrl),
-          useResponses: false,
+          useResponses: true,
         }),
       tracingDisabled: true,
     }).run(agent, request.task, { maxTurns: 50, stream: true });

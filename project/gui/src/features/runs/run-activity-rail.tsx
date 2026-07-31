@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
-import { sweatApiUrl } from '#/lib/auth-client'
+import { apiFetch } from '#/lib/api-transport'
 import { formatStepText, mergeSteps, pairSteps } from './run-activity'
 import { stepLabel } from './step-label'
 import type { Step } from './step-label'
@@ -269,8 +269,7 @@ export function RunActivityRail({
     setPersistedSteps([])
     setLoading(true)
     setError(undefined)
-    void fetch(sweatApiUrl(`/api/rooms/${run.roomId}/runs/${run.id}/steps`), {
-      credentials: 'include',
+    void apiFetch(`/api/rooms/${run.roomId}/runs/${run.id}/steps`, {
       signal: controller.signal,
     })
       .then(async (response) => {

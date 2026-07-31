@@ -59,7 +59,8 @@ export function createWorkspaceMcpUpstream(options: {
         },
         {
           name: "workspace.post_message",
-          description: "Post a message from you into the current room.",
+          description:
+            "Post a progress update or clarifying question into the current room. Do not use this for your final result; your final response is automatically shown in the room as the run result.",
           inputSchema: {
             type: "object",
             properties: { text: { type: "string" } },
