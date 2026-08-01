@@ -1,48 +1,84 @@
 # Sweat
 
 Sweat is a self-hosted multiplayer workspace where people delegate work to
-isolated AI agents and collaborate around the results. Its intended primary
-experience is a Tauri desktop application backed by the same static client
-available in a browser.
+isolated AI agents, follow it as it happens, and keep the results with the
+conversation.
 
-Authenticated users share `General` and can create public or member-restricted
-private rooms. Messages, delegated runs, and realtime activity remain isolated
-to the room where they occur.
+[![Watch the Sweat demo](./sweat-demo.png)](./sweat-demo.mov?raw=1)
+
+_Click the preview to watch the demo._
+
+## Vision
+
+Sweat should feel like a shared place where people and agents work together,
+not a dashboard for launching background processes. Teams organize work in
+durable rooms, delegate bounded runs to visible agent roles, and retain tasks,
+progress, results, and decisions as one shared record.
+
+Each deployment owns its accounts, data, model configuration, integrations,
+and sandboxed agent execution. The native Tauri app and browser client connect
+to the same authoritative Sweat server.
 
 Read [VISION.md](./VISION.md) for the product direction,
 [CONTEXT.md](./CONTEXT.md) for the domain language, and
 [docs/architecture.md](./docs/architecture.md) for the current architecture.
-Workspace admission is specified in
-[docs/account-admission.md](./docs/account-admission.md).
 
-The implementation lives in [`project/`](./project/).
+## Install
 
-Copy `.env.example` to `.env.local` and add a stable `BETTER_AUTH_SECRET`.
-After setup, an administrator configures the model provider in Workspace Settings.
-This root file is the only environment file used by the development commands. Existing installations are migrated automatically from
-the former `project/gui/.env.local` location.
+Sweat currently targets macOS. Running the server requires
+[Bun](https://bun.com/docs/installation) and
+[Apple Container](https://github.com/apple/container).
+
+### Run the server
+
+Download `sweat-server-<version>.tar.gz` from the
+[latest release](https://github.com/4ug-aug/sweat-v2/releases/latest), extract
+it, and open a terminal in the extracted directory:
+
+```bash
+cp .env.example .env.local
+openssl rand -base64 32
+```
+
+Put the generated value in `.env.local` as `BETTER_AUTH_SECRET`. If another
+machine will connect to the server, set `BETTER_AUTH_URL` to its reachable URL.
+Then start Sweat:
+
+```bash
+container system start
+(cd agent && container build -t sweat-agent:latest .)
+bun src/server/coordinator.js
+```
+
+The server listens on port 3001 and prints a one-time setup token on first
+startup.
+
+### Install the desktop app
+
+Download the universal macOS `.dmg` from the
+[latest release](https://github.com/4ug-aug/sweat-v2/releases/latest), open it,
+and drag Sweat into Applications. Connect it to the server URL and enter the
+setup token to create the first administrator.
+
+The current builds are not notarized. If macOS blocks the first launch,
+Control-click Sweat, choose **Open**, then confirm.
+
+## Development
+
+```bash
+cp .env.example .env.local
+# Add a stable BETTER_AUTH_SECRET to .env.local
+make dev
+```
 
 `make dev` migrates the database, builds the agent image, and starts an empty
-invite-only workspace. On first successful server startup, copy the one-time
-setup token printed by the coordinator into the browser to create the
-administrator.
+invite-only workspace. Use `make dev-seeded` for two reusable local accounts,
+or `make server` and `make gui` separately to exercise the desktop boundary.
+Run `make help` for every development command.
 
-To give room-launched software engineers a repository workspace, authenticate
-the host GitHub CLI and set `SWEAT_GITHUB_REPOSITORY`. Also set
-`SWEAT_VERIFY_COMMAND` to grant pull-request publishing; the command must pass
-inside the sandbox before a branch is published.
+To enable repository-backed software-engineer runs, authenticate the host
+GitHub CLI and set `SWEAT_GITHUB_REPOSITORY`. Set `SWEAT_VERIFY_COMMAND` to
+allow verified pull-request publishing.
 
-For local two-user testing, `make dev-seeded` performs the same complete startup
-and creates
-`admin@sweat.local` and `teammate@sweat.local`; both use the password
-`change-me-now`.
-
-If the initial setup token is lost, run `make rotate-setup-token` before an
-administrator exists. `make reset-admin-password` securely prompts for a new
-password. Run `make help` for the complete command list.
-
-To emulate the desktop-client boundary, run `make server` in one terminal and
-`make gui` in another.
-
-Back up the SQLite database together with its sibling `attachments/` directory;
-room attachment bytes are stored there rather than in SQLite.
+Back up the SQLite database together with its sibling `attachments/`
+directory.
