@@ -15,7 +15,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '#/components/ui/alert-dialog'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import {
+  Avatar,
+  AvatarBadge,
+  AvatarFallback,
+  AvatarImage,
+} from '@/components/ui/avatar'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -32,6 +37,11 @@ import {
   PopoverTrigger,
 } from '#/components/ui/popover'
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '#/components/ui/hover-card'
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -47,6 +57,28 @@ import {
 import type { Author, Room } from '#/features/rooms/types'
 import { canDeleteRoom } from '#/features/rooms/permissions'
 import { isTauriRuntime } from '#/lib/server-config'
+import { cn } from '#/lib/utils'
+
+const softwareEngineerCapabilities = [
+  {
+    name: 'Linear issues',
+    icon: '/icons/linear.svg',
+    invertOnDark: false,
+    tools: ['Get issues', 'List issues', 'Save comments', 'Save issues'],
+  },
+  {
+    name: 'GitHub pull requests',
+    icon: '/icons/github.svg',
+    invertOnDark: true,
+    tools: ['Create pull requests', 'Wait for pull request checks'],
+  },
+  {
+    name: 'Room context',
+    icon: undefined,
+    invertOnDark: false,
+    tools: ['Read messages', 'Post messages'],
+  },
+] as const
 
 export type DashboardView = 'room' | 'account' | 'workspace'
 
@@ -117,6 +149,67 @@ export function RoomSidebar({
     ),
     <Sidebar key="sidebar" variant="inset" collapsible="icon">
       <SidebarContent>
+      <SidebarGroup>
+          <SidebarGroupLabel>Agents</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <HoverCard>
+                  <HoverCardTrigger
+                    delay={150}
+                    closeDelay={100}
+                    render={
+                      <SidebarMenuButton
+                        aria-label="Software engineer. View capabilities."
+                        onClick={() => onMentionAgent('software-engineer')}
+                      />
+                    }
+                  >
+                    <Bot />
+                    <span>Software engineer</span>
+                  </HoverCardTrigger>
+                  <HoverCardContent side="right" align="start" className="w-80">
+                    <div className="flex flex-col gap-1">
+                      <h2 className="text-sm font-semibold">
+                        Software engineer
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        Build, debug, and review code.
+                      </p>
+                    </div>
+                    <div className="mt-3 flex flex-col gap-3">
+                      {softwareEngineerCapabilities.map((capability) => (
+                        <div
+                          key={capability.name}
+                          className="flex flex-col gap-1"
+                        >
+                          <div className="flex items-center gap-2">
+                            {capability.icon && (
+                              <img
+                                src={capability.icon}
+                                alt=""
+                                className={cn(
+                                  'size-4 shrink-0',
+                                  capability.invertOnDark && 'dark:invert',
+                                )}
+                              />
+                            )}
+                            <p className="text-xs font-medium">
+                              {capability.name}
+                            </p>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {capability.tools.join(' · ')}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </HoverCardContent>
+                </HoverCard>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
         <SidebarGroup>
           <div className="flex items-center justify-between pr-2">
             <SidebarGroupLabel>Rooms</SidebarGroupLabel>
@@ -219,6 +312,7 @@ export function RoomSidebar({
               </PopoverContent>
             </Popover>
           </div>
+          
           <SidebarGroupContent>
             <SidebarMenu>
               {rooms.map((item) => (
@@ -276,22 +370,6 @@ export function RoomSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>Agents</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Software engineer"
-                  onClick={() => onMentionAgent('software-engineer')}
-                >
-                  <Bot />
-                  <span>Software engineer</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
         {user.role === 'admin' && (
           <SidebarGroup>
             <SidebarGroupLabel>Administration</SidebarGroupLabel>
@@ -329,6 +407,7 @@ export function RoomSidebar({
                     className="bg-white p-1"
                   />
                   <AvatarFallback>{user.name.slice(0, 1)}</AvatarFallback>
+                  <AvatarBadge className="bg-green-600 dark:bg-green-800" />
                 </Avatar>
 
                 <span className="min-w-0 flex-1">

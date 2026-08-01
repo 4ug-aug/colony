@@ -28,6 +28,27 @@ export type RoomMessage = {
   author: MessageAuthor
   text: string
   createdAt: number
+  attachments: RoomAttachment[]
+}
+export type RoomAttachment = {
+  id: string
+  filename: string
+  contentType: string
+  byteSize: number
+}
+export type NewRoomAttachment = RoomAttachment & {
+  sha256: string
+  storageKey: string
+  createdAt: number
+}
+export type StoredRoomAttachment = NewRoomAttachment & { roomId: string }
+export type RoomMessageInput = Omit<RoomMessage, 'attachments'> & {
+  attachments?: RoomAttachment[]
+}
+export type RoomHistoryPage = {
+  messages: RoomMessage[]
+  runs: RoomRun[]
+  nextCursor?: string
 }
 export type AttentionKind = 'mention' | 'run_terminal'
 export type RoomAttention = {
@@ -82,6 +103,8 @@ export interface RoomStore {
     createdBy?: string
   }): boolean
   deleteRoom(roomId: string): boolean
+  listAttachmentStorageKeys(roomId: string): string[]
+  getAttachment(id: string): StoredRoomAttachment | undefined
   canAccessRoom(roomId: string, userId: string): boolean
   listRoomsForUser(userId: string): RoomSummary[]
   listMembers(roomId: string): RoomUser[]
@@ -91,8 +114,15 @@ export interface RoomStore {
   listWorkspaceUsers(): RoomUser[]
   listMentionableAccounts(roomId: string): RoomUser[]
   listMessages(roomId: string): RoomMessage[]
+  listRoomHistoryPage(
+    roomId: string,
+    options: { limit: number; cursor?: string },
+  ): RoomHistoryPage
   listRuns(roomId: string): RoomRun[]
-  createMessage(message: RoomMessage): void
+  createMessage(
+    message: RoomMessageInput,
+    attachments?: NewRoomAttachment[],
+  ): void
   createAttention(attention: RoomAttention): boolean
   listMentionRecipientIds(messageId: string): string[]
   listAttentionCounts(userId: string): Map<string, number>
@@ -138,6 +168,17 @@ type MessageRow = {
   text: string
   created_at: number
 }
+type AttachmentRow = {
+  id: string
+  message_id: string
+  filename: string
+  content_type: string
+  byte_size: number
+  sha256: string
+  storage_key: string
+  created_at: number
+  room_id?: string
+}
 type RunRow = {
   id: string
   room_id: string
@@ -182,7 +223,16 @@ const userFrom = (row: UserRow): RoomUser => ({
   ...(row.email != null ? { email: row.email } : {}),
   ...(row.image != null ? { image: row.image } : {}),
 })
-const messageFrom = (row: MessageRow): RoomMessage => ({
+const attachmentFrom = (row: AttachmentRow): RoomAttachment => ({
+  id: row.id,
+  filename: row.filename,
+  contentType: row.content_type,
+  byteSize: row.byte_size,
+})
+const messageFrom = (
+  row: MessageRow,
+  attachments: RoomAttachment[] = [],
+): RoomMessage => ({
   id: row.id,
   roomId: row.room_id,
   author:
@@ -205,6 +255,7 @@ const messageFrom = (row: MessageRow): RoomMessage => ({
         },
   text: row.text,
   createdAt: row.created_at,
+  attachments,
 })
 const stepFrom = (row: StepRow): StoredStep => ({
   id: row.id,
@@ -238,7 +289,37 @@ const runFrom = (row: RunRow): RoomRun => ({
   },
 })
 
+type MessageCursor = { createdAt: number; id: string }
+
+const encodeMessageCursor = (cursor: MessageCursor): string =>
+  Buffer.from(JSON.stringify(cursor)).toString('base64url')
+
+const decodeMessageCursor = (value: string): MessageCursor => {
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(value, 'base64url').toString('utf8'),
+    ) as Partial<MessageCursor>
+    if (
+      typeof parsed.createdAt !== 'number' ||
+      !Number.isFinite(parsed.createdAt) ||
+      typeof parsed.id !== 'string' ||
+      !parsed.id
+    )
+      throw new Error()
+    return { createdAt: parsed.createdAt, id: parsed.id }
+  } catch {
+    throw new Error('Invalid room history cursor')
+  }
+}
+
 export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
+  const hasAttachments = Boolean(
+    sqlite
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'room_attachment'",
+      )
+      .get(),
+  )
   const userColumns = sqlite.prepare('PRAGMA table_info(user)').all() as {
     name?: string
   }[]
@@ -255,16 +336,54 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
   const messageProfileJoin = hasUsername
     ? " LEFT JOIN user u ON m.author_kind = 'user' AND u.id = m.author_id"
     : ''
-  const messages = (roomId: string): RoomMessage[] =>
-    (
-      sqlite
-        .prepare(
-          `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${messageProfile}
+  const hydrateMessages = (roomId: string, rows: MessageRow[]) => {
+    if (!rows.length) return []
+    const attachments = hasAttachments
+      ? (sqlite
+          .prepare(
+            `SELECT a.id, a.message_id, a.filename, a.content_type, a.byte_size, a.sha256, a.storage_key, a.created_at
+         FROM room_attachment a JOIN room_message m ON m.id = a.message_id
+         WHERE m.room_id = ? AND a.message_id IN (${rows.map(() => '?').join(', ')}) ORDER BY a.created_at, a.id`,
+          )
+          .all(roomId, ...rows.map(({ id }) => id)) as AttachmentRow[])
+      : []
+    const byMessage = new Map<string, RoomAttachment[]>()
+    for (const attachment of attachments) {
+      const list = byMessage.get(attachment.message_id) ?? []
+      list.push(attachmentFrom(attachment))
+      byMessage.set(attachment.message_id, list)
+    }
+    return rows.map((row) => messageFrom(row, byMessage.get(row.id) ?? []))
+  }
+  const messages = (roomId: string): RoomMessage[] => {
+    const rows = sqlite
+      .prepare(
+        `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${messageProfile}
            FROM room_message m${messageProfileJoin}
            WHERE m.room_id = ? ORDER BY m.created_at, m.id`,
-        )
-        .all(roomId) as MessageRow[]
-    ).map(messageFrom)
+      )
+      .all(roomId) as MessageRow[]
+    return hydrateMessages(roomId, rows)
+  }
+  const messageRows = (
+    roomId: string,
+    before: MessageCursor | undefined,
+    limit: number,
+  ): MessageRow[] => {
+    const where = before
+      ? 'WHERE m.room_id = ? AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))'
+      : 'WHERE m.room_id = ?'
+    const values = before
+      ? [roomId, before.createdAt, before.createdAt, before.id, limit + 1]
+      : [roomId, limit + 1]
+    return sqlite
+      .prepare(
+        `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${messageProfile}
+           FROM room_message m${messageProfileJoin}
+           ${where} ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
+      )
+      .all(...values) as MessageRow[]
+  }
   const selectRuns = (where = '', ...values: unknown[]): RoomRun[] =>
     (
       sqlite
@@ -293,6 +412,36 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
   ]
   const ROOM_ORDER =
     "ORDER BY CASE WHEN id = 'general' THEN 0 ELSE 1 END, name COLLATE NOCASE, id"
+  const listRoomHistoryPage = (
+    roomId: string,
+    options: { limit: number; cursor?: string },
+  ): RoomHistoryPage => {
+    const limit = Math.max(1, Math.min(100, Math.floor(options.limit)))
+    const before =
+      options.cursor !== undefined
+        ? decodeMessageCursor(options.cursor)
+        : undefined
+    const rows = messageRows(roomId, before, limit)
+    const pageRows = rows.slice(0, limit)
+    const messages = hydrateMessages(roomId, [...pageRows].reverse())
+    const messageIds = pageRows.map(({ id }) => id)
+    const runWhere = messageIds.length
+      ? `WHERE room_id = ? AND (trigger_message_id IN (${messageIds.map(() => '?').join(', ')}) OR state IN ('preparing', 'running'))`
+      : "WHERE room_id = ? AND state IN ('preparing', 'running')"
+    const runs = selectRuns(runWhere, roomId, ...messageIds)
+    return {
+      messages,
+      runs,
+      ...(rows.length > limit && pageRows.length
+        ? {
+            nextCursor: encodeMessageCursor({
+              createdAt: pageRows.at(-1)!.created_at,
+              id: pageRows.at(-1)!.id,
+            }),
+          }
+        : {}),
+    }
+  }
   return {
     listRooms: () =>
       (
@@ -334,6 +483,32 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           changes?: number
         }
       ).changes ?? 0) > 0,
+    listAttachmentStorageKeys: (roomId) =>
+      (
+        sqlite
+          .prepare(
+            `SELECT a.storage_key FROM room_attachment a
+             JOIN room_message m ON m.id = a.message_id WHERE m.room_id = ?`,
+          )
+          .all(roomId) as { storage_key: string }[]
+      ).map(({ storage_key }) => storage_key),
+    getAttachment: (id) => {
+      const row = sqlite
+        .prepare(
+          `SELECT a.id, a.message_id, a.filename, a.content_type, a.byte_size, a.sha256, a.storage_key, a.created_at, m.room_id
+           FROM room_attachment a JOIN room_message m ON m.id = a.message_id WHERE a.id = ?`,
+        )
+        .get(id) as AttachmentRow | undefined
+      return row && row.room_id
+        ? {
+            ...attachmentFrom(row),
+            sha256: row.sha256,
+            storageKey: row.storage_key,
+            createdAt: row.created_at,
+            roomId: row.room_id,
+          }
+        : undefined
+    },
     canAccessRoom: (roomId, userId) => {
       const row = sqlite
         .prepare(
@@ -418,22 +593,50 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           .all(roomId) as UserRow[]
       ).map(userFrom),
     listMessages: messages,
+    listRoomHistoryPage,
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
-    createMessage: (message) => {
-      sqlite
-        .prepare(
-          'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, author_kind, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    createMessage: (message, attachments = []) => {
+      const run = () => {
+        sqlite
+          .prepare(
+            'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, author_kind, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          )
+          .run(
+            message.id,
+            message.roomId,
+            message.author.id,
+            message.author.name,
+            message.author.image ?? null,
+            message.author.kind,
+            message.text,
+            message.createdAt,
+          )
+        if (!attachments.length) return
+        const insert = sqlite.prepare(
+          'INSERT INTO room_attachment (id, message_id, filename, content_type, byte_size, sha256, storage_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         )
-        .run(
-          message.id,
-          message.roomId,
-          message.author.id,
-          message.author.name,
-          message.author.image ?? null,
-          message.author.kind,
-          message.text,
-          message.createdAt,
-        )
+        for (const attachment of attachments)
+          insert.run(
+            attachment.id,
+            message.id,
+            attachment.filename,
+            attachment.contentType,
+            attachment.byteSize,
+            attachment.sha256,
+            attachment.storageKey,
+            attachment.createdAt,
+          )
+      }
+      if (!attachments.length) return run()
+      // SQLite transactions keep message and attachment rows inseparable.
+      sqlite.prepare('BEGIN').run()
+      try {
+        run()
+        sqlite.prepare('COMMIT').run()
+      } catch (error) {
+        sqlite.prepare('ROLLBACK').run()
+        throw error
+      }
     },
     createAttention: (attention) =>
       ((

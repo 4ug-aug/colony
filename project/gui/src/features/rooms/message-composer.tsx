@@ -1,9 +1,24 @@
-import { EditorContent, useEditor } from '@tiptap/react'
+import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
 import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
-import { AtSign, Bold, Code, Italic, List, Send } from 'lucide-react'
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import {
+  AtSign,
+  Bold,
+  Code,
+  Italic,
+  List,
+  Paperclip,
+  Send,
+  X,
+} from 'lucide-react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '#/components/ui/button'
 import type { MentionableAccount } from './types'
@@ -14,6 +29,72 @@ type MentionItem = {
   name: string
   description: string
   kind: 'account' | 'agent'
+}
+
+const previewTypes = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+])
+const previewExtensions = /\.(?:png|jpe?g|gif|webp)$/i
+
+function SelectedFile({
+  file,
+  disabled,
+  sending,
+  remove,
+}: {
+  file: File
+  disabled: boolean
+  sending: boolean
+  remove: () => void
+}) {
+  const [url, setUrl] = useState<string>()
+  useEffect(() => {
+    if (
+      !previewTypes.has(file.type.toLowerCase()) &&
+      !previewExtensions.test(file.name)
+    )
+      return
+    const objectUrl = URL.createObjectURL(file)
+    setUrl(objectUrl)
+    return () => {
+      URL.revokeObjectURL(objectUrl)
+      setUrl(undefined)
+    }
+  }, [file])
+  return (
+    <div className="flex">
+      <div className="flex flex-col items-center rounded-md bg-muted px-2 py-1 text-xs max-w-full align-middle">
+        {url && (
+          <div className="mb-1 w-full rounded overflow-hidden flex justify-center items-center">
+            <img
+              src={url}
+              alt=""
+              className="w-full h-24 object-cover rounded border"
+              aria-hidden="true"
+              style={{ objectFit: 'cover' }}
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-1 w-full">
+          <span className="truncate">
+            {file.name} ({formatBytes(file.size)})
+          </span>
+          <button
+            type="button"
+            aria-label={`Remove ${file.name}`}
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            disabled={disabled || sending}
+            onClick={remove}
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 const agents: MentionItem[] = [
@@ -152,7 +233,7 @@ export const MessageComposer = forwardRef<
   {
     value: string
     onChange: (value: string) => void
-    onSubmit: (value: string) => void
+    onSubmit: (value: string, files: File[]) => Promise<boolean>
     disabled: boolean
     roomName: string
     mentionableAccounts: MentionableAccount[]
@@ -163,6 +244,11 @@ export const MessageComposer = forwardRef<
 ) {
   const mentionOpen = useRef(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const fileInput = useRef<HTMLInputElement | null>(null)
+  const [files, setFiles] = useState<File[]>([])
+  const filesRef = useRef<File[]>([])
+  filesRef.current = files
+  const [sending, setSending] = useState(false)
   const roomNameRef = useRef(roomName)
   const mentionItems = useRef<MentionItem[]>([])
   mentionItems.current = [
@@ -182,9 +268,23 @@ export const MessageComposer = forwardRef<
     roomNameRef.current = roomName
   }, [roomName])
   const serialize = () => editor.getText()
-  const submit = () => {
+  const addFiles = (next: FileList | File[]) => {
+    if (disabled || sending) return
+    setFiles((current) => [...current, ...Array.from(next)])
+  }
+  const submit = async () => {
     const text = serialize()
-    if (text.trim()) onSubmit(text)
+    const selectedFiles = filesRef.current
+    if ((!text.trim() && !selectedFiles.length) || disabled || sending) return
+    setSending(true)
+    try {
+      if (await onSubmit(text, selectedFiles)) {
+        setFiles([])
+        editor.commands.clearContent()
+      }
+    } finally {
+      setSending(false)
+    }
   }
 
   const editor = useEditor({
@@ -222,13 +322,28 @@ export const MessageComposer = forwardRef<
         if (mentionOpen.current) return false
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault()
-          submit()
+          void submit()
           return true
         }
         return false
       },
+      handlePaste: (_, event) => {
+        if (event.clipboardData?.files.length)
+          addFiles(event.clipboardData.files)
+        return false
+      },
     },
     onUpdate: ({ editor: updatedEditor }) => onChange(updatedEditor.getText()),
+  })
+  const editorState = useEditorState({
+    editor,
+    selector: ({ editor: currentEditor }) => ({
+      hasText: Boolean(currentEditor.getText().trim()),
+      bold: currentEditor.isActive('bold'),
+      italic: currentEditor.isActive('italic'),
+      bulletList: currentEditor.isActive('bulletList'),
+      code: currentEditor.isActive('code'),
+    }),
   })
 
   useImperativeHandle(
@@ -267,7 +382,7 @@ export const MessageComposer = forwardRef<
   }, [editor, disabled])
 
   useEffect(() => {
-    if (editor) editor.view.dispatch(editor.state.tr)
+    editor.view.dispatch(editor.state.tr)
   }, [editor, roomName])
 
   const control = (
@@ -291,30 +406,55 @@ export const MessageComposer = forwardRef<
 
   return (
     <div ref={containerRef} className="relative">
-      <EditorContent editor={editor} />
+      <EditorContent
+        editor={editor}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files.length) return
+          event.preventDefault()
+          addFiles(event.dataTransfer.files)
+        }}
+      />
+      {files.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {files.map((file, index) => (
+            <SelectedFile
+              key={`${file.name}-${file.size}-${index}`}
+              file={file}
+              disabled={disabled}
+              sending={sending}
+              remove={() =>
+                setFiles((current) =>
+                  current.filter((_, item) => item !== index),
+                )
+              }
+            />
+          ))}
+        </div>
+      )}
       <div className="mt-1.5 flex items-center justify-between">
         <div className="flex items-center gap-0.5 text-muted-foreground">
           {control(
             'Bold',
-            editor.isActive('bold'),
+            editorState.bold,
             () => editor.chain().focus().toggleBold().run(),
             Bold,
           )}
           {control(
             'Italic',
-            editor.isActive('italic'),
+            editorState.italic,
             () => editor.chain().focus().toggleItalic().run(),
             Italic,
           )}
           {control(
             'Bullet list',
-            editor.isActive('bulletList'),
+            editorState.bulletList,
             () => editor.chain().focus().toggleBulletList().run(),
             List,
           )}
           {control(
             'Inline code',
-            editor.isActive('code'),
+            editorState.code,
             () => editor.chain().focus().toggleCode().run(),
             Code,
           )}
@@ -328,18 +468,46 @@ export const MessageComposer = forwardRef<
           >
             <AtSign />
           </Button>
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            className="sr-only"
+            onChange={(event) => {
+              if (event.target.files) addFiles(event.target.files)
+              event.target.value = ''
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Attach files"
+            onClick={() => fileInput.current?.click()}
+            disabled={disabled || sending}
+          >
+            <Paperclip />
+          </Button>
         </div>
         <Button
           type="button"
           size="icon-sm"
           className="rounded-full"
-          aria-label="Send message"
-          onClick={submit}
-          disabled={!value.trim() || disabled}
+          aria-label={sending ? 'Sending message' : 'Send message'}
+          onClick={() => void submit()}
+          disabled={
+            (!editorState.hasText && !files.length) || disabled || sending
+          }
         >
-          <Send />
+          {sending ? 'Sending…' : <Send />}
         </Button>
       </div>
     </div>
   )
 })
+
+function formatBytes(bytes: number) {
+  return bytes < 1024 * 1024
+    ? `${Math.max(1, Math.ceil(bytes / 1024))} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}

@@ -43,3 +43,6 @@ password. Run `make help` for the complete command list.
 
 To emulate the desktop-client boundary, run `make server` in one terminal and
 `make gui` in another.
+
+Back up the SQLite database together with its sibling `attachments/` directory;
+room attachment bytes are stored there rather than in SQLite.

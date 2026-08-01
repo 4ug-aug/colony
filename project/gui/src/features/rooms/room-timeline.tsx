@@ -1,10 +1,135 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Dialog } from '@base-ui/react/dialog'
+import { Download, X } from 'lucide-react'
 import { Avatar, timestamp } from '#/components/avatar'
 import { Markdown } from '#/components/markdown'
 import { Button } from '#/components/ui/button'
 import { RunCapsule } from '#/features/runs/run-capsule'
+import { toast } from '#/components/ui/toast'
 import { messagesAreGrouped } from './message-grouping'
-import type { RoomMessage, RoomRun } from './types'
+import type { RoomAttachment, RoomMessage, RoomRun } from './types'
+import { apiFetch } from '#/lib/api-transport'
+
+const previewTypes = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+])
+
+function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
+  const [url, setUrl] = useState<string>()
+  const [open, setOpen] = useState(false)
+  const preview = previewTypes.has(attachment.contentType)
+  useEffect(() => {
+    if (!preview) return
+    let current: string | undefined
+    void apiFetch(`/api/attachments/${attachment.id}`)
+      .then(async (response) => {
+        if (!response.ok) return
+        current = URL.createObjectURL(await response.blob())
+        setUrl(current)
+      })
+      .catch(() => undefined)
+    return () => {
+      if (current) URL.revokeObjectURL(current)
+    }
+  }, [attachment.id, preview])
+  const download = async () => {
+    const response = await apiFetch(`/api/attachments/${attachment.id}`)
+    if (!response.ok) return
+    const link = document.createElement('a')
+    const objectUrl = URL.createObjectURL(await response.blob())
+    link.href = objectUrl
+    link.download = attachment.filename
+    link.click()
+    URL.revokeObjectURL(objectUrl)
+    toast.add({
+      title: 'Download started',
+      description: attachment.filename,
+      type: 'success',
+    })
+  }
+  if (preview && url)
+    return (
+      <>
+        <div className="relative w-fit max-w-full rounded-lg bg-muted p-2">
+          <button
+            type="button"
+            className="block"
+            aria-label={`Preview ${attachment.filename}`}
+            onClick={() => setOpen(true)}
+          >
+            <img
+              src={url}
+              alt={attachment.filename}
+              className="max-h-72 max-w-96 rounded-md border object-contain bg-muted"
+            />
+          </button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon-xs"
+            className="absolute right-2 bottom-2 shadow-sm cursor-pointer hover:bg-muted"
+            aria-label={`Download ${attachment.filename}`}
+            onClick={() => void download()}
+          >
+            <Download />
+          </Button>
+        </div>
+        <Dialog.Root open={open} onOpenChange={setOpen}>
+          <Dialog.Portal>
+            <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/80 transition-opacity duration-200 data-starting-style:opacity-0 data-ending-style:opacity-0" />
+            <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 max-h-[90vh] max-w-[95vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl bg-muted p-3 outline-none transition-opacity duration-200 ease-out data-starting-style:opacity-0 data-ending-style:opacity-0">
+              <Dialog.Title className="sr-only">
+                {attachment.filename}
+              </Dialog.Title>
+              <img
+                src={url}
+                alt={attachment.filename}
+                className="max-h-[calc(90vh-1.5rem)] max-w-[calc(95vw-1.5rem)] rounded-lg object-contain"
+              />
+              <div className="absolute top-3 right-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon-sm"
+                  aria-label={`Download ${attachment.filename}`}
+                  onClick={() => void download()}
+                >
+                  <Download />
+                </Button>
+                <Dialog.Close
+                  aria-label="Close image preview"
+                  className="inline-flex size-8 items-center justify-center rounded-md bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80"
+                >
+                  <X className="size-4" />
+                </Dialog.Close>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Portal>
+        </Dialog.Root>
+      </>
+    )
+  return (
+    <button
+      type="button"
+      className="flex max-w-full items-center gap-2 rounded-md border px-2 py-1 text-left text-xs hover:bg-muted"
+      onClick={() => void download()}
+    >
+      <span className="truncate">{attachment.filename}</span>
+      <span className="shrink-0 text-muted-foreground">
+        {formatBytes(attachment.byteSize)}
+      </span>
+    </button>
+  )
+}
+
+function formatBytes(bytes: number) {
+  return bytes < 1024 * 1024
+    ? `${Math.max(1, Math.ceil(bytes / 1024))} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 export function Timeline({
   messages,
@@ -95,6 +220,16 @@ export function Timeline({
               >
                 <Markdown mentions={mentionHandles}>{text}</Markdown>
               </div>
+              {!isResult && item.message.attachments.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-start gap-2">
+                  {item.message.attachments.map((attachment) => (
+                    <AttachmentView
+                      attachment={attachment}
+                      key={attachment.id}
+                    />
+                  ))}
+                </div>
+              )}
               {!isResult && item.run && (
                 <RunCapsule run={item.run} openRun={openRun} />
               )}

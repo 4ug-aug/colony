@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   Hash,
@@ -26,6 +26,7 @@ import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
 
 const bottomScrollThreshold = 150
+const historyTopThreshold = 80
 
 export function Dashboard({
   user,
@@ -54,18 +55,25 @@ export function Dashboard({
     setDraft,
     membersChangedAt,
     mentionableAccounts,
+    loadOlder,
+    loadingOlder,
+    hasOlderMessages,
   } = useRooms()
   const [view, setView] = useState<DashboardView>('room')
   const [selectedRunId, setSelectedRunId] = useState<string>()
   const composer = useRef<MessageComposerHandle>(null)
   const scrollRef = useRef<HTMLElement>(null)
   const atBottomRef = useRef(true)
+  const historyAnchorRef = useRef<
+    { height: number; top: number } | undefined
+  >(undefined)
   const [atBottom, setAtBottom] = useState(true)
 
-  const submit = async (text: string) => {
-    if (!text.trim()) return
-    const result = await send(text)
+  const submit = async (text: string, files: File[]) => {
+    if (!text.trim() && !files.length) return false
+    const result = await send(text, files)
     if (result) setDraft('')
+    return Boolean(result)
   }
 
   useEffect(() => {
@@ -73,12 +81,21 @@ export function Dashboard({
     if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
   }, [messages, runs])
 
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const anchor = historyAnchorRef.current
+    if (!el || !anchor) return
+    el.scrollTop = anchor.top + el.scrollHeight - anchor.height
+    historyAnchorRef.current = undefined
+  }, [messages])
+
   useEffect(() => {
     const el = scrollRef.current
     if (el) {
       el.scrollTop = el.scrollHeight
       atBottomRef.current = true
       setAtBottom(true)
+      historyAnchorRef.current = undefined
     }
     setSelectedRunId(undefined)
   }, [room?.id])
@@ -173,6 +190,17 @@ export function Dashboard({
                   onScroll={() => {
                     const el = scrollRef.current
                     if (el) {
+                      if (
+                        el.scrollTop <= historyTopThreshold &&
+                        hasOlderMessages &&
+                        !loadingOlder
+                      ) {
+                        historyAnchorRef.current = {
+                          height: el.scrollHeight,
+                          top: el.scrollTop,
+                        }
+                        void loadOlder()
+                      }
                       const nextAtBottom =
                         el.scrollHeight - el.scrollTop - el.clientHeight <
                         bottomScrollThreshold
@@ -182,6 +210,14 @@ export function Dashboard({
                   }}
                 >
                   <div className="mx-auto max-w-7xl">
+                    {loadingOlder && (
+                      <div
+                        className="flex justify-center pb-4 text-sm text-muted-foreground"
+                        role="status"
+                      >
+                        <BrailleLoader text="Loading older messages…" />
+                      </div>
+                    )}
                     {loading ? (
                       <div
                         className="flex justify-center py-12 text-sm text-muted-foreground"
@@ -227,10 +263,11 @@ export function Dashboard({
               <div className="shrink-0 px-4 pb-4 sm:px-6">
                 <div className="mx-auto max-w-7xl rounded-xl border bg-background p-2.5 shadow-sm">
                   <MessageComposer
+                    key={room?.id}
                     ref={composer}
                     value={draft}
                     onChange={setDraft}
-                    onSubmit={(text) => void submit(text)}
+                    onSubmit={submit}
                     disabled={loading || !room}
                     roomName={room?.name ?? 'room'}
                     mentionableAccounts={mentionableAccounts}

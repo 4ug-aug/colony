@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
 import {
   HoverCard,
@@ -48,10 +49,10 @@ export function ActiveAgents({
             </AvatarGroupCount>
           )}
         </AvatarGroup>
-        <span>
-          {agentName(activeRuns[0].agentId)}
-          {activeRuns.length > 1 && ` +${activeRuns.length - 1}`}
-        </span>
+        <BrailleLoader
+          loader="wave-rows"
+          text={`${agentName(activeRuns[0].agentId)}${activeRuns.length > 1 ? ` +${activeRuns.length - 1}` : ''}`}
+        />
       </HoverCardTrigger>
       <HoverCardContent
         side="top"

@@ -21,6 +21,13 @@ import {
 } from './admission-http'
 import { canDeleteRoom } from '#/features/rooms/permissions'
 import { mentionedAccounts } from './attention'
+import {
+  attachmentBytes,
+  attachmentDirectory,
+  MAX_REQUEST_BYTES,
+  removeAttachmentFiles,
+  stageAttachments,
+} from './attachments'
 
 export interface SessionAuthenticator {
   authenticate(request: Request): Promise<RoomUser | undefined>
@@ -63,6 +70,7 @@ export type RoomServerMessage =
       room: WorkspaceRoom
       messages: RoomMessage[]
       runs: RoomRun[]
+      nextCursor?: string
       latestSteps: StoredStep[]
     }
   | { type: 'message.created'; message: RoomMessage }
@@ -82,6 +90,8 @@ export type WorkspaceServerMessage =
       kind?: 'mention' | 'run_terminal'
     }
 export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
+
+const roomHistoryPageSize = 50
 
 type SocketData =
   | { scope: 'room'; roomId: string; userId: string }
@@ -134,6 +144,38 @@ async function textFrom(request: Request): Promise<string | undefined> {
     return undefined
   }
 }
+async function messageInputFrom(
+  request: Request,
+): Promise<{ text: string; files: File[] } | { error: string }> {
+  if (!request.headers.get('content-type')?.startsWith('multipart/form-data')) {
+    const text = await textFrom(request)
+    return text ? { text, files: [] } : { error: 'Invalid message' }
+  }
+  const length = Number(request.headers.get('content-length') ?? 0)
+  if (length > MAX_REQUEST_BYTES)
+    return { error: 'Attachments must total 50 MiB or less' }
+  try {
+    const bytes = await request.arrayBuffer()
+    if (bytes.byteLength > MAX_REQUEST_BYTES)
+      return { error: 'Attachments must total 50 MiB or less' }
+    const contentType = request.headers.get('content-type')
+    if (!contentType) return { error: 'Invalid message' }
+    const form = await new Response(bytes, {
+      headers: { 'content-type': contentType },
+    }).formData()
+    const rawText = form.get('text')
+    const text = typeof rawText === 'string' ? rawText.trim() : ''
+    if (text.length > 10_000) return { error: 'Invalid message' }
+    const files = form
+      .getAll('attachments')
+      .filter((entry): entry is File => entry instanceof File)
+    if (form.getAll('attachments').length !== files.length)
+      return { error: 'Invalid attachment' }
+    return text || files.length ? { text, files } : { error: 'Invalid message' }
+  } catch {
+    return { error: 'Invalid message' }
+  }
+}
 type RoomBody =
   | {
       name: string
@@ -175,10 +217,14 @@ export function createCoordinator(options: {
   authenticator: SessionAuthenticator
   authHandler: (request: Request) => Promise<Response>
   origin: string
+  attachmentDirectory?: string
   port?: number
   admission?: AdmissionOptions
   agentReady?: () => boolean
 }) {
+  const attachmentsDirectory =
+    options.attachmentDirectory ??
+    attachmentDirectory(process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite')
   const sockets = new Set<ServerWebSocket<SocketData>>()
   const admissionHandler = options.admission
     ? createAdmissionHttpHandler({
@@ -260,21 +306,22 @@ export function createCoordinator(options: {
     }
     const room = options.store.getRoom(socket.data.roomId)
     if (!room) return socket.close()
+    const page = options.store.listRoomHistoryPage(socket.data.roomId, {
+      limit: roomHistoryPageSize,
+    })
     send(socket, {
       type: 'room.snapshot',
       room: {
         ...room,
         attentionCount:
-          options.store
-            .listAttentionCounts(socket.data.userId)
-            .get(room.id) ?? 0,
+          options.store.listAttentionCounts(socket.data.userId).get(room.id) ??
+          0,
       },
-      messages: options.messages.listMessages(socket.data.roomId),
-      runs: options.store.listRuns(socket.data.roomId),
+      messages: page.messages,
+      runs: page.runs,
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
       latestSteps: [
-        ...options.store
-          .latestStepsForActiveRuns(socket.data.roomId)
-          .values(),
+        ...options.store.latestStepsForActiveRuns(socket.data.roomId).values(),
       ],
     })
   }
@@ -449,32 +496,106 @@ export function createCoordinator(options: {
           room.visibility === 'private'
             ? new Set(options.store.listMembers(room.id).map(({ id }) => id))
             : undefined
+        const storageKeys = options.store.listAttachmentStorageKeys(room.id)
         options.store.deleteRoom(room.id)
+        try {
+          await removeAttachmentFiles(attachmentsDirectory, storageKeys)
+        } catch (error) {
+          console.error(
+            'Attachment cleanup orphaned files:',
+            room.id,
+            storageKeys,
+            error,
+          )
+        }
         const removed = { type: 'room.removed' as const, roomId: room.id }
         if (recipients) broadcastWorkspaceToUsers(recipients, removed)
         else broadcastWorkspace(removed)
         return cors(json({ ok: true }))
       }
       const messages = url.pathname.match(/^\/api\/rooms\/([^/]+)\/messages$/)
+      if (messages && request.method === 'GET') {
+        const roomId = messages[1]!
+        if (!options.store.canAccessRoom(roomId, user.id))
+          return cors(json({ error: 'Room not found' }, 404))
+        try {
+          const page = options.store.listRoomHistoryPage(roomId, {
+            limit: roomHistoryPageSize,
+            cursor: url.searchParams.get('cursor') ?? undefined,
+          })
+          return cors(json(page))
+        } catch (error) {
+          return cors(
+            json(
+              {
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : 'Invalid room history cursor',
+              },
+              400,
+            ),
+          )
+        }
+      }
       if (messages && request.method === 'POST') {
         const roomId = messages[1]!
         if (!options.store.canAccessRoom(roomId, user.id))
           return cors(json({ error: 'Room not found' }, 404))
-        const text = await textFrom(request)
-        if (!text) return cors(json({ error: 'Invalid message' }, 400))
+        const input = await messageInputFrom(request)
+        if ('error' in input) return cors(json({ error: input.error }, 400))
+        const { text, files } = input
         const mention = /(^|\s)@software-engineer\b\s*/
-        const task = mention.test(text)
+        const isAgentMessage = mention.test(text)
+        const task = isAgentMessage
           ? text.replace(mention, (_, prefix: string) => prefix).trim()
           : undefined
-        if (mention.test(text) && !task)
+        if (files.length && isAgentMessage)
+          return cors(
+            json(
+              { error: 'Attachments cannot be sent to Software engineer' },
+              400,
+            ),
+          )
+        if (isAgentMessage && !task)
           return cors(json({ error: 'Agent task is required' }, 400))
         if (task && options.agentReady && !options.agentReady())
           return cors(json({ error: 'LLM provider is not configured' }, 409))
-        const message = options.messages.postMessage({
-          roomId,
-          author: { kind: 'user', ...user },
-          text,
-        })
+        let attachments
+        try {
+          attachments = await stageAttachments(files, attachmentsDirectory)
+        } catch (error) {
+          return cors(
+            json(
+              {
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : 'Unable to store attachments',
+              },
+              400,
+            ),
+          )
+        }
+        let message: RoomMessage
+        try {
+          message = options.messages.postMessage({
+            roomId,
+            author: { kind: 'user', ...user },
+            text,
+            attachments,
+          })
+        } catch (error) {
+          try {
+            await removeAttachmentFiles(
+              attachmentsDirectory,
+              attachments.map(({ storageKey }) => storageKey),
+            )
+          } catch (cleanupError) {
+            console.error('Attachment cleanup orphaned files:', cleanupError)
+          }
+          return cors(json({ error: 'Unable to save message' }, 500))
+        }
         if (!task) return cors(json({ message }, 201))
         try {
           const run = options.control.start(task, {
@@ -505,6 +626,32 @@ export function createCoordinator(options: {
             ),
           )
         }
+      }
+      const attachmentRoute = url.pathname.match(
+        /^\/api\/attachments\/([^/]+)$/,
+      )
+      if (attachmentRoute && request.method === 'GET') {
+        const attachment = options.store.getAttachment(attachmentRoute[1]!)
+        if (
+          !attachment ||
+          !options.store.canAccessRoom(attachment.roomId, user.id)
+        )
+          return cors(json({ error: 'Attachment not found' }, 404))
+        const bytes = await attachmentBytes(
+          attachmentsDirectory,
+          attachment.storageKey,
+        )
+        if (!bytes) return cors(json({ error: 'Attachment not found' }, 404))
+        return cors(
+          new Response(bytes as unknown as BodyInit, {
+            headers: {
+              'content-type': attachment.contentType,
+              'content-length': String(bytes.byteLength),
+              'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+              'x-content-type-options': 'nosniff',
+            },
+          }),
+        )
       }
       const stepsRoute = url.pathname.match(
         /^\/api\/rooms\/([^/]+)\/runs\/([^/]+)\/steps$/,
@@ -714,7 +861,10 @@ if (import.meta.main) {
       adapters: [
         createWorkspaceSoftwareEngineerAdapter({
           port: {
-            listMessages: (id) => messages.listMessages(id),
+            listMessages: (id) =>
+              messages
+                .listMessages(id)
+                .map(({ attachments: _, ...message }) => message),
             postMessage: (input) => {
               messages.postMessage(input)
             },

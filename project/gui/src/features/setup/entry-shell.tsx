@@ -27,7 +27,7 @@ export function EntryShell({
       style={titleBarVars()}
     >
       <div
-        className={`entry-shell-frame mx-auto grid min-h-[calc(100svh-1.5rem-var(--titlebar,0px))] max-w-6xl overflow-hidden rounded-3xl border bg-card shadow-sm sm:min-h-[calc(100svh-2.5rem-var(--titlebar,0px))]${exiting ? ' entry-shell-frame--exiting' : ''}`}
+        className={`entry-shell-frame mx-auto grid min-h-[calc(100svh-1.5rem-var(--titlebar,0px))] max-w-full overflow-hidden rounded-3xl border bg-card shadow-sm sm:min-h-[calc(100svh-2.5rem-var(--titlebar,0px))]${exiting ? ' entry-shell-frame--exiting' : ''}`}
         onAnimationEnd={(event: AnimationEvent<HTMLDivElement>) => {
           if (
             event.target === event.currentTarget &&

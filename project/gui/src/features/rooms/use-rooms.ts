@@ -8,6 +8,7 @@ import type { RealtimeStreamHandle } from '#/lib/api-transport'
 import type {
   MentionableAccount,
   Room,
+  RoomHistoryPage,
   RoomMessage,
   RoomRun,
   RoomStreamMessage,
@@ -21,6 +22,22 @@ function upsert<T extends { id: string }>(items: T[], item: T) {
   return index < 0
     ? [...items, item]
     : items.map((value) => (value.id === item.id ? item : value))
+}
+
+function mergeMessages(messages: RoomMessage[], incoming: RoomMessage[]) {
+  const byId = new Map(messages.map((message) => [message.id, message]))
+  for (const message of incoming) byId.set(message.id, message)
+  return [...byId.values()].sort(
+    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+  )
+}
+
+function mergeRuns(runs: RoomRun[], incoming: RoomRun[]) {
+  const byId = new Map(runs.map((run) => [run.id, run]))
+  for (const run of incoming) byId.set(run.id, run)
+  return [...byId.values()].sort(
+    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+  )
 }
 
 function orderedRooms(rooms: Room[]) {
@@ -52,6 +69,8 @@ export function useRooms() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [runs, setRuns] = useState<RoomRun[]>([])
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const runsRef = useRef<RoomRun[]>([])
   const [latestStepByRun, setLatestStepByRun] = useState<Map<string, Step>>(
     new Map(),
@@ -60,7 +79,6 @@ export function useRooms() {
     new Map(),
   )
   const [loading, setLoading] = useState(true)
-  const [, setDraftVersion] = useState(0)
   const [connection, setConnection] = useState<
     'connecting' | 'connected' | 'reconnecting' | 'disconnected'
   >('connecting')
@@ -75,6 +93,9 @@ export function useRooms() {
   const roomSocket = useRef<RealtimeStreamHandle | undefined>(undefined)
   const workspaceSocket = useRef<RealtimeStreamHandle | undefined>(undefined)
   const selectedRoomRef = useRef<string | undefined>(undefined)
+  const nextCursorRef = useRef<string | undefined>(undefined)
+  const loadingOlderRef = useRef(false)
+  const historyReadyRef = useRef(false)
   const drafts = useRef<Record<string, string>>({})
 
   const forgetRoom = useCallback((roomId: string) => {
@@ -149,7 +170,7 @@ export function useRooms() {
                 room.id === event.roomId
                   ? { ...room, attentionCount: event.attentionCount }
                   : room,
-                ),
+              ),
             )
             if (
               event.kind === 'mention' &&
@@ -163,10 +184,7 @@ export function useRooms() {
               })
               playMentionSound()
             }
-            if (
-              event.attentionCount > 0 &&
-              alreadyViewing
-            )
+            if (event.attentionCount > 0 && alreadyViewing)
               void acknowledge(event.roomId)
           }
         },
@@ -205,6 +223,8 @@ export function useRooms() {
 
   useEffect(() => {
     if (!selectedRoomId) return
+    historyReadyRef.current = false
+    nextCursorRef.current = undefined
     let stopped = false
     let attempts = 0
     let retry: ReturnType<typeof setTimeout> | undefined
@@ -221,9 +241,18 @@ export function useRooms() {
           if (stopped) return
           if (event.type === 'room.snapshot') {
             if (event.room.id !== selectedRoomId) return
-            setMessages(event.messages)
-            runsRef.current = event.runs
-            setRuns(event.runs)
+            if (!historyReadyRef.current) {
+              setMessages(mergeMessages([], event.messages))
+              runsRef.current = mergeRuns([], event.runs)
+              setRuns(runsRef.current)
+              nextCursorRef.current = event.nextCursor
+              setNextCursor(event.nextCursor)
+              historyReadyRef.current = true
+            } else {
+              setMessages((current) => mergeMessages(current, event.messages))
+              runsRef.current = mergeRuns(runsRef.current, event.runs)
+              setRuns(runsRef.current)
+            }
             setLatestStepByRun(
               new Map(event.latestSteps.map((s) => [s.runId, s])),
             )
@@ -241,13 +270,13 @@ export function useRooms() {
             event.type === 'message.created' &&
             event.message.roomId === selectedRoomId
           )
-            setMessages((current) => upsert(current, event.message))
+            setMessages((current) => mergeMessages(current, [event.message]))
           if (
             event.type === 'run.changed' &&
             event.run.roomId === selectedRoomId
           ) {
-            runsRef.current = upsert(runsRef.current, event.run)
-            setRuns((current) => upsert(current, event.run))
+            runsRef.current = mergeRuns(runsRef.current, [event.run])
+            setRuns((current) => mergeRuns(current, [event.run]))
           }
           if (
             event.type === 'run.step' &&
@@ -298,6 +327,36 @@ export function useRooms() {
       roomSocket.current?.close()
     }
   }, [acknowledge, selectedRoomId])
+
+  const loadOlder = useCallback(async () => {
+    const roomId = selectedRoomId
+    const cursor = nextCursorRef.current
+    if (!roomId || !cursor || loadingOlderRef.current) return
+    loadingOlderRef.current = true
+    setLoadingOlder(true)
+    try {
+      const response = await apiFetch(
+        `/api/rooms/${roomId}/messages?cursor=${encodeURIComponent(cursor)}`,
+      )
+      const page = (await response.json()) as RoomHistoryPage & {
+        error?: string
+      }
+      if (!response.ok) throw new Error(page.error ?? 'Unable to load history')
+      if (selectedRoomRef.current !== roomId) return
+      setMessages((current) => mergeMessages(current, page.messages))
+      runsRef.current = mergeRuns(runsRef.current, page.runs)
+      setRuns((current) => mergeRuns(current, page.runs))
+      nextCursorRef.current = page.nextCursor
+      setNextCursor(page.nextCursor)
+      setError(undefined)
+    } catch (reason) {
+      if (selectedRoomRef.current === roomId)
+        setError(reason instanceof Error ? reason.message : 'Unable to load history')
+    } finally {
+      loadingOlderRef.current = false
+      setLoadingOlder(false)
+    }
+  }, [selectedRoomId])
 
   useEffect(() => {
     if (!selectedRoomId) return
@@ -364,8 +423,13 @@ export function useRooms() {
       if (roomId === selectedRoomId) return
       setSelectedRoomId(roomId)
       localStorage.setItem(selectedRoomKey, roomId)
+      historyReadyRef.current = false
+      nextCursorRef.current = undefined
+      loadingOlderRef.current = false
       setMessages([])
       setRuns([])
+      setNextCursor(undefined)
+      setLoadingOlder(false)
       setLatestStepByRun(new Map())
       setLiveStepsByRun(new Map())
       setMentionableAccounts([])
@@ -374,10 +438,7 @@ export function useRooms() {
     },
     draft: selectedRoomId ? (drafts.current[selectedRoomId] ?? '') : '',
     setDraft: (text: string) => {
-      if (selectedRoomId) {
-        drafts.current[selectedRoomId] = text
-        setDraftVersion((version) => version + 1)
-      }
+      if (selectedRoomId) drafts.current[selectedRoomId] = text
     },
     create: async (
       name: string,
@@ -400,8 +461,13 @@ export function useRooms() {
         setRooms((current) => orderedRooms(upsert(current, result.room!)))
         setSelectedRoomId(result.room.id)
         localStorage.setItem(selectedRoomKey, result.room.id)
+        historyReadyRef.current = false
+        nextCursorRef.current = undefined
+        loadingOlderRef.current = false
         setMessages([])
         setRuns([])
+        setNextCursor(undefined)
+        setLoadingOlder(false)
         setLatestStepByRun(new Map())
         setLiveStepsByRun(new Map())
         setLoading(true)
@@ -423,18 +489,52 @@ export function useRooms() {
       return result
     },
     createError,
-    send: async (text: string) => {
+    send: async (text: string, files: File[] = []) => {
       if (!selectedRoomId) return
-      const result = await request<{ message: RoomMessage; run?: RoomRun }>(
-        `/api/rooms/${selectedRoomId}/messages`,
-        { text },
-      )
+      let result: { message: RoomMessage; run?: RoomRun } | undefined
+      try {
+        const body = files.length
+          ? (() => {
+              const form = new FormData()
+              form.set('text', text)
+              files.forEach((file) => form.append('attachments', file))
+              return form
+            })()
+          : JSON.stringify({ text })
+        const response = await apiFetch(
+          `/api/rooms/${selectedRoomId}/messages`,
+          {
+            method: 'POST',
+            headers: files.length
+              ? undefined
+              : { 'content-type': 'application/json' },
+            body,
+          },
+        )
+        const responseBody = (await response.json()) as {
+          message?: RoomMessage
+          run?: RoomRun
+          error?: string
+        }
+        if (!response.ok || !responseBody.message)
+          throw new Error(responseBody.error ?? 'Request failed')
+        result = { message: responseBody.message, run: responseBody.run }
+        setError(undefined)
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Request failed')
+      }
       if (result) {
-        setMessages((current) => upsert(current, result.message))
-        if (result.run) setRuns((current) => upsert(current, result.run!))
+        setMessages((current) => mergeMessages(current, [result.message]))
+        if (result.run) {
+          runsRef.current = mergeRuns(runsRef.current, [result.run])
+          setRuns((current) => mergeRuns(current, [result.run!]))
+        }
       }
       return result
     },
+    loadOlder,
+    loadingOlder,
+    hasOlderMessages: Boolean(nextCursor),
     cancel: (runId: string) =>
       selectedRoomId
         ? request(`/api/rooms/${selectedRoomId}/runs/${runId}/cancel`)

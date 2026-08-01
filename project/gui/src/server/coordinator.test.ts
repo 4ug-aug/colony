@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test'
 import { createServer } from 'node:net'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import {
   allowedOrigin,
   createCoordinator,
@@ -12,6 +15,9 @@ import {
   GENERAL_ROOM_ID,
   type RoomMessage,
   type RoomAttention,
+  type NewRoomAttachment,
+  type RoomMessageInput,
+  type StoredRoomAttachment,
   type RoomRun,
   type RoomSummary,
   type RoomStore,
@@ -95,6 +101,7 @@ class MemoryRoomStore implements RoomStore {
   attentions: (RoomAttention & { acknowledgedAt?: number })[] = []
   members: MemberRow[] = []
   workspaceUsers: RoomUser[] = []
+  attachments: StoredRoomAttachment[] = []
   listRooms() {
     return this.rooms
   }
@@ -136,7 +143,18 @@ class MemoryRoomStore implements RoomStore {
     this.attentions = this.attentions.filter(
       (attention) => attention.roomId !== roomId,
     )
+    this.attachments = this.attachments.filter(
+      (attachment) => attachment.roomId !== roomId,
+    )
     return exists
+  }
+  listAttachmentStorageKeys(roomId: string) {
+    return this.attachments
+      .filter((attachment) => attachment.roomId === roomId)
+      .map((attachment) => attachment.storageKey)
+  }
+  getAttachment(id: string) {
+    return this.attachments.find((attachment) => attachment.id === id)
   }
   canAccessRoom(roomId: string, userId: string): boolean {
     const room = this.rooms.find((r) => r.id === roomId)
@@ -191,11 +209,62 @@ class MemoryRoomStore implements RoomStore {
   listMessages(roomId: string) {
     return this.messages.filter((message) => message.roomId === roomId)
   }
+  listRoomHistoryPage(
+    roomId: string,
+    options: { limit: number; cursor?: string },
+  ) {
+    const before = options.cursor
+      ? (JSON.parse(
+          Buffer.from(options.cursor, 'base64url').toString('utf8'),
+        ) as { createdAt: number; id: string })
+      : undefined
+    const sorted = this.listMessages(roomId)
+      .filter(
+        (message) =>
+          !before ||
+          message.createdAt < before.createdAt ||
+          (message.createdAt === before.createdAt && message.id < before.id),
+      )
+      .sort(
+        (a, b) =>
+          b.createdAt - a.createdAt || b.id.localeCompare(a.id),
+      )
+    const rows = sorted.slice(0, options.limit)
+    const ids = new Set(rows.map(({ id }) => id))
+    const runs = this.listRuns(roomId).filter(
+      (run) => ids.has(run.triggerMessageId) || ['preparing', 'running'].includes(run.state),
+    )
+    return {
+      messages: rows.reverse(),
+      runs: runs.sort(
+        (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+      ),
+      ...(sorted.length > options.limit && rows.length
+        ? {
+            nextCursor: Buffer.from(
+              JSON.stringify({
+                createdAt: rows[0]!.createdAt,
+                id: rows[0]!.id,
+              }),
+            ).toString('base64url'),
+          }
+        : {}),
+    }
+  }
   listRuns(roomId: string) {
     return this.runs.filter((run) => run.roomId === roomId)
   }
-  createMessage(message: RoomMessage) {
-    this.messages.push(message)
+  createMessage(
+    message: RoomMessageInput,
+    attachments: NewRoomAttachment[] = [],
+  ) {
+    this.messages.push({ ...message, attachments: message.attachments ?? [] })
+    this.attachments.push(
+      ...attachments.map((attachment) => ({
+        ...attachment,
+        roomId: message.roomId,
+      })),
+    )
   }
   createAttention(attention: RoomAttention) {
     if (
@@ -436,6 +505,150 @@ test('two clients receive durable room messages and agent runs', async () => {
     b.socket.close()
   } finally {
     coordinator.stop()
+  }
+})
+
+test('room history is paginated over HTTP and in the realtime snapshot', async () => {
+  const store = new MemoryRoomStore()
+  for (let index = 0; index < 51; index++)
+    store.createMessage({
+      id: `message-${index}`,
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'user', id: 'user-1', name: 'Ada' },
+      text: String(index),
+      createdAt: index,
+    })
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const firstResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    const first = (await firstResponse.json()) as {
+      messages: RoomMessage[]
+      nextCursor?: string
+    }
+    expect(firstResponse.status).toBe(200)
+    expect(first.messages).toHaveLength(50)
+    expect(first.messages[0]?.id).toBe('message-1')
+    expect(first.messages.at(-1)?.id).toBe('message-50')
+    expect(first.nextCursor).toEqual(expect.any(String))
+
+    const secondResponse = await fetch(
+      `${base}/api/rooms/general/messages?cursor=${encodeURIComponent(first.nextCursor!)}`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    const second = (await secondResponse.json()) as {
+      messages: RoomMessage[]
+      nextCursor?: string
+    }
+    expect(secondResponse.status).toBe(200)
+    expect(second.messages.map(({ id }) => id)).toEqual(['message-0'])
+    expect(second.nextCursor).toBeUndefined()
+
+    const invalid = await fetch(
+      `${base}/api/rooms/general/messages?cursor=invalid`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    expect(invalid.status).toBe(400)
+
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    const snapshot = await socket.next()
+    expect(snapshot.type).toBe('room.snapshot')
+    expect(snapshot.messages).toHaveLength(50)
+    expect(snapshot.nextCursor).toEqual(expect.any(String))
+    socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('multipart messages persist attachment metadata and serve authorized bytes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sweat-attachments-'))
+  const store = new MemoryRoomStore()
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    attachmentDirectory: directory,
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const form = new FormData()
+    form.set('text', '')
+    form.append(
+      'attachments',
+      new File(
+        [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+        '../avatar.png',
+        {
+          type: 'image/png',
+        },
+      ),
+    )
+    const created = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test' },
+      body: form,
+    })
+    expect(created.status).toBe(201)
+    const message = (await created.json()) as {
+      message: {
+        attachments: Array<{
+          id: string
+          filename: string
+          contentType: string
+          byteSize: number
+        }>
+      }
+    }
+    expect(message.message.attachments).toEqual([
+      {
+        id: expect.any(String),
+        filename: '.._avatar.png',
+        contentType: 'image/png',
+        byteSize: 8,
+      },
+    ])
+    const attachmentId = message.message.attachments[0].id
+    const downloaded = await fetch(`${base}/api/attachments/${attachmentId}`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(downloaded.status).toBe(200)
+    expect(downloaded.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(downloaded.headers.get('content-disposition')).toContain(
+      '.._avatar.png',
+    )
+    expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    )
+    const tooMany = new FormData()
+    for (let index = 0; index < 6; index++)
+      tooMany.append('attachments', new File(['x'], `file-${index}`))
+    const rejected = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test' },
+      body: tooMany,
+    })
+    expect(rejected.status).toBe(400)
+    expect(await readdir(directory)).toHaveLength(1)
+  } finally {
+    coordinator.stop()
+    await rm(directory, { recursive: true, force: true })
   }
 })
 

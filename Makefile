@@ -96,5 +96,6 @@ check: test
 	@cd $(GUI) && bun run build
 
 reset:
-	@case "$(SWEAT_DATABASE_PATH)" in "$(CURDIR)/$(GUI)/"*) ;; *) echo "Refusing to reset a database outside $(GUI)"; exit 1;; esac
-	@rm -f -- "$(SWEAT_DATABASE_PATH)" "$(SWEAT_DATABASE_PATH)-shm" "$(SWEAT_DATABASE_PATH)-wal"
+	@case "$(SWEAT_DATABASE_PATH)" in "$(CURDIR)/$(GUI)/"*) ;; *) echo "Refusing to reset a database outside $(GUI)"; exit 1;; esac; \
+	rm -f -- "$(SWEAT_DATABASE_PATH)" "$(SWEAT_DATABASE_PATH)-shm" "$(SWEAT_DATABASE_PATH)-wal"; \
+	rm -rf -- "$(dir $(SWEAT_DATABASE_PATH))attachments"

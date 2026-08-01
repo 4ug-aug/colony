@@ -30,6 +30,13 @@ export type RoomMessage = {
   author: Author
   text: string
   createdAt: number
+  attachments: RoomAttachment[]
+}
+export type RoomAttachment = {
+  id: string
+  filename: string
+  contentType: string
+  byteSize: number
 }
 export type RoomRun = {
   id: string
@@ -46,12 +53,18 @@ export type RoomRun = {
   stdout: string
   output?: string
 }
+export type RoomHistoryPage = {
+  messages: RoomMessage[]
+  runs: RoomRun[]
+  nextCursor?: string
+}
 export type RoomStreamMessage =
   | {
       type: 'room.snapshot'
       room: Room
       messages: RoomMessage[]
       runs: RoomRun[]
+      nextCursor?: string
       latestSteps: Step[]
     }
   | { type: 'message.created'; message: RoomMessage }

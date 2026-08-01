@@ -1,14 +1,14 @@
 import { expect, test } from 'bun:test'
 import { createRoomMessageHub, type RoomEvent } from './room-hub'
-import type { RoomMessage, RoomStore } from './room-store'
+import type { RoomMessage, RoomMessageInput, RoomStore } from './room-store'
 
 class FakeStore implements Pick<RoomStore, 'listMessages' | 'createMessage'> {
   messages: RoomMessage[] = []
   listMessages(roomId: string) {
     return this.messages.filter((m) => m.roomId === roomId)
   }
-  createMessage(message: RoomMessage) {
-    this.messages.push(message)
+  createMessage(message: RoomMessageInput) {
+    this.messages.push({ ...message, attachments: message.attachments ?? [] })
   }
 }
 

@@ -88,6 +88,7 @@ test('room store retains history and fails stale runs', () => {
       author: { kind: 'user', id: 'user-1', name: 'Ada' },
       text: 'Please help',
       createdAt: 1,
+      attachments: [],
     },
   ])
   expect(store.failStaleRuns()).toMatchObject([
@@ -101,6 +102,103 @@ test('room store retains history and fails stale runs', () => {
     state: 'failed',
     completedAt: expect.any(Number),
   })
+  sqlite.close()
+})
+
+test('room history pages newest messages and follows an opaque cursor', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  for (const [id, createdAt] of [
+    ['msg-1', 1],
+    ['msg-2', 2],
+    ['msg-3', 3],
+  ] as const)
+    store.createMessage({
+      id,
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'user', id: 'user-1', name: 'Ada' },
+      text: id,
+      createdAt,
+    })
+  store.createRun(makeRun({ id: 'run-old', triggerMessageId: 'msg-1', state: 'succeeded' }))
+  store.createRun(makeRun({ id: 'run-current', triggerMessageId: 'msg-2' }))
+
+  const newest = store.listRoomHistoryPage(GENERAL_ROOM_ID, { limit: 2 })
+  expect(newest.messages.map(({ id }) => id)).toEqual(['msg-2', 'msg-3'])
+  expect(newest.runs.map(({ id }) => id)).toEqual(['run-current'])
+  expect(newest.nextCursor).toEqual(expect.any(String))
+
+  const oldest = store.listRoomHistoryPage(GENERAL_ROOM_ID, {
+    limit: 2,
+    cursor: newest.nextCursor,
+  })
+  expect(oldest.messages.map(({ id }) => id)).toEqual(['msg-1'])
+  expect(oldest.runs.map(({ id }) => id)).toEqual(['run-current', 'run-old'])
+  expect(oldest.nextCursor).toBeUndefined()
+  expect(() =>
+    store.listRoomHistoryPage(GENERAL_ROOM_ID, { limit: 2, cursor: '' }),
+  ).toThrow('Invalid room history cursor')
+
+  sqlite.close()
+})
+
+test('room messages expose attachment metadata without storage details', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(`${SCHEMA_DDL}
+    CREATE TABLE room_attachment (
+      id TEXT PRIMARY KEY, message_id TEXT NOT NULL REFERENCES room_message(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL, content_type TEXT NOT NULL, byte_size INTEGER NOT NULL,
+      sha256 TEXT NOT NULL, storage_key TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL
+    );
+    CREATE INDEX room_attachment_message_idx ON room_attachment(message_id);
+  `)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage(
+    {
+      id: 'message-with-file',
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'user', id: 'user-1', name: 'Ada' },
+      text: '',
+      createdAt: 1,
+      attachments: [],
+    },
+    [
+      {
+        id: 'attachment-1',
+        filename: 'report.pdf',
+        contentType: 'application/pdf',
+        byteSize: 42,
+        sha256: 'private-hash',
+        storageKey: 'private-key',
+        createdAt: 1,
+      },
+    ],
+  )
+
+  expect(store.listMessages(GENERAL_ROOM_ID)).toMatchObject([
+    {
+      id: 'message-with-file',
+      attachments: [
+        {
+          id: 'attachment-1',
+          filename: 'report.pdf',
+          contentType: 'application/pdf',
+          byteSize: 42,
+        },
+      ],
+    },
+  ])
+  expect(JSON.stringify(store.listMessages(GENERAL_ROOM_ID))).not.toContain(
+    'private-key',
+  )
+  expect(store.getAttachment('attachment-1')).toMatchObject({
+    storageKey: 'private-key',
+    sha256: 'private-hash',
+  })
+  expect(store.listAttachmentStorageKeys(GENERAL_ROOM_ID)).toEqual([
+    'private-key',
+  ])
   sqlite.close()
 })
 

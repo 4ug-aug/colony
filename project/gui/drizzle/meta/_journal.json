@@ -64,6 +64,13 @@
       "when": 1785085393264,
       "tag": "0008_workspace_llm_config",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785085393265,
+      "tag": "0009_room_attachments",
+      "breakpoints": true
     }
   ]
 }

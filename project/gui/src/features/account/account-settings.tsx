@@ -89,8 +89,8 @@ export function AccountSettingsPage({
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 p-6 sm:p-8">
-      <section className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
+    <div className="mx-auto w-full space-y-6 p-6 sm:p-8">
+      <section className="border-b pb-4">
         <div className="flex items-center gap-3">
           <Avatar author={user} details={false} />
           <div className="min-w-0">
@@ -108,7 +108,7 @@ export function AccountSettingsPage({
       </section>
 
       {isTauriRuntime() && (
-        <section className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
+        <section className="border-b pb-4">
           <h2 className="font-semibold">Connected server</h2>
           <p className="mt-1 truncate text-sm text-muted-foreground">
             {currentServerBase()}
@@ -156,7 +156,7 @@ export function AccountSettingsPage({
         </section>
       )}
 
-      <section className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
+      <section>
         <h2 className="font-semibold">Password</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Changing your password signs out your other sessions.

@@ -1,8 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { formatStepText, mergeSteps, pairSteps } from './run-activity'
+import {
+  formatStepText,
+  groupActivity,
+  mergeSteps,
+  pairSteps,
+} from './run-activity'
 import type { Step } from './step-label'
 
-const step = (values: Partial<Step> & Pick<Step, 'id' | 'idx' | 'kind'>): Step => ({
+const step = (
+  values: Partial<Step> & Pick<Step, 'id' | 'idx' | 'kind'>,
+): Step => ({
   runId: 'run-1',
   roomId: 'general',
   text: '',
@@ -12,7 +19,9 @@ const step = (values: Partial<Step> & Pick<Step, 'id' | 'idx' | 'kind'>): Step =
 
 describe('run activity', () => {
   test('formats JSON step text for code blocks', () => {
-    expect(formatStepText('{"text":"Message 1: starting task as requested."}')).toBe(
+    expect(
+      formatStepText('{"text":"Message 1: starting task as requested."}'),
+    ).toBe(
       `{
   "text": "Message 1: starting task as requested."
 }`,
@@ -45,6 +54,23 @@ describe('run activity', () => {
     expect(pairSteps([narration, call, result])).toEqual([
       { step: narration },
       { step: call, result },
+    ])
+  })
+
+  test('groups consecutive tool calls without grouping reasoning', () => {
+    const firstReasoning = step({ id: 'reasoning-1', idx: 0, kind: 'message' })
+    const firstTool = step({ id: 'tool-1', idx: 1, kind: 'tool_call' })
+    const secondTool = step({ id: 'tool-2', idx: 2, kind: 'tool_call' })
+    const secondReasoning = step({ id: 'reasoning-2', idx: 3, kind: 'message' })
+
+    expect(
+      groupActivity(
+        pairSteps([firstReasoning, firstTool, secondTool, secondReasoning]),
+      ),
+    ).toEqual([
+      { kind: 'reasoning', item: { step: firstReasoning } },
+      { kind: 'tools', items: [{ step: firstTool }, { step: secondTool }] },
+      { kind: 'reasoning', item: { step: secondReasoning } },
     ])
   })
 })
