@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 
@@ -19,6 +19,15 @@ const root = join(import.meta.dir, "..");
 const defaultEnvPath = join(root, ".env.local");
 const releaseApi =
   "https://api.github.com/repos/4ug-aug/sweat-v2/releases/latest";
+let inputBuffer = "";
+let inputListener: ((chunk: string | Buffer) => void) | undefined;
+let inputEndListener: (() => void) | undefined;
+let pendingInput:
+  | {
+      resolve: (value: string) => void;
+      reject: (error: Error) => void;
+    }
+  | undefined;
 
 function envPattern(key: string, commented = false): RegExp {
   const prefix = commented ? "(?:#\\s*)?" : "";
@@ -90,9 +99,59 @@ export function selectUniversalDmg(
 
 async function input(label: string, defaultValue?: string): Promise<string> {
   const suffix = defaultValue ? ` [${defaultValue}]` : "";
-  const answer = prompt(`${label}${suffix} `);
-  if (answer === null) throw new Error("Setup cancelled");
+  process.stdout.write(`${label}${suffix} `);
+  const answer = await readLine();
   return answer.trim() || defaultValue || "";
+}
+
+function nextBufferedLine(): string | undefined {
+  const newline = inputBuffer.indexOf("\n");
+  if (newline < 0) return undefined;
+  const line = inputBuffer.slice(0, newline).replace(/\r$/, "");
+  inputBuffer = inputBuffer.slice(newline + 1);
+  return line;
+}
+
+function ensureInputListener(): void {
+  if (inputListener) return;
+  inputListener = (chunk) => {
+    inputBuffer += String(chunk);
+    const line = nextBufferedLine();
+    if (line !== undefined && pendingInput) {
+      const pending = pendingInput;
+      pendingInput = undefined;
+      pending.resolve(line);
+    }
+  };
+  inputEndListener = () => {
+    pendingInput?.reject(new Error("Setup cancelled"));
+    pendingInput = undefined;
+  };
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", inputListener);
+  process.stdin.once("end", inputEndListener);
+  process.stdin.resume();
+}
+
+function readLine(): Promise<string> {
+  const buffered = nextBufferedLine();
+  if (buffered !== undefined) return Promise.resolve(buffered);
+  ensureInputListener();
+  return new Promise((resolve, reject) => {
+    pendingInput = { resolve, reject };
+  });
+}
+
+function closeInput(): void {
+  if (inputListener) process.stdin.off("data", inputListener);
+  if (inputEndListener) process.stdin.off("end", inputEndListener);
+  inputListener = undefined;
+  inputEndListener = undefined;
+  if (pendingInput) {
+    pendingInput.reject(new Error("Setup cancelled"));
+    pendingInput = undefined;
+  }
+  process.stdin.pause();
 }
 
 async function choose(
@@ -118,6 +177,7 @@ async function secret(label: string, current?: string): Promise<string> {
   }
   if (!process.stdin.isTTY) return input(label);
 
+  closeInput();
   process.stdout.write(`${label}: `);
   const child = Bun.spawn(
     [
@@ -174,6 +234,7 @@ async function requireRuntime(provider: SandboxProvider): Promise<void> {
 }
 
 async function requireGitHubCli(): Promise<void> {
+  closeInput();
   if (!(await available("gh")))
     throw new Error(
       "GitHub CLI is required. Install it from https://cli.github.com/ and rerun make setup.",
@@ -200,6 +261,12 @@ function envPath(): string {
   const configured = process.env.ENV_FILE;
   if (!configured) return defaultEnvPath;
   return isAbsolute(configured) ? configured : join(root, configured);
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KiB`;
+  return `${(value / 1024 ** 2).toFixed(1)} MiB`;
 }
 
 async function saveEnv(
@@ -308,6 +375,7 @@ async function configureServer(path: string): Promise<void> {
     document = setEnvValue(document, "LINEAR_MCP_API_KEY", token);
   }
 
+  closeInput();
   await saveEnv(path, current, document);
   await requireRuntime(provider);
   await run("bun", ["install", "--cwd", "project", "--frozen-lockfile"]);
@@ -323,11 +391,13 @@ async function configureServer(path: string): Promise<void> {
 async function installMacApplication(): Promise<void> {
   if (process.platform !== "darwin")
     throw new Error("The macOS application can only be installed on macOS.");
+  console.log("Checking for the latest Sweat release...");
   const response = await fetch(releaseApi, {
     headers: {
       Accept: "application/vnd.github+json",
       "User-Agent": "sweat-setup",
     },
+    signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok)
     throw new Error(
@@ -339,11 +409,46 @@ async function installMacApplication(): Promise<void> {
     throw new Error(
       "The latest GitHub release does not contain a universal macOS DMG.",
     );
-  const download = await fetch(asset.browser_download_url);
+  console.log(`Found ${asset.name}. Starting download...`);
+  const download = await fetch(asset.browser_download_url, {
+    signal: AbortSignal.timeout(120_000),
+  });
   if (!download.ok)
     throw new Error(`Could not download ${asset.name} (${download.status}).`);
   const path = join(tmpdir(), asset.name);
-  await Bun.write(path, await download.arrayBuffer());
+  const body = download.body;
+  if (!body)
+    throw new Error(`Could not download ${asset.name}: empty response.`);
+  const writer = Bun.file(path).writer();
+  const reader = body.getReader();
+  const total = Number(download.headers.get("content-length"));
+  const totalLabel =
+    Number.isFinite(total) && total > 0 ? ` / ${formatBytes(total)}` : "";
+  let downloaded = 0;
+  let completed = false;
+  process.stdout.write(`Downloading ${asset.name}: 0 B${totalLabel}`);
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      await writer.write(chunk.value);
+      downloaded += chunk.value.byteLength;
+      process.stdout.write(
+        `\rDownloading ${asset.name}: ${formatBytes(downloaded)}${totalLabel}`,
+      );
+    }
+    await writer.end();
+    completed = true;
+  } finally {
+    reader.releaseLock();
+    if (!completed) {
+      await writer.end().catch(() => undefined);
+      await rm(path, { force: true });
+    }
+  }
+  process.stdout.write("\n");
+  console.log(`Downloaded ${formatBytes(downloaded)} to ${path}.`);
+  console.log("Opening the installer...");
   await run("open", [path]);
   console.log(
     `Opened ${path}. Drag Sweat to Applications to finish installation.`,
@@ -351,13 +456,17 @@ async function installMacApplication(): Promise<void> {
 }
 
 export async function runSetup(): Promise<void> {
-  const choice = await choose("What do you want to set up?", [
-    "Server setup",
-    "Install mac application",
-    "Exit",
-  ]);
-  if (choice === 0) await configureServer(envPath());
-  else if (choice === 1) await installMacApplication();
+  try {
+    const choice = await choose("What do you want to set up?", [
+      "Server setup",
+      "Install mac application",
+      "Exit",
+    ]);
+    if (choice === 0) await configureServer(envPath());
+    else if (choice === 1) await installMacApplication();
+  } finally {
+    closeInput();
+  }
 }
 
 if (import.meta.main) {
