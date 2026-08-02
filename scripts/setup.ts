@@ -298,8 +298,8 @@ async function configureServer(path: string): Promise<void> {
     existing("BETTER_AUTH_URL") ?? "http://localhost:3001",
   );
   const guiOrigin = await input(
-    "Browser GUI origin",
-    existing("SWEAT_GUI_ORIGIN") ?? "http://localhost:3000",
+    "GUI origin",
+    existing("SWEAT_GUI_ORIGIN") ?? "tauri://localhost",
   );
   const providerOptions: readonly SandboxProvider[] = [
     "apple-container",

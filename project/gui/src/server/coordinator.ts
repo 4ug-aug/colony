@@ -1323,7 +1323,7 @@ if (import.meta.main) {
     messages,
     authenticator: betterAuthSessionAuthenticator,
     authHandler: (request) => auth.handler(request),
-    origin: process.env.SWEAT_GUI_ORIGIN ?? 'http://localhost:3000',
+    origin: process.env.SWEAT_GUI_ORIGIN ?? 'tauri://localhost',
     attachmentDirectory: attachmentsDirectory,
     port: Number(process.env.SWEAT_COORDINATOR_PORT ?? 3001),
     scheduleStore,

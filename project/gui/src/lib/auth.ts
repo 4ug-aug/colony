@@ -5,7 +5,7 @@ import { admin } from 'better-auth/plugins/admin'
 import { username } from 'better-auth/plugins/username'
 import { authSchema, db } from '#/lib/database'
 
-const appOrigin = process.env.SWEAT_GUI_ORIGIN ?? 'http://localhost:3000'
+const appOrigin = process.env.SWEAT_GUI_ORIGIN ?? 'tauri://localhost'
 const trustedOrigins = [
   appOrigin,
   ...(new URL(appOrigin).hostname === 'localhost'
