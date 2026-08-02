@@ -17,7 +17,7 @@ const schema = `
   CREATE TABLE schedule_run (
     id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL REFERENCES schedule(id) ON DELETE CASCADE,
     source TEXT NOT NULL, scheduled_for INTEGER, started_by TEXT REFERENCES user(id),
-    task TEXT NOT NULL, agent_id TEXT NOT NULL, state TEXT NOT NULL, created_at INTEGER NOT NULL,
+    task TEXT NOT NULL, agent_id TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, state TEXT NOT NULL, created_at INTEGER NOT NULL,
     started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT,
     stdout TEXT NOT NULL, stderr TEXT NOT NULL
   );
@@ -39,6 +39,8 @@ const run = (
   ...(scheduledFor === undefined ? {} : { scheduledFor }),
   task: 'Check the repo',
   agentId: 'software-engineer',
+  provider: 'openai',
+  model: 'gpt-4.1-mini',
   state: 'preparing',
   createdAt: 10,
   stdout: '',

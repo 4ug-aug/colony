@@ -64,9 +64,12 @@ future Tauri shell. The client does not own room state or execution.
 ## Decisions
 
 - Use a generic in-container Node/Bun runtime, backed by the OpenAI Agents SDK.
-- Keep model configuration provider-neutral: `{ baseUrl, apiKey, model }`.
+- Keep model configuration OpenAI-compatible and provider-neutral: `{ provider, baseUrl, apiKey, model }`.
 - Treat CLI coding agents as optional adapters, not the core architecture.
 - Keep role instructions and requested capabilities declarative.
+- Select the sandbox provider explicitly when composing the Sweat server. The
+  run executor receives that provider; it does not inspect deployment
+  configuration or know the container technology.
 - Prepare deterministic inputs through orchestrator entrypoints before an
   agent starts. A role does not decide how to acquire a repository or other
   required context.

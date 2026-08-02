@@ -212,7 +212,7 @@ export function Dashboard({
                 <section
                   key={room?.id}
                   ref={scrollRef}
-                  className="h-full overflow-y-auto px-5 py-8 sm:px-8"
+                  className="no-scrollbar h-full overflow-y-auto px-5 py-8 sm:px-8"
                   aria-busy={loading}
                   onPointerDown={() => {
                     followRoomRef.current = false

@@ -7,6 +7,7 @@ import {
   allowedOrigin,
   createCoordinator,
   mintRealtimeTicket,
+  parseSandboxProvider,
   verifyRealtimeTicket,
   type SessionAuthenticator,
 } from './coordinator'
@@ -19,6 +20,7 @@ import {
 import type { AttachmentInput } from '../../../inputs/repository'
 import { createSoftwareEngineerExecutor } from '../../../agents/software-engineer'
 import { createAppleContainerClient } from '../../../sdk/src'
+import { createAppleContainerSandboxProvider } from '../../../providers/apple-container-sandbox'
 import {
   GENERAL_ROOM_ID,
   type RoomMessage,
@@ -67,6 +69,8 @@ class FakeRunControl implements RunControl {
       id: crypto.randomUUID(),
       task,
       agentId: 'software-engineer',
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
       state: 'preparing',
       createdAt: Date.now(),
       stdout: '',
@@ -788,16 +792,19 @@ test('an attachment preparation failure leaves the durable message and failed ru
   const control = createRunControl(
     createSoftwareEngineerExecutor({
       model: () => ({
+        provider: 'openai',
         baseUrl: 'https://models.example/v1',
         apiKey: 'test-key',
         model: 'test-model',
       }),
-      createId: () => 'run-missing-attachment',
-      container: createAppleContainerClient({
-        async run(args) {
-          containerCalls.push([...args])
-          return { args, exitCode: 0, stdout: '', stderr: '' }
-        },
+      sandboxProvider: createAppleContainerSandboxProvider({
+        createId: () => 'run-missing-attachment',
+        container: createAppleContainerClient({
+          async run(args) {
+            containerCalls.push([...args])
+            return { args, exitCode: 0, stdout: '', stderr: '' }
+          },
+        }),
       }),
     }),
   )
@@ -2387,4 +2394,15 @@ test('verifyRealtimeTicket rejects tampered and malformed tickets', () => {
   expect(verifyRealtimeTicket(ticket.slice(0, -2) + 'xx')).toBeUndefined()
   expect(verifyRealtimeTicket('not-a-ticket')).toBeUndefined()
   expect(verifyRealtimeTicket('')).toBeUndefined()
+})
+
+test('sandbox provider configuration accepts only the supported providers', () => {
+  expect(parseSandboxProvider('apple-container')).toBe('apple-container')
+  expect(parseSandboxProvider('docker')).toBe('docker')
+  expect(() => parseSandboxProvider(undefined)).toThrow(
+    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker',
+  )
+  expect(() => parseSandboxProvider('podman')).toThrow(
+    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker',
+  )
 })

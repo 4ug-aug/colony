@@ -57,6 +57,11 @@ controls its deployment configuration. The operator need not participate in
 the workspace.
 _Avoid_: Workspace administrator, member
 
+**Dedicated Sweat host**: A machine reserved for operating one Sweat server and
+its disposable sandboxes. It is not a shared workstation or a general-purpose
+agent execution host.
+_Avoid_: Worker pool, shared server
+
 **Workspace administrator**: An account authorized to manage workspace-wide
 membership and settings. The first administrator is established through the
 server's one-time setup flow.
@@ -92,6 +97,11 @@ _Avoid_: Prompt
 **System instructions**: The role-owned instructions supplied by an agent
 definition.
 _Avoid_: Task prompt
+
+**Model endpoint**: The OpenAI-compatible provider URL selected by the
+workspace and resolved into one run's model configuration. It may be a hosted
+service or a model server operated elsewhere on the customer's network.
+_Avoid_: Sandbox provider, model runtime
 
 **Step**: A single recorded event in a run's execution. A run produces an
 ordered **step history**. V1 has three step kinds:
@@ -137,6 +147,11 @@ A **sandbox** is a generic, disposable execution environment. It starts in
 `/work`, which is empty unless a run deliberately prepares inputs there. It
 must not assume a repository or GitHub.
 
+**Sandbox provider**: The explicitly deployment-selected adapter that creates,
+executes within, and disposes of a sandbox. It fulfils the same sandbox launch
+contract regardless of the container technology underneath.
+_Avoid_: Runtime, agent provider
+
 ## Runtime and models
 
 The agent reasoning loop runs inside the disposable sandbox container. Use a
@@ -144,11 +159,11 @@ generic container entrypoint such as `sweat-agent run /run/job.json`; do not
 create role-specific container entrypoints.
 
 The first intended runtime is a Node/TypeScript agent SDK. Model configuration
-should remain OpenAI-compatible and provider-neutral:
+should remain OpenAI-compatible and provider-neutral, with an explicit provider identity:
 
 ```ts
 {
-  (baseUrl, apiKey, model);
+  (provider, baseUrl, apiKey, model);
 }
 ```
 

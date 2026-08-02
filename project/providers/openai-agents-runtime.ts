@@ -1,6 +1,14 @@
 import { parseStep } from "../runtime/step";
 import type { AgentProvider, RuntimeRequest } from "../runs";
 
+function containerModelBaseUrl(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+    return baseUrl;
+  url.hostname = "host.container.internal";
+  return url.toString().replace(/\/$/, "");
+}
+
 export function createOpenAIAgentsRuntime(options: {
   command?: readonly string[];
 } = {}): AgentProvider {
@@ -30,7 +38,7 @@ export function createOpenAIAgentsRuntime(options: {
           SWEAT_AGENT_TASK: request.task,
           SWEAT_AGENT_ID: request.definition.id,
           SWEAT_AGENT_INSTRUCTIONS: request.definition.instructions,
-          SWEAT_MODEL_BASE_URL: model.baseUrl,
+          SWEAT_MODEL_BASE_URL: containerModelBaseUrl(model.baseUrl),
           SWEAT_MODEL_API_KEY: model.apiKey,
           SWEAT_MODEL_NAME: model.model,
           ...(request.capabilitySession

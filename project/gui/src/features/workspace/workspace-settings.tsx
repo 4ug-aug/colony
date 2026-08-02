@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '#/lib/api-transport'
+import { ProviderIcon } from '#/components/provider-icon'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Input } from '#/components/ui/input'
@@ -11,6 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import {
+  defaultLlmBaseUrl,
+  llmProviderName,
+  type LlmProvider,
+} from '#/lib/llm-provider'
+import {
+  Check
+} from 'lucide-react'
 
 type Member = {
   id: string
@@ -28,6 +37,7 @@ type Invitation = {
 }
 type LlmConfig = {
   configured: boolean
+  provider?: LlmProvider
   baseUrl?: string
   model?: string
 }
@@ -46,7 +56,8 @@ export function WorkspaceSettingsPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
   const [llm, setLlm] = useState<LlmConfig>({ configured: false })
-  const [baseUrl, setBaseUrl] = useState('')
+  const [provider, setProvider] = useState<LlmProvider>('openai')
+  const [baseUrl, setBaseUrl] = useState(defaultLlmBaseUrl('openai'))
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
 
@@ -68,7 +79,8 @@ export function WorkspaceSettingsPage({
     )
     const config = (await llmResponse.json()) as LlmConfig
     setLlm(config)
-    setBaseUrl(config.baseUrl ?? '')
+    setProvider(config.provider ?? 'openai')
+    setBaseUrl(config.baseUrl ?? defaultLlmBaseUrl(config.provider ?? 'openai'))
     setModel(config.model ?? '')
   }
 
@@ -151,12 +163,13 @@ export function WorkspaceSettingsPage({
       const response = await apiFetch('/api/workspace/settings/llm', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ baseUrl, model, apiKey }),
+        body: JSON.stringify({ provider, baseUrl, model, apiKey }),
       })
       const result = (await response.json()) as LlmConfig & { error?: string }
       if (!response.ok)
         throw new Error(result.error ?? 'Could not save provider')
       setLlm(result)
+      setProvider(result.provider ?? 'openai')
       setBaseUrl(result.baseUrl ?? '')
       setModel(result.model ?? '')
       setApiKey('')
@@ -182,6 +195,39 @@ export function WorkspaceSettingsPage({
           Configure the OpenAI-compatible provider used for new agent runs.
         </p>
         <div className="mt-4 grid max-w-xl gap-3">
+          <Select
+            value={provider}
+            disabled={busy || loading}
+            onValueChange={(value) => {
+              const next = value as LlmProvider
+              setProvider(next)
+              setBaseUrl(defaultLlmBaseUrl(next))
+            }}
+          >
+            <SelectTrigger className="w-full" aria-label="LLM provider">
+              <SelectValue>
+                {(value) => {
+                  const selected = value as LlmProvider
+                  return (
+                    <>
+                      <ProviderIcon provider={selected} />
+                      {llmProviderName(selected)}
+                    </>
+                  )
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {(['openai', 'custom'] as const).map((value) => (
+                  <SelectItem key={value} value={value}>
+                    <ProviderIcon provider={value} />
+                    {llmProviderName(value)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <Input
             aria-label="LLM base URL"
             disabled={busy || loading}
@@ -211,7 +257,15 @@ export function WorkspaceSettingsPage({
               Save provider
             </Button>
             <span className="text-sm text-muted-foreground">
-              {llm.configured ? 'Configured' : 'Not configured'}
+              {llm.configured ? (
+                <span className="inline-flex items-center gap-1 text-green-600">
+                  <Check className="w-4 h-4" />
+                  Configured
+                </span>
+              ) : (
+                'Not configured'
+              )}
+         
             </span>
           </div>
         </div>

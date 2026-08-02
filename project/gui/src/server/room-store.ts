@@ -197,6 +197,8 @@ type RunRow = {
   created_at: number
   task: string
   agent_id: string
+  provider: 'openai' | 'custom'
+  model: string
   state: RunState
   started_at: number | null
   completed_at: number | null
@@ -282,6 +284,8 @@ const runFrom = (row: RunRow): RoomRun => ({
   roomId: row.room_id,
   task: row.task,
   agentId: row.agent_id,
+  provider: row.provider,
+  model: row.model,
   state: row.state,
   createdAt: row.created_at,
   startedAt: row.started_at ?? undefined,
@@ -415,7 +419,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     (
       sqlite
         .prepare(
-          `SELECT id, room_id, requested_by_id AS author_id, requested_by_name AS author_name, requested_by_image AS author_image, task, agent_id, state, created_at, started_at, completed_at, exit_code, error, stdout, stderr, trigger_message_id FROM room_run ${where} ORDER BY created_at, id`,
+          `SELECT id, room_id, requested_by_id AS author_id, requested_by_name AS author_name, requested_by_image AS author_image, task, agent_id, provider, model, state, created_at, started_at, completed_at, exit_code, error, stdout, stderr, trigger_message_id FROM room_run ${where} ORDER BY created_at, id`,
         )
         .all(...values) as RunRow[]
     ).map(runFrom)
@@ -428,6 +432,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     run.requestedBy.image ?? null,
     run.task,
     run.agentId,
+    run.provider,
+    run.model,
     run.state,
     run.createdAt,
     run.startedAt ?? null,
@@ -720,7 +726,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     createRun: (run) => {
       sqlite
         .prepare(
-          'INSERT INTO room_run (id, room_id, trigger_message_id, requested_by_id, requested_by_name, requested_by_image, task, agent_id, state, created_at, started_at, completed_at, exit_code, error, stdout, stderr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO room_run (id, room_id, trigger_message_id, requested_by_id, requested_by_name, requested_by_image, task, agent_id, provider, model, state, created_at, started_at, completed_at, exit_code, error, stdout, stderr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .run(...values(run))
     },

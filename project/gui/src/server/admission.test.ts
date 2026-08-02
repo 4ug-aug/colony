@@ -105,7 +105,7 @@ test('admission endpoints close open signup and enforce the administrator bounda
     CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
     CREATE TABLE room_member (room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
     CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
-    CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
+    CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
     CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT, room_id TEXT, idx INTEGER, kind TEXT, tool TEXT, call_id TEXT, text TEXT, created_at INTEGER);
     CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL, recipient_id TEXT NOT NULL, kind TEXT NOT NULL, source_id TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
     CREATE TABLE admission_setup_token (id INTEGER PRIMARY KEY, token_hash TEXT NOT NULL, created_at INTEGER NOT NULL, claimed_at INTEGER, redeemed_at INTEGER);
@@ -116,7 +116,12 @@ test('admission endpoints close open signup and enforce the administrator bounda
   const token = admission.ensureSetupToken()!
   const createdRoles: string[] = []
   let suspended = 0
-  let llm: { configured: boolean; baseUrl?: string; model?: string } = {
+  let llm: {
+    configured: boolean
+    provider?: 'openai' | 'custom'
+    baseUrl?: string
+    model?: string
+  } = {
     configured: false,
   }
   const createAccount = async (
@@ -160,8 +165,13 @@ test('admission endpoints close open signup and enforce the administrator bounda
       store: admission,
       llm: {
         public: () => llm,
-        save: ({ baseUrl, model }) =>
-          (llm = { configured: true, baseUrl, model }),
+        save: ({ provider, baseUrl, model }) =>
+          (llm = {
+            configured: true,
+            provider: provider as 'openai' | 'custom',
+            baseUrl,
+            model,
+          }),
       },
       listUsers: async () => [
         { id: 'admin', name: 'Admin', email: 'admin@example.com' },
@@ -245,6 +255,7 @@ test('admission endpoints close open signup and enforce the administrator bounda
       method: 'POST',
       headers: { cookie: 'admin', 'content-type': 'application/json' },
       body: JSON.stringify({
+        provider: 'openai',
         baseUrl: 'https://models.example/v1',
         model: 'test-model',
         apiKey: 'secret',
@@ -253,6 +264,7 @@ test('admission endpoints close open signup and enforce the administrator bounda
     expect(savedLlm.status).toBe(200)
     expect(await savedLlm.json()).toEqual({
       configured: true,
+      provider: 'openai',
       baseUrl: 'https://models.example/v1',
       model: 'test-model',
     })

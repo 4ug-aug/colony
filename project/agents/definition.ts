@@ -1,4 +1,5 @@
 export interface ModelRuntimeConfig {
+  provider?: "openai" | "custom";
   baseUrl: string;
   apiKey: string;
   model: string;

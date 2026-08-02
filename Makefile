@@ -17,6 +17,7 @@ help:
 	@echo "  make gui                   Start only the browser client"
 	@echo "  make test                  Run tests"
 	@echo "  make check                 Run typecheck, tests, and production build"
+	@echo "  make setup                 Configure a server or install the macOS app"
 	@echo "  make rotate-setup-token    Replace a lost first-user setup token"
 	@echo "  make reset-admin-password  Prompt for a new administrator password"
 	@echo "  make reset                 Delete the local development database"
@@ -38,7 +39,7 @@ env:
 		exit 2; \
 	else \
 		cp ".env.example" "$(ROOT_ENV)"; \
-		echo "Created .env.local. Add BETTER_AUTH_SECRET, then rerun make."; \
+		echo "Created .env.local. Run make setup to configure it."; \
 		exit 2; \
 	fi
 
@@ -54,7 +55,8 @@ server: migrate agent
 migrate: env
 	@cd $(GUI) && bun $(BUN_ENV) run db:migrate
 
-setup: migrate
+setup:
+	@ENV_FILE="$(ENV_FILE)" bun scripts/setup.ts
 
 seed: migrate
 	@cd $(GUI) && bun $(BUN_ENV) run seed:admin
@@ -77,7 +79,12 @@ reset-admin-password: env
 	cd $(GUI) && bun $(BUN_ENV) run src/server/reset-admin-password.ts
 
 agent: env
-	@cd project && bun $(BUN_ENV) run agent:build
+	@provider="$${SWEAT_SANDBOX_PROVIDER:-$$(sed -n 's/^SWEAT_SANDBOX_PROVIDER=//p' "$(ENV_FILE)" | tail -n 1)}"; \
+	case "$$provider" in \
+		apple-container) cd project && bun $(BUN_ENV) run agent:build ;; \
+		docker) docker build -t sweat-agent:latest project ;; \
+		*) echo "SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker"; exit 2 ;; \
+	esac
 
 gui: env
 	@cd $(GUI) && bun $(BUN_ENV) run dev

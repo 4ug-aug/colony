@@ -1,12 +1,18 @@
 import { Dithering } from '@paper-design/shaders-react'
 import { X } from 'lucide-react'
-import { AgentAnt } from '#/components/avatar'
+import { ProviderIcon } from '#/components/provider-icon'
 import { useTheme } from '#/components/theme-provider'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import { terminal, type RunState } from './run-helpers'
 
-function DitherTile({ active }: { active: boolean }) {
+function DitherTile({
+  active,
+  provider,
+}: {
+  active: boolean
+  provider: 'openai' | 'custom'
+}) {
   const { theme } = useTheme()
   const dark =
     theme === 'dark' ||
@@ -35,7 +41,7 @@ function DitherTile({ active }: { active: boolean }) {
       <div className="relative grid size-11 place-items-center rounded-full bg-background shadow-sm">
         <Avatar className="size-9">
           <AvatarFallback className="bg-primary/10 text-primary">
-            <AgentAnt className="size-5" />
+            <ProviderIcon provider={provider} className="size-5" />
           </AvatarFallback>
         </Avatar>
       </div>
@@ -45,12 +51,16 @@ function DitherTile({ active }: { active: boolean }) {
 
 export function RunActivitySplitHeader({
   agent,
+  provider,
+  model,
   state,
   status,
   onClose,
   onCancel,
 }: {
   agent: string
+  provider: 'openai' | 'custom'
+  model: string
   state: RunState
   status: string
   onClose: () => void
@@ -59,15 +69,18 @@ export function RunActivitySplitHeader({
   return (
     <header className="shrink-0 border-b p-3">
       <div className="flex min-h-24 overflow-hidden rounded-xl border bg-background shadow-sm">
-        <DitherTile active={!terminal(state)} />
+        <DitherTile active={!terminal(state)} provider={provider} />
         <div className="flex min-w-0 flex-1 items-center gap-3 bg-background px-3 py-2">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold">Run activity</h2>
+            <p className="truncate text-xs font-medium">{agent}</p>
             <p
               key={status}
               className="truncate text-xs text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-0.5 duration-300"
             >
-              {agent} · {status}
+              {model || 'Unknown model'} ·{' '}
+              {provider === 'openai' ? 'OpenAI' : 'Custom / OpenAI-compatible'}{' '}
+              · {status}
             </p>
           </div>
           {!terminal(state) && (

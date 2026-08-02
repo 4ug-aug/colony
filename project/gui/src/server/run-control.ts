@@ -16,6 +16,8 @@ export type RunSummary = Pick<
   | 'stderr'
 > & {
   agentId: string
+  provider: 'openai' | 'custom'
+  model: string
 }
 
 export type { Step }
@@ -69,6 +71,8 @@ export function runSummary<Input extends RunInput>(
     stdout,
     stderr,
     agentId,
+    provider: run.definition.runtime?.model?.provider ?? 'openai',
+    model: run.definition.runtime?.model?.model ?? '',
   }
 }
 

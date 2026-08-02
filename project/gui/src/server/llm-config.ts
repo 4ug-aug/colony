@@ -5,7 +5,12 @@ import {
   randomBytes,
 } from 'node:crypto'
 
-import type { OpenAICompatibleModel } from '../../../runtime/openai-agents'
+import {
+  OPENAI_DEFAULT_BASE_URL,
+  type OpenAICompatibleModel,
+} from '../../../runtime/openai-agents'
+
+export type LlmProvider = 'openai' | 'custom'
 
 type Sqlite = {
   prepare(sql: string): {
@@ -15,6 +20,7 @@ type Sqlite = {
 }
 
 type StoredConfig = {
+  provider: LlmProvider
   base_url: string
   model: string
   api_key_ciphertext: string
@@ -24,11 +30,13 @@ type StoredConfig = {
 
 export type PublicLlmConfig = {
   configured: boolean
+  provider?: LlmProvider
   baseUrl?: string
   model?: string
 }
 
 export type LlmConfigInput = {
+  provider: unknown
   baseUrl: string
   model: string
   apiKey?: string
@@ -81,6 +89,9 @@ const validBaseUrl = (value: unknown): string | undefined => {
   }
 }
 
+const validProvider = (value: unknown): LlmProvider | undefined =>
+  value === 'openai' || value === 'custom' ? value : undefined
+
 const validModel = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() && value.trim().length <= 200
     ? value.trim()
@@ -90,7 +101,7 @@ export function createWorkspaceLlmConfig(sqlite: Sqlite) {
   const read = (): StoredConfig | undefined =>
     sqlite
       .prepare(
-        'SELECT base_url, model, api_key_ciphertext, api_key_iv, api_key_tag FROM workspace_llm_config WHERE id = 1',
+        'SELECT provider, base_url, model, api_key_ciphertext, api_key_iv, api_key_tag FROM workspace_llm_config WHERE id = 1',
       )
       .get() as StoredConfig | undefined
 
@@ -98,23 +109,33 @@ export function createWorkspaceLlmConfig(sqlite: Sqlite) {
     public(): PublicLlmConfig {
       const config = read()
       return config
-        ? { configured: true, baseUrl: config.base_url, model: config.model }
+        ? {
+            configured: true,
+            provider: config.provider,
+            baseUrl: config.base_url,
+            model: config.model,
+          }
         : { configured: false }
     },
     save(input: LlmConfigInput): PublicLlmConfig {
-      const baseUrl = validBaseUrl(input.baseUrl)
+      const provider = validProvider(input.provider ?? 'openai')
+      const baseUrl = validBaseUrl(
+        input.baseUrl ||
+          (provider === 'openai' ? OPENAI_DEFAULT_BASE_URL : undefined),
+      )
       const model = validModel(input.model)
       const current = read()
       const apiKey = input.apiKey?.trim()
-      if (!baseUrl || !model || (!current && !apiKey))
-        throw new Error('Base URL, model, and API key are required')
+      if (!provider || !baseUrl || !model || (!current && !apiKey))
+        throw new Error('Provider, base URL, model, and API key are required')
       const secret = apiKey ? encrypted(apiKey) : undefined
       sqlite
         .prepare(
           `INSERT INTO workspace_llm_config
-             (id, base_url, model, api_key_ciphertext, api_key_iv, api_key_tag)
-           VALUES (1, ?, ?, ?, ?, ?)
+             (id, provider, base_url, model, api_key_ciphertext, api_key_iv, api_key_tag)
+           VALUES (1, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
+             provider = excluded.provider,
              base_url = excluded.base_url,
              model = excluded.model,
              api_key_ciphertext = excluded.api_key_ciphertext,
@@ -122,18 +143,20 @@ export function createWorkspaceLlmConfig(sqlite: Sqlite) {
              api_key_tag = excluded.api_key_tag`,
         )
         .run(
+          provider,
           baseUrl,
           model,
           secret?.ciphertext ?? current!.api_key_ciphertext,
           secret?.iv ?? current!.api_key_iv,
           secret?.tag ?? current!.api_key_tag,
         )
-      return { configured: true, baseUrl, model }
+      return { configured: true, provider, baseUrl, model }
     },
     model(): OpenAICompatibleModel {
       const config = read()
       if (!config) throw new Error('LLM provider is not configured')
       return {
+        provider: config.provider,
         baseUrl: config.base_url,
         model: config.model,
         apiKey: decrypted(config),

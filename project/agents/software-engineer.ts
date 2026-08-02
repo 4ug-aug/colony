@@ -13,13 +13,8 @@ import {
   type RepositoryInput,
   type WorkspaceInput,
 } from "../inputs/repository";
-import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import { createOpenAIAgentsRuntime } from "../providers/openai-agents-runtime";
 import { softwareEngineerRole } from "../roles/software-engineer";
-import {
-  createAppleContainerClient,
-  type AppleContainerClient,
-} from "../sdk/src";
 import type { OpenAICompatibleModel } from "../runtime/openai-agents";
 import { createCapabilitySessionFactory } from "../mcp/session";
 import {
@@ -27,7 +22,7 @@ import {
   type McpGrant,
   type McpUpstream,
 } from "../mcp/gateway";
-import type { Sandbox } from "../sandboxes";
+import type { Sandbox, SandboxProvider } from "../sandboxes";
 
 const defaultLimits = {
   maxDurationMs: 30 * 60 * 1000,
@@ -76,11 +71,9 @@ export function createSoftwareEngineerExecutor(options: {
     url: string;
     close(): Promise<void>;
   };
-  container?: AppleContainerClient;
-  createId?: () => string;
+  sandboxProvider: SandboxProvider;
   attachmentSource?: AttachmentSource;
 }): SoftwareEngineerExecutor {
-  const container = options.container ?? createAppleContainerClient();
   const adapters = options.adapters ?? [];
   const repositories = adapters.flatMap((adapter) =>
     adapter.repository ? [adapter.repository] : [],
@@ -168,10 +161,7 @@ export function createSoftwareEngineerExecutor(options: {
           : undefined;
       },
     },
-    sandboxes: createAppleContainerSandboxProvider({
-      container,
-      createId: options.createId,
-    }),
+    sandboxes: options.sandboxProvider,
     runtime: createOpenAIAgentsRuntime({}),
     capabilities,
     inputs: createRepositoryWorkspaceProvisioner({

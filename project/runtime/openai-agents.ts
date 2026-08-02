@@ -16,10 +16,13 @@ import type { Step } from "./step";
 import type { CapabilitySessionBinding } from "../mcp/session";
 
 export interface OpenAICompatibleModel {
+  provider?: "openai" | "custom";
   baseUrl: string;
   apiKey: string;
   model: string;
 }
+
+export const OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 export interface AgentRuntimeRequest {
   task: string;

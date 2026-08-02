@@ -10,6 +10,7 @@ export * from "./mcp/http";
 export * from "./mcp/linear";
 export * from "./mcp/session";
 export * from "./providers/apple-container-sandbox";
+export * from "./providers/docker-sandbox";
 export * from "./providers/command-agent";
 export * from "./providers/openai-agents-runtime";
 export * from "./runs";

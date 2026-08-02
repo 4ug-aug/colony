@@ -25,40 +25,28 @@ Read [VISION.md](./VISION.md) for the product direction,
 
 ## Install
 
-Sweat currently targets macOS. Running the server requires
-[Bun](https://bun.com/docs/installation) and
-[Apple Container](https://github.com/apple/container).
-
-### Run the server
-
-Download `sweat-server-<version>.tar.gz` from the
-[latest release](https://github.com/4ug-aug/sweat-v2/releases/latest), extract
-it, and open a terminal in the extracted directory:
+Clone the repository and run the setup wizard:
 
 ```bash
-cp .env.example .env.local
-openssl rand -base64 32
+git clone https://github.com/4ug-aug/sweat-v2.git
+cd sweat-v2
+make setup
 ```
 
-Put the generated value in `.env.local` as `BETTER_AUTH_SECRET`. If another
-machine will connect to the server, set `BETTER_AUTH_URL` to its reachable URL.
-Then start Sweat:
+Choose **Server setup** to configure `.env.local`. The wizard generates the
+authentication secret, asks for the server URL, browser origin, sandbox
+runtime, and optional GitHub/Linear integrations. It preserves existing
+values, backs up an existing environment file, installs dependencies, builds
+the agent image, and runs database migrations.
 
-```bash
-container system start
-(cd agent && container build -t sweat-agent:latest .)
-bun src/server/coordinator.js
-```
+The server setup supports [Apple Container](https://github.com/apple/container)
+and Docker. Install the selected runtime before running the wizard. Start the
+configured server with `make server` or the local full stack with `make dev`.
+Configure the model provider after first sign-in from Workspace Settings.
 
-The server listens on port 3001 and prints a one-time setup token on first
-startup.
-
-### Install the desktop app
-
-Download the universal macOS `.dmg` from the
-[latest release](https://github.com/4ug-aug/sweat-v2/releases/latest), open it,
-and drag Sweat into Applications. Connect it to the server URL and enter the
-setup token to create the first administrator.
+Choose **Install mac application** on macOS to download and open the latest
+universal DMG. Drag Sweat into Applications, then connect it to the server URL
+and enter the one-time setup token to create the first administrator.
 
 The current builds are not notarized. If macOS blocks the first launch,
 Control-click Sweat, choose **Open**, then confirm.

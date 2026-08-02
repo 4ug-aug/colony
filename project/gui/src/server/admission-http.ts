@@ -201,6 +201,7 @@ export function createAdmissionHttpHandler(
         try {
           return json(
             options.llm.save({
+              provider: body?.provider,
               baseUrl: typeof body?.baseUrl === 'string' ? body.baseUrl : '',
               model: typeof body?.model === 'string' ? body.model : '',
               ...(typeof body?.apiKey === 'string'

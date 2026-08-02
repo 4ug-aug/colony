@@ -7,6 +7,7 @@ import {
   type CommandResult,
   type CommandRunner,
 } from "../sdk/src";
+import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import {
   createSoftwareEngineerExecutor,
   type SoftwareEngineerAdapter,
@@ -74,8 +75,10 @@ test("a configured adapter binds its repository and capabilities to every run", 
       url: "http://capabilities.example/mcp",
       close: async () => {},
     }),
-    container: createAppleContainerClient(runner),
-    createId: () => "run-1",
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-1",
+    }),
   });
 
   const id = executor.startRun({ task: "fix the issue" });
@@ -160,8 +163,10 @@ test("request attachments become workspace inputs and an auditable task note", a
         return id === attachment.id ? { ...attachment, bytes } : undefined;
       },
     },
-    container: createAppleContainerClient(runner),
-    createId: () => "run-attachment",
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-attachment",
+    }),
   });
 
   const id = executor.startRun({

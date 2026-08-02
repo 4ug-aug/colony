@@ -14,6 +14,7 @@ try {
       instructions: required("SWEAT_AGENT_INSTRUCTIONS"),
       agentId: required("SWEAT_AGENT_ID"),
       model: {
+        provider: "openai",
         baseUrl: required("SWEAT_MODEL_BASE_URL"),
         apiKey: required("SWEAT_MODEL_API_KEY"),
         model: required("SWEAT_MODEL_NAME"),

@@ -169,6 +169,18 @@ export const allowedOrigin = (
     return origin
   return undefined
 }
+
+export type SandboxProviderName = 'apple-container' | 'docker'
+
+export function parseSandboxProvider(
+  value: string | undefined,
+): SandboxProviderName {
+  if (value === 'apple-container' || value === 'docker') return value
+  throw new Error(
+    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker',
+  )
+}
+
 async function textFrom(request: Request): Promise<string | undefined> {
   try {
     const body: unknown = await request.json()
@@ -1192,6 +1204,9 @@ export function createCoordinator(options: {
 }
 
 if (import.meta.main) {
+  const sandboxProviderName = parseSandboxProvider(
+    process.env.SWEAT_SANDBOX_PROVIDER,
+  )
   const { fileURLToPath } = await import('node:url')
   // Load the database first: auth and the session authenticator both depend on it.
   const { migrateDatabase, sqlite } = await import('../lib/database')
@@ -1212,6 +1227,9 @@ if (import.meta.main) {
     { createGitHubCliClient },
     { createMcpGatewayHttpServer },
     { agentParticipant },
+    { createAppleContainerClient },
+    { createAppleContainerSandboxProvider },
+    { createDockerSandboxProvider },
   ] = await Promise.all([
     import('../lib/auth'),
     import('./session-auth'),
@@ -1222,6 +1240,9 @@ if (import.meta.main) {
     import('../../../mcp/github'),
     import('../../../mcp/http'),
     import('./room-store'),
+    import('../../../sdk/src'),
+    import('../../../providers/apple-container-sandbox'),
+    import('../../../providers/docker-sandbox'),
   ])
   const admissionStore = createAdmissionStore(sqlite)
   const llm = createWorkspaceLlmConfig(sqlite)
@@ -1241,8 +1262,15 @@ if (import.meta.main) {
       'http://0.0.0.0',
       process.env.SWEAT_MCP_HOST ?? 'http://host.container.internal',
     )
+  const sandboxProvider =
+    sandboxProviderName === 'docker'
+      ? createDockerSandboxProvider()
+      : createAppleContainerSandboxProvider({
+          container: createAppleContainerClient(),
+        })
   const control = createRunControl(
     createSoftwareEngineerExecutor({
+      sandboxProvider,
       image: process.env.SWEAT_AGENT_IMAGE,
       model: () => llm.model(),
       attachmentSource: createRoomAttachmentSource({

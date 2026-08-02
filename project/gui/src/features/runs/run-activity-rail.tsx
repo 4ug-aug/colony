@@ -28,6 +28,8 @@ type ActivityRun = {
   id: string
   roomId: string
   agentId: string
+  provider: 'openai' | 'custom'
+  model: string
   task: string
   requestedBy: Person
   state: 'preparing' | 'running' | 'succeeded' | 'failed' | 'cancelled'
@@ -109,6 +111,8 @@ function RunActivityContent({
     <>
       <RunActivitySplitHeader
         agent={agentName(run.agentId)}
+        provider={run.provider}
+        model={run.model}
         state={run.state}
         status={status}
         onClose={onClose}

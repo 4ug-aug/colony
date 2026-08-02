@@ -32,6 +32,8 @@ export type ScheduleRun = {
   startedBy?: ScheduleActor
   task: string
   agentId: string
+  provider: 'openai' | 'custom'
+  model: string
   state: RunState
   createdAt: number
   startedAt?: number
@@ -124,6 +126,8 @@ type ScheduleRunRow = {
   started_image: string | null
   task: string
   agent_id: string
+  provider: 'openai' | 'custom'
+  model: string
   state: RunState
   created_at: number
   started_at: number | null
@@ -186,6 +190,8 @@ const runFrom = (row: ScheduleRunRow): ScheduleRun => ({
     : {}),
   task: row.task,
   agentId: row.agent_id,
+  provider: row.provider,
+  model: row.model,
   state: row.state,
   createdAt: row.created_at,
   ...(row.started_at === null ? {} : { startedAt: row.started_at }),
@@ -317,8 +323,8 @@ export function createSqliteScheduleStore(sqlite: Sqlite): ScheduleStore {
           } else if (schedule.state === 'archived') return undefined
           const result = sqlite
             .prepare(
-              `INSERT INTO schedule_run (id, schedule_id, source, scheduled_for, started_by, task, agent_id, state, created_at, started_at, completed_at, exit_code, error, stdout, stderr)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO schedule_run (id, schedule_id, source, scheduled_for, started_by, task, agent_id, provider, model, state, created_at, started_at, completed_at, exit_code, error, stdout, stderr)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
               run.id,
@@ -328,6 +334,8 @@ export function createSqliteScheduleStore(sqlite: Sqlite): ScheduleStore {
               run.startedBy ?? null,
               run.task,
               run.agentId,
+              run.provider,
+              run.model,
               run.state,
               run.createdAt,
               run.startedAt ?? null,
@@ -374,6 +382,8 @@ export function createSqliteScheduleStore(sqlite: Sqlite): ScheduleStore {
           : { startedBy: input.startedBy }),
         task: input.task,
         agentId: input.agentId,
+        provider: 'openai',
+        model: '',
         state: 'failed',
         createdAt: input.now,
         completedAt: input.now,
@@ -384,8 +394,8 @@ export function createSqliteScheduleStore(sqlite: Sqlite): ScheduleStore {
       const created = transaction(sqlite, () => {
         sqlite
           .prepare(
-            `INSERT INTO schedule_run (id, schedule_id, source, scheduled_for, started_by, task, agent_id, state, created_at, completed_at, error, stdout, stderr)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?, '', '')`,
+            `INSERT INTO schedule_run (id, schedule_id, source, scheduled_for, started_by, task, agent_id, provider, state, created_at, completed_at, error, stdout, stderr)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?, '', '')`,
           )
           .run(
             run.id,
@@ -395,6 +405,7 @@ export function createSqliteScheduleStore(sqlite: Sqlite): ScheduleStore {
             run.startedBy ?? null,
             run.task,
             run.agentId,
+            run.provider,
             run.createdAt,
             run.completedAt,
             run.error,

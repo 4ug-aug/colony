@@ -47,10 +47,10 @@ function SelectTrigger({
 function SelectContent({
   className,
   children,
-  alignItemWithTrigger = true,
-  align = "center",
+  alignItemWithTrigger = false,
+  align = "start",
   alignOffset,
-  side,
+  side = "bottom",
   sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Popup> &
@@ -108,12 +108,12 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className,
       )}
       {...props}
     >
-      <SelectPrimitive.ItemText className="shrink-0 whitespace-nowrap">
+      <SelectPrimitive.ItemText className="flex min-w-0 items-center gap-2 whitespace-nowrap">
         {children}
       </SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator className="absolute right-2 flex size-3.5 items-center justify-center">
