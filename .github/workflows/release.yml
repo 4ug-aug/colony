@@ -6,9 +6,51 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
+  agent-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}-agent
+          tags: |
+            type=raw,value=${{ github.event.release.tag_name }}
+            type=raw,value=latest
+
+      - name: Build and publish agent image
+        uses: docker/build-push-action@v7
+        with:
+          context: project
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            SWEAT_VERSION=${{ github.event.release.tag_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   build:
+    needs: agent-image
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,11 +84,9 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           bundle="sweat-server-$VERSION"
-          mkdir -p "release/$bundle/src/server" "release/$bundle/agent"
+          mkdir -p "release/$bundle/src/server"
           bun build project/gui/src/server/coordinator.ts --target=bun --minify --outfile "release/$bundle/src/server/coordinator.js"
           cp -R project/gui/drizzle "release/$bundle/drizzle"
-          cp project/Dockerfile project/package.json project/bun.lock "release/$bundle/agent/"
-          cp -R project/roles project/runtime "release/$bundle/agent/"
           cp .env.example "release/$bundle/.env.example"
           cp project/server-release.md "release/$bundle/README.md"
           tar -C release -czf "release/$bundle.tar.gz" "$bundle"

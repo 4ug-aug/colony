@@ -17,6 +17,7 @@ type CommandOptions = {
 
 const root = join(import.meta.dir, "..");
 const defaultEnvPath = join(root, ".env.local");
+const defaultAgentImage = "ghcr.io/4ug-aug/sweat-v2-agent:latest";
 const releaseApi =
   "https://api.github.com/repos/4ug-aug/sweat-v2/releases/latest";
 let inputBuffer = "";
@@ -323,6 +324,11 @@ async function configureServer(path: string): Promise<void> {
   document = setEnvValue(document, "BETTER_AUTH_URL", authUrl);
   document = setEnvValue(document, "SWEAT_GUI_ORIGIN", guiOrigin);
   document = setEnvValue(document, "SWEAT_SANDBOX_PROVIDER", provider);
+  document = setEnvValue(
+    document,
+    "SWEAT_AGENT_IMAGE",
+    existing("SWEAT_AGENT_IMAGE") ?? defaultAgentImage,
+  );
 
   const githubConfigured = Boolean(existing("SWEAT_GITHUB_REPOSITORY"));
   const linearConfigured = Boolean(existing("LINEAR_MCP_API_KEY"));

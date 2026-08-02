@@ -1,8 +1,8 @@
 # Sweat server
 
-This release contains the production server bundle and the agent image build
-context. It currently targets macOS because Sweat uses Apple Container to
-isolate agents.
+This release contains the production server bundle. The agent image is
+published separately to GitHub Container Registry and supports both Docker and
+Apple Container.
 
 ## Run
 
@@ -15,20 +15,28 @@ directory:
 
 ```bash
 cp .env.example .env.local
-openssl rand -base64 32
 ```
 
-Put the generated value in `.env.local` as `BETTER_AUTH_SECRET`. If the server
-is not local, also set `BETTER_AUTH_URL` to its reachable URL. Then run:
+Set `BETTER_AUTH_SECRET`, `SWEAT_SANDBOX_PROVIDER`, and
+`SWEAT_AGENT_IMAGE=ghcr.io/4ug-aug/sweat-v2-agent:<release-tag>` in
+`.env.local`, replacing `<release-tag>` with the GitHub release tag. Pull the
+published image and start the selected runtime:
 
 ```bash
 container system start
-(cd agent && container build -t sweat-agent:latest .)
+container image pull ghcr.io/4ug-aug/sweat-v2-agent:<release-tag>
 bun src/server/coordinator.js
 ```
 
-For Docker, set `SWEAT_SANDBOX_PROVIDER=docker` in `.env.local` and replace the
-two container commands with `docker build -t sweat-agent:latest agent`.
+For Docker, replace the two container commands with:
+
+```bash
+docker pull ghcr.io/4ug-aug/sweat-v2-agent:<release-tag>
+bun src/server/coordinator.js
+```
+
+If the package is private, authenticate the selected container runtime with
+GitHub Container Registry before pulling.
 
 The server listens on port 3001. On first startup, copy the setup token it
 prints and use it in the Sweat desktop app. The database defaults to

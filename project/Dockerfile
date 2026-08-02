@@ -1,5 +1,10 @@
 FROM oven/bun:1.3.5
 
+ARG SWEAT_VERSION=dev
+
+LABEL org.opencontainers.image.source="https://github.com/4ug-aug/sweat-v2" \
+      org.opencontainers.image.version="$SWEAT_VERSION"
+
 ENV OPENAI_AGENTS_DISABLE_TRACING=1
 
 WORKDIR /app

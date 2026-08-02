@@ -36,13 +36,19 @@ make setup
 Choose **Server setup** to configure `.env.local`. The wizard generates the
 authentication secret, asks for the server URL, browser origin, sandbox
 runtime, and optional GitHub/Linear integrations. It preserves existing
-values, backs up an existing environment file, installs dependencies, builds
-the agent image, and runs database migrations.
+values, backs up an existing environment file, installs dependencies, pulls the
+CI-published agent image, and runs database migrations.
 
 The server setup supports [Apple Container](https://github.com/apple/container)
 and Docker. Install the selected runtime before running the wizard. Start the
 configured server with `make server` or the local full stack with `make dev`.
 Configure the model provider after first sign-in from Workspace Settings.
+
+The agent image is published to GitHub Container Registry for each release and
+must be publicly readable. To build the image from a local checkout instead,
+set `SWEAT_AGENT_IMAGE=sweat-agent:latest` before running `make agent`.
+After the first release, set `sweat-v2-agent` to Public in the package settings
+if GitHub created it as private.
 
 Choose **Install mac application** on macOS to download and open the latest
 universal DMG. Drag Sweat into Applications, then connect it to the server URL

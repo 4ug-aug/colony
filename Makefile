@@ -80,9 +80,13 @@ reset-admin-password: env
 
 agent: env
 	@provider="$${SWEAT_SANDBOX_PROVIDER:-$$(sed -n 's/^SWEAT_SANDBOX_PROVIDER=//p' "$(ENV_FILE)" | tail -n 1)}"; \
+	image="$${SWEAT_AGENT_IMAGE:-$$(sed -n 's/^SWEAT_AGENT_IMAGE=//p' "$(ENV_FILE)" | tail -n 1)}"; \
+	image="$${image#\"}"; image="$${image%\"}"; \
 	case "$$provider" in \
-		apple-container) cd project && bun $(BUN_ENV) run agent:build ;; \
-		docker) docker build -t sweat-agent:latest project ;; \
+		apple-container) \
+			case "$$image" in */*|*@*) container image pull "$$image" ;; *) cd project && bun $(BUN_ENV) run agent:build ;; esac ;; \
+		docker) \
+			case "$$image" in */*|*@*) docker pull "$$image" ;; *) docker build -t sweat-agent:latest project ;; esac ;; \
 		*) echo "SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker"; exit 2 ;; \
 	esac
 
