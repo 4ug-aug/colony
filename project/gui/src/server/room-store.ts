@@ -30,6 +30,11 @@ export type RoomMessage = {
   createdAt: number
   attachments: RoomAttachment[]
 }
+export type RoomMessageMarker = {
+  id: string
+  createdAt: number
+  authorId: string
+}
 export type RoomAttachment = {
   id: string
   filename: string
@@ -114,6 +119,10 @@ export interface RoomStore {
   listWorkspaceUsers(): RoomUser[]
   listMentionableAccounts(roomId: string): RoomUser[]
   listMessages(roomId: string): RoomMessage[]
+  latestMessageFromOther(
+    roomId: string,
+    userId: string,
+  ): RoomMessageMarker | undefined
   listRoomHistoryPage(
     roomId: string,
     options: { limit: number; cursor?: string },
@@ -125,7 +134,7 @@ export interface RoomStore {
   ): void
   createAttention(attention: RoomAttention): boolean
   listMentionRecipientIds(messageId: string): string[]
-  listAttentionCounts(userId: string): Map<string, number>
+  listAttentionCounts(userId: string, kind?: AttentionKind): Map<string, number>
   acknowledgeRoomAttention(roomId: string, userId: string, at: number): void
   createRun(run: RoomRun): void
   updateRun(run: RoomRun): void
@@ -365,6 +374,24 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       .all(roomId) as MessageRow[]
     return hydrateMessages(roomId, rows)
   }
+  const latestMessageFromOther = (
+    roomId: string,
+    userId: string,
+  ): RoomMessageMarker | undefined => {
+    const row = sqlite
+      .prepare(
+        `SELECT id, created_at, author_id
+         FROM room_message
+         WHERE room_id = ? AND author_id <> ?
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(roomId, userId) as
+      { id: string; created_at: number; author_id: string } | undefined
+    return row
+      ? { id: row.id, createdAt: row.created_at, authorId: row.author_id }
+      : undefined
+  }
   const messageRows = (
     roomId: string,
     before: MessageCursor | undefined,
@@ -593,6 +620,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           .all(roomId) as UserRow[]
       ).map(userFrom),
     listMessages: messages,
+    latestMessageFromOther,
     listRoomHistoryPage,
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
     createMessage: (message, attachments = []) => {
@@ -661,7 +689,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           )
           .all(messageId) as { recipient_id: string }[]
       ).map(({ recipient_id }) => recipient_id),
-    listAttentionCounts: (userId) => {
+    listAttentionCounts: (userId, kind) => {
+      const kindFilter = kind ? ' AND a.kind = ?' : ''
       const rows = sqlite
         .prepare(
           `SELECT a.room_id, COUNT(*) AS count
@@ -672,9 +701,13 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
            WHERE a.recipient_id = ?
              AND a.acknowledged_at IS NULL
              AND (r.visibility = 'public' OR rm.user_id IS NOT NULL)
+             ${kindFilter}
            GROUP BY a.room_id`,
         )
-        .all(userId) as { room_id: string; count: number }[]
+        .all(...(kind ? [userId, kind] : [userId])) as {
+        room_id: string
+        count: number
+      }[]
       return new Map(rows.map(({ room_id, count }) => [room_id, count]))
     },
     acknowledgeRoomAttention: (roomId, userId, at) => {

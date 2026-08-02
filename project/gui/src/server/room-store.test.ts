@@ -121,7 +121,9 @@ test('room history pages newest messages and follows an opaque cursor', () => {
       text: id,
       createdAt,
     })
-  store.createRun(makeRun({ id: 'run-old', triggerMessageId: 'msg-1', state: 'succeeded' }))
+  store.createRun(
+    makeRun({ id: 'run-old', triggerMessageId: 'msg-1', state: 'succeeded' }),
+  )
   store.createRun(makeRun({ id: 'run-current', triggerMessageId: 'msg-2' }))
 
   const newest = store.listRoomHistoryPage(GENERAL_ROOM_ID, { limit: 2 })
@@ -750,6 +752,25 @@ test('attention is idempotent, countable, and acknowledged per room', () => {
   sqlite.exec('PRAGMA foreign_keys = ON;')
   sqlite.exec(SCHEMA_DDL)
   const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'message-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Hello',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'message-2',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Hi',
+    createdAt: 2,
+  })
+  expect(store.latestMessageFromOther(GENERAL_ROOM_ID, 'user-2')).toEqual({
+    id: 'message-1',
+    createdAt: 1,
+    authorId: 'user-1',
+  })
   const attention = {
     id: 'attention-1',
     roomId: GENERAL_ROOM_ID,
@@ -765,6 +786,9 @@ test('attention is idempotent, countable, and acknowledged per room', () => {
   ).toBe(false)
   expect(store.listMentionRecipientIds('message-1')).toEqual(['user-2'])
   expect(store.listAttentionCounts('user-2').get(GENERAL_ROOM_ID)).toBe(1)
+  expect(
+    store.listAttentionCounts('user-2', 'mention').get(GENERAL_ROOM_ID),
+  ).toBe(1)
 
   store.acknowledgeRoomAttention(GENERAL_ROOM_ID, 'user-2', 2)
   expect(store.listAttentionCounts('user-2').size).toBe(0)

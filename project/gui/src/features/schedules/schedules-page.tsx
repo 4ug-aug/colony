@@ -129,7 +129,7 @@ export function SchedulesPage() {
   return (
     <div className="flex min-h-0 flex-1">
       <main className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-5 sm:p-8">
+        <div className="mx-auto flex w-full max-w-full flex-col gap-6 p-5 sm:p-8">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h1 className="text-xl font-semibold">Schedules</h1>
@@ -291,7 +291,7 @@ export function SchedulesPage() {
                   const history = runs[schedule.id] ?? []
                   const latest = history.at(-1)
                   return (
-                    <Card key={schedule.id}>
+                    <Card key={schedule.id} className="shadow-sm">
                       <CardHeader>
                         <CardTitle className="flex flex-wrap items-center gap-2">
                           <h2>{schedule.name}</h2>

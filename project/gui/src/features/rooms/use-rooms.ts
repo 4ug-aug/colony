@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   apiFetch,
   connectRoomStream,
@@ -16,6 +16,8 @@ import type {
 } from './types'
 import type { Step } from '#/features/runs/step-label'
 import { toast } from '#/components/ui/toast'
+import { compareMessageMarkers, roomNotification } from './room-notifications'
+import type { RoomNotification } from './room-notifications'
 
 function upsert<T extends { id: string }>(items: T[], item: T) {
   const index = items.findIndex(({ id }) => id === item.id)
@@ -50,6 +52,28 @@ function orderedRooms(rooms: Room[]) {
 }
 
 const selectedRoomKey = 'sweat.selected-room'
+const seenRoomMessagesKey = 'sweat.seen-room-messages'
+
+function readSeenRoomMessages() {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(seenRoomMessagesKey) ?? '{}',
+    ) as Record<string, unknown>
+    return Object.fromEntries(
+      Object.entries(value).filter(
+        ([, marker]) =>
+          marker &&
+          typeof marker === 'object' &&
+          typeof (marker as { id?: unknown }).id === 'string' &&
+          typeof (marker as { createdAt?: unknown }).createdAt === 'number',
+      ),
+    ) as Partial<
+      Record<string, { id: string; createdAt: number; authorId: string }>
+    >
+  } catch {
+    return {}
+  }
+}
 
 function playMentionSound() {
   const context = new AudioContext()
@@ -64,7 +88,7 @@ function playMentionSound() {
   oscillator.stop(context.currentTime + 0.18)
 }
 
-export function useRooms() {
+export function useRooms(userId: string) {
   const [rooms, setRooms] = useState<Room[]>([])
   const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
@@ -97,8 +121,65 @@ export function useRooms() {
   const loadingOlderRef = useRef(false)
   const historyReadyRef = useRef(false)
   const drafts = useRef<Record<string, string>>({})
+  const seenRoomMessagesRef = useRef(readSeenRoomMessages())
+  const [seenVersion, setSeenVersion] = useState(0)
+
+  const markRoomSeen = useCallback(
+    (
+      roomId: string,
+      marker: { id: string; createdAt: number; authorId: string },
+    ) => {
+      const previous = seenRoomMessagesRef.current[roomId]
+      if (previous && compareMessageMarkers(marker, previous) <= 0) return
+      const next = { ...seenRoomMessagesRef.current, [roomId]: marker }
+      seenRoomMessagesRef.current = next
+      localStorage.setItem(seenRoomMessagesKey, JSON.stringify(next))
+      setSeenVersion((version) => version + 1)
+    },
+    [],
+  )
+
+  const recordMessageActivity = useCallback(
+    (activity: {
+      roomId: string
+      messageId: string
+      createdAt: number
+      authorId: string
+    }) => {
+      if (activity.authorId === userId) return
+      const marker = {
+        id: activity.messageId,
+        createdAt: activity.createdAt,
+        authorId: activity.authorId,
+      }
+      setRooms((current) =>
+        current.map((room) => {
+          if (
+            room.id !== activity.roomId ||
+            (room.latestOtherMessage &&
+              compareMessageMarkers(marker, room.latestOtherMessage) <= 0)
+          )
+            return room
+          return { ...room, latestOtherMessage: marker }
+        }),
+      )
+      if (
+        selectedRoomRef.current === activity.roomId &&
+        document.visibilityState === 'visible'
+      )
+        markRoomSeen(activity.roomId, marker)
+    },
+    [markRoomSeen, userId],
+  )
 
   const forgetRoom = useCallback((roomId: string) => {
+    if (seenRoomMessagesRef.current[roomId]) {
+      const next = { ...seenRoomMessagesRef.current }
+      delete next[roomId]
+      seenRoomMessagesRef.current = next
+      localStorage.setItem(seenRoomMessagesKey, JSON.stringify(next))
+      setSeenVersion((version) => version + 1)
+    }
     setRooms((current) => {
       const next = current.filter(({ id }) => id !== roomId)
       setSelectedRoomId((currentId) => {
@@ -120,7 +201,9 @@ export function useRooms() {
     if (!response.ok) return
     setRooms((current) =>
       current.map((room) =>
-        room.id === roomId ? { ...room, attentionCount: 0 } : room,
+        room.id === roomId
+          ? { ...room, attentionCount: 0, mentionCount: 0 }
+          : room,
       ),
     )
   }, [])
@@ -128,6 +211,12 @@ export function useRooms() {
   useEffect(() => {
     selectedRoomRef.current = selectedRoomId
   }, [selectedRoomId])
+
+  useEffect(() => {
+    if (document.visibilityState !== 'visible' || !selectedRoomId) return
+    const room = rooms.find(({ id }) => id === selectedRoomId)
+    if (room?.latestOtherMessage) markRoomSeen(room.id, room.latestOtherMessage)
+  }, [markRoomSeen, rooms, selectedRoomId])
 
   useEffect(() => {
     let stopped = false
@@ -168,7 +257,11 @@ export function useRooms() {
             setRooms((current) =>
               current.map((room) =>
                 room.id === event.roomId
-                  ? { ...room, attentionCount: event.attentionCount }
+                  ? {
+                      ...room,
+                      attentionCount: event.attentionCount,
+                      mentionCount: event.mentionCount,
+                    }
                   : room,
               ),
             )
@@ -187,6 +280,7 @@ export function useRooms() {
             if (event.attentionCount > 0 && alreadyViewing)
               void acknowledge(event.roomId)
           }
+          if (event.type === 'message.created') recordMessageActivity(event)
         },
         onClose() {
           if (stopped) return
@@ -219,7 +313,7 @@ export function useRooms() {
       if (retry) clearTimeout(retry)
       workspaceSocket.current?.close()
     }
-  }, [acknowledge, forgetRoom])
+  }, [acknowledge, forgetRoom, recordMessageActivity])
 
   useEffect(() => {
     if (!selectedRoomId) return
@@ -241,6 +335,16 @@ export function useRooms() {
           if (stopped) return
           if (event.type === 'room.snapshot') {
             if (event.room.id !== selectedRoomId) return
+            setRooms((current) =>
+              current.map((room) =>
+                room.id === event.room.id
+                  ? {
+                      ...room,
+                      ...event.room,
+                    }
+                  : room,
+              ),
+            )
             if (!historyReadyRef.current) {
               setMessages(mergeMessages([], event.messages))
               runsRef.current = mergeRuns([], event.runs)
@@ -261,6 +365,11 @@ export function useRooms() {
             )
             setLoading(false)
             if (
+              event.room.latestOtherMessage &&
+              document.visibilityState === 'visible'
+            )
+              markRoomSeen(event.room.id, event.room.latestOtherMessage)
+            if (
               event.room.attentionCount > 0 &&
               document.visibilityState === 'visible'
             )
@@ -269,8 +378,15 @@ export function useRooms() {
           if (
             event.type === 'message.created' &&
             event.message.roomId === selectedRoomId
-          )
+          ) {
             setMessages((current) => mergeMessages(current, [event.message]))
+            recordMessageActivity({
+              roomId: event.message.roomId,
+              messageId: event.message.id,
+              createdAt: event.message.createdAt,
+              authorId: event.message.author.id,
+            })
+          }
           if (
             event.type === 'run.changed' &&
             event.run.roomId === selectedRoomId
@@ -326,7 +442,22 @@ export function useRooms() {
       if (retry) clearTimeout(retry)
       roomSocket.current?.close()
     }
-  }, [acknowledge, selectedRoomId])
+  }, [acknowledge, markRoomSeen, recordMessageActivity, selectedRoomId])
+
+  const notificationByRoom = useMemo<Record<string, RoomNotification>>(
+    () =>
+      Object.fromEntries(
+        rooms.flatMap((room) => {
+          const notification = roomNotification(
+            room.mentionCount,
+            room.latestOtherMessage,
+            seenRoomMessagesRef.current[room.id],
+          )
+          return notification ? [[room.id, notification]] : []
+        }),
+      ),
+    [rooms, seenVersion],
+  )
 
   const loadOlder = useCallback(async () => {
     const roomId = selectedRoomId
@@ -351,7 +482,9 @@ export function useRooms() {
       setError(undefined)
     } catch (reason) {
       if (selectedRoomRef.current === roomId)
-        setError(reason instanceof Error ? reason.message : 'Unable to load history')
+        setError(
+          reason instanceof Error ? reason.message : 'Unable to load history',
+        )
     } finally {
       loadingOlderRef.current = false
       setLoadingOlder(false)
@@ -419,6 +552,7 @@ export function useRooms() {
     error,
     membersChangedAt,
     mentionableAccounts,
+    notificationByRoom,
     select: (roomId: string) => {
       if (roomId === selectedRoomId) return
       setSelectedRoomId(roomId)

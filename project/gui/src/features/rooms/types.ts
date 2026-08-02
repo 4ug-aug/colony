@@ -16,6 +16,13 @@ export type Room = {
   visibility: 'public' | 'private'
   createdBy?: string
   attentionCount: number
+  mentionCount: number
+  latestOtherMessage?: RoomMessageMarker
+}
+export type RoomMessageMarker = {
+  id: string
+  createdAt: number
+  authorId: string
 }
 export type MentionableAccount = {
   id: string
@@ -80,5 +87,13 @@ export type WorkspaceStreamMessage =
       roomId: string
       roomName: string
       attentionCount: number
+      mentionCount: number
       kind?: 'mention' | 'run_terminal'
+    }
+  | {
+      type: 'message.created'
+      roomId: string
+      messageId: string
+      createdAt: number
+      authorId: string
     }

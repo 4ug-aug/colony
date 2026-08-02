@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Bot, CalendarClock, Hash, Lock, LogOut, Settings, Trash2 } from 'lucide-react'
+import {
+  Bot,
+  CalendarClock,
+  Hash,
+  Lock,
+  LogOut,
+  Settings,
+  Trash2,
+} from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
@@ -55,6 +63,7 @@ import {
   SidebarTrigger,
 } from '#/components/ui/sidebar'
 import type { Author, Room } from '#/features/rooms/types'
+import type { RoomNotification } from '#/features/rooms/room-notifications'
 import { canDeleteRoom } from '#/features/rooms/permissions'
 import { isTauriRuntime } from '#/lib/server-config'
 import { cn } from '#/lib/utils'
@@ -89,6 +98,7 @@ export function RoomSidebar({
   onCreate,
   onDelete,
   createError,
+  notificationByRoom,
   onMentionAgent,
   view,
   onOpenAccount,
@@ -102,6 +112,7 @@ export function RoomSidebar({
   onCreate: (name: string, visibility: 'public' | 'private') => Promise<unknown>
   onDelete: (roomId: string) => Promise<unknown>
   createError: string | undefined
+  notificationByRoom: Partial<Record<string, RoomNotification>>
   onMentionAgent: (agentId: string) => void
   view: DashboardView
   onOpenAccount: () => void
@@ -151,7 +162,7 @@ export function RoomSidebar({
     ),
     <Sidebar key="sidebar" variant="inset" collapsible="icon">
       <SidebarContent>
-      <SidebarGroup>
+        <SidebarGroup>
           <SidebarGroupLabel>Agents</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -314,90 +325,118 @@ export function RoomSidebar({
               </PopoverContent>
             </Popover>
           </div>
-          
+
           <SidebarGroupContent>
             <SidebarMenu>
-              {rooms.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <ContextMenu disabled={!canDeleteRoom(user, item)}>
-                    <ContextMenuTrigger
-                      render={
-                        <SidebarMenuButton
-                          isActive={
-                            view === 'room' && item.id === selectedRoomId
-                          }
-                          tooltip={
-                            item.attentionCount
-                              ? `${item.name} · ${item.attentionCount} need attention`
-                              : item.name
-                          }
-                          aria-label={
-                            item.attentionCount
-                              ? `${item.name}, ${item.attentionCount} need attention`
-                              : item.name
-                          }
-                          onClick={() => onSelect(item.id)}
-                          className="data-[active=true]:bg-primary/5"
-                        />
-                      }
-                    >
-                      {item.visibility === 'private' ? <Lock /> : <Hash />}
-                      <span>{item.name}</span>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuGroup>
-                        <ContextMenuItem
-                          variant="destructive"
-                          onClick={() => setRoomToDelete(item)}
+              {rooms.map((item) => {
+                const notification = notificationByRoom[item.id]
+                const notificationLabel =
+                  notification === 'mention'
+                    ? 'has a mention'
+                    : notification === 'unread'
+                      ? 'has new messages'
+                      : undefined
+                return (
+                  <SidebarMenuItem key={item.id}>
+                    <ContextMenu disabled={!canDeleteRoom(user, item)}>
+                      <ContextMenuTrigger
+                        render={
+                          <SidebarMenuButton
+                            isActive={
+                              view === 'room' && item.id === selectedRoomId
+                            }
+                            tooltip={
+                              notificationLabel
+                                ? `${item.name} · ${notificationLabel}`
+                                : item.name
+                            }
+                            aria-label={
+                              notificationLabel
+                                ? `${item.name}, ${notificationLabel}`
+                                : item.name
+                            }
+                            onClick={() => onSelect(item.id)}
+                            className="data-[active=true]:bg-primary/5"
+                          />
+                        }
+                      >
+                        {item.visibility === 'private' ? <Lock /> : <Hash />}
+                        <span>{item.name}</span>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuGroup>
+                          <ContextMenuItem
+                            variant="destructive"
+                            onClick={() => setRoomToDelete(item)}
+                          >
+                            <Trash2 />
+                            Delete room
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                    {notification && (
+                      <>
+                        <SidebarMenuBadge
+                          aria-hidden="true"
+                          className="h-auto min-w-0 p-0"
                         >
-                          <Trash2 />
-                          Delete room
-                        </ContextMenuItem>
-                      </ContextMenuGroup>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                  {item.attentionCount > 0 && (
-                    <>
-                      <SidebarMenuBadge aria-hidden="true">
-                        {item.attentionCount > 99 ? '99+' : item.attentionCount}
-                      </SidebarMenuBadge>
-                      <span
-                        aria-hidden="true"
-                        className="absolute top-1 right-1 hidden size-2 rounded-full bg-primary group-data-[collapsible=icon]:block"
-                      />
-                    </>
-                  )}
-                </SidebarMenuItem>
-              ))}
+                          <span
+                            className={cn(
+                              'size-2 rounded-full',
+                              notification === 'mention'
+                                ? 'bg-orange-500'
+                                : 'bg-green-500',
+                            )}
+                          />
+                        </SidebarMenuBadge>
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            'absolute top-0 right-0 z-10 hidden size-2.5 rounded-full ring-2 ring-sidebar',
+                            'group-data-[collapsible=icon]:block',
+                            notification === 'mention'
+                              ? 'bg-orange-500'
+                              : 'bg-green-500',
+                          )}
+                        />
+                      </>
+                    )}
+                  </SidebarMenuItem>
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={view === 'schedules'}
+                  onClick={onOpenSchedules}
+                >
+                  <CalendarClock />
+                  <span>Schedules</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {user.role === 'admin' && (
                 <SidebarMenuItem>
-                  <SidebarMenuButton isActive={view === 'schedules'} onClick={onOpenSchedules}>
-                    <CalendarClock />
-                    <span>Schedules</span>
+                  <SidebarMenuButton
+                    tooltip="Workspace settings"
+                    isActive={view === 'workspace'}
+                    onClick={onOpenWorkspace}
+                  >
+                    <Settings />
+                    <span>Workspace</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-                {user.role === 'admin' && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      tooltip="Workspace settings"
-                      isActive={view === 'workspace'}
-                      onClick={onOpenWorkspace}
-                    >
-                      <Settings />
-                      <span>Workspace</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  )}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
         <div className="flex min-w-0 items-center justify-center gap-2 group-data-[collapsible=icon]:justify-center">
           <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none">
             <SidebarMenuItem>
@@ -430,7 +469,7 @@ export function RoomSidebar({
           </SidebarMenu>
           <Button
             aria-label="Sign out"
-            variant="outline"
+            variant="ghost"
             size="icon-sm"
             className="group-data-[collapsible=icon]:hidden"
             onClick={() => void authClient.signOut()}

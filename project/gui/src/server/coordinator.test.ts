@@ -232,6 +232,19 @@ class MemoryRoomStore implements RoomStore {
   listMessages(roomId: string) {
     return this.messages.filter((message) => message.roomId === roomId)
   }
+  latestMessageFromOther(roomId: string, userId: string) {
+    const message = this.listMessages(roomId)
+      .filter((message) => message.author.id !== userId)
+      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+      .at(0)
+    return message
+      ? {
+          id: message.id,
+          createdAt: message.createdAt,
+          authorId: message.author.id,
+        }
+      : undefined
+  }
   listRoomHistoryPage(
     roomId: string,
     options: { limit: number; cursor?: string },
@@ -310,11 +323,12 @@ class MemoryRoomStore implements RoomStore {
       .map(({ recipientId }) => recipientId)
       .sort()
   }
-  listAttentionCounts(userId: string) {
+  listAttentionCounts(userId: string, kind?: RoomAttention['kind']) {
     const counts = new Map<string, number>()
     for (const attention of this.attentions) {
       if (
         attention.recipientId !== userId ||
+        (kind !== undefined && attention.kind !== kind) ||
         attention.acknowledgedAt !== undefined ||
         !this.canAccessRoom(attention.roomId, userId)
       )
@@ -872,6 +886,11 @@ test('mentions and terminal runs create durable directed attention', async () =>
       attentionCount: 1,
       kind: 'mention',
     })
+    expect(await reviewer.next()).toMatchObject({
+      type: 'message.created',
+      roomId: GENERAL_ROOM_ID,
+      authorId: 'user-1',
+    })
     reviewer.socket.close()
     currentUser = 'user-2'
     reviewer = await open(`${wsBase}/api/workspace/stream`)
@@ -881,6 +900,9 @@ test('mentions and terminal runs create durable directed attention', async () =>
         expect.objectContaining({
           id: GENERAL_ROOM_ID,
           attentionCount: 1,
+          latestOtherMessage: expect.objectContaining({
+            authorId: 'user-1',
+          }),
         }),
       ],
     })

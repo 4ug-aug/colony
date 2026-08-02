@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   CalendarClock,
@@ -60,12 +60,15 @@ export function Dashboard({
     loadOlder,
     loadingOlder,
     hasOlderMessages,
-  } = useRooms()
+    notificationByRoom,
+  } = useRooms(user.id)
   const [view, setView] = useState<DashboardView>('room')
   const [selectedRunId, setSelectedRunId] = useState<string>()
   const composer = useRef<MessageComposerHandle>(null)
   const scrollRef = useRef<HTMLElement>(null)
+  const timelineRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
+  const followRoomRef = useRef(true)
   const historyAnchorRef = useRef<{ height: number; top: number } | undefined>(
     undefined,
   )
@@ -78,10 +81,30 @@ export function Dashboard({
     return Boolean(result)
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    followRoomRef.current = true
+  }, [room?.id])
+
+  useLayoutEffect(() => {
     const el = scrollRef.current
-    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
-  }, [messages, runs])
+    if (!el || loading || (!followRoomRef.current && !atBottomRef.current))
+      return
+    el.scrollTop = el.scrollHeight
+    atBottomRef.current = true
+    setAtBottom(true)
+  }, [loading, messages, room?.id, runs])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const timeline = timelineRef.current
+    if (!el || !timeline) return
+    const observer = new ResizeObserver(() => {
+      if (followRoomRef.current || atBottomRef.current)
+        el.scrollTop = el.scrollHeight
+    })
+    observer.observe(timeline)
+    return () => observer.disconnect()
+  }, [room?.id])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -91,14 +114,8 @@ export function Dashboard({
     historyAnchorRef.current = undefined
   }, [messages])
 
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el) {
-      el.scrollTop = el.scrollHeight
-      atBottomRef.current = true
-      setAtBottom(true)
-      historyAnchorRef.current = undefined
-    }
+  useLayoutEffect(() => {
+    historyAnchorRef.current = undefined
     setSelectedRunId(undefined)
   }, [room?.id])
 
@@ -124,6 +141,7 @@ export function Dashboard({
         }}
         onDelete={remove}
         createError={createError}
+        notificationByRoom={notificationByRoom}
         onMentionAgent={(agentId) => {
           setView('room')
           requestAnimationFrame(() => composer.current?.mention(agentId))
@@ -196,6 +214,15 @@ export function Dashboard({
                   ref={scrollRef}
                   className="h-full overflow-y-auto px-5 py-8 sm:px-8"
                   aria-busy={loading}
+                  onPointerDown={() => {
+                    followRoomRef.current = false
+                  }}
+                  onTouchMove={() => {
+                    followRoomRef.current = false
+                  }}
+                  onWheel={() => {
+                    followRoomRef.current = false
+                  }}
                   onScroll={() => {
                     const el = scrollRef.current
                     if (el) {
@@ -218,7 +245,7 @@ export function Dashboard({
                     }
                   }}
                 >
-                  <div className="mx-auto max-w-7xl">
+                  <div ref={timelineRef} className="mx-auto max-w-7xl">
                     {loadingOlder && (
                       <div
                         className="flex justify-center pb-4 text-sm text-muted-foreground"

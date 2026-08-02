@@ -23,7 +23,7 @@ export function EntryShell({
 
   return (
     <main
-      className="h-svh overflow-y-auto bg-muted/40 p-3 pt-[calc(0.75rem+var(--titlebar,0px))] sm:p-5 sm:pt-[calc(1.25rem+var(--titlebar,0px))]"
+      className="h-svh overflow-y-auto bg-muted/40 p-5 pt-[calc(0.75rem+var(--titlebar,0px))] sm:p-5 sm:pt-[calc(0.6rem+var(--titlebar,0px))]"
       style={titleBarVars()}
     >
       <div
