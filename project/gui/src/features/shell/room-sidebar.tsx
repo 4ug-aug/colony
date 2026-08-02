@@ -213,18 +213,6 @@ export function RoomSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
         <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton isActive={view === 'schedules'} onClick={onOpenSchedules}>
-                  <CalendarClock />
-                  <span>Schedules</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        <SidebarGroup>
           <div className="flex items-center justify-between pr-2">
             <SidebarGroupLabel>Rooms</SidebarGroupLabel>
             <Popover
@@ -384,27 +372,32 @@ export function RoomSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {user.role === 'admin' && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Administration</SidebarGroupLabel>
+      </SidebarContent>
+      <SidebarFooter>
+        <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
-                  <SidebarMenuButton
-                    tooltip="Workspace settings"
-                    isActive={view === 'workspace'}
-                    onClick={onOpenWorkspace}
-                  >
-                    <Settings />
-                    <span>Workspace</span>
+                  <SidebarMenuButton isActive={view === 'schedules'} onClick={onOpenSchedules}>
+                    <CalendarClock />
+                    <span>Schedules</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
+                {user.role === 'admin' && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      tooltip="Workspace settings"
+                      isActive={view === 'workspace'}
+                      onClick={onOpenWorkspace}
+                    >
+                      <Settings />
+                      <span>Workspace</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        )}
-      </SidebarContent>
-      <SidebarFooter>
         <div className="flex min-w-0 items-center gap-2">
           <SidebarMenu className="min-w-0 flex-1">
             <SidebarMenuItem>
