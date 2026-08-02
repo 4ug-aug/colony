@@ -398,8 +398,8 @@ export function RoomSidebar({
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        <div className="flex min-w-0 items-center gap-2">
-          <SidebarMenu className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center justify-center gap-2 group-data-[collapsible=icon]:justify-center">
+          <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none">
             <SidebarMenuItem>
               <SidebarMenuButton
                 size="lg"
@@ -432,6 +432,7 @@ export function RoomSidebar({
             aria-label="Sign out"
             variant="outline"
             size="icon-sm"
+            className="group-data-[collapsible=icon]:hidden"
             onClick={() => void authClient.signOut()}
           >
             <LogOut className="size-4" />
