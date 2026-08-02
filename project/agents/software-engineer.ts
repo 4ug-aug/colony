@@ -7,8 +7,11 @@ import {
 import { type AgentDefinition } from "./definition";
 import {
   createRepositoryWorkspaceProvisioner,
+  type AttachmentInput,
+  type AttachmentSource,
   type RepositoryCheckoutSource,
   type RepositoryInput,
+  type WorkspaceInput,
 } from "../inputs/repository";
 import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import { createOpenAIAgentsRuntime } from "../providers/openai-agents-runtime";
@@ -46,17 +49,20 @@ export interface SoftwareEngineerAdapter {
   capability?: {
     id: string;
     resources?: McpGrant["resources"];
+    applies?(context: SoftwareEngineerCapabilityContext): boolean;
     createUpstream(context: SoftwareEngineerCapabilityContext): McpUpstream;
   };
 }
 
 export type SoftwareEngineerStartRunRequest = Omit<
-  StartRunRequest<RepositoryInput>,
+  StartRunRequest<WorkspaceInput>,
   "agentDefinitionId" | "definitionId" | "inputs" | "capabilityGrant"
->;
+> & {
+  attachments?: readonly AttachmentInput[];
+};
 
 export type SoftwareEngineerExecutor = Omit<
-  RunExecutor<RepositoryInput>,
+  RunExecutor<WorkspaceInput>,
   "startRun"
 > & {
   startRun(request: SoftwareEngineerStartRunRequest): string;
@@ -72,6 +78,7 @@ export function createSoftwareEngineerExecutor(options: {
   };
   container?: AppleContainerClient;
   createId?: () => string;
+  attachmentSource?: AttachmentSource;
 }): SoftwareEngineerExecutor {
   const container = options.container ?? createAppleContainerClient();
   const adapters = options.adapters ?? [];
@@ -93,7 +100,7 @@ export function createSoftwareEngineerExecutor(options: {
     ]),
   );
   const capabilityIds = new Set<string>();
-  const tools = capabilityAdapters.flatMap((adapter) => {
+  capabilityAdapters.forEach((adapter) => {
     if (capabilityIds.has(adapter.id)) {
       throw new Error(
         `Duplicate software engineer capability adapter: ${adapter.id}`,
@@ -106,7 +113,6 @@ export function createSoftwareEngineerExecutor(options: {
         `Software engineer did not request capability: ${adapter.id}`,
       );
     }
-    return requested;
   });
   for (const capability of capabilityAdapters) {
     for (const resource of capability.resources ?? []) {
@@ -131,9 +137,13 @@ export function createSoftwareEngineerExecutor(options: {
     ? createCapabilitySessionFactory({
         createGateway: (context) =>
           createMcpGateway({
-            upstreams: capabilityAdapters.map((adapter) =>
+            upstreams: capabilityAdapters
+              .filter((adapter) =>
+                adapter.applies ? adapter.applies(context) : true,
+              )
+              .map((adapter) =>
               adapter.createUpstream(context),
-            ),
+              ),
           }),
         createEndpoint: options.createCapabilityEndpoint!,
       })
@@ -147,7 +157,7 @@ export function createSoftwareEngineerExecutor(options: {
     },
     executionPolicy: defaultLimits,
   };
-  const executor = createRunExecutor<RepositoryInput>({
+  const executor = createRunExecutor<WorkspaceInput>({
     definitions: {
       resolve(id) {
         return id === definition.id
@@ -166,20 +176,40 @@ export function createSoftwareEngineerExecutor(options: {
     capabilities,
     inputs: createRepositoryWorkspaceProvisioner({
       sources: repositories.map((repository) => repository.source),
+      attachmentSource: options.attachmentSource,
     }),
   });
   return {
     ...executor,
     startRun(request) {
+      const { attachments = [], task, ...runRequest } = request;
+      const eligible = capabilityAdapters.filter((adapter) =>
+        adapter.applies ? adapter.applies({ grantContext: runRequest.grantContext }) : true,
+      );
+      const eligibleTools = eligible.flatMap(
+        (adapter) => requestedCapabilities.get(adapter.id) ?? [],
+      );
+      const attachmentNote = attachments.length
+        ? `\n\nAttachments (inspect these paths before acting):\n${attachments
+            .map(
+              (attachment) =>
+                `- ${attachment.filename}: /work/.sweat/attachments/${attachment.id}/${attachment.filename}`,
+            )
+            .join("\n")}`
+        : "";
       return executor.startRun({
-        ...request,
+        ...runRequest,
+        task: `${task}${attachmentNote}`,
         agentDefinitionId: softwareEngineerRole.id,
-        inputs: repositories.map((repository) => repository.input),
-        ...(capabilityAdapters.length
+        inputs: [
+          ...repositories.map((repository) => repository.input),
+          ...attachments,
+        ],
+        ...(eligible.length
           ? {
               capabilityGrant: {
-                tools,
-                resources: capabilityAdapters.flatMap(
+                tools: eligibleTools,
+                resources: eligible.flatMap(
                   (adapter) => adapter.resources ?? [],
                 ),
                 expiresAt: new Date(Date.now() + defaultLimits.maxDurationMs),

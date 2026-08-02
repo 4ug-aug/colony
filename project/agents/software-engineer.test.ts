@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import {
   createAppleContainerClient,
@@ -126,4 +127,52 @@ test("a repository-scoped capability cannot be configured without its repository
       }),
     }),
   ).toThrow("requires its repository adapter");
+});
+
+test("request attachments become workspace inputs and an auditable task note", async () => {
+  const bytes = new TextEncoder().encode("brief\n");
+  const attachment = {
+    type: "attachment" as const,
+    id: "attachment-1",
+    roomId: "room-1",
+    filename: "brief.txt",
+    byteSize: 6,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const executor = createSoftwareEngineerExecutor({
+    model: () => ({
+      baseUrl: "https://models.example/v1",
+      apiKey: "test-key",
+      model: "test-model",
+    }),
+    attachmentSource: {
+      async read(id) {
+        return id === attachment.id ? { ...attachment, bytes } : undefined;
+      },
+    },
+    container: createAppleContainerClient(runner),
+    createId: () => "run-attachment",
+  });
+
+  const id = executor.startRun({
+    task: "review the brief",
+    attachments: [attachment],
+  });
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? ""))
+    await Bun.sleep(0);
+
+  expect(executor.getRun(id)?.inputs).toEqual([attachment]);
+  expect(executor.getRun(id)?.task).toBe(
+    "review the brief\n\nAttachments (inspect these paths before acting):\n- brief.txt: /work/.sweat/attachments/attachment-1/brief.txt",
+  );
 });

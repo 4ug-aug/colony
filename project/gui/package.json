@@ -42,6 +42,8 @@
     "better-sqlite3": "11.8.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "croner": "^10.0.1",
+    "cronstrue": "^3.24.0",
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^0.577.0",

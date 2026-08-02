@@ -34,6 +34,7 @@ type ActivityRun = {
   error?: string
   stdout: string
   output?: string
+  attribution?: string
 }
 type TriggerMessage = { author: Person; text: string }
 
@@ -68,6 +69,7 @@ function RunActivityContent({
   onRetry,
   onClose,
   onCancel,
+  attribution,
 }: {
   run: ActivityRun
   triggerMessage?: TriggerMessage
@@ -77,6 +79,7 @@ function RunActivityContent({
   onRetry: () => void
   onClose: () => void
   onCancel: () => void
+  attribution?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
@@ -128,6 +131,7 @@ function RunActivityContent({
             <p className="mb-1 text-sm font-semibold">
               {(triggerMessage?.author ?? run.requestedBy).name}
             </p>
+            {attribution && <p className="mb-1 text-xs text-muted-foreground">{attribution}</p>}
             <div className="text-sm leading-6">
               <Markdown>{triggerMessage?.text ?? run.task}</Markdown>
             </div>
@@ -266,12 +270,14 @@ export function RunActivityRail({
   liveSteps,
   onClose,
   onCancel,
+  stepsPath,
 }: {
   run: ActivityRun
   triggerMessage?: TriggerMessage
   liveSteps: Step[]
   onClose: () => void
   onCancel: () => void
+  stepsPath?: string
 }) {
   const inline = useInlineRail()
   const [persistedSteps, setPersistedSteps] = useState<Step[]>([])
@@ -288,7 +294,7 @@ export function RunActivityRail({
     setPersistedSteps([])
     setLoading(true)
     setError(undefined)
-    void apiFetch(`/api/rooms/${run.roomId}/runs/${run.id}/steps`, {
+    void apiFetch(stepsPath ?? `/api/rooms/${run.roomId}/runs/${run.id}/steps`, {
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -320,6 +326,7 @@ export function RunActivityRail({
       onRetry={() => setReload((value) => value + 1)}
       onClose={onClose}
       onCancel={onCancel}
+      attribution={run.attribution}
     />
   )
 

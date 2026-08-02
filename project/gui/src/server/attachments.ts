@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
-import type { NewRoomAttachment } from './room-store'
+import type { AttachmentSource } from '../../../inputs/repository'
+import type { NewRoomAttachment, RoomStore } from './room-store'
 
 export const MAX_ATTACHMENTS = 5
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
@@ -136,5 +137,30 @@ export async function attachmentBytes(
     return await readFile(path)
   } catch {
     return undefined
+  }
+}
+
+export function createRoomAttachmentSource(options: {
+  store: RoomStore
+  directory: string
+}): AttachmentSource {
+  return {
+    async read(id) {
+      const attachment = options.store.getAttachment(id)
+      if (!attachment) return undefined
+      const bytes = await attachmentBytes(
+        options.directory,
+        attachment.storageKey,
+      )
+      return bytes
+        ? {
+            roomId: attachment.roomId,
+            filename: attachment.filename,
+            byteSize: attachment.byteSize,
+            sha256: attachment.sha256,
+            bytes,
+          }
+        : undefined
+    },
   }
 }

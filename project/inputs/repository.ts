@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { InputProvisioner, RunInput } from "../runs";
@@ -10,23 +11,101 @@ export interface RepositoryInput extends RunInput {
   revision: string;
 }
 
+export interface AttachmentInput extends RunInput {
+  type: "attachment";
+  id: string;
+  roomId: string;
+  filename: string;
+  byteSize: number;
+  sha256: string;
+}
+
+export interface AttachmentSource {
+  read(id: string): Promise<
+    | {
+        roomId: string;
+        filename: string;
+        byteSize: number;
+        sha256: string;
+        bytes: Uint8Array;
+      }
+    | undefined
+  >;
+}
+
 export interface RepositoryCheckoutSource {
   provider: string;
-  checkout(input: RepositoryInput, directory: string): Promise<{ revision: string }>;
+  checkout(
+    input: RepositoryInput,
+    directory: string,
+  ): Promise<{ revision: string }>;
 }
+
+export type WorkspaceInput = RepositoryInput | AttachmentInput;
+
+type WorkspaceProvisionerOptions = {
+  sources: readonly RepositoryCheckoutSource[];
+  attachmentSource?: AttachmentSource;
+  createDirectory?: () => Promise<string>;
+  removeDirectory?: (directory: string) => Promise<void>;
+};
 
 function repositoryInput(input: RunInput): RepositoryInput {
   const value = input as unknown as Record<string, unknown>;
-  if (input.type !== "repository"
-    || typeof value.provider !== "string"
-    || typeof value.repository !== "string"
-    || typeof value.revision !== "string") {
-    throw new Error("Repository input requires provider, repository, and revision");
+  if (
+    input.type !== "repository" ||
+    typeof value.provider !== "string" ||
+    typeof value.repository !== "string" ||
+    typeof value.revision !== "string"
+  ) {
+    throw new Error(
+      "Repository input requires provider, repository, and revision",
+    );
   }
   return input as RepositoryInput;
 }
 
-async function git(directory: string, args: readonly string[]): Promise<string> {
+function unavailable(id: string): Error {
+  return new Error(`Attachment unavailable: ${id}`);
+}
+
+function pathComponent(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value !== "." &&
+    value !== ".." &&
+    !/[\\/\0]/.test(value)
+  );
+}
+
+function attachmentInput(input: RunInput): AttachmentInput {
+  const value = input as unknown as Record<string, unknown>;
+  const id = typeof value.id === "string" ? value.id : "unknown";
+  if (
+    input.type !== "attachment" ||
+    !pathComponent(value.id) ||
+    typeof value.roomId !== "string" ||
+    !pathComponent(value.filename) ||
+    typeof value.byteSize !== "number" ||
+    !Number.isSafeInteger(value.byteSize) ||
+    value.byteSize < 0 ||
+    typeof value.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/.test(value.sha256)
+  ) {
+    throw unavailable(id);
+  }
+  return input as AttachmentInput;
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function git(
+  directory: string,
+  args: readonly string[],
+): Promise<string> {
   const process = Bun.spawn(["git", "-C", directory, ...args], {
     env: { PATH: Bun.env.PATH },
     stdout: "pipe",
@@ -41,55 +120,144 @@ async function git(directory: string, args: readonly string[]): Promise<string> 
   return stdout;
 }
 
-async function initializeGitWorkspace(directory: string, branch: string): Promise<string> {
+async function initializeGitWorkspace(
+  directory: string,
+  branch: string,
+): Promise<string> {
   await git(directory, ["init", "--initial-branch", branch]);
   await git(directory, ["config", "user.name", "Sweat Agent"]);
   await git(directory, ["config", "user.email", "agent@sweat.local"]);
   await git(directory, ["config", "commit.gpgsign", "false"]);
+  await addWorkspaceExcludes(directory);
   await git(directory, ["add", "--all"]);
   await git(directory, ["commit", "--quiet", "--message", "Sweat base"]);
   return (await git(directory, ["rev-parse", "HEAD"])).trim();
 }
 
-export function createRepositoryWorkspaceProvisioner(options: {
-  sources: readonly RepositoryCheckoutSource[];
-  createDirectory?: () => Promise<string>;
-  removeDirectory?: (directory: string) => Promise<void>;
-}): InputProvisioner<RepositoryInput> {
-  const sources = new Map(options.sources.map((source) => [source.provider, source]));
-  const createDirectory = options.createDirectory ?? (() => mkdtemp(join(tmpdir(), "sweat-run-")));
-  const removeDirectory = options.removeDirectory ?? ((directory) => rm(directory, { force: true, recursive: true }));
+async function addWorkspaceExcludes(directory: string): Promise<void> {
+  await appendFile(join(directory, ".git", "info", "exclude"), "/.sweat/\n");
+}
+
+async function stageAttachment(
+  directory: string,
+  input: AttachmentInput,
+  source: AttachmentSource | undefined,
+): Promise<void> {
+  try {
+    const attachment = await source?.read(input.id);
+    if (
+      !attachment ||
+      attachment.roomId !== input.roomId ||
+      attachment.filename !== input.filename ||
+      attachment.byteSize !== input.byteSize ||
+      attachment.sha256 !== input.sha256 ||
+      !(attachment.bytes instanceof Uint8Array) ||
+      attachment.bytes.byteLength !== input.byteSize ||
+      sha256(attachment.bytes) !== input.sha256
+    ) {
+      throw unavailable(input.id);
+    }
+    const path = join(
+      directory,
+      ".sweat",
+      "attachments",
+      input.id,
+      input.filename,
+    );
+    await mkdir(join(directory, ".sweat", "attachments", input.id), {
+      recursive: true,
+    });
+    await writeFile(path, attachment.bytes);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === `Attachment unavailable: ${input.id}`
+    )
+      throw error;
+    throw unavailable(input.id);
+  }
+}
+
+export function createRepositoryWorkspaceProvisioner(
+  options: WorkspaceProvisionerOptions,
+): InputProvisioner<WorkspaceInput> {
+  const sources = new Map(
+    options.sources.map((source) => [source.provider, source]),
+  );
+  const createDirectory =
+    options.createDirectory ?? (() => mkdtemp(join(tmpdir(), "sweat-run-")));
+  const removeDirectory =
+    options.removeDirectory ??
+    ((directory) => rm(directory, { force: true, recursive: true }));
 
   return {
     async prepare(inputs, context) {
-      if (!inputs.length) return {};
-      if (inputs.length !== 1) {
-        throw new Error("A run currently supports one repository workspace");
+      const repositories: RepositoryInput[] = [];
+      const attachments: AttachmentInput[] = [];
+      const attachmentIds = new Set<string>();
+      for (const input of inputs) {
+        if (input.type === "repository")
+          repositories.push(repositoryInput(input));
+        else if (input.type === "attachment") {
+          const attachment = attachmentInput(input);
+          if (attachmentIds.has(attachment.id))
+            throw unavailable(attachment.id);
+          attachmentIds.add(attachment.id);
+          attachments.push(attachment);
+        } else {
+          throw new Error("Unsupported workspace input");
+        }
       }
-      const input = repositoryInput(inputs[0]);
-      const source = sources.get(input.provider);
-      if (!source) throw new Error(`Unsupported repository provider: ${input.provider}`);
+      if (repositories.length > 1)
+        throw new Error("A run currently supports one repository workspace");
+      if (!repositories.length && !attachments.length) return {};
+
+      const repository = repositories[0];
+      const source = repository && sources.get(repository.provider);
+      if (repository && !source)
+        throw new Error(
+          `Unsupported repository provider: ${repository.provider}`,
+        );
       const path = await createDirectory();
       try {
-        const checkout = await source.checkout(input, path);
+        const checkout = repository
+          ? await source!.checkout(repository, path)
+          : undefined;
+        if (attachments.length)
+          await rm(join(path, ".sweat"), { force: true, recursive: true });
         const branch = `sweat/${context.runId}`;
-        const baseCommit = await initializeGitWorkspace(path, branch);
+        const baseCommit = repository
+          ? await initializeGitWorkspace(path, branch)
+          : undefined;
+        for (const attachment of attachments) {
+          await stageAttachment(path, attachment, options.attachmentSource);
+        }
         return {
           workspace: {
             path,
-            git: {
-              repository: input.repository,
-              baseRevision: checkout.revision,
-              baseCommit,
-              branch,
-            },
+            ...(repository && checkout && baseCommit
+              ? {
+                  git: {
+                    repository: repository.repository,
+                    baseRevision: checkout.revision,
+                    baseCommit,
+                    branch,
+                  },
+                }
+              : {}),
             dispose: () => removeDirectory(path),
           },
         };
       } catch (error) {
-        await removeDirectory(path);
+        try {
+          await removeDirectory(path);
+        } catch {
+          // Preserve the preparation error; the run must not expose cleanup details.
+        }
         throw error;
       }
     },
   };
 }
+
+export const createWorkspaceProvisioner = createRepositoryWorkspaceProvisioner;

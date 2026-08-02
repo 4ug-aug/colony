@@ -10,7 +10,15 @@ import {
   verifyRealtimeTicket,
   type SessionAuthenticator,
 } from './coordinator'
-import type { RunControl, RunSummary, Step } from './run-control'
+import {
+  createRunControl,
+  type RunControl,
+  type RunSummary,
+  type Step,
+} from './run-control'
+import type { AttachmentInput } from '../../../inputs/repository'
+import { createSoftwareEngineerExecutor } from '../../../agents/software-engineer'
+import { createAppleContainerClient } from '../../../sdk/src'
 import {
   GENERAL_ROOM_ID,
   type RoomMessage,
@@ -25,11 +33,17 @@ import {
   type StoredStep,
 } from './room-store'
 import { createRoomMessageHub } from './room-hub'
+import { createRoomAttachmentSource } from './attachments'
 
 class FakeRunControl implements RunControl {
   private listeners = new Set<(run: RunSummary) => void>()
   private stepListeners = new Set<(runId: string, step: Step) => void>()
   private runs: RunSummary[] = []
+  requests: Array<{
+    task: string
+    roomId: string
+    attachments?: readonly AttachmentInput[]
+  }> = []
   listRuns() {
     return this.runs
   }
@@ -43,7 +57,11 @@ class FakeRunControl implements RunControl {
   }
   start<Output>(
     task: string,
-    context: { roomId: string; onCreate: (run: RunSummary) => Output },
+    context: {
+      roomId: string
+      attachments?: readonly AttachmentInput[]
+      onCreate: (run: RunSummary) => Output
+    },
   ): Output {
     const run: RunSummary = {
       id: crypto.randomUUID(),
@@ -54,6 +72,11 @@ class FakeRunControl implements RunControl {
       stdout: '',
       stderr: '',
     }
+    this.requests.push({
+      task,
+      roomId: context.roomId,
+      ...(context.attachments ? { attachments: context.attachments } : {}),
+    })
     const created = context.onCreate(run)
     this.runs = [...this.runs, run]
     this.publish(run)
@@ -225,14 +248,13 @@ class MemoryRoomStore implements RoomStore {
           message.createdAt < before.createdAt ||
           (message.createdAt === before.createdAt && message.id < before.id),
       )
-      .sort(
-        (a, b) =>
-          b.createdAt - a.createdAt || b.id.localeCompare(a.id),
-      )
+      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
     const rows = sorted.slice(0, options.limit)
     const ids = new Set(rows.map(({ id }) => id))
     const runs = this.listRuns(roomId).filter(
-      (run) => ids.has(run.triggerMessageId) || ['preparing', 'running'].includes(run.state),
+      (run) =>
+        ids.has(run.triggerMessageId) ||
+        ['preparing', 'running'].includes(run.state),
     )
     return {
       messages: rows.reverse(),
@@ -625,6 +647,19 @@ test('multipart messages persist attachment metadata and serve authorized bytes'
       },
     ])
     const attachmentId = message.message.attachments[0].id
+    const source = createRoomAttachmentSource({ store, directory })
+    const prepared = await source.read(attachmentId)
+    expect(prepared).toMatchObject({
+      roomId: GENERAL_ROOM_ID,
+      filename: '.._avatar.png',
+      byteSize: 8,
+      sha256: store.attachments[0]!.sha256,
+    })
+    expect(prepared?.bytes).toEqual(
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    )
+    expect('storageKey' in prepared!).toBe(false)
+    expect(await source.read('missing')).toBeUndefined()
     const downloaded = await fetch(`${base}/api/attachments/${attachmentId}`, {
       headers: { origin: 'http://gui.test' },
     })
@@ -646,6 +681,142 @@ test('multipart messages persist attachment metadata and serve authorized bytes'
     })
     expect(rejected.status).toBe(400)
     expect(await readdir(directory)).toHaveLength(1)
+  } finally {
+    coordinator.stop()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('a multipart software-engineer message is durable and forwards only its descriptors', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sweat-agent-attachments-'))
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    attachmentDirectory: directory,
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const form = new FormData()
+    form.set('text', '@software-engineer Review this brief')
+    form.append('attachments', new File(['agent brief\n'], 'brief.txt'))
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test' },
+      body: form,
+    })
+
+    expect(response.status).toBe(202)
+    expect(store.messages).toHaveLength(1)
+    expect(store.runs).toHaveLength(1)
+    const attachment = store.attachments[0]!
+    expect(control.requests).toEqual([
+      {
+        task: 'Review this brief',
+        roomId: GENERAL_ROOM_ID,
+        attachments: [
+          {
+            type: 'attachment',
+            id: attachment.id,
+            roomId: GENERAL_ROOM_ID,
+            filename: 'brief.txt',
+            byteSize: 12,
+            sha256:
+              'be8926bf4a116563971b25303b7e93f237564e5f67163ab8d1200da75b00b0a7',
+          },
+        ],
+      },
+    ])
+    expect(JSON.stringify(control.requests)).not.toContain(
+      attachment.storageKey,
+    )
+
+    const missingTask = new FormData()
+    missingTask.set('text', '@software-engineer ')
+    missingTask.append('attachments', new File(['ignored'], 'ignored.txt'))
+    expect(
+      (
+        await fetch(`${base}/api/rooms/general/messages`, {
+          method: 'POST',
+          headers: { origin: 'http://gui.test' },
+          body: missingTask,
+        })
+      ).status,
+    ).toBe(400)
+    expect(store.messages).toHaveLength(1)
+
+    const later = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@software-engineer Follow up' }),
+    })
+    expect(later.status).toBe(202)
+    expect(control.requests[1]?.attachments).toEqual([])
+  } finally {
+    coordinator.stop()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('an attachment preparation failure leaves the durable message and failed run', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sweat-agent-failure-'))
+  const store = new MemoryRoomStore()
+  const containerCalls: string[][] = []
+  const control = createRunControl(
+    createSoftwareEngineerExecutor({
+      model: () => ({
+        baseUrl: 'https://models.example/v1',
+        apiKey: 'test-key',
+        model: 'test-model',
+      }),
+      createId: () => 'run-missing-attachment',
+      container: createAppleContainerClient({
+        async run(args) {
+          containerCalls.push([...args])
+          return { args, exitCode: 0, stdout: '', stderr: '' }
+        },
+      }),
+    }),
+  )
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    attachmentDirectory: directory,
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const form = new FormData()
+    form.set('text', '@software-engineer Review this brief')
+    form.append('attachments', new File(['agent brief\n'], 'brief.txt'))
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test' },
+      body: form,
+    })
+
+    expect(response.status).toBe(202)
+    const run = store.runs[0]!
+    while (store.getRun(run.id)?.state === 'preparing') await Bun.sleep(0)
+    expect(store.messages).toHaveLength(1)
+    expect(store.getRun(run.id)).toMatchObject({
+      state: 'failed',
+      error: `Attachment unavailable: ${store.attachments[0]!.id}`,
+    })
+    expect(containerCalls).toEqual([])
   } finally {
     coordinator.stop()
     await rm(directory, { recursive: true, force: true })

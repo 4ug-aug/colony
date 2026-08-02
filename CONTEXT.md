@@ -35,6 +35,18 @@ Acknowledging attention clears its room badge without changing or deleting the
 shared record.
 _Avoid_: Unread message, notification
 
+**Schedule**: A workspace-owned recurring delegation that starts bounded runs
+at configured times. It references an agent definition and reusable task while
+each run resolves the current definition and workspace policy. Its creator is
+retained as attribution, while its configuration, run history, and results are
+shared outside room conversation.
+_Avoid_: Scheduled task, cron job, personal automation
+
+**Schedule run**: A bounded run created from a schedule, either when it becomes
+due or when a person chooses **Run now**. It is retained in the schedule's
+shared history rather than a room timeline.
+_Avoid_: Scheduled run, schedule occurrence, background task
+
 **Workspace membership**: A Sweat server's authorization for an account to
 participate in its workspace. Authentication proves control of the account;
 membership determines whether that person may enter.
@@ -67,6 +79,12 @@ _Avoid_: Community
 **Room**: A durable context in a workspace where people coordinate work and
 where related runs and their results remain visible.
 _Avoid_: Channel, conversation
+
+**Room attachment**: Durable bytes and metadata attached to one room message.
+When that message starts a run, the server verifies and copies the attachment
+into that run's disposable `/work/.sweat/attachments/<id>/<filename>` input;
+the room original remains outside the sandbox.
+_Avoid_: Artifact, workspace file
 
 **Task**: The plain-text assignment supplied by a run to an agent runtime.
 _Avoid_: Prompt
@@ -175,6 +193,13 @@ work back through a granted capability (for example, a pull request), but
 arbitrary files there do not persist after the run. V1 has no generic artifact
 or manifest model; add one only when durable storage or multiple named inputs
 need it.
+
+Room attachments stay durable with their messages. Only attachments on the
+message that triggered a run are copied, after metadata and checksum
+verification, into that run's `.sweat/attachments/<id>/` staging area.
+Repository workspaces exclude that staging area from Git. The runtime can pass
+supported raster images from this area to a vision-capable model with its
+scoped `view_image` tool.
 
 V1 also has no structured run-output or handoff model. The runtime report and
 the durable effects of granted capabilities are its handoff. Add structured

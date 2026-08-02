@@ -32,7 +32,7 @@ function captureExecutor(
   }
 }
 
-test('passes room context without assembling infrastructure concerns', () => {
+test('passes room context and attachment descriptors without assembling inputs', () => {
   let request: SoftwareEngineerStartRunRequest | undefined
   const control = createRunControl(
     captureExecutor((value) => {
@@ -40,8 +40,23 @@ test('passes room context without assembling infrastructure concerns', () => {
     }),
   )
 
-  control.start('summarize ORI-198', { roomId: 'room-1', onCreate: () => true })
+  const attachments = [
+    {
+      type: 'attachment' as const,
+      id: 'attachment-1',
+      roomId: 'room-1',
+      filename: 'brief.txt',
+      byteSize: 6,
+      sha256: 'a'.repeat(64),
+    },
+  ]
+  control.start('summarize ORI-198', {
+    roomId: 'room-1',
+    attachments,
+    onCreate: () => true,
+  })
 
   expect(request?.task).toBe('summarize ORI-198')
   expect(request?.grantContext).toEqual({ roomId: 'room-1' })
+  expect(request?.attachments).toEqual(attachments)
 })

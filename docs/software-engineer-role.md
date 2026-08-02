@@ -11,6 +11,7 @@ Linear issue
   -> create run(agent: software-engineer, task, repository@commit)
   -> resolve connections and narrow grants
   -> prepare repository workspace
+  -> verify and stage triggering-message attachments under /work/.sweat/
   -> start generic runtime in the workspace
   -> inspect, edit, and test
   -> commit and create a PR through the GitHub grant
@@ -68,6 +69,13 @@ run. A GitHub adapter owns its repository input, checkout source, resource
 scope, and pull-request upstream together. Callers supply only the task and
 run-specific context; they must not assemble repository inputs or capability
 grants independently.
+
+When a room message supplies attachments, the server passes only their public
+metadata to the run, verifies durable bytes during preparation, and stages
+writable disposable copies under `/work/.sweat/attachments/<id>/<filename>`.
+Attachment storage locations never enter the sandbox. For supported raster
+images, the runtime's scoped `view_image` tool supplies the staged copy to a
+vision-capable model.
 
 Those are generic run concerns. A future researcher can use an uploaded
 artifact instead of `repository`; a support-triage role can receive a ticket

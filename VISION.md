@@ -164,6 +164,9 @@ to their members, who can manage membership within the room's policy. Each
 room retains its own durable message history and linked run history. A message
 that mentions `@software-engineer` delegates a bounded run whose progress and
 result stay in that room and survive refreshes and server restarts.
+Attachments remain durable room-message records; a delegated run receives only
+verified, disposable copies beneath its `/work` workspace and can inspect
+supported image copies with a vision-capable configured model.
 
 The room experience keeps messages left-aligned as a shared team timeline.
 An active agent is represented by a small status badge below the request, then

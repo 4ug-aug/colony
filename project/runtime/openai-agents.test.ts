@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
-import { OpenAIChatCompletionsModel } from "@openai/agents";
+import {
+  OpenAIChatCompletionsModel,
+  OpenAIResponsesModel,
+  type ModelRequest,
+  type ResponseStreamEvent,
+} from "@openai/agents";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import OpenAI from "openai";
 import type { Step } from "./step";
 import { normalizeModelBaseUrl, runAgent, toolOutputText } from "./openai-agents";
@@ -130,6 +138,110 @@ test("the runtime completes an SDK tool loop against an OpenAI-compatible API", 
   expect(messageSteps.length).toBeGreaterThan(0);
   expect(messageSteps[messageSteps.length - 1]!.text).toBe("runtime ready");
   expect(calls).toBe(2);
+});
+
+test("view_image sends a staged image to the model", async () => {
+  const root = await mkdtemp(join(tmpdir(), "sweat-view-image-"));
+  const outsideRoot = await mkdtemp(join(tmpdir(), "sweat-view-image-outside-"));
+  const image = join(root, "attachment-1", "pie.png");
+  const outsideImage = join(outsideRoot, "private.png");
+  await mkdir(join(root, "attachment-1"));
+  const png = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ]);
+  await Promise.all([
+    writeFile(image, png),
+    writeFile(outsideImage, png),
+  ]);
+  const client = new OpenAI({
+    apiKey: "test-key",
+    baseURL: "https://models.example/v1",
+  });
+  class ImageModel extends OpenAIResponsesModel {
+    requests: unknown[] = [];
+
+    override async *getStreamedResponse(
+      request: ModelRequest,
+    ): AsyncIterable<ResponseStreamEvent> {
+      this.requests.push(
+        this._buildResponsesCreateRequest(request, true).requestData,
+      );
+      const output =
+        this.requests.length < 3
+          ? [{
+              type: "function_call" as const,
+              callId: `call-view-image-${this.requests.length}`,
+              name: "view_image",
+              arguments: JSON.stringify({
+                path: this.requests.length === 1 ? outsideImage : image,
+              }),
+              status: "completed" as const,
+            }]
+          : [{
+              type: "message" as const,
+              role: "assistant" as const,
+              status: "completed" as const,
+              content: [{
+                type: "output_text" as const,
+                text: "I see an apple pie recipe.",
+              }],
+            }];
+      yield {
+        type: "response_done",
+        response: {
+          id: `response-${this.requests.length}`,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          output,
+        },
+      };
+    }
+  }
+  const model = new ImageModel(client, "test-model");
+  const steps: Step[] = [];
+
+  try {
+    expect(
+      await runAgent(
+        {
+          task: "What is in the attached image?",
+          instructions: "Inspect attached images before answering.",
+          agentId: "software-engineer",
+          model: {
+            baseUrl: "https://models.example/v1",
+            apiKey: "test-key",
+            model: "test-model",
+          },
+        },
+        {
+          model,
+          attachmentRoot: root,
+          onStep: (step) => steps.push(step),
+        },
+      ),
+    ).toBe("I see an apple pie recipe.");
+    expect(JSON.stringify(model.requests[1])).toContain(
+      "Image path must be a staged attachment",
+    );
+    expect(JSON.stringify(model.requests[1])).not.toContain(
+      "data:image/png;base64,",
+    );
+    expect(JSON.stringify(model.requests[2])).toContain(
+      "data:image/png;base64,",
+    );
+    expect(
+      steps
+        .filter((step) => step.kind === "tool_result")
+        .map((step) => step.text),
+    ).toEqual([
+        "Unable to view image: Image path must be a staged attachment",
+        "[image]",
+      ]);
+  } finally {
+    await Promise.all([
+      rm(root, { force: true, recursive: true }),
+      rm(outsideRoot, { force: true, recursive: true }),
+    ]);
+  }
 });
 
 test("the runtime emits structured steps for a tool call and final message", async () => {

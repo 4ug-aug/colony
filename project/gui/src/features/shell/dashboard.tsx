@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
+  CalendarClock,
   Hash,
   Lock,
   Settings,
@@ -8,6 +9,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
+import { SchedulesPage } from '#/features/schedules/schedules-page'
 import { useRooms } from '#/features/rooms/use-rooms'
 import { RoomSidebar } from './room-sidebar'
 import type { DashboardView } from './room-sidebar'
@@ -64,9 +66,9 @@ export function Dashboard({
   const composer = useRef<MessageComposerHandle>(null)
   const scrollRef = useRef<HTMLElement>(null)
   const atBottomRef = useRef(true)
-  const historyAnchorRef = useRef<
-    { height: number; top: number } | undefined
-  >(undefined)
+  const historyAnchorRef = useRef<{ height: number; top: number } | undefined>(
+    undefined,
+  )
   const [atBottom, setAtBottom] = useState(true)
 
   const submit = async (text: string, files: File[]) => {
@@ -131,6 +133,7 @@ export function Dashboard({
         onOpenWorkspace={() => {
           if (user.role === 'admin') setView('workspace')
         }}
+        onOpenSchedules={() => setView('schedules')}
         user={user}
       />
       <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
@@ -139,18 +142,22 @@ export function Dashboard({
             <UserRound className="size-4 text-muted-foreground" />
           ) : view === 'workspace' ? (
             <Settings className="size-4 text-muted-foreground" />
+          ) : view === 'schedules' ? (
+            <CalendarClock className="size-4 text-muted-foreground" />
           ) : room?.visibility === 'private' ? (
             <Lock className="size-4 text-muted-foreground" />
           ) : (
             <Hash className="size-4 text-muted-foreground" />
           )}
-          <h1 className="font-semibold">
+          <p className="font-semibold">
             {view === 'account'
               ? 'User settings'
               : view === 'workspace'
                 ? 'Workspace'
-                : (room?.name ?? 'Rooms')}
-          </h1>
+                : view === 'schedules'
+                  ? 'Schedules'
+                  : (room?.name ?? 'Rooms')}
+          </p>
           {view === 'room' && room?.visibility === 'private' && (
             <MembersPanel
               room={room}
@@ -179,11 +186,13 @@ export function Dashboard({
             <WorkspaceSettingsPage currentUserId={user.id} />
           </div>
         )}
+        {view === 'schedules' && <SchedulesPage />}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
             <div className="relative flex min-w-0 flex-1 flex-col">
               <div className="relative min-h-0 flex-1">
                 <section
+                  key={room?.id}
                   ref={scrollRef}
                   className="h-full overflow-y-auto px-5 py-8 sm:px-8"
                   aria-busy={loading}

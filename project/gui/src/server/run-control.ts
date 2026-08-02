@@ -1,5 +1,6 @@
 import type { RunInput, RunRecord, Step } from '../../../runs'
 import type { SoftwareEngineerExecutor } from '../../../agents/software-engineer'
+import type { AttachmentInput } from '../../../inputs/repository'
 
 export type RunSummary = Pick<
   RunRecord,
@@ -19,15 +20,23 @@ export type RunSummary = Pick<
 
 export type { Step }
 
+export type RunStartContext<Output> =
+  | {
+      roomId: string
+      attachments?: readonly AttachmentInput[]
+      onCreate: (run: RunSummary) => NonNullable<Output>
+    }
+  | {
+      scheduleId: string
+      onCreate: (run: RunSummary) => NonNullable<Output>
+    }
+
 export interface RunControl {
   subscribe(listener: (run: RunSummary) => void): () => void
   subscribeSteps(listener: (runId: string, step: Step) => void): () => void
   start<Output>(
     task: string,
-    context: {
-      roomId: string
-      onCreate: (run: RunSummary) => NonNullable<Output>
-    },
+    context: RunStartContext<Output>,
   ): NonNullable<Output>
   cancel(runId: string): Promise<RunSummary | undefined>
 }
@@ -75,15 +84,18 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
     subscribeSteps: (listener) => executor.subscribeSteps(listener),
     start: <Output>(
       task: string,
-      context: {
-        roomId: string
-        onCreate: (run: RunSummary) => NonNullable<Output>
-      },
+      context: RunStartContext<Output>,
     ): NonNullable<Output> => {
       let created: NonNullable<Output> | undefined
       executor.startRun({
         task,
-        grantContext: { roomId: context.roomId },
+        grantContext:
+          'roomId' in context
+            ? { roomId: context.roomId }
+            : { scheduleId: context.scheduleId },
+        ...('roomId' in context && context.attachments
+          ? { attachments: context.attachments }
+          : {}),
         onCreate: (run) => {
           const registered = context.onCreate(runSummary(run))
           if (registered === undefined)

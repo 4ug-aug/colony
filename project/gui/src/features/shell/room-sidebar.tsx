@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Bot, Hash, Lock, LogOut, Settings, Trash2 } from 'lucide-react'
+import { Bot, CalendarClock, Hash, Lock, LogOut, Settings, Trash2 } from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
@@ -80,7 +80,7 @@ const softwareEngineerCapabilities = [
   },
 ] as const
 
-export type DashboardView = 'room' | 'account' | 'workspace'
+export type DashboardView = 'room' | 'account' | 'workspace' | 'schedules'
 
 export function RoomSidebar({
   rooms,
@@ -93,6 +93,7 @@ export function RoomSidebar({
   view,
   onOpenAccount,
   onOpenWorkspace,
+  onOpenSchedules,
   user,
 }: {
   rooms: Room[]
@@ -105,6 +106,7 @@ export function RoomSidebar({
   view: DashboardView
   onOpenAccount: () => void
   onOpenWorkspace: () => void
+  onOpenSchedules: () => void
   user: Author
 }) {
   const [creating, setCreating] = useState(false)
@@ -206,6 +208,18 @@ export function RoomSidebar({
                     </div>
                   </HoverCardContent>
                 </HoverCard>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view === 'schedules'} onClick={onOpenSchedules}>
+                  <CalendarClock />
+                  <span>Schedules</span>
+                </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>

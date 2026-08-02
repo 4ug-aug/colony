@@ -50,6 +50,7 @@ changes over realtime connections.
 ```text
 authenticated user -> durable room message
                    -> @software-engineer task (only at exact leading mention)
+                   -> verify and copy that message's attachments into /work
                    -> bounded existing run executor
                    -> durable status/result projected back into that room
 ```
@@ -97,6 +98,9 @@ future Tauri shell. The client does not own room state or execution.
 - A composable MCP gateway core that issues expiring sessions and filters tools,
   plus a Linear upstream adapter.
 - Repository-workspace provisioning and a GitHub adapter backed by Octokit.
+- Durable room attachments copied as verified, disposable software-engineer
+  run inputs; storage keys remain server-only, and a scoped `view_image` tool
+  sends supported raster copies to vision-capable models.
 
 ## MCP target design
 

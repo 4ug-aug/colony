@@ -15,6 +15,9 @@ export function createWorkspaceSoftwareEngineerAdapter(options: {
   return {
     capability: {
       id: "workspace.room",
+      applies({ grantContext }) {
+        return Boolean((grantContext as { roomId?: string } | undefined)?.roomId);
+      },
       createUpstream({ grantContext }) {
         const roomId = (grantContext as { roomId?: string } | undefined)
           ?.roomId;

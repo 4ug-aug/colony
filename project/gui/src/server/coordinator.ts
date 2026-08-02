@@ -24,10 +24,24 @@ import { mentionedAccounts } from './attention'
 import {
   attachmentBytes,
   attachmentDirectory,
+  createRoomAttachmentSource,
   MAX_REQUEST_BYTES,
   removeAttachmentFiles,
   stageAttachments,
 } from './attachments'
+import { previewCron } from '#/features/schedules/cron'
+import {
+  createSqliteScheduleStore,
+  type Schedule,
+  type ScheduleRun,
+  type ScheduleRunStep,
+  type ScheduleStore,
+} from './schedule-store'
+import {
+  createScheduleRunner,
+  ScheduleActiveRunError,
+  type ScheduleRunner,
+} from './schedule-runner'
 
 export interface SessionAuthenticator {
   authenticate(request: Request): Promise<RoomUser | undefined>
@@ -89,7 +103,19 @@ export type WorkspaceServerMessage =
       attentionCount: number
       kind?: 'mention' | 'run_terminal'
     }
+  | { type: 'schedule.created'; schedule: Schedule }
+  | { type: 'schedule.changed'; schedule: Schedule }
+  | { type: 'schedule_run.created'; run: ScheduleRun }
+  | { type: 'schedule_run.changed'; run: ScheduleRun }
+  | { type: 'schedule_run.step'; runId: string; step: ScheduleRunStep }
 export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
+
+export type AgentDefinitionSummary = {
+  id: string
+  name: string
+  description: string
+  capabilities: { id: string; name: string; tools: string[] }[]
+}
 
 const roomHistoryPageSize = 50
 
@@ -221,6 +247,8 @@ export function createCoordinator(options: {
   port?: number
   admission?: AdmissionOptions
   agentReady?: () => boolean
+  scheduleStore?: ScheduleStore
+  agentDefinitions?: () => AgentDefinitionSummary[]
 }) {
   const attachmentsDirectory =
     options.attachmentDirectory ??
@@ -245,6 +273,26 @@ export function createCoordinator(options: {
       attentionCount: counts.get(room.id) ?? 0,
     }))
   }
+  const agentDefinitions = (): AgentDefinitionSummary[] =>
+    options.agentDefinitions?.() ?? [
+      {
+        id: 'software-engineer',
+        name: 'Software engineer',
+        description: 'Build, debug, and review code.',
+        capabilities: [
+          {
+            id: 'linear.issues',
+            name: 'Linear issues',
+            tools: ['Get issues', 'List issues', 'Save comments', 'Save issues'],
+          },
+          {
+            id: 'github.pull-requests',
+            name: 'GitHub pull requests',
+            tools: ['Create pull requests', 'Wait for pull request checks'],
+          },
+        ],
+      },
+    ]
   const broadcastWorkspace = (message: WorkspaceServerMessage): void => {
     for (const socket of sockets)
       if (socket.data.scope === 'workspace') send(socket, message)
@@ -261,6 +309,21 @@ export function createCoordinator(options: {
     for (const socket of sockets)
       if (socket.data.scope === 'workspace' && userIds.has(socket.data.userId))
         send(socket, message)
+  }
+  let scheduleRunner: ScheduleRunner | undefined
+  if (options.scheduleStore) {
+    scheduleRunner = createScheduleRunner({
+      store: options.scheduleStore,
+      control: options.control,
+      onScheduleChange: (schedule) =>
+        broadcastWorkspace({ type: 'schedule.changed', schedule }),
+      onRunCreated: (run) =>
+        broadcastWorkspace({ type: 'schedule_run.created', run }),
+      onRunChange: (run) =>
+        broadcastWorkspace({ type: 'schedule_run.changed', run }),
+      onStep: (step) =>
+        broadcastWorkspace({ type: 'schedule_run.step', runId: step.runId, step }),
+    })
   }
   const broadcastAttention = (
     userId: string,
@@ -401,6 +464,11 @@ export function createCoordinator(options: {
     broadcastRoom(run.roomId, { type: 'run.changed', run })
     notifyRunTerminal(run)
   })
+  scheduleRunner?.failStaleRuns()
+  scheduleRunner?.tick()
+  const scheduleInterval = scheduleRunner
+    ? setInterval(() => scheduleRunner!.tick(), 15_000)
+    : undefined
   const server = Bun.serve<SocketData>({
     port: options.port ?? 3001,
     async fetch(request, server) {
@@ -418,7 +486,7 @@ export function createCoordinator(options: {
             headers: {
               'access-control-allow-headers':
                 'content-type, x-sweat-setup-token',
-              'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+              'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS',
             },
           }),
         )
@@ -459,6 +527,134 @@ export function createCoordinator(options: {
       if (!user) return cors(json({ error: 'Unauthorized' }, 401))
       if (url.pathname === '/api/realtime-ticket' && request.method === 'GET')
         return cors(json({ ticket: mintRealtimeTicket(user.id) }))
+      if (url.pathname === '/api/agent-definitions' && request.method === 'GET')
+        return cors(json({ agents: agentDefinitions() }))
+      if (options.scheduleStore) {
+        const scheduleBody = async (): Promise<Record<string, unknown> | undefined> => {
+          try {
+            const body = await request.json()
+            return body && typeof body === 'object'
+              ? (body as Record<string, unknown>)
+              : undefined
+          } catch {
+            return undefined
+          }
+        }
+        const knownAgent = (id: unknown): id is string =>
+          typeof id === 'string' && agentDefinitions().some((agent) => agent.id === id)
+        const scheduleInput = (body: Record<string, unknown>, now: number) => {
+          const name = typeof body.name === 'string' ? body.name.trim() : ''
+          const task = typeof body.task === 'string' ? body.task.trim() : ''
+          const agentDefinitionId = body.agentDefinitionId
+          const cronExpression =
+            typeof body.cronExpression === 'string' ? body.cronExpression.trim() : ''
+          const timezone = typeof body.timezone === 'string' ? body.timezone.trim() : ''
+          if (!name || name.length > 50 || !task || task.length > 10_000)
+            throw new Error('Invalid schedule name or task')
+          if (!knownAgent(agentDefinitionId)) throw new Error('Unknown agent definition')
+          const preview = previewCron(cronExpression, timezone, now)
+          return {
+            name,
+            task,
+            agentDefinitionId,
+            cronExpression,
+            timezone,
+            nextRunAt: preview.nextRuns[0]!,
+          }
+        }
+        if (url.pathname === '/api/schedules' && request.method === 'GET')
+          return cors(
+            json({ schedules: options.scheduleStore.listSchedules(url.searchParams.get('archived') !== 'true') }),
+          )
+        if (url.pathname === '/api/schedules' && request.method === 'POST') {
+          const body = await scheduleBody()
+          if (!body) return cors(json({ error: 'Invalid schedule' }, 400))
+          try {
+            const input = scheduleInput(body, Date.now())
+            const schedule = options.scheduleStore.createSchedule({
+              id: crypto.randomUUID(),
+              ...input,
+              state: 'active',
+              createdBy: user.id,
+              createdAt: Date.now(),
+            })
+            broadcastWorkspace({ type: 'schedule.created', schedule })
+            return cors(json({ schedule }, 201))
+          } catch (error) {
+            return cors(json({ error: error instanceof Error ? error.message : 'Invalid schedule' }, 400))
+          }
+        }
+        const scheduleRoute = url.pathname.match(/^\/api\/schedules\/([^/]+)$/)
+        if (scheduleRoute && request.method === 'PATCH') {
+          const schedule = options.scheduleStore.getSchedule(scheduleRoute[1]!)
+          if (!schedule) return cors(json({ error: 'Schedule not found' }, 404))
+          const body = await scheduleBody()
+          if (!body) return cors(json({ error: 'Invalid schedule' }, 400))
+          try {
+            const input = {
+              ...(body.name === undefined ? {} : { name: typeof body.name === 'string' ? body.name.trim() : '' }),
+              ...(body.task === undefined ? {} : { task: typeof body.task === 'string' ? body.task.trim() : '' }),
+              ...(body.agentDefinitionId === undefined ? {} : { agentDefinitionId: body.agentDefinitionId as string }),
+              ...(body.cronExpression === undefined ? {} : { cronExpression: typeof body.cronExpression === 'string' ? body.cronExpression.trim() : '' }),
+              ...(body.timezone === undefined ? {} : { timezone: typeof body.timezone === 'string' ? body.timezone.trim() : '' }),
+              ...(body.state === undefined ? {} : { state: body.state as Schedule['state'] }),
+            }
+            if (input.name !== undefined && (!input.name || input.name.length > 50)) throw new Error('Invalid schedule name')
+            if (input.task !== undefined && (!input.task || input.task.length > 10_000)) throw new Error('Invalid schedule task')
+            if (body.agentDefinitionId !== undefined && !knownAgent(body.agentDefinitionId)) throw new Error('Unknown agent definition')
+            if (input.cronExpression !== undefined || input.timezone !== undefined)
+              previewCron(input.cronExpression ?? schedule.cronExpression, input.timezone ?? schedule.timezone, Date.now())
+            if (input.state !== undefined && !['active', 'paused', 'archived'].includes(input.state)) throw new Error('Invalid schedule state')
+            const updated = options.scheduleStore.updateSchedule(schedule.id, input, Date.now())
+            broadcastWorkspace({ type: 'schedule.changed', schedule: updated })
+            return cors(json({ schedule: updated }))
+          } catch (error) {
+            return cors(json({ error: error instanceof Error ? error.message : 'Invalid schedule' }, 400))
+          }
+        }
+        const runsRoute = url.pathname.match(/^\/api\/schedules\/([^/]+)\/runs$/)
+        if (runsRoute && request.method === 'GET') {
+          if (!options.scheduleStore.getSchedule(runsRoute[1]!)) return cors(json({ error: 'Schedule not found' }, 404))
+          try {
+            return cors(json({
+              ...options.scheduleStore.listRuns(runsRoute[1]!, {
+                limit: Number(url.searchParams.get('limit') ?? 50),
+                cursor: url.searchParams.get('cursor') ?? undefined,
+              }),
+            }))
+          } catch (error) {
+            return cors(json({ error: error instanceof Error ? error.message : 'Invalid cursor' }, 400))
+          }
+        }
+        if (runsRoute && request.method === 'POST') {
+          if (!scheduleRunner) return cors(json({ error: 'Scheduler unavailable' }, 503))
+          try {
+            const run = scheduleRunner.runNow(runsRoute[1]!, user.id)
+            return cors(json({ run }, 202))
+          } catch (error) {
+            if (error instanceof ScheduleActiveRunError) return cors(json({ error: error.message }, 409))
+            if (error instanceof Error && error.message === 'Schedule not found') return cors(json({ error: error.message }, 404))
+            return cors(json({ error: error instanceof Error ? error.message : 'Unable to start schedule' }, 502))
+          }
+        }
+        const scheduleRunRoute = url.pathname.match(/^\/api\/schedule-runs\/([^/]+)$/)
+        if (scheduleRunRoute && request.method === 'GET') {
+          const run = options.scheduleStore.getRun(scheduleRunRoute[1]!)
+          return run ? cors(json({ run })) : cors(json({ error: 'Run not found' }, 404))
+        }
+        const scheduleRunCancel = url.pathname.match(/^\/api\/schedule-runs\/([^/]+)\/cancel$/)
+        if (scheduleRunCancel && request.method === 'POST') {
+          const run = options.scheduleStore.getRun(scheduleRunCancel[1]!)
+          if (!run) return cors(json({ error: 'Run not found' }, 404))
+          const changed = await scheduleRunner?.cancel(run.id)
+          return cors(json({ run: changed ?? run }))
+        }
+        const scheduleRunSteps = url.pathname.match(/^\/api\/schedule-runs\/([^/]+)\/steps$/)
+        if (scheduleRunSteps && request.method === 'GET') {
+          if (!options.scheduleStore.getRun(scheduleRunSteps[1]!)) return cors(json({ error: 'Run not found' }, 404))
+          return cors(json({ steps: options.scheduleStore.listSteps(scheduleRunSteps[1]!) }))
+        }
+      }
       if (url.pathname === '/api/rooms' && request.method === 'GET')
         return cors(json({ rooms: roomsFor(user.id) }))
       if (url.pathname === '/api/rooms' && request.method === 'POST') {
@@ -550,13 +746,6 @@ export function createCoordinator(options: {
         const task = isAgentMessage
           ? text.replace(mention, (_, prefix: string) => prefix).trim()
           : undefined
-        if (files.length && isAgentMessage)
-          return cors(
-            json(
-              { error: 'Attachments cannot be sent to Software engineer' },
-              400,
-            ),
-          )
         if (isAgentMessage && !task)
           return cors(json({ error: 'Agent task is required' }, 400))
         if (task && options.agentReady && !options.agentReady())
@@ -600,6 +789,14 @@ export function createCoordinator(options: {
         try {
           const run = options.control.start(task, {
             roomId,
+            attachments: attachments.map((attachment) => ({
+              type: 'attachment' as const,
+              id: attachment.id,
+              roomId,
+              filename: attachment.filename,
+              byteSize: attachment.byteSize,
+              sha256: attachment.sha256,
+            })),
             onCreate: (source) => {
               const run: RoomRun = {
                 ...source,
@@ -803,6 +1000,8 @@ export function createCoordinator(options: {
       unsubscribe()
       unsubscribeMessages()
       unsubscribeSteps()
+      if (scheduleInterval) clearInterval(scheduleInterval)
+      scheduleRunner?.stop()
       server.stop(true)
     },
   }
@@ -844,7 +1043,11 @@ if (import.meta.main) {
   const llm = createWorkspaceLlmConfig(sqlite)
   const authContext = await auth.$context
   const store = createSqliteRoomStore(sqlite)
+  const scheduleStore = createSqliteScheduleStore(sqlite)
   const messages = createRoomMessageHub(store)
+  const attachmentsDirectory = attachmentDirectory(
+    process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
+  )
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
   const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
@@ -858,6 +1061,10 @@ if (import.meta.main) {
     createSoftwareEngineerExecutor({
       image: process.env.SWEAT_AGENT_IMAGE,
       model: () => llm.model(),
+      attachmentSource: createRoomAttachmentSource({
+        store,
+        directory: attachmentsDirectory,
+      }),
       adapters: [
         createWorkspaceSoftwareEngineerAdapter({
           port: {
@@ -905,7 +1112,9 @@ if (import.meta.main) {
     authenticator: betterAuthSessionAuthenticator,
     authHandler: (request) => auth.handler(request),
     origin: process.env.SWEAT_GUI_ORIGIN ?? 'http://localhost:3000',
+    attachmentDirectory: attachmentsDirectory,
     port: Number(process.env.SWEAT_COORDINATOR_PORT ?? 3001),
+    scheduleStore,
     admission: {
       store: admissionStore,
       llm,
