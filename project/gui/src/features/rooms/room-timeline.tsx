@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { Download, X } from 'lucide-react'
 import { Avatar, timestamp } from '#/components/avatar'
@@ -8,7 +8,10 @@ import { RunCapsule } from '#/features/runs/run-capsule'
 import { toast } from '#/components/ui/toast'
 import { messagesAreGrouped } from './message-grouping'
 import type { RoomAttachment, RoomMessage, RoomRun } from './types'
-import { apiFetch } from '#/lib/api-transport'
+import {
+  useAttachmentBlob,
+  useEnsureAttachmentObjectUrl,
+} from './use-attachment-blob'
 
 const previewTypes = new Set([
   'image/png',
@@ -18,37 +21,29 @@ const previewTypes = new Set([
 ])
 
 function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
-  const [url, setUrl] = useState<string>()
   const [open, setOpen] = useState(false)
   const preview = previewTypes.has(attachment.contentType)
-  useEffect(() => {
-    if (!preview) return
-    let current: string | undefined
-    void apiFetch(`/api/attachments/${attachment.id}`)
-      .then(async (response) => {
-        if (!response.ok) return
-        current = URL.createObjectURL(await response.blob())
-        setUrl(current)
-      })
-      .catch(() => undefined)
-    return () => {
-      if (current) URL.revokeObjectURL(current)
-    }
-  }, [attachment.id, preview])
+  const { url } = useAttachmentBlob(attachment.id, preview)
+  const ensureAttachmentObjectUrl = useEnsureAttachmentObjectUrl()
   const download = async () => {
-    const response = await apiFetch(`/api/attachments/${attachment.id}`)
-    if (!response.ok) return
-    const link = document.createElement('a')
-    const objectUrl = URL.createObjectURL(await response.blob())
-    link.href = objectUrl
-    link.download = attachment.filename
-    link.click()
-    URL.revokeObjectURL(objectUrl)
-    toast.add({
-      title: 'Download started',
-      description: attachment.filename,
-      type: 'success',
-    })
+    try {
+      const objectUrl = await ensureAttachmentObjectUrl(attachment.id)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = attachment.filename
+      link.click()
+      toast.add({
+        title: 'Download started',
+        description: attachment.filename,
+        type: 'success',
+      })
+    } catch {
+      toast.add({
+        title: 'Download failed',
+        description: attachment.filename,
+        type: 'error',
+      })
+    }
   }
   if (preview && url)
     return (

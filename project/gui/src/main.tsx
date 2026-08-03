@@ -1,6 +1,7 @@
 import { Component, StrictMode, useCallback, useState } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { App } from './App'
 import './styles.css'
 import { Button } from '#/components/ui/button'
@@ -19,9 +20,11 @@ import { SignIn } from '#/features/auth/sign-in'
 import { Toaster } from '#/components/ui/toast'
 import { WindowDragRegion } from '#/features/shell/window-toolbar'
 import { initInviteDeepLinks } from '#/lib/invite-deep-link'
+import { createAppQueryClient } from '#/lib/query-client'
 
 const rootEl = document.getElementById('root')!
 const root = createRoot(rootEl)
+const queryClient = createAppQueryClient()
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -117,15 +120,17 @@ initServerConfig()
     if (!needsServer) initAuthClient()
     root.render(
       <StrictMode>
-        <ErrorBoundary>
-          <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-            <TooltipProvider>
-              <WindowDragRegion />
-              <EntryFlow needsServer={needsServer} />
-              <Toaster />
-            </TooltipProvider>
-          </ThemeProvider>
-        </ErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <ErrorBoundary>
+            <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+              <TooltipProvider>
+                <WindowDragRegion />
+                <EntryFlow needsServer={needsServer} />
+                <Toaster />
+              </TooltipProvider>
+            </ThemeProvider>
+          </ErrorBoundary>
+        </QueryClientProvider>
       </StrictMode>,
     )
   })
