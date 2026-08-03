@@ -141,6 +141,113 @@ function flattenTextToolOutputs(
   });
 }
 
+function mcpProtocolType(item: {
+  type?: unknown;
+  name?: unknown;
+  providerData?: unknown;
+}): string | undefined {
+  const providerData =
+    item.providerData &&
+    typeof item.providerData === "object" &&
+    !Array.isArray(item.providerData)
+      ? (item.providerData as Record<string, unknown>)
+      : undefined;
+  if (typeof providerData?.type === "string") return providerData.type;
+  if (typeof item.name === "string" && item.name.startsWith("mcp_")) {
+    return item.name;
+  }
+  if (typeof item.type === "string" && item.type.startsWith("mcp_")) {
+    return item.type;
+  }
+  return undefined;
+}
+
+/**
+ * vLLM's Harmony Responses path only accepts message / function_call /
+ * function_call_output / reasoning as input. Drop OpenAI-hosted MCP protocol
+ * items that would 400 with "Unknown input type: mcp_call".
+ */
+export function stripMcpProtocolInput(
+  input: ModelRequest["input"],
+): ModelRequest["input"] {
+  if (typeof input === "string") return input;
+  return input.filter((item) => {
+    const type = mcpProtocolType(item);
+    return !(typeof type === "string" && type.startsWith("mcp_"));
+  });
+}
+
+/**
+ * vLLM often classifies ordinary tool calls as `mcp_call` when the Harmony
+ * recipient is not `functions.<name>`. Rewrite those into function_call items
+ * so the Agents SDK can execute local tools and the next turn stays on
+ * function_call / function_call_output (which vLLM accepts).
+ */
+export function rewriteVllmMcpCalls(output: unknown[]): void {
+  for (let index = 0; index < output.length; index += 1) {
+    const value = output[index];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const item = value as Record<string, unknown>;
+    const providerData =
+      item.providerData &&
+      typeof item.providerData === "object" &&
+      !Array.isArray(item.providerData)
+        ? (item.providerData as Record<string, unknown>)
+        : {};
+    const type = mcpProtocolType(item);
+    if (item.type !== "hosted_tool_call" || !type?.startsWith("mcp_")) continue;
+
+    if (type !== "mcp_call") {
+      output.splice(index, 1);
+      index -= 1;
+      continue;
+    }
+
+    const toolName =
+      typeof providerData.name === "string" ? providerData.name.trim() : "";
+    // Drop Harmony control-token junk such as "<|constrain|>json".
+    if (!toolName || toolName.includes("<|")) {
+      output.splice(index, 1);
+      index -= 1;
+      continue;
+    }
+
+    const callId =
+      (typeof providerData.id === "string" && providerData.id) ||
+      (typeof item.id === "string" && item.id) ||
+      `call_mcp_${index}`;
+    const status =
+      item.status === "in_progress" ||
+      item.status === "completed" ||
+      item.status === "incomplete"
+        ? item.status
+        : "completed";
+
+    output[index] = {
+      type: "function_call",
+      id: typeof item.id === "string" ? item.id : undefined,
+      callId,
+      name: toolName,
+      arguments:
+        typeof providerData.arguments === "string"
+          ? providerData.arguments
+          : "{}",
+      status,
+    };
+  }
+}
+
+function sanitizeCompatibleInput(
+  input: ModelRequest["input"],
+): ModelRequest["input"] {
+  return flattenTextToolOutputs(stripMcpProtocolInput(input));
+}
+
+function sanitizeCompatibleOutput(output: unknown[]): void {
+  rewriteVllmMcpCalls(output);
+  sanitizeOutputStatuses(output);
+}
+
 export class CompatibleResponsesModel extends OpenAIResponsesModel {
   protected override _buildResponsesCreateRequest(
     request: ModelRequest,
@@ -148,14 +255,14 @@ export class CompatibleResponsesModel extends OpenAIResponsesModel {
   ) {
     return super._buildResponsesCreateRequest({
       ...request,
-      input: flattenTextToolOutputs(request.input),
+      input: sanitizeCompatibleInput(request.input),
     }, stream);
   }
 
   override async getResponse(request: ModelRequest): Promise<ModelResponse> {
     const response = await super.getResponse(request);
     sanitizeUsageDetails(response.usage);
-    sanitizeOutputStatuses(response.output);
+    sanitizeCompatibleOutput(response.output);
     return response;
   }
 
@@ -165,7 +272,7 @@ export class CompatibleResponsesModel extends OpenAIResponsesModel {
     for await (const event of super.getStreamedResponse(request)) {
       if (event.type === "response_done") {
         sanitizeUsageDetails(event.response.usage);
-        sanitizeOutputStatuses(event.response.output);
+        sanitizeCompatibleOutput(event.response.output);
       }
       yield event;
     }

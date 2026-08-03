@@ -15,9 +15,11 @@ import {
   CompatibleResponsesModel,
   createModelProvider,
   normalizeModelBaseUrl,
+  rewriteVllmMcpCalls,
   runAgent,
   sanitizeOutputStatuses,
   sanitizeUsageDetails,
+  stripMcpProtocolInput,
   toolOutputText,
 } from "./openai-agents";
 
@@ -177,6 +179,82 @@ test("custom providers normalize MLflow Responses extensions", async () => {
     tracing: false,
   }, true).requestData;
   expect(request.input[0]?.output).toBe("[augusttollerup] hello");
+});
+
+test("custom providers rewrite vLLM mcp_call items into function calls", () => {
+  const output = [
+    {
+      type: "hosted_tool_call",
+      id: "mcp_1",
+      name: "mcp_call",
+      status: "completed",
+      providerData: {
+        type: "mcp_call",
+        id: "mcp_1",
+        name: "shell",
+        arguments: '{"command":"pwd"}',
+        server_label: "functions",
+      },
+    },
+    {
+      type: "hosted_tool_call",
+      id: "mcp_2",
+      name: "mcp_list_tools",
+      providerData: { type: "mcp_list_tools", server_label: "browser" },
+    },
+    {
+      type: "hosted_tool_call",
+      id: "mcp_3",
+      name: "mcp_call",
+      providerData: {
+        type: "mcp_call",
+        name: "<|constrain|>json",
+        arguments: '{"ok":true}',
+      },
+    },
+  ];
+  rewriteVllmMcpCalls(output);
+  expect(output).toEqual([
+    {
+      type: "function_call",
+      id: "mcp_1",
+      callId: "mcp_1",
+      name: "shell",
+      arguments: '{"command":"pwd"}',
+      status: "completed",
+    },
+  ]);
+
+  expect(
+    stripMcpProtocolInput([
+      {
+        type: "function_call_result",
+        name: "shell",
+        callId: "call-1",
+        status: "completed",
+        output: "ok",
+      },
+      {
+        type: "hosted_tool_call",
+        id: "mcp_1",
+        name: "mcp_call",
+        status: "completed",
+        providerData: {
+          type: "mcp_call",
+          name: "shell",
+          arguments: "{}",
+        },
+      },
+    ]),
+  ).toEqual([
+    {
+      type: "function_call_result",
+      name: "shell",
+      callId: "call-1",
+      status: "completed",
+      output: "ok",
+    },
+  ]);
 });
 
 test("tool results preserve structured output as JSON", () => {
