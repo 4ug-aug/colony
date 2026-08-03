@@ -31,6 +31,16 @@ export const capabilityPresentation: Record<
       "asana.add_task_comment": "Add comments",
     },
   },
+  "outline.documents": {
+    name: "Outline wiki",
+    tools: {
+      "outline.list_documents": "Search documents",
+      "outline.fetch": "Read documents",
+      "outline.list_collections": "List collections",
+      "outline.create_document": "Create documents",
+      "outline.update_document": "Update documents",
+    },
+  },
   "github.pull-requests": {
     name: "GitHub pull requests",
     tools: {

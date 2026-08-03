@@ -154,7 +154,7 @@ and repository checkout among its capabilities when granted.
 _Avoid_: software-engineer-cursor, Cursor engineer
 
 **antboy**: A non-GitHub collaborator person. Runtime kind `openai-agents`,
-with room, task, shell, and attachment access when granted, but no GitHub
+with room, task, wiki, shell, and attachment access when granted, but no GitHub
 capability and no repository clone into `/work`.
 _Avoid_: general-purpose agent, assistant
 

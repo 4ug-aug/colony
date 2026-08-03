@@ -386,6 +386,74 @@ test("antboy runs in a room while a GitHub adapter is configured", async () => {
   );
 });
 
+test("outline documents are granted to antboy and withheld from software-engineer", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const outlineTools = [
+    "outline.list_documents",
+    "outline.fetch",
+    "outline.list_collections",
+    "outline.create_document",
+    "outline.update_document",
+  ];
+  const outlineAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "outline.documents",
+      createUpstream: () => ({
+        listTools: async () => outlineTools.map((name) => ({ name })),
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  let runs = 0;
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    adapters: [outlineAdapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => `run-outline-${(runs += 1)}`,
+    }),
+  });
+  const finish = async (id: string) => {
+    while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+      await Bun.sleep(0);
+    }
+    return executor.getRun(id)!;
+  };
+
+  const antboy = await finish(
+    executor.startRun({
+      task: "check the wiki",
+      agentDefinitionId: ANTBOY_ID,
+    }),
+  );
+  // A succeeded state means the session warm-up found every granted tool.
+  expect(antboy.state).toBe("succeeded");
+  expect(antboy.capabilityGrant?.tools).toEqual(outlineTools);
+
+  const engineer = await finish(
+    executor.startRun({
+      task: "check the wiki",
+      agentDefinitionId: SOFTWARE_ENGINEER_ID,
+    }),
+  );
+  expect(engineer.state).toBe("succeeded");
+  expect(engineer.capabilityGrant).toBeUndefined();
+});
+
 test("client-safe roster presentation never reaches role instructions", async () => {
   // run-helpers.ts and markdown.tsx import roster-people from the GUI bundle.
   // Anything it reaches transitively ships to the browser, so role modules

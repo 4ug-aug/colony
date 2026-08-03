@@ -5,6 +5,10 @@ import { createAsanaMcpUpstream } from "../mcp/asana";
 import { createGitHubMcpUpstream } from "../mcp/github";
 import { createLinearMcpUpstream } from "../mcp/linear";
 import {
+  createOutlineMcpUpstream,
+  type OutlineConfiguration,
+} from "../mcp/outline";
+import {
   createWorkspaceMcpUpstream,
   type WorkspaceRoomPort,
 } from "../mcp/workspace";
@@ -56,6 +60,18 @@ export function createAsanaSoftwareEngineerAdapter(options: {
     capability: {
       id: "asana.tasks",
       createUpstream: () => createAsanaMcpUpstream(options),
+    },
+  };
+}
+
+/** Outline wiki documents. Requested by antboy only. */
+export function createOutlineAdapter(
+  options: OutlineConfiguration,
+): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "outline.documents",
+      createUpstream: () => createOutlineMcpUpstream(options),
     },
   };
 }

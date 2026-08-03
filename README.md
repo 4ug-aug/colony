@@ -78,5 +78,10 @@ To enable scoped Asana tasks, set both `ASANA_API_TOKEN` and
 `ASANA_PROJECT_GID`. Use a dedicated service-account token with access only to
 that project.
 
+To let antboy search and write the Outline wiki, set both `OUTLINE_URL` (your
+instance URL, without `/mcp`) and `OUTLINE_API_KEY`. Only antboy requests this
+capability; the software engineer never receives it. The key's scopes must cover
+every granted tool, or runs fail with `Granted MCP tools are unavailable`.
+
 Back up the SQLite database together with its sibling `attachments/`
 directory.

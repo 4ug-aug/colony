@@ -1258,9 +1258,11 @@ if (import.meta.main) {
       createAsanaSoftwareEngineerAdapter,
       createGitHubSoftwareEngineerAdapter,
       createLinearSoftwareEngineerAdapter,
+      createOutlineAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
     { readAsanaConfiguration },
+    { readOutlineConfiguration },
     { createGitHubCliClient },
     { createMcpGatewayHttpServer },
     { createAppleContainerClient },
@@ -1275,6 +1277,7 @@ if (import.meta.main) {
     import('../../../agents/roster'),
     import('../../../agents/software-engineer-adapters'),
     import('../../../mcp/asana'),
+    import('../../../mcp/outline'),
     import('../../../mcp/github'),
     import('../../../mcp/http'),
     import('../../../sdk/src'),
@@ -1293,6 +1296,7 @@ if (import.meta.main) {
   )
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
   const asana = readAsanaConfiguration()
+  const outline = readOutlineConfiguration()
   const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
   const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
@@ -1348,6 +1352,7 @@ if (import.meta.main) {
               }),
             ]
           : []),
+        ...(outline ? [createOutlineAdapter(outline)] : []),
         ...(github && githubRepository
           ? [
               createGitHubSoftwareEngineerAdapter({
