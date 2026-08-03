@@ -228,9 +228,20 @@ export const MessageComposer = forwardRef<
     disabled: boolean
     roomName: string
     mentionableAccounts: MentionableAccount[]
+    editing?: boolean
+    onCancelEdit?: () => void
   }
 >(function MessageComposer(
-  { value, onChange, onSubmit, disabled, roomName, mentionableAccounts },
+  {
+    value,
+    onChange,
+    onSubmit,
+    disabled,
+    roomName,
+    mentionableAccounts,
+    editing = false,
+    onCancelEdit,
+  },
   ref,
 ) {
   const { data: agentDefinitions = [] } = useAgentDefinitions()
@@ -249,6 +260,7 @@ export const MessageComposer = forwardRef<
   filesRef.current = files
   const [sending, setSending] = useState(false)
   const roomNameRef = useRef(roomName)
+  const editingRef = useRef(editing)
   const mentionItems = useRef<MentionItem[]>([])
   mentionItems.current = [
     ...mentionableAccounts.map((account) => {
@@ -266,14 +278,17 @@ export const MessageComposer = forwardRef<
   useEffect(() => {
     roomNameRef.current = roomName
   }, [roomName])
+  useEffect(() => {
+    editingRef.current = editing
+  }, [editing])
   const serialize = () => editor.getText()
   const addFiles = (next: FileList | File[]) => {
-    if (disabled || sending) return
+    if (disabled || sending || editing) return
     setFiles((current) => [...current, ...Array.from(next)])
   }
   const submit = async () => {
     const text = serialize()
-    const selectedFiles = filesRef.current
+    const selectedFiles = editing ? [] : filesRef.current
     if ((!text.trim() && !selectedFiles.length) || disabled || sending) return
     setSending(true)
     try {
@@ -306,7 +321,9 @@ export const MessageComposer = forwardRef<
       }),
       Placeholder.configure({
         placeholder: () =>
-          `Message #${roomNameRef.current} or mention someone…`,
+          editingRef.current
+            ? 'Edit your message…'
+            : `Message #${roomNameRef.current} or mention someone…`,
       }),
     ],
     content: value,
@@ -382,7 +399,7 @@ export const MessageComposer = forwardRef<
 
   useEffect(() => {
     editor.view.dispatch(editor.state.tr)
-  }, [editor, roomName])
+  }, [editor, roomName, editing])
 
   const control = (
     label: string,
@@ -405,16 +422,30 @@ export const MessageComposer = forwardRef<
 
   return (
     <div ref={containerRef} className="relative">
+      {editing && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
+          <span>Editing message</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={onCancelEdit}
+            disabled={disabled || sending}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
       <EditorContent
         editor={editor}
         onDragOver={(event) => event.preventDefault()}
         onDrop={(event) => {
-          if (!event.dataTransfer.files.length) return
+          if (editing || !event.dataTransfer.files.length) return
           event.preventDefault()
           addFiles(event.dataTransfer.files)
         }}
       />
-      {files.length > 0 && (
+      {!editing && files.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {files.map((file, index) => (
             <SelectedFile
@@ -467,38 +498,50 @@ export const MessageComposer = forwardRef<
           >
             <AtSign />
           </Button>
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            className="sr-only"
-            onChange={(event) => {
-              if (event.target.files) addFiles(event.target.files)
-              event.target.value = ''
-            }}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Attach files"
-            onClick={() => fileInput.current?.click()}
-            disabled={disabled || sending}
-          >
-            <Paperclip />
-          </Button>
+          {!editing && (
+            <>
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                className="sr-only"
+                onChange={(event) => {
+                  if (event.target.files) addFiles(event.target.files)
+                  event.target.value = ''
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Attach files"
+                onClick={() => fileInput.current?.click()}
+                disabled={disabled || sending}
+              >
+                <Paperclip />
+              </Button>
+            </>
+          )}
         </div>
         <Button
           type="button"
           size="icon-sm"
           className="rounded-full"
-          aria-label={sending ? 'Sending message' : 'Send message'}
+          aria-label={
+            sending
+              ? editing
+                ? 'Saving message'
+                : 'Sending message'
+              : editing
+                ? 'Save message'
+                : 'Send message'
+          }
           onClick={() => void submit()}
           disabled={
             (!editorState.hasText && !files.length) || disabled || sending
           }
         >
-          {sending ? 'Sending…' : <Send />}
+          {sending ? (editing ? 'Saving…' : 'Sending…') : <Send />}
         </Button>
       </div>
     </div>

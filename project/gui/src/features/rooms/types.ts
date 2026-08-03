@@ -37,6 +37,7 @@ export type RoomMessage = {
   author: Author
   text: string
   createdAt: number
+  editedAt?: number
   attachments: RoomAttachment[]
 }
 export type RoomAttachment = {
@@ -77,6 +78,7 @@ export type RoomStreamMessage =
       latestSteps: Step[]
     }
   | { type: 'message.created'; message: RoomMessage }
+  | { type: 'message.updated'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
   | { type: 'run.step'; runId: string; step: Step }
   | { type: 'room.members.changed'; roomId: string }

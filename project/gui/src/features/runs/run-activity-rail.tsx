@@ -1,27 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
-import { apiFetch } from '#/lib/api-transport'
-import {
-  formatStepText,
-  groupActivity,
-  mergeSteps,
-  pairSteps,
-} from './run-activity'
-import { stepLabel } from './step-label'
-import type { Step } from './step-label'
-import { terminal, agentName } from './run-helpers'
 import { Markdown } from '#/components/markdown'
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
-import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
-import { RunActivitySplitHeader } from './run-activity-dither'
-import { ToolIcon } from './run-tool-icon'
+import { Button } from '#/components/ui/button'
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetTitle,
 } from '#/components/ui/sheet'
+import { apiFetch } from '#/lib/api-transport'
+import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  formatStepText,
+  groupActivity,
+  mergeSteps,
+  pairSteps,
+} from './run-activity'
+import { RunActivitySplitHeader } from './run-activity-dither'
+import { agentName, terminal } from './run-helpers'
+import { ToolIcon } from './run-tool-icon'
+import type { Step } from './step-label'
+import { stepLabel } from './step-label'
 
 type Person = { name: string; image?: string }
 type ActivityRun = {

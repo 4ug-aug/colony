@@ -131,11 +131,15 @@ export function Timeline({
   runs,
   openRun,
   mentionHandles,
+  currentUserId,
+  onEdit,
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
   openRun: (runId: string) => void
   mentionHandles: string[]
+  currentUserId?: string
+  onEdit?: (message: RoomMessage) => void
 }) {
   const items = useMemo(() => {
     const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
@@ -191,9 +195,14 @@ export function Timeline({
             : item.message.text
         const isAgent =
           isResult || (!isResult && item.message.author.kind === 'agent')
+        const canEdit =
+          !isResult &&
+          Boolean(onEdit) &&
+          item.message.author.kind !== 'agent' &&
+          item.message.author.id === currentUserId
         return (
           <article
-            className={`flex gap-3 ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}`}
+            className={`group flex gap-3 ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}`}
             key={item.id}
           >
             {item.grouped ? (
@@ -208,6 +217,38 @@ export function Timeline({
                   <time className="text-xs text-muted-foreground">
                     {timestamp(item.createdAt)}
                   </time>
+                  {!isResult && item.message.editedAt != null && (
+                    <span className="text-xs text-muted-foreground">Edited</span>
+                  )}
+                  {canEdit && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      onClick={() => onEdit?.(item.message)}
+                    >
+                      Edit
+                    </Button>
+                  )}
+                </div>
+              )}
+              {item.grouped && (canEdit || (!isResult && item.message.editedAt != null)) && (
+                <div className="mb-0.5 flex items-center gap-2">
+                  {!isResult && item.message.editedAt != null && (
+                    <span className="text-xs text-muted-foreground">Edited</span>
+                  )}
+                  {canEdit && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      onClick={() => onEdit?.(item.message)}
+                    >
+                      Edit
+                    </Button>
+                  )}
                 </div>
               )}
               <div

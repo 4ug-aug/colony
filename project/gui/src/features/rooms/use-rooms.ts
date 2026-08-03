@@ -376,16 +376,18 @@ export function useRooms(userId: string) {
               void acknowledge(selectedRoomId)
           }
           if (
-            event.type === 'message.created' &&
+            (event.type === 'message.created' ||
+              event.type === 'message.updated') &&
             event.message.roomId === selectedRoomId
           ) {
             setMessages((current) => mergeMessages(current, [event.message]))
-            recordMessageActivity({
-              roomId: event.message.roomId,
-              messageId: event.message.id,
-              createdAt: event.message.createdAt,
-              authorId: event.message.author.id,
-            })
+            if (event.type === 'message.created')
+              recordMessageActivity({
+                roomId: event.message.roomId,
+                messageId: event.message.id,
+                createdAt: event.message.createdAt,
+                authorId: event.message.author.id,
+              })
           }
           if (
             event.type === 'run.changed' &&
@@ -664,6 +666,33 @@ export function useRooms(userId: string) {
           setRuns((current) => mergeRuns(current, [result.run!]))
         }
       }
+      return result
+    },
+    edit: async (messageId: string, text: string) => {
+      if (!selectedRoomId) return
+      let result: RoomMessage | undefined
+      try {
+        const response = await apiFetch(
+          `/api/rooms/${selectedRoomId}/messages/${messageId}`,
+          {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ text }),
+          },
+        )
+        const responseBody = (await response.json()) as {
+          message?: RoomMessage
+          error?: string
+        }
+        if (!response.ok || !responseBody.message)
+          throw new Error(responseBody.error ?? 'Request failed')
+        result = responseBody.message
+        setError(undefined)
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Request failed')
+      }
+      if (result)
+        setMessages((current) => mergeMessages(current, [result]))
       return result
     },
     loadOlder,

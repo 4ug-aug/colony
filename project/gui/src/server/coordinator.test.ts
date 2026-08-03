@@ -311,6 +311,30 @@ class MemoryRoomStore implements RoomStore {
       })),
     )
   }
+  getMessage(roomId: string, messageId: string) {
+    return this.messages.find(
+      (message) => message.roomId === roomId && message.id === messageId,
+    )
+  }
+  updateMessageText(input: {
+    id: string
+    roomId: string
+    text: string
+    editedAt: number
+  }) {
+    const index = this.messages.findIndex(
+      (message) => message.roomId === input.roomId && message.id === input.id,
+    )
+    if (index < 0) return undefined
+    const current = this.messages[index]!
+    const updated = {
+      ...current,
+      text: input.text,
+      editedAt: input.editedAt,
+    }
+    this.messages[index] = updated
+    return updated
+  }
   createAttention(attention: RoomAttention) {
     if (
       this.attentions.some(
@@ -2453,6 +2477,156 @@ test('allowedOrigin rejects disallowed origins', () => {
   expect(
     allowedOrigin('https://evil.example', 'https://app.example.com'),
   ).toBeUndefined()
+})
+
+test('PATCH edits own message text without starting runs or creating attention', async () => {
+  let currentUser = 'user-1'
+  const users: RoomUser[] = [
+    { id: 'user-1', name: 'ada', username: 'ada' },
+    { id: 'user-2', name: 'bob', username: 'bob' },
+  ]
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = users
+  const control = new FakeRunControl()
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: {
+      authenticate: async () => users.find(({ id }) => id === currentUser),
+    },
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const room = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    expect((await room.next()).type).toBe('room.snapshot')
+    currentUser = 'user-2'
+    const reviewer = await open(`${base.replace('http', 'ws')}/api/workspace/stream`)
+    expect((await reviewer.next()).type).toBe('workspace.snapshot')
+
+    currentUser = 'user-1'
+    const created = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Original note for @bob' }),
+    })
+    expect(created.status).toBe(201)
+    const message = ((await created.json()) as { message: RoomMessage }).message
+    expect((await room.next()).type).toBe('message.created')
+    expect(await reviewer.next()).toMatchObject({
+      type: 'attention.changed',
+      kind: 'mention',
+    })
+    expect(await reviewer.next()).toMatchObject({ type: 'message.created' })
+    const attentionAfterCreate = store.attentions.length
+    const runCount = control.requests.length
+
+    const updatedEvent = room.next()
+    const patched = await fetch(
+      `${base}/api/rooms/general/messages/${message.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          origin: 'http://gui.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ text: 'Edited note mentioning @bob again' }),
+      },
+    )
+    expect(patched.status).toBe(200)
+    const body = (await patched.json()) as { message: RoomMessage }
+    expect(body.message.text).toBe('Edited note mentioning @bob again')
+    expect(body.message.editedAt).toBeDefined()
+    expect(body.message.id).toBe(message.id)
+    expect(await updatedEvent).toMatchObject({
+      type: 'message.updated',
+      message: {
+        id: message.id,
+        text: 'Edited note mentioning @bob again',
+      },
+    })
+    await expectNoEvent(reviewer)
+    expect(store.attentions).toHaveLength(attentionAfterCreate)
+    expect(control.requests).toHaveLength(runCount)
+    expect(store.messages[0]!.text).toBe('Edited note mentioning @bob again')
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('PATCH rejects empty text, other authors, and missing messages', async () => {
+  const store = new MemoryRoomStore()
+  const messages = createRoomMessageHub(store)
+  const mine = messages.postMessage({
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Mine',
+  })
+  const theirs = messages.postMessage({
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Theirs',
+  })
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages,
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const empty = await fetch(
+      `${base}/api/rooms/general/messages/${mine.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          origin: 'http://gui.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ text: '   ' }),
+      },
+    )
+    expect(empty.status).toBe(400)
+
+    const forbidden = await fetch(
+      `${base}/api/rooms/general/messages/${theirs.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          origin: 'http://gui.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ text: 'Hijack' }),
+      },
+    )
+    expect(forbidden.status).toBe(403)
+
+    const missing = await fetch(
+      `${base}/api/rooms/general/messages/does-not-exist`,
+      {
+        method: 'PATCH',
+        headers: {
+          origin: 'http://gui.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ text: 'Nope' }),
+      },
+    )
+    expect(missing.status).toBe(404)
+  } finally {
+    coordinator.stop()
+  }
 })
 
 test('a realtime ticket round-trips to its user id', () => {

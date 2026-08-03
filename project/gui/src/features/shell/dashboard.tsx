@@ -6,7 +6,7 @@ import { MembersPanel } from '#/features/members/members-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
 import { Timeline } from '#/features/rooms/room-timeline'
-import type { Author } from '#/features/rooms/types'
+import type { Author, RoomMessage } from '#/features/rooms/types'
 import { useRooms } from '#/features/rooms/use-rooms'
 import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
@@ -52,6 +52,7 @@ export function Dashboard({
     create,
     remove,
     send,
+    edit,
     cancel,
     draft,
     setDraft,
@@ -64,6 +65,7 @@ export function Dashboard({
   } = useRooms(user.id)
   const [view, setView] = useState<DashboardView>('room')
   const [selectedRunId, setSelectedRunId] = useState<string>()
+  const [editingMessage, setEditingMessage] = useState<RoomMessage>()
   const composer = useRef<MessageComposerHandle>(null)
   const scrollRef = useRef<HTMLElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -75,10 +77,24 @@ export function Dashboard({
   const [atBottom, setAtBottom] = useState(true)
 
   const submit = async (text: string, files: File[]) => {
+    if (editingMessage) {
+      if (!text.trim()) return false
+      const result = await edit(editingMessage.id, text)
+      if (result) {
+        setEditingMessage(undefined)
+        setDraft('')
+      }
+      return Boolean(result)
+    }
     if (!text.trim() && !files.length) return false
     const result = await send(text, files)
     if (result) setDraft('')
     return Boolean(result)
+  }
+
+  const cancelEdit = () => {
+    setEditingMessage(undefined)
+    setDraft('')
   }
 
   useLayoutEffect(() => {
@@ -117,6 +133,7 @@ export function Dashboard({
   useLayoutEffect(() => {
     historyAnchorRef.current = undefined
     setSelectedRunId(undefined)
+    setEditingMessage(undefined)
   }, [room?.id])
 
   const selectedRun = runs.find(({ id }) => id === selectedRunId)
@@ -266,6 +283,11 @@ export function Dashboard({
                         messages={messages}
                         runs={runs}
                         openRun={setSelectedRunId}
+                        currentUserId={user.id}
+                        onEdit={(message) => {
+                          setEditingMessage(message)
+                          setDraft(message.text)
+                        }}
                         mentionHandles={[
                           user.name,
                           ...mentionableAccounts.map(
@@ -306,6 +328,8 @@ export function Dashboard({
                     disabled={loading || !room}
                     roomName={room?.name ?? 'room'}
                     mentionableAccounts={mentionableAccounts}
+                    editing={Boolean(editingMessage)}
+                    onCancelEdit={cancelEdit}
                   />
                 </div>
                 <div className="mx-auto max-w-7xl">

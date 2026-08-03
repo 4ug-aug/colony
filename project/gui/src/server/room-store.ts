@@ -29,6 +29,7 @@ export type RoomMessage = {
   author: MessageAuthor
   text: string
   createdAt: number
+  editedAt?: number
   attachments: RoomAttachment[]
 }
 export type RoomMessageMarker = {
@@ -106,6 +107,7 @@ export interface RoomStore {
   listWorkspaceUsers(): RoomUser[]
   listMentionableAccounts(roomId: string): RoomUser[]
   listMessages(roomId: string): RoomMessage[]
+  getMessage(roomId: string, messageId: string): RoomMessage | undefined
   latestMessageFromOther(
     roomId: string,
     userId: string,
@@ -119,6 +121,12 @@ export interface RoomStore {
     message: RoomMessageInput,
     attachments?: NewRoomAttachment[],
   ): void
+  updateMessageText(input: {
+    id: string
+    roomId: string
+    text: string
+    editedAt: number
+  }): RoomMessage | undefined
   createAttention(attention: RoomAttention): boolean
   listMentionRecipientIds(messageId: string): string[]
   listAttentionCounts(userId: string, kind?: AttentionKind): Map<string, number>
@@ -163,6 +171,7 @@ type MessageRow = {
   author_display_name?: string | null
   text: string
   created_at: number
+  edited_at?: number | null
 }
 type AttachmentRow = {
   id: string
@@ -253,6 +262,7 @@ const messageFrom = (
         },
   text: row.text,
   createdAt: row.created_at,
+  ...(row.edited_at != null ? { editedAt: row.edited_at } : {}),
   attachments,
 })
 const stepFrom = (row: StepRow): StoredStep => ({
@@ -320,6 +330,13 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       )
       .get(),
   )
+  const messageColumns = sqlite
+    .prepare('PRAGMA table_info(room_message)')
+    .all() as { name?: string }[]
+  const hasEditedAt = messageColumns.some(
+    (column) => column.name === 'edited_at',
+  )
+  const editedAtSelect = hasEditedAt ? ', m.edited_at' : ''
   const userColumns = sqlite.prepare('PRAGMA table_info(user)').all() as {
     name?: string
   }[]
@@ -355,15 +372,26 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     }
     return rows.map((row) => messageFrom(row, byMessage.get(row.id) ?? []))
   }
+  const messageSelect = `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${editedAtSelect}${messageProfile}
+           FROM room_message m${messageProfileJoin}`
   const messages = (roomId: string): RoomMessage[] => {
     const rows = sqlite
       .prepare(
-        `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${messageProfile}
-           FROM room_message m${messageProfileJoin}
+        `${messageSelect}
            WHERE m.room_id = ? ORDER BY m.created_at, m.id`,
       )
       .all(roomId) as MessageRow[]
     return hydrateMessages(roomId, rows)
+  }
+  const getMessage = (
+    roomId: string,
+    messageId: string,
+  ): RoomMessage | undefined => {
+    const row = sqlite
+      .prepare(`${messageSelect} WHERE m.room_id = ? AND m.id = ?`)
+      .get(roomId, messageId) as MessageRow | undefined
+    if (!row) return undefined
+    return hydrateMessages(roomId, [row])[0]
   }
   const latestMessageFromOther = (
     roomId: string,
@@ -396,8 +424,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       : [roomId, limit + 1]
     return sqlite
       .prepare(
-        `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${messageProfile}
-           FROM room_message m${messageProfileJoin}
+        `${messageSelect}
            ${where} ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
       )
       .all(...values) as MessageRow[]
@@ -613,6 +640,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           .all(roomId) as UserRow[]
       ).map(userFrom),
     listMessages: messages,
+    getMessage,
     latestMessageFromOther,
     listRoomHistoryPage,
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
@@ -658,6 +686,16 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         sqlite.prepare('ROLLBACK').run()
         throw error
       }
+    },
+    updateMessageText: ({ id, roomId, text, editedAt }) => {
+      if (!hasEditedAt) return undefined
+      const result = sqlite
+        .prepare(
+          'UPDATE room_message SET text = ?, edited_at = ? WHERE id = ? AND room_id = ?',
+        )
+        .run(text, editedAt, id, roomId) as { changes?: number }
+      if ((result.changes ?? 0) !== 1) return undefined
+      return getMessage(roomId, id)
     },
     createAttention: (attention) =>
       ((

@@ -15,7 +15,7 @@ import {
   type RoomUser,
   type StoredStep,
 } from './room-store'
-import { createRoomMessageHub, type RoomMessageHub } from './room-hub'
+import { createRoomMessageHub, type RoomMessageHub, EditMessageError } from './room-hub'
 import {
   createAdmissionHttpHandler,
   type AdmissionOptions,
@@ -95,6 +95,7 @@ export type RoomServerMessage =
       latestSteps: StoredStep[]
     }
   | { type: 'message.created'; message: RoomMessage }
+  | { type: 'message.updated'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
   | { type: 'run.step'; runId: string; step: StoredStep }
   | { type: 'room.members.changed'; roomId: string }
@@ -471,6 +472,7 @@ export function createCoordinator(options: {
   const unsubscribe = options.control.subscribe(project)
   const unsubscribeMessages = options.messages.subscribe((event) => {
     broadcastRoom(event.message.roomId, event)
+    if (event.type !== 'message.created') return
     for (const account of mentionedAccounts(
       event.message.text,
       options.store.listMentionableAccounts(event.message.roomId),
@@ -912,6 +914,35 @@ export function createCoordinator(options: {
               400,
             ),
           )
+        }
+      }
+      const messageEdit = url.pathname.match(
+        /^\/api\/rooms\/([^/]+)\/messages\/([^/]+)$/,
+      )
+      if (messageEdit && request.method === 'PATCH') {
+        const roomId = messageEdit[1]!
+        const messageId = messageEdit[2]!
+        if (!options.store.canAccessRoom(roomId, user.id))
+          return cors(json({ error: 'Room not found' }, 404))
+        const text = await textFrom(request)
+        if (!text) return cors(json({ error: 'Invalid message' }, 400))
+        try {
+          const message = options.messages.editMessage({
+            roomId,
+            messageId,
+            authorId: user.id,
+            text,
+          })
+          return cors(json({ message }))
+        } catch (error) {
+          if (error instanceof EditMessageError) {
+            if (error.code === 'not_found')
+              return cors(json({ error: 'Message not found' }, 404))
+            if (error.code === 'forbidden')
+              return cors(json({ error: 'Forbidden' }, 403))
+            return cors(json({ error: 'Invalid message' }, 400))
+          }
+          return cors(json({ error: 'Unable to edit message' }, 500))
         }
       }
       if (messages && request.method === 'POST') {
