@@ -101,10 +101,30 @@ export function sanitizeUsageDetails(usage: SanitizableUsage): void {
   }
 }
 
+const responseItemStatuses = new Set([
+  "in_progress",
+  "completed",
+  "incomplete",
+]);
+
+export function sanitizeOutputStatuses(output: unknown[]): void {
+  for (const value of output) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const item = value as Record<string, unknown>;
+    if (
+      (item.type === "message" || item.type === "function_call") &&
+      !responseItemStatuses.has(String(item.status))
+    ) {
+      item.status = "completed";
+    }
+  }
+}
+
 class CompatibleResponsesModel extends OpenAIResponsesModel {
   override async getResponse(request: ModelRequest): Promise<ModelResponse> {
     const response = await super.getResponse(request);
     sanitizeUsageDetails(response.usage);
+    sanitizeOutputStatuses(response.output);
     return response;
   }
 
@@ -114,6 +134,7 @@ class CompatibleResponsesModel extends OpenAIResponsesModel {
     for await (const event of super.getStreamedResponse(request)) {
       if (event.type === "response_done") {
         sanitizeUsageDetails(event.response.usage);
+        sanitizeOutputStatuses(event.response.output);
       }
       yield event;
     }

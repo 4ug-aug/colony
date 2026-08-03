@@ -15,6 +15,7 @@ import {
   createModelProvider,
   normalizeModelBaseUrl,
   runAgent,
+  sanitizeOutputStatuses,
   sanitizeUsageDetails,
   toolOutputText,
 } from "./openai-agents";
@@ -139,6 +140,18 @@ test("custom providers keep Responses and discard nonnumeric usage extensions", 
   expect(usage.requestUsageEntries?.[0]?.outputTokensDetails).toEqual({
     reasoning_tokens: 0,
   });
+
+  const output = [
+    { type: "message", status: "complete" },
+    { type: "function_call", status: null },
+    { type: "hosted_tool_call", status: "failed" },
+  ];
+  sanitizeOutputStatuses(output);
+  expect(output.map((item) => item.status)).toEqual([
+    "completed",
+    "completed",
+    "failed",
+  ]);
 });
 
 test("tool results preserve structured output as JSON", () => {

@@ -34,6 +34,24 @@ export type AdmissionOptions = {
   }
 }
 
+export function invitationUrl(
+  token: string,
+  guiOrigin: string,
+  serverOrigin: string,
+): string {
+  const gui = new URL(guiOrigin)
+  const path = `/invite/${encodeURIComponent(token)}`
+  if (gui.protocol !== 'tauri:') return new URL(path, gui).toString()
+
+  const server = new URL(serverOrigin)
+  if (server.protocol !== 'http:' && server.protocol !== 'https:')
+    throw new Error('Invite server origin must use HTTP or HTTPS')
+
+  const url = new URL(`sweat://invite/${encodeURIComponent(token)}`)
+  url.searchParams.set('server', server.toString().replace(/\/$/, ''))
+  return url.toString()
+}
+
 const json = (body: unknown, status = 200): Response =>
   Response.json(body, { status })
 
@@ -161,10 +179,7 @@ export function createAdmissionHttpHandler(
         return json(
           {
             ...created,
-            url: new URL(
-              `/invite/${encodeURIComponent(created.token)}`,
-              options.guiOrigin,
-            ).toString(),
+            url: invitationUrl(created.token, options.guiOrigin, url.origin),
           },
           201,
         )

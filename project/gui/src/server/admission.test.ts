@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { createAdmissionStore } from './admission'
+import { invitationUrl } from './admission-http'
 import { createCoordinator } from './coordinator'
 import { createRoomMessageHub } from './room-hub'
 import { createSqliteRoomStore } from './room-store'
@@ -30,6 +31,19 @@ const makeDatabase = () => {
   `)
   return sqlite
 }
+
+test('desktop invitations identify the server and token', () => {
+  const value = invitationUrl(
+    'invite-token',
+    'tauri://localhost',
+    'https://sweat.example.com/',
+  )
+  const url = new URL(value)
+  expect(url.protocol).toBe('sweat:')
+  expect(url.hostname).toBe('invite')
+  expect(url.pathname).toBe('/invite-token')
+  expect(url.searchParams.get('server')).toBe('https://sweat.example.com')
+})
 
 test('setup token is created once and only its hash persists', () => {
   const sqlite = makeDatabase()

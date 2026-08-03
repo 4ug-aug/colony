@@ -13,6 +13,7 @@ fn should_open_externally(current: &Url, target: &Url) -> bool {
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_deep_link::init())
     .plugin(tauri_plugin_opener::init())
     .plugin(
       tauri::plugin::Builder::<_, ()>::new("external-links")
