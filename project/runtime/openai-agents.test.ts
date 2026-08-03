@@ -4,13 +4,20 @@ import {
   OpenAIResponsesModel,
   type ModelRequest,
   type ResponseStreamEvent,
+  Usage,
 } from "@openai/agents";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import OpenAI from "openai";
 import type { Step } from "./step";
-import { normalizeModelBaseUrl, runAgent, toolOutputText } from "./openai-agents";
+import {
+  createModelProvider,
+  normalizeModelBaseUrl,
+  runAgent,
+  sanitizeUsageDetails,
+  toolOutputText,
+} from "./openai-agents";
 
 function completionStream(
   id: string,
@@ -81,6 +88,57 @@ test("OpenAI's root URL uses its versioned API path", () => {
   expect(normalizeModelBaseUrl("https://api.openai.com")).toBe(
     "https://api.openai.com/v1",
   );
+});
+
+test("custom providers keep Responses and discard nonnumeric usage extensions", async () => {
+  const model = {
+    baseUrl: "https://models.example/v1",
+    apiKey: "test-key",
+    model: "test-model",
+  };
+
+  expect(
+    await createModelProvider({ ...model, provider: "custom" }).getModel(),
+  ).toBeInstanceOf(OpenAIResponsesModel);
+  expect(
+    await createModelProvider({ ...model, provider: "openai" }).getModel(),
+  ).toBeInstanceOf(OpenAIResponsesModel);
+
+  const usage = new Usage({
+    inputTokens: 3,
+    outputTokens: 2,
+    totalTokens: 5,
+    inputTokensDetails: {
+      cached_tokens: 1,
+      input_tokens_per_turn: [3],
+    } as unknown as Record<string, number>,
+    outputTokensDetails: {
+      reasoning_tokens: 0,
+      output_tokens_per_turn: [2],
+    } as unknown as Record<string, number>,
+    requestUsageEntries: [{
+      inputTokens: 3,
+      outputTokens: 2,
+      totalTokens: 5,
+      inputTokensDetails: {
+        cached_tokens: 1,
+        cached_tokens_per_turn: [1],
+      } as unknown as Record<string, number>,
+      outputTokensDetails: {
+        reasoning_tokens: 0,
+        tool_output_tokens_per_turn: [0],
+      } as unknown as Record<string, number>,
+    }],
+  });
+  sanitizeUsageDetails(usage);
+  expect(usage.inputTokensDetails).toEqual([{ cached_tokens: 1 }]);
+  expect(usage.outputTokensDetails).toEqual([{ reasoning_tokens: 0 }]);
+  expect(usage.requestUsageEntries?.[0]?.inputTokensDetails).toEqual({
+    cached_tokens: 1,
+  });
+  expect(usage.requestUsageEntries?.[0]?.outputTokensDetails).toEqual({
+    reasoning_tokens: 0,
+  });
 });
 
 test("tool results preserve structured output as JSON", () => {

@@ -3,14 +3,19 @@ import {
   MCPServers,
   MCPServerStreamableHttp,
   type Model,
+  type ModelRequest,
   type ModelProvider,
+  type ModelResponse,
+  OpenAIResponsesModel,
   OpenAIProvider,
+  type ResponseStreamEvent,
   Runner,
   tool,
   type ToolOutputImage,
 } from "@openai/agents";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import OpenAI from "openai";
 
 import type { Step } from "./step";
 import type { CapabilitySessionBinding } from "../mcp/session";
@@ -57,6 +62,80 @@ export function toolOutputText(output: unknown): string {
     // Fall through for circular or otherwise non-JSON values.
   }
   return String(output);
+}
+
+type TokenDetails = Record<string, number>;
+type SanitizableUsage = {
+  inputTokensDetails?: TokenDetails | TokenDetails[];
+  outputTokensDetails?: TokenDetails | TokenDetails[];
+  requestUsageEntries?: Array<{
+    inputTokensDetails?: TokenDetails;
+    outputTokensDetails?: TokenDetails;
+  }>;
+};
+
+function numericDetails(details: TokenDetails): TokenDetails {
+  return Object.fromEntries(
+    Object.entries(details).filter(([, value]) => typeof value === "number"),
+  );
+}
+
+export function sanitizeUsageDetails(usage: SanitizableUsage): void {
+  if (usage.inputTokensDetails) {
+    usage.inputTokensDetails = Array.isArray(usage.inputTokensDetails)
+      ? usage.inputTokensDetails.map(numericDetails)
+      : numericDetails(usage.inputTokensDetails);
+  }
+  if (usage.outputTokensDetails) {
+    usage.outputTokensDetails = Array.isArray(usage.outputTokensDetails)
+      ? usage.outputTokensDetails.map(numericDetails)
+      : numericDetails(usage.outputTokensDetails);
+  }
+  for (const entry of usage.requestUsageEntries ?? []) {
+    if (entry.inputTokensDetails) {
+      entry.inputTokensDetails = numericDetails(entry.inputTokensDetails);
+    }
+    if (entry.outputTokensDetails) {
+      entry.outputTokensDetails = numericDetails(entry.outputTokensDetails);
+    }
+  }
+}
+
+class CompatibleResponsesModel extends OpenAIResponsesModel {
+  override async getResponse(request: ModelRequest): Promise<ModelResponse> {
+    const response = await super.getResponse(request);
+    sanitizeUsageDetails(response.usage);
+    return response;
+  }
+
+  override async *getStreamedResponse(
+    request: ModelRequest,
+  ): AsyncIterable<ResponseStreamEvent> {
+    for await (const event of super.getStreamedResponse(request)) {
+      if (event.type === "response_done") {
+        sanitizeUsageDetails(event.response.usage);
+      }
+      yield event;
+    }
+  }
+}
+
+export function createModelProvider(
+  model: OpenAICompatibleModel,
+): ModelProvider {
+  const baseURL = normalizeModelBaseUrl(model.baseUrl);
+  if (model.provider === "custom") {
+    const client = new OpenAI({ apiKey: model.apiKey, baseURL });
+    return {
+      getModel: (name) =>
+        new CompatibleResponsesModel(client, name ?? model.model),
+    };
+  }
+  return new OpenAIProvider({
+    apiKey: model.apiKey,
+    baseURL,
+    useResponses: true,
+  });
 }
 
 function shellEnvironment(): Record<string, string | undefined> {
@@ -237,11 +316,7 @@ export async function runAgent(
     const result = await new Runner({
       modelProvider:
         dependencies.modelProvider ??
-        new OpenAIProvider({
-          apiKey: request.model.apiKey,
-          baseURL: normalizeModelBaseUrl(request.model.baseUrl),
-          useResponses: true,
-        }),
+        createModelProvider(request.model),
       tracingDisabled: true,
     }).run(agent, request.task, { maxTurns: 50, stream: true });
 
