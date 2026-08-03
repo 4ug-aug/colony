@@ -82,6 +82,20 @@ const softwareEngineerCapabilities = [
     tools: ['Create pull requests', 'Wait for pull request checks'],
   },
   {
+    name: 'Asana tasks',
+    icon: '/icons/asana.svg',
+    invertOnDark: false,
+    tools: [
+      'Get project',
+      'Create tasks',
+      'List tasks',
+      'Get task details',
+      'Read comments',
+      'Update completion',
+      'Add comments',
+    ],
+  },
+  {
     name: 'Room context',
     icon: undefined,
     invertOnDark: false,

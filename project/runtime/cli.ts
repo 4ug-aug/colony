@@ -7,6 +7,14 @@ const required = (name: string): string => {
   return value;
 };
 
+const modelProvider = (): "openai" | "custom" => {
+  const value = Bun.env.SWEAT_MODEL_PROVIDER ?? "openai";
+  if (value !== "openai" && value !== "custom") {
+    throw new Error("SWEAT_MODEL_PROVIDER must be openai or custom");
+  }
+  return value;
+};
+
 try {
   await runAgent(
     {
@@ -14,7 +22,7 @@ try {
       instructions: required("SWEAT_AGENT_INSTRUCTIONS"),
       agentId: required("SWEAT_AGENT_ID"),
       model: {
-        provider: "openai",
+        provider: modelProvider(),
         baseUrl: required("SWEAT_MODEL_BASE_URL"),
         apiKey: required("SWEAT_MODEL_API_KEY"),
         model: required("SWEAT_MODEL_NAME"),

@@ -21,8 +21,23 @@ export const softwareEngineerRole: AgentRole = {
       ],
     },
     {
+      id: "asana.tasks",
+      tools: [
+        "asana.get_project",
+        "asana.create_task",
+        "asana.list_tasks",
+        "asana.get_task",
+        "asana.get_task_comments",
+        "asana.set_task_completion",
+        "asana.add_task_comment",
+      ],
+    },
+    {
       id: "github.pull-requests",
-      tools: ["github.create_pull_request", "github.wait_for_pull_request_checks"],
+      tools: [
+        "github.create_pull_request",
+        "github.wait_for_pull_request_checks",
+      ],
     },
     {
       id: "workspace.room",

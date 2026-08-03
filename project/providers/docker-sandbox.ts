@@ -4,8 +4,10 @@ import {
   type CommandRunner,
 } from "../sdk/src";
 import type { SandboxProvider } from "../sandboxes";
+import { isAbsolute } from "node:path";
 
 const idleCommand = ["sh", "-c", "while :; do sleep 3600; done"] as const;
+const extraCaCertificate = "/etc/ssl/certs/sweat-extra-ca.pem";
 
 async function checked(
   runner: CommandRunner,
@@ -21,8 +23,12 @@ export function createDockerSandboxProvider(
   options: {
     runner?: CommandRunner;
     createId?: () => string;
+    caCertificate?: string;
   } = {},
 ): SandboxProvider {
+  if (options.caCertificate && !isAbsolute(options.caCertificate)) {
+    throw new Error("Docker agent CA certificate path must be absolute");
+  }
   const runner = options.runner ?? new BunCommandRunner("docker");
   const createId = options.createId ?? (() => `sandbox-${crypto.randomUUID()}`);
 
@@ -38,6 +44,9 @@ export function createDockerSandboxProvider(
           "--detach",
           "--add-host",
           "host.container.internal:host-gateway",
+          ...(options.caCertificate
+            ? ["--volume", `${options.caCertificate}:${extraCaCertificate}:ro`]
+            : []),
           ...(spec.volumes?.flatMap((volume) => ["--volume", volume]) ?? []),
           spec.image,
           ...idleCommand,
@@ -51,7 +60,13 @@ export function createDockerSandboxProvider(
 
         async exec(request) {
           const args = ["exec"];
-          for (const [key, value] of Object.entries(request.env ?? {})) {
+          const env = {
+            ...request.env,
+            ...(options.caCertificate
+              ? { NODE_EXTRA_CA_CERTS: extraCaCertificate }
+              : {}),
+          };
+          for (const [key, value] of Object.entries(env)) {
             args.push("--env", value === undefined ? key : `${key}=${value}`);
           }
           if (request.workdir) args.push("--workdir", request.workdir);

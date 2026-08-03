@@ -4,6 +4,7 @@ import {
   MCPServerStreamableHttp,
   type Model,
   type ModelProvider,
+  OpenAIChatCompletionsModel,
   OpenAIProvider,
   Runner,
   tool,
@@ -11,6 +12,7 @@ import {
 } from "@openai/agents";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import OpenAI from "openai";
 
 import type { Step } from "./step";
 import type { CapabilitySessionBinding } from "../mcp/session";
@@ -57,6 +59,24 @@ export function toolOutputText(output: unknown): string {
     // Fall through for circular or otherwise non-JSON values.
   }
   return String(output);
+}
+
+export function createModelProvider(
+  model: OpenAICompatibleModel,
+): ModelProvider {
+  const baseURL = normalizeModelBaseUrl(model.baseUrl);
+  if (model.provider === "custom") {
+    const client = new OpenAI({ apiKey: model.apiKey, baseURL });
+    return {
+      getModel: (name) =>
+        new OpenAIChatCompletionsModel(client, name ?? model.model),
+    };
+  }
+  return new OpenAIProvider({
+    apiKey: model.apiKey,
+    baseURL,
+    useResponses: true,
+  });
 }
 
 function shellEnvironment(): Record<string, string | undefined> {
@@ -237,11 +257,7 @@ export async function runAgent(
     const result = await new Runner({
       modelProvider:
         dependencies.modelProvider ??
-        new OpenAIProvider({
-          apiKey: request.model.apiKey,
-          baseURL: normalizeModelBaseUrl(request.model.baseUrl),
-          useResponses: true,
-        }),
+        createModelProvider(request.model),
       tracingDisabled: true,
     }).run(agent, request.task, { maxTurns: 50, stream: true });
 

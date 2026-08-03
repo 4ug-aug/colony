@@ -10,7 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import OpenAI from "openai";
 import type { Step } from "./step";
-import { normalizeModelBaseUrl, runAgent, toolOutputText } from "./openai-agents";
+import {
+  createModelProvider,
+  normalizeModelBaseUrl,
+  runAgent,
+  toolOutputText,
+} from "./openai-agents";
 
 function completionStream(
   id: string,
@@ -81,6 +86,23 @@ test("OpenAI's root URL uses its versioned API path", () => {
   expect(normalizeModelBaseUrl("https://api.openai.com")).toBe(
     "https://api.openai.com/v1",
   );
+});
+
+test("custom providers use Chat Completions while OpenAI uses Responses", async () => {
+  const model = {
+    baseUrl: "https://models.example/v1",
+    apiKey: "test-key",
+    model: "test-model",
+  };
+
+  const customModel = await createModelProvider({
+    ...model,
+    provider: "custom",
+  }).getModel();
+  expect(customModel).toBeInstanceOf(OpenAIChatCompletionsModel);
+  expect(
+    await createModelProvider({ ...model, provider: "openai" }).getModel(),
+  ).toBeInstanceOf(OpenAIResponsesModel);
 });
 
 test("tool results preserve structured output as JSON", () => {

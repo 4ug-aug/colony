@@ -18,6 +18,7 @@ import { Dashboard } from '#/features/shell/dashboard'
 import { SignIn } from '#/features/auth/sign-in'
 import { Toaster } from '#/components/ui/toast'
 import { WindowDragRegion } from '#/features/shell/window-toolbar'
+import { initInviteDeepLinks } from '#/lib/invite-deep-link'
 
 const rootEl = document.getElementById('root')!
 const root = createRoot(rootEl)
@@ -110,6 +111,7 @@ function EntryFlow({ needsServer }: { needsServer: boolean }) {
 }
 
 initServerConfig()
+  .then(initInviteDeepLinks)
   .then(() => {
     const needsServer = isTauriRuntime() && !currentServerBase()
     if (!needsServer) initAuthClient()

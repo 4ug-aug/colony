@@ -11,7 +11,7 @@ const _isTauri = isTauri()
 
 // In the browser we can resolve the default eagerly at module load.
 // This makes currentServerBase() synchronously available before initServerConfig() runs.
-if (!_isTauri) {
+if (!_isTauri && typeof window !== 'undefined') {
   _base =
     import.meta.env.VITE_SWEAT_API_URL ??
     `${window.location.protocol}//${window.location.hostname}:3001`

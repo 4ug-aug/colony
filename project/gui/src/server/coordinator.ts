@@ -1220,10 +1220,12 @@ if (import.meta.main) {
     { createWorkspaceLlmConfig },
     { createSoftwareEngineerExecutor },
     {
+      createAsanaSoftwareEngineerAdapter,
       createGitHubSoftwareEngineerAdapter,
       createLinearSoftwareEngineerAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
+    { readAsanaConfiguration },
     { createGitHubCliClient },
     { createMcpGatewayHttpServer },
     { agentParticipant },
@@ -1237,6 +1239,7 @@ if (import.meta.main) {
     import('./llm-config'),
     import('../../../agents/software-engineer'),
     import('../../../agents/software-engineer-adapters'),
+    import('../../../mcp/asana'),
     import('../../../mcp/github'),
     import('../../../mcp/http'),
     import('./room-store'),
@@ -1254,8 +1257,10 @@ if (import.meta.main) {
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
   )
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
+  const asana = readAsanaConfiguration()
   const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
+  const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
   const github = githubRepository ? await createGitHubCliClient() : undefined
   const capabilityUrl = (u: string): string =>
     u.replace(
@@ -1264,7 +1269,9 @@ if (import.meta.main) {
     )
   const sandboxProvider =
     sandboxProviderName === 'docker'
-      ? createDockerSandboxProvider()
+      ? createDockerSandboxProvider({
+          ...(agentCaCertificate ? { caCertificate: agentCaCertificate } : {}),
+        })
       : createAppleContainerSandboxProvider({
           container: createAppleContainerClient(),
         })
@@ -1294,6 +1301,14 @@ if (import.meta.main) {
           ? [
               createLinearSoftwareEngineerAdapter({
                 accessToken: linearAccessToken,
+              }),
+            ]
+          : []),
+        ...(asana
+          ? [
+              createAsanaSoftwareEngineerAdapter({
+                apiToken: asana.apiToken,
+                projectGid: asana.projectGid,
               }),
             ]
           : []),

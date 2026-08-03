@@ -10,8 +10,9 @@ alternative. The desktop app wraps the **same** React client and calls the
 **same** self-hosted coordinator API over HTTP and WebSocket. Tauri is a
 packaging and native-affordance layer; it does not contain a second
 orchestration implementation. This first slice delivers packaging plus
-first-launch server selection and targets macOS. Native notifications, tray
-status, and deep links are deferred.
+first-launch server selection and targets macOS. Native notifications and tray
+status are deferred. Invitation links use the registered `sweat://` desktop
+scheme to carry the single-use token and server URL into the app.
 
 ## Server selection
 

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 export type SandboxProvider = "apple-container" | "docker";
 
@@ -15,9 +15,14 @@ type CommandOptions = {
   env?: Record<string, string | undefined>;
 };
 
-const root = join(import.meta.dir, "..");
+const root = join(import.meta.dirname, "..");
 const defaultEnvPath = join(root, ".env.local");
 const defaultAgentImage = "ghcr.io/4ug-aug/sweat-v2-agent:latest";
+// Docker 26+; add version gating only if older rootless engines need support.
+const rootlessDockerMcpHost = "http://10.0.2.2";
+const rootlessDockerOverride = `[Service]
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false
+`;
 const releaseApi =
   "https://api.github.com/repos/4ug-aug/sweat-v2/releases/latest";
 let inputBuffer = "";
@@ -214,6 +219,24 @@ async function run(
     throw new Error(`Command failed: ${command} ${args.join(" ")}`);
 }
 
+async function output(
+  command: string,
+  args: readonly string[],
+): Promise<string> {
+  const child = Bun.spawn([command, ...args], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+  const [exitCode, stdout] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+  ]);
+  if (exitCode !== 0)
+    throw new Error(`Command failed: ${command} ${args.join(" ")}`);
+  return stdout.trim();
+}
+
 async function available(command: string): Promise<boolean> {
   const child = Bun.spawn(
     ["sh", "-c", 'command -v "$1" >/dev/null 2>&1', "setup", command],
@@ -222,7 +245,11 @@ async function available(command: string): Promise<boolean> {
   return (await child.exited) === 0;
 }
 
-async function requireRuntime(provider: SandboxProvider): Promise<void> {
+export function usesRootlessDocker(securityOptions: string): boolean {
+  return securityOptions.includes("name=rootless");
+}
+
+async function requireRuntime(provider: SandboxProvider): Promise<boolean> {
   if (!(await available(provider === "docker" ? "docker" : "container"))) {
     throw new Error(
       provider === "docker"
@@ -230,8 +257,33 @@ async function requireRuntime(provider: SandboxProvider): Promise<void> {
         : "Apple Container is required. Install it from https://github.com/apple/container and rerun make setup.",
     );
   }
-  if (provider === "docker") await run("docker", ["info"]);
-  else await run("container", ["system", "start"]);
+  if (provider === "docker") {
+    return usesRootlessDocker(
+      await output("docker", ["info", "--format", "{{json .SecurityOptions}}"]),
+    );
+  }
+  await run("container", ["system", "start"]);
+  return false;
+}
+
+async function configureRootlessDocker(): Promise<void> {
+  if (!(await available("systemctl"))) {
+    throw new Error(
+      "Rootless Docker requires systemd user services for automatic setup.",
+    );
+  }
+  const configHome = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
+  const path = join(
+    configHome,
+    "systemd/user/docker.service.d/sweat-host-loopback.conf",
+  );
+  if ((await readOptional(path)) === rootlessDockerOverride) return;
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, rootlessDockerOverride);
+  console.log("Enabled host access for rootless Docker agent containers.");
+  await run("systemctl", ["--user", "daemon-reload"]);
+  await run("systemctl", ["--user", "restart", "docker"]);
 }
 
 async function requireGitHubCli(): Promise<void> {
@@ -329,22 +381,58 @@ async function configureServer(path: string): Promise<void> {
     "SWEAT_AGENT_IMAGE",
     existing("SWEAT_AGENT_IMAGE") ?? defaultAgentImage,
   );
+  if (provider === "docker") {
+    const configuredCaCertificate = await input(
+      "Agent CA certificate bundle (optional)",
+      existing("SWEAT_AGENT_CA_CERT"),
+    );
+    if (configuredCaCertificate) {
+      const caCertificate = isAbsolute(configuredCaCertificate)
+        ? configuredCaCertificate
+        : resolve(root, configuredCaCertificate);
+      if (!(await stat(caCertificate)).isFile()) {
+        throw new Error(`Agent CA certificate is not a file: ${caCertificate}`);
+      }
+      document = setEnvValue(document, "SWEAT_AGENT_CA_CERT", caCertificate);
+    }
+  }
 
   const githubConfigured = Boolean(existing("SWEAT_GITHUB_REPOSITORY"));
   const linearConfigured = Boolean(existing("LINEAR_MCP_API_KEY"));
+  const asanaConfigured =
+    Boolean(existing("ASANA_API_TOKEN")) ||
+    Boolean(existing("ASANA_PROJECT_GID"));
   const integrations = await choose(
     "Optional integrations",
-    ["None", "GitHub", "Linear", "GitHub + Linear"],
-    githubConfigured && linearConfigured
-      ? 3
-      : githubConfigured
-        ? 1
-        : linearConfigured
-          ? 2
-          : 0,
+    [
+      "None",
+      "GitHub",
+      "Linear",
+      "Asana",
+      "GitHub + Linear",
+      "GitHub + Asana",
+      "Linear + Asana",
+      "GitHub + Linear + Asana",
+    ],
+    githubConfigured && linearConfigured && asanaConfigured
+      ? 7
+      : githubConfigured && linearConfigured
+        ? 4
+        : githubConfigured && asanaConfigured
+          ? 5
+          : linearConfigured && asanaConfigured
+            ? 6
+            : githubConfigured
+              ? 1
+              : linearConfigured
+                ? 2
+                : asanaConfigured
+                  ? 3
+                  : 0,
   );
-  const useGitHub = integrations === 1 || integrations === 3;
-  const useLinear = integrations === 2 || integrations === 3;
+  const useGitHub = [1, 4, 5, 7].includes(integrations);
+  const useLinear = [2, 4, 6, 7].includes(integrations);
+  const useAsana = [3, 5, 6, 7].includes(integrations);
 
   if (useGitHub) {
     await requireGitHubCli();
@@ -380,10 +468,31 @@ async function configureServer(path: string): Promise<void> {
       throw new Error("A Linear API key is required when Linear is selected.");
     document = setEnvValue(document, "LINEAR_MCP_API_KEY", token);
   }
+  if (useAsana) {
+    const token = await secret("Asana API token", existing("ASANA_API_TOKEN"));
+    const projectGid = await input(
+      "Asana project GID",
+      existing("ASANA_PROJECT_GID"),
+    );
+    if (!token || !projectGid)
+      throw new Error(
+        "An Asana API token and project GID are required when Asana is selected.",
+      );
+    document = setEnvValue(document, "ASANA_API_TOKEN", token);
+    document = setEnvValue(document, "ASANA_PROJECT_GID", projectGid);
+  }
 
   closeInput();
+  const rootlessDocker = await requireRuntime(provider);
+  if (rootlessDocker) {
+    await configureRootlessDocker();
+    document = setEnvValue(
+      document,
+      "SWEAT_MCP_HOST",
+      existing("SWEAT_MCP_HOST") ?? rootlessDockerMcpHost,
+    );
+  }
   await saveEnv(path, current, document);
-  await requireRuntime(provider);
   await run("bun", ["install", "--cwd", "project", "--frozen-lockfile"]);
   await run("bun", ["install", "--cwd", "project/gui", "--frozen-lockfile"]);
   const commandEnv = { ...process.env, ENV_FILE: path };

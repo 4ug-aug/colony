@@ -28,6 +28,13 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["sweat"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
