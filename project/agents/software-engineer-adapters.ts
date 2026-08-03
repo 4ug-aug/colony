@@ -1,5 +1,6 @@
 import type { Octokit } from "octokit";
 import { createGitHubRepositoryCheckoutSource } from "../inputs/github";
+import { createAsanaMcpUpstream } from "../mcp/asana";
 import { createGitHubMcpUpstream } from "../mcp/github";
 import { createLinearMcpUpstream } from "../mcp/linear";
 import {
@@ -16,7 +17,9 @@ export function createWorkspaceSoftwareEngineerAdapter(options: {
     capability: {
       id: "workspace.room",
       applies({ grantContext }) {
-        return Boolean((grantContext as { roomId?: string } | undefined)?.roomId);
+        return Boolean(
+          (grantContext as { roomId?: string } | undefined)?.roomId,
+        );
       },
       createUpstream({ grantContext }) {
         const roomId = (grantContext as { roomId?: string } | undefined)
@@ -41,6 +44,18 @@ export function createLinearSoftwareEngineerAdapter(options: {
     capability: {
       id: "linear.issues",
       createUpstream: () => createLinearMcpUpstream(options),
+    },
+  };
+}
+
+export function createAsanaSoftwareEngineerAdapter(options: {
+  apiToken: string;
+  projectGid: string;
+}): SoftwareEngineerAdapter {
+  return {
+    capability: {
+      id: "asana.tasks",
+      createUpstream: () => createAsanaMcpUpstream(options),
     },
   };
 }

@@ -393,29 +393,46 @@ async function configureServer(path: string): Promise<void> {
       if (!(await stat(caCertificate)).isFile()) {
         throw new Error(`Agent CA certificate is not a file: ${caCertificate}`);
       }
-      document = setEnvValue(
-        document,
-        "SWEAT_AGENT_CA_CERT",
-        caCertificate,
-      );
+      document = setEnvValue(document, "SWEAT_AGENT_CA_CERT", caCertificate);
     }
   }
 
   const githubConfigured = Boolean(existing("SWEAT_GITHUB_REPOSITORY"));
   const linearConfigured = Boolean(existing("LINEAR_MCP_API_KEY"));
+  const asanaConfigured =
+    Boolean(existing("ASANA_API_TOKEN")) ||
+    Boolean(existing("ASANA_PROJECT_GID"));
   const integrations = await choose(
     "Optional integrations",
-    ["None", "GitHub", "Linear", "GitHub + Linear"],
-    githubConfigured && linearConfigured
-      ? 3
-      : githubConfigured
-        ? 1
-        : linearConfigured
-          ? 2
-          : 0,
+    [
+      "None",
+      "GitHub",
+      "Linear",
+      "Asana",
+      "GitHub + Linear",
+      "GitHub + Asana",
+      "Linear + Asana",
+      "GitHub + Linear + Asana",
+    ],
+    githubConfigured && linearConfigured && asanaConfigured
+      ? 7
+      : githubConfigured && linearConfigured
+        ? 4
+        : githubConfigured && asanaConfigured
+          ? 5
+          : linearConfigured && asanaConfigured
+            ? 6
+            : githubConfigured
+              ? 1
+              : linearConfigured
+                ? 2
+                : asanaConfigured
+                  ? 3
+                  : 0,
   );
-  const useGitHub = integrations === 1 || integrations === 3;
-  const useLinear = integrations === 2 || integrations === 3;
+  const useGitHub = [1, 4, 5, 7].includes(integrations);
+  const useLinear = [2, 4, 6, 7].includes(integrations);
+  const useAsana = [3, 5, 6, 7].includes(integrations);
 
   if (useGitHub) {
     await requireGitHubCli();
@@ -450,6 +467,19 @@ async function configureServer(path: string): Promise<void> {
     if (!token)
       throw new Error("A Linear API key is required when Linear is selected.");
     document = setEnvValue(document, "LINEAR_MCP_API_KEY", token);
+  }
+  if (useAsana) {
+    const token = await secret("Asana API token", existing("ASANA_API_TOKEN"));
+    const projectGid = await input(
+      "Asana project GID",
+      existing("ASANA_PROJECT_GID"),
+    );
+    if (!token || !projectGid)
+      throw new Error(
+        "An Asana API token and project GID are required when Asana is selected.",
+      );
+    document = setEnvValue(document, "ASANA_API_TOKEN", token);
+    document = setEnvValue(document, "ASANA_PROJECT_GID", projectGid);
   }
 
   closeInput();

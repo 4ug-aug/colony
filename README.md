@@ -35,7 +35,7 @@ make setup
 
 Choose **Server setup** to configure `.env.local`. The wizard generates the
 authentication secret, asks for the server URL, browser origin, sandbox
-runtime, and optional GitHub/Linear integrations. It preserves existing
+runtime, and optional GitHub, Linear, and project-scoped Asana integrations. It preserves existing
 values, backs up an existing environment file, installs dependencies, pulls the
 CI-published agent image, and runs database migrations.
 
@@ -73,6 +73,10 @@ Run `make help` for every development command.
 To enable repository-backed software-engineer runs, authenticate the host
 GitHub CLI and set `SWEAT_GITHUB_REPOSITORY`. Set `SWEAT_VERIFY_COMMAND` to
 allow verified pull-request publishing.
+
+To enable scoped Asana tasks, set both `ASANA_API_TOKEN` and
+`ASANA_PROJECT_GID`. Use a dedicated service-account token with access only to
+that project.
 
 Back up the SQLite database together with its sibling `attachments/`
 directory.

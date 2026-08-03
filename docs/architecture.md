@@ -80,6 +80,10 @@ future Tauri shell. The client does not own room state or execution.
 - Configure tenant connections and start runs through the self-hosted product UI.
 - Keep the frontend a static client of an explicit server API so browser and
   Tauri clients share the same product boundary.
+- The Software engineer hovercard is currently static presentation metadata;
+  it can advertise a capability that is not configured for a deployment. Make
+  it derive from the server's eligible capability summary when configuration
+  visibility is added.
 - Keep collaborative runs server-owned so they continue independently of any
   browser tab or desktop process.
 - Have the server apply database migrations idempotently and ensure structural
