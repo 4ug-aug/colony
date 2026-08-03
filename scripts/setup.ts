@@ -2,8 +2,22 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  cancel,
+  intro,
+  isCancel,
+  log,
+  multiselect,
+  outro,
+  password,
+  select,
+  spinner,
+  text,
+} from "@clack/prompts";
 
 export type SandboxProvider = "apple-container" | "docker";
+
+type Integration = "github" | "linear" | "asana" | "outline";
 
 type ReleaseAsset = {
   name: string;
@@ -25,15 +39,38 @@ Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false
 `;
 const releaseApi =
   "https://api.github.com/repos/4ug-aug/sweat-v2/releases/latest";
-let inputBuffer = "";
-let inputListener: ((chunk: string | Buffer) => void) | undefined;
-let inputEndListener: (() => void) | undefined;
-let pendingInput:
-  | {
-      resolve: (value: string) => void;
-      reject: (error: Error) => void;
-    }
-  | undefined;
+
+function assertNotCancelled<T>(value: T | symbol): T {
+  if (isCancel(value)) {
+    cancel("Setup cancelled");
+    process.exit(0);
+  }
+  return value;
+}
+
+async function askText(
+  message: string,
+  initialValue?: string,
+  validate?: (value: string) => string | Error | undefined,
+): Promise<string> {
+  return assertNotCancelled(
+    await text({
+      message,
+      initialValue,
+      placeholder: initialValue,
+      validate,
+    }),
+  );
+}
+
+async function askSecret(message: string, current?: string): Promise<string> {
+  const value = assertNotCancelled(
+    await password({
+      message: current ? `${message} (leave blank to keep current)` : message,
+    }),
+  );
+  return value.trim() || current || "";
+}
 
 function envPattern(key: string, commented = false): RegExp {
   const prefix = commented ? "(?:#\\s*)?" : "";
@@ -101,105 +138,6 @@ export function selectUniversalDmg(
       asset.name.toLowerCase().endsWith(".dmg") &&
       asset.name.toLowerCase().includes("universal"),
   );
-}
-
-async function input(label: string, defaultValue?: string): Promise<string> {
-  const suffix = defaultValue ? ` [${defaultValue}]` : "";
-  process.stdout.write(`${label}${suffix} `);
-  const answer = await readLine();
-  return answer.trim() || defaultValue || "";
-}
-
-function nextBufferedLine(): string | undefined {
-  const newline = inputBuffer.indexOf("\n");
-  if (newline < 0) return undefined;
-  const line = inputBuffer.slice(0, newline).replace(/\r$/, "");
-  inputBuffer = inputBuffer.slice(newline + 1);
-  return line;
-}
-
-function ensureInputListener(): void {
-  if (inputListener) return;
-  inputListener = (chunk) => {
-    inputBuffer += String(chunk);
-    const line = nextBufferedLine();
-    if (line !== undefined && pendingInput) {
-      const pending = pendingInput;
-      pendingInput = undefined;
-      pending.resolve(line);
-    }
-  };
-  inputEndListener = () => {
-    pendingInput?.reject(new Error("Setup cancelled"));
-    pendingInput = undefined;
-  };
-  process.stdin.setEncoding("utf8");
-  process.stdin.on("data", inputListener);
-  process.stdin.once("end", inputEndListener);
-  process.stdin.resume();
-}
-
-function readLine(): Promise<string> {
-  const buffered = nextBufferedLine();
-  if (buffered !== undefined) return Promise.resolve(buffered);
-  ensureInputListener();
-  return new Promise((resolve, reject) => {
-    pendingInput = { resolve, reject };
-  });
-}
-
-function closeInput(): void {
-  if (inputListener) process.stdin.off("data", inputListener);
-  if (inputEndListener) process.stdin.off("end", inputEndListener);
-  inputListener = undefined;
-  inputEndListener = undefined;
-  if (pendingInput) {
-    pendingInput.reject(new Error("Setup cancelled"));
-    pendingInput = undefined;
-  }
-  process.stdin.pause();
-}
-
-async function choose(
-  label: string,
-  options: readonly string[],
-  defaultIndex = 0,
-): Promise<number> {
-  console.log(`\n${label}`);
-  options.forEach((option, index) => console.log(`  ${index + 1}) ${option}`));
-  while (true) {
-    const value = await input(`Choose`, String(defaultIndex + 1));
-    const index = Number(value) - 1;
-    if (Number.isInteger(index) && index >= 0 && index < options.length)
-      return index;
-    console.log(`Choose a number from 1 to ${options.length}.`);
-  }
-}
-
-async function secret(label: string, current?: string): Promise<string> {
-  if (current !== undefined) {
-    const value = await input(`${label} (leave blank to keep current)`);
-    return value || current;
-  }
-  if (!process.stdin.isTTY) return input(label);
-
-  closeInput();
-  process.stdout.write(`${label}: `);
-  const child = Bun.spawn(
-    [
-      "sh",
-      "-c",
-      'stty -echo; trap \'stty echo\' EXIT HUP INT TERM; IFS= read -r value; printf "%s" "$value"',
-    ],
-    { stdin: "inherit", stdout: "pipe", stderr: "inherit" },
-  );
-  const [exitCode, value] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-  ]);
-  process.stdout.write("\n");
-  if (exitCode !== 0) throw new Error(`Could not read ${label.toLowerCase()}`);
-  return value.trim();
 }
 
 async function run(
@@ -287,7 +225,6 @@ async function configureRootlessDocker(): Promise<void> {
 }
 
 async function requireGitHubCli(): Promise<void> {
-  closeInput();
   if (!(await available("gh")))
     throw new Error(
       "GitHub CLI is required. Install it from https://cli.github.com/ and rerun make setup.",
@@ -345,36 +282,35 @@ async function configureServer(path: string): Promise<void> {
 
   const secretValue =
     existing("BETTER_AUTH_SECRET") ?? randomBytes(32).toString("base64");
-  const authUrl = await input(
+  const authUrl = await askText(
     "Server URL",
     existing("BETTER_AUTH_URL") ?? "http://localhost:3001",
+    (value) => (value.trim() ? undefined : "Server URL is required"),
   );
-  const guiOrigin = await input(
+  const guiOrigin = await askText(
     "GUI origin",
     existing("SWEAT_GUI_ORIGIN") ?? "tauri://localhost",
+    (value) => (value.trim() ? undefined : "GUI origin is required"),
   );
-  const providerOptions: readonly SandboxProvider[] = [
-    "apple-container",
-    "docker",
-  ];
   const existingProvider = existing("SWEAT_SANDBOX_PROVIDER");
-  const provider =
-    providerOptions[
-      await choose(
-        "Agent sandbox",
-        providerOptions,
-        Math.max(
-          0,
-          providerOptions.indexOf(existingProvider as SandboxProvider) >= 0
-            ? providerOptions.indexOf(existingProvider as SandboxProvider)
-            : providerOptions.indexOf(defaultSandboxProvider()),
-        ),
-      )
-    ]!;
+  const defaultProvider =
+    existingProvider === "apple-container" || existingProvider === "docker"
+      ? existingProvider
+      : defaultSandboxProvider();
+  const provider = assertNotCancelled(
+    await select({
+      message: "Agent sandbox",
+      options: [
+        { value: "apple-container" as const, label: "apple-container" },
+        { value: "docker" as const, label: "docker" },
+      ],
+      initialValue: defaultProvider,
+    }),
+  );
 
   document = setEnvValue(document, "BETTER_AUTH_SECRET", secretValue);
-  document = setEnvValue(document, "BETTER_AUTH_URL", authUrl);
-  document = setEnvValue(document, "SWEAT_GUI_ORIGIN", guiOrigin);
+  document = setEnvValue(document, "BETTER_AUTH_URL", authUrl.trim());
+  document = setEnvValue(document, "SWEAT_GUI_ORIGIN", guiOrigin.trim());
   document = setEnvValue(document, "SWEAT_SANDBOX_PROVIDER", provider);
   document = setEnvValue(
     document,
@@ -382,10 +318,12 @@ async function configureServer(path: string): Promise<void> {
     existing("SWEAT_AGENT_IMAGE") ?? defaultAgentImage,
   );
   if (provider === "docker") {
-    const configuredCaCertificate = await input(
-      "Agent CA certificate bundle (optional)",
-      existing("SWEAT_AGENT_CA_CERT"),
-    );
+    const configuredCaCertificate = (
+      await askText(
+        "Agent CA certificate bundle (optional)",
+        existing("SWEAT_AGENT_CA_CERT"),
+      )
+    ).trim();
     if (configuredCaCertificate) {
       const caCertificate = isAbsolute(configuredCaCertificate)
         ? configuredCaCertificate
@@ -397,70 +335,75 @@ async function configureServer(path: string): Promise<void> {
     }
   }
 
-  const githubConfigured = Boolean(existing("SWEAT_GITHUB_REPOSITORY"));
-  const linearConfigured = Boolean(existing("LINEAR_MCP_API_KEY"));
-  const asanaConfigured =
-    Boolean(existing("ASANA_API_TOKEN")) ||
-    Boolean(existing("ASANA_PROJECT_GID"));
-  const integrations = await choose(
-    "Optional integrations",
-    [
-      "None",
-      "GitHub",
-      "Linear",
-      "Asana",
-      "GitHub + Linear",
-      "GitHub + Asana",
-      "Linear + Asana",
-      "GitHub + Linear + Asana",
-    ],
-    githubConfigured && linearConfigured && asanaConfigured
-      ? 7
-      : githubConfigured && linearConfigured
-        ? 4
-        : githubConfigured && asanaConfigured
-          ? 5
-          : linearConfigured && asanaConfigured
-            ? 6
-            : githubConfigured
-              ? 1
-              : linearConfigured
-                ? 2
-                : asanaConfigured
-                  ? 3
-                  : 0,
+  const initialIntegrations: Integration[] = [];
+  if (existing("SWEAT_GITHUB_REPOSITORY")) initialIntegrations.push("github");
+  if (existing("LINEAR_MCP_API_KEY")) initialIntegrations.push("linear");
+  if (existing("ASANA_API_TOKEN") || existing("ASANA_PROJECT_GID"))
+    initialIntegrations.push("asana");
+  if (existing("OUTLINE_URL") || existing("OUTLINE_API_KEY"))
+    initialIntegrations.push("outline");
+
+  const integrations = assertNotCancelled(
+    await multiselect({
+      message: "Optional integrations",
+      options: [
+        { value: "github" as const, label: "GitHub", hint: "repo + base branch" },
+        { value: "linear" as const, label: "Linear", hint: "MCP API key" },
+        {
+          value: "asana" as const,
+          label: "Asana",
+          hint: "token + project GID",
+        },
+        {
+          value: "outline" as const,
+          label: "Outline",
+          hint: "instance URL + API key",
+        },
+      ],
+      initialValues: initialIntegrations,
+      required: false,
+    }),
   );
-  const useGitHub = [1, 4, 5, 7].includes(integrations);
-  const useLinear = [2, 4, 6, 7].includes(integrations);
-  const useAsana = [3, 5, 6, 7].includes(integrations);
+  const useGitHub = integrations.includes("github");
+  const useLinear = integrations.includes("linear");
+  const useAsana = integrations.includes("asana");
+  const useOutline = integrations.includes("outline");
 
   if (useGitHub) {
     await requireGitHubCli();
     document = setEnvValue(
       document,
       "SWEAT_GITHUB_REPOSITORY",
-      await input(
-        "GitHub repository (owner/name)",
-        existing("SWEAT_GITHUB_REPOSITORY"),
-      ),
+      (
+        await askText(
+          "GitHub repository (owner/name)",
+          existing("SWEAT_GITHUB_REPOSITORY"),
+          (value) =>
+            value.trim() ? undefined : "GitHub repository is required",
+        )
+      ).trim(),
     );
     document = setEnvValue(
       document,
       "SWEAT_GITHUB_BASE",
-      await input(
-        "GitHub base branch",
-        existing("SWEAT_GITHUB_BASE") ?? "main",
-      ),
+      (
+        await askText(
+          "GitHub base branch",
+          existing("SWEAT_GITHUB_BASE") ?? "main",
+          (value) => (value.trim() ? undefined : "GitHub base branch is required"),
+        )
+      ).trim(),
     );
-    const verify = await input(
-      "Verification command (optional)",
-      existing("SWEAT_VERIFY_COMMAND"),
-    );
-    if (verify)
-      document = setEnvValue(document, "SWEAT_VERIFY_COMMAND", verify);
+    const verify = (
+      await askText(
+        "Verification command (optional)",
+        existing("SWEAT_VERIFY_COMMAND"),
+      )
+    ).trim();
+    if (verify) document = setEnvValue(document, "SWEAT_VERIFY_COMMAND", verify);
   }
   if (useLinear) {
-    const token = await secret(
+    const token = await askSecret(
       "Linear API key",
       existing("LINEAR_MCP_API_KEY"),
     );
@@ -469,11 +412,17 @@ async function configureServer(path: string): Promise<void> {
     document = setEnvValue(document, "LINEAR_MCP_API_KEY", token);
   }
   if (useAsana) {
-    const token = await secret("Asana API token", existing("ASANA_API_TOKEN"));
-    const projectGid = await input(
-      "Asana project GID",
-      existing("ASANA_PROJECT_GID"),
-    );
+    const token = await askSecret("Asana API token", existing("ASANA_API_TOKEN"));
+    const projectGid = (
+      await askText(
+        "Asana project GID",
+        existing("ASANA_PROJECT_GID"),
+        (value) =>
+          value.trim() || existing("ASANA_PROJECT_GID")
+            ? undefined
+            : "Asana project GID is required",
+      )
+    ).trim();
     if (!token || !projectGid)
       throw new Error(
         "An Asana API token and project GID are required when Asana is selected.",
@@ -481,50 +430,93 @@ async function configureServer(path: string): Promise<void> {
     document = setEnvValue(document, "ASANA_API_TOKEN", token);
     document = setEnvValue(document, "ASANA_PROJECT_GID", projectGid);
   }
-
-  closeInput();
-  const rootlessDocker = await requireRuntime(provider);
-  if (rootlessDocker) {
-    await configureRootlessDocker();
-    document = setEnvValue(
-      document,
-      "SWEAT_MCP_HOST",
-      existing("SWEAT_MCP_HOST") ?? rootlessDockerMcpHost,
+  if (useOutline) {
+    const outlineUrl = (
+      await askText(
+        "Outline URL (without /mcp)",
+        existing("OUTLINE_URL"),
+        (value) => (value.trim() ? undefined : "Outline URL is required"),
+      )
+    )
+      .trim()
+      .replace(/\/$/, "");
+    const apiKey = await askSecret(
+      "Outline API key",
+      existing("OUTLINE_API_KEY"),
     );
+    if (!outlineUrl || !apiKey)
+      throw new Error(
+        "An Outline URL and API key are required when Outline is selected.",
+      );
+    document = setEnvValue(document, "OUTLINE_URL", outlineUrl);
+    document = setEnvValue(document, "OUTLINE_API_KEY", apiKey);
   }
+
+  const preparing = spinner();
+  preparing.start("Preparing agent runtime...");
+  try {
+    const rootlessDocker = await requireRuntime(provider);
+    if (rootlessDocker) {
+      await configureRootlessDocker();
+      document = setEnvValue(
+        document,
+        "SWEAT_MCP_HOST",
+        existing("SWEAT_MCP_HOST") ?? rootlessDockerMcpHost,
+      );
+    }
+    preparing.stop("Agent runtime ready");
+  } catch (error) {
+    preparing.stop("Agent runtime setup failed");
+    throw error;
+  }
+
   await saveEnv(path, current, document);
+
+  log.step("Installing project dependencies...");
   await run("bun", ["install", "--cwd", "project", "--frozen-lockfile"]);
+  log.step("Installing GUI dependencies...");
   await run("bun", ["install", "--cwd", "project/gui", "--frozen-lockfile"]);
   const commandEnv = { ...process.env, ENV_FILE: path };
+  log.step("Building agent image...");
   await run("make", ["agent"], { env: commandEnv });
+  log.step("Running database migrations...");
   await run("make", ["migrate"], { env: commandEnv });
-  console.log(
-    "\nServer setup complete. Start it with `make server` or `make dev`.",
-  );
+
+  outro("Server setup complete. Start it with `make server` or `make dev`.");
 }
 
 async function installMacApplication(): Promise<void> {
   if (process.platform !== "darwin")
     throw new Error("The macOS application can only be installed on macOS.");
-  console.log("Checking for the latest Sweat release...");
-  const response = await fetch(releaseApi, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "sweat-setup",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok)
-    throw new Error(
-      `Could not read the latest GitHub release (${response.status}).`,
-    );
-  const release = (await response.json()) as { assets?: ReleaseAsset[] };
-  const asset = selectUniversalDmg(release.assets ?? []);
-  if (!asset)
-    throw new Error(
-      "The latest GitHub release does not contain a universal macOS DMG.",
-    );
-  console.log(`Found ${asset.name}. Starting download...`);
+
+  const checking = spinner();
+  checking.start("Checking for the latest Sweat release...");
+  let asset: ReleaseAsset;
+  try {
+    const response = await fetch(releaseApi, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "sweat-setup",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok)
+      throw new Error(
+        `Could not read the latest GitHub release (${response.status}).`,
+      );
+    const release = (await response.json()) as { assets?: ReleaseAsset[] };
+    const selected = selectUniversalDmg(release.assets ?? []);
+    if (!selected)
+      throw new Error(
+        "The latest GitHub release does not contain a universal macOS DMG.",
+      );
+    asset = selected;
+    checking.stop(`Found ${asset.name}`);
+  } catch (error) {
+    checking.stop("Could not find the latest release");
+    throw error;
+  }
+
   const download = await fetch(asset.browser_download_url, {
     signal: AbortSignal.timeout(120_000),
   });
@@ -565,23 +557,30 @@ async function installMacApplication(): Promise<void> {
   console.log(`Downloaded ${formatBytes(downloaded)} to ${path}.`);
   console.log("Opening the installer...");
   await run("open", [path]);
-  console.log(
+  outro(
     `Opened ${path}. Drag Sweat to Applications to finish installation.`,
   );
 }
 
 export async function runSetup(): Promise<void> {
-  try {
-    const choice = await choose("What do you want to set up?", [
-      "Server setup",
-      "Install mac application",
-      "Exit",
-    ]);
-    if (choice === 0) await configureServer(envPath());
-    else if (choice === 1) await installMacApplication();
-  } finally {
-    closeInput();
+  if (!process.stdin.isTTY) {
+    throw new Error("make setup requires an interactive terminal.");
   }
+
+  intro("Sweat setup");
+  const choice = assertNotCancelled(
+    await select({
+      message: "What do you want to set up?",
+      options: [
+        { value: "server" as const, label: "Server setup" },
+        { value: "mac" as const, label: "Install mac application" },
+        { value: "exit" as const, label: "Exit" },
+      ],
+    }),
+  );
+  if (choice === "server") await configureServer(envPath());
+  else if (choice === "mac") await installMacApplication();
+  else cancel("Setup cancelled");
 }
 
 if (import.meta.main) {

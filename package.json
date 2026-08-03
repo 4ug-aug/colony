@@ -1,0 +1,8 @@
+{
+  "name": "sweat-v2",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@clack/prompts": "^1.7.0"
+  }
+}

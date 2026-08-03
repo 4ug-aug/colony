@@ -56,6 +56,7 @@ migrate: env
 	@cd $(GUI) && bun $(BUN_ENV) run db:migrate
 
 setup:
+	@bun install --frozen-lockfile
 	@ENV_FILE="$(ENV_FILE)" bun scripts/setup.ts
 
 seed: migrate
