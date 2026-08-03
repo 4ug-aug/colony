@@ -91,16 +91,18 @@ test("OpenAI's root URL uses its versioned API path", () => {
   );
 });
 
-test("custom providers keep Responses and discard nonnumeric usage extensions", async () => {
+test("custom providers normalize MLflow Responses extensions", async () => {
   const model = {
     baseUrl: "https://models.example/v1",
     apiKey: "test-key",
     model: "test-model",
   };
 
-  expect(
-    await createModelProvider({ ...model, provider: "custom" }).getModel(),
-  ).toBeInstanceOf(OpenAIResponsesModel);
+  const customModel = await createModelProvider({
+    ...model,
+    provider: "custom",
+  }).getModel();
+  expect(customModel).toBeInstanceOf(OpenAIResponsesModel);
   expect(
     await createModelProvider({ ...model, provider: "openai" }).getModel(),
   ).toBeInstanceOf(OpenAIResponsesModel);
@@ -152,6 +154,27 @@ test("custom providers keep Responses and discard nonnumeric usage extensions", 
     "completed",
     "failed",
   ]);
+
+  const request = (customModel as unknown as {
+    _buildResponsesCreateRequest(
+      request: ModelRequest,
+      stream: boolean,
+    ): { requestData: { input: Array<{ output?: unknown }> } };
+  })._buildResponsesCreateRequest({
+    input: [{
+      type: "function_call_result",
+      name: "workspace.read_messages",
+      callId: "call-1",
+      status: "completed",
+      output: [{ type: "input_text", text: "[augusttollerup] hello" }],
+    }],
+    modelSettings: {},
+    tools: [],
+    outputType: "text",
+    handoffs: [],
+    tracing: false,
+  }, true).requestData;
+  expect(request.input[0]?.output).toBe("[augusttollerup] hello");
 });
 
 test("tool results preserve structured output as JSON", () => {

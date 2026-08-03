@@ -120,7 +120,36 @@ export function sanitizeOutputStatuses(output: unknown[]): void {
   }
 }
 
+function flattenTextToolOutputs(
+  input: ModelRequest["input"],
+): ModelRequest["input"] {
+  if (typeof input === "string") return input;
+  return input.map((item) => {
+    if (
+      item.type !== "function_call_result" ||
+      !Array.isArray(item.output) ||
+      !item.output.every((part) => part.type === "input_text")
+    ) {
+      return item;
+    }
+    return {
+      ...item,
+      output: item.output.map((part) => part.text).join("\n"),
+    };
+  });
+}
+
 class CompatibleResponsesModel extends OpenAIResponsesModel {
+  protected override _buildResponsesCreateRequest(
+    request: ModelRequest,
+    stream: boolean,
+  ) {
+    return super._buildResponsesCreateRequest({
+      ...request,
+      input: flattenTextToolOutputs(request.input),
+    }, stream);
+  }
+
   override async getResponse(request: ModelRequest): Promise<ModelResponse> {
     const response = await super.getResponse(request);
     sanitizeUsageDetails(response.usage);
