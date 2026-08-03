@@ -126,7 +126,35 @@ test("Asana rejects every task operation outside the configured project before r
   );
 });
 
-test("Asana exposes only its six granted tools and keeps token errors safe", async () => {
+test("Asana creates tasks only in the configured project", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const upstream = createAsanaMcpUpstream({
+    apiToken: token,
+    projectGid,
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return Response.json({ data: { gid: "task-1" } });
+    },
+  });
+
+  await upstream.callTool("asana.create_task", {
+    name: "Ship it",
+    description: "Ready to release",
+  });
+
+  expect(requests.map(({ url, init }) => [init?.method, url])).toEqual([
+    ["POST", "https://app.asana.com/api/1.0/tasks"],
+  ]);
+  expect(JSON.parse(requests[0].init?.body as string)).toEqual({
+    data: {
+      name: "Ship it",
+      description: "Ready to release",
+      projects: [projectGid],
+    },
+  });
+});
+
+test("Asana exposes only its seven granted tools and keeps token errors safe", async () => {
   const upstream = createAsanaMcpUpstream({
     apiToken: token,
     projectGid,
@@ -140,6 +168,7 @@ test("Asana exposes only its six granted tools and keeps token errors safe", asy
   const session = gateway.createSession({
     tools: [
       "asana.get_project",
+      "asana.create_task",
       "asana.list_tasks",
       "asana.get_task",
       "asana.get_task_comments",
@@ -155,6 +184,7 @@ test("Asana exposes only its six granted tools and keeps token errors safe", asy
     session
       ? [
           "asana.get_project",
+          "asana.create_task",
           "asana.list_tasks",
           "asana.get_task",
           "asana.get_task_comments",
@@ -167,7 +197,7 @@ test("Asana exposes only its six granted tools and keeps token errors safe", asy
     gateway.callTool(session.token, "asana.get_project", {}),
   ).rejects.toThrow("Asana access was denied");
   await expect(
-    gateway.callTool(session.token, "asana.create_task", {}),
+    gateway.callTool(session.token, "asana.delete_task", {}),
   ).rejects.toThrow("MCP tool is not granted");
   try {
     await gateway.callTool(session.token, "asana.get_project", {});
@@ -222,6 +252,7 @@ test("Asana configuration must be complete and creates the scoped adapter only w
     ),
   ).toEqual([
     "asana.get_project",
+    "asana.create_task",
     "asana.list_tasks",
     "asana.get_task",
     "asana.get_task_comments",

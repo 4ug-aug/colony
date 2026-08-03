@@ -24,6 +24,7 @@ export const softwareEngineerRole: AgentRole = {
       id: "asana.tasks",
       tools: [
         "asana.get_project",
+        "asana.create_task",
         "asana.list_tasks",
         "asana.get_task",
         "asana.get_task_comments",

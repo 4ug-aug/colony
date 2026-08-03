@@ -14,6 +14,19 @@ const tools: readonly McpTool[] = [
     },
   },
   {
+    name: "asana.create_task",
+    description: "Create a task in the configured Asana project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 1 },
+        description: { type: "string", minLength: 1 },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "asana.list_tasks",
     description:
       "List tasks in the configured Asana project. Use nextPage.offset for the next bounded page.",
@@ -95,6 +108,24 @@ function nonEmptyString(value: unknown, message: string): string {
 function taskInput(args: Record<string, unknown>): TaskInput {
   requireOnly(args, ["taskGid"]);
   return { taskGid: nonEmptyString(args.taskGid, "Asana taskGid is required") };
+}
+
+function createTaskInput(args: Record<string, unknown>): {
+  name: string;
+  description?: string;
+} {
+  requireOnly(args, ["name", "description"]);
+  return {
+    name: nonEmptyString(args.name, "Asana task name is required"),
+    ...(args.description === undefined
+      ? {}
+      : {
+          description: nonEmptyString(
+            args.description,
+            "Asana task description must be a non-empty string",
+          ),
+        }),
+  };
 }
 
 function listTasksInput(args: Record<string, unknown>): {
@@ -252,6 +283,16 @@ export function createAsanaMcpUpstream(options: {
         return request(
           `/projects/${encodeURIComponent(options.projectGid)}?opt_fields=gid,name,permalink_url`,
         );
+      }
+      if (name === "asana.create_task") {
+        const input = createTaskInput(args);
+        return request("/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data: { ...input, projects: [options.projectGid] },
+          }),
+        });
       }
       if (name === "asana.list_tasks") {
         const input = listTasksInput(args);

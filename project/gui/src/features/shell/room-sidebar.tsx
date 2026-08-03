@@ -87,6 +87,7 @@ const softwareEngineerCapabilities = [
     invertOnDark: false,
     tools: [
       'Get project',
+      'Create tasks',
       'List tasks',
       'Get task details',
       'Read comments',
