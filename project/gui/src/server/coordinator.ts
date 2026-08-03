@@ -23,6 +23,12 @@ import {
 import { canDeleteRoom } from '#/features/rooms/permissions'
 import { mentionedAccounts } from './attention'
 import {
+  rosterDefinitionSummaries,
+  rosterMentionPattern,
+  rosterNotConfiguredMessage,
+  rosterPerson,
+} from '../../../agents/roster'
+import {
   attachmentBytes,
   attachmentDirectory,
   createRoomAttachmentSource,
@@ -127,6 +133,7 @@ export type AgentDefinitionSummary = {
   id: string
   name: string
   description: string
+  kind?: 'cursor' | 'openai-agents'
   capabilities: { id: string; name: string; tools: string[] }[]
 }
 
@@ -308,63 +315,7 @@ export function createCoordinator(options: {
     })
   }
   const agentDefinitions = (): AgentDefinitionSummary[] =>
-    options.agentDefinitions?.() ?? [
-      {
-        id: 'software-engineer',
-        name: 'Software engineer',
-        description: 'Build, debug, and review code in a checked-out repository.',
-        capabilities: [
-          {
-            id: 'linear.issues',
-            name: 'Linear issues',
-            tools: [
-              'Get issues',
-              'List issues',
-              'Save comments',
-              'Save issues',
-            ],
-          },
-          {
-            id: 'github.pull-requests',
-            name: 'GitHub pull requests',
-            tools: ['Create pull requests', 'Wait for pull request checks'],
-          },
-          {
-            id: 'workspace.room',
-            name: 'Room',
-            tools: ['Read messages', 'Post messages'],
-          },
-        ],
-      },
-      {
-        id: 'antboy',
-        name: 'antboy',
-        description:
-          'Collaborative teammate for room and task work without a GitHub checkout.',
-        capabilities: [
-          {
-            id: 'linear.issues',
-            name: 'Linear issues',
-            tools: [
-              'Get issues',
-              'List issues',
-              'Save comments',
-              'Save issues',
-            ],
-          },
-          {
-            id: 'asana.tasks',
-            name: 'Asana tasks',
-            tools: ['List and update tasks', 'Comments'],
-          },
-          {
-            id: 'workspace.room',
-            name: 'Room',
-            tools: ['Read messages', 'Post messages'],
-          },
-        ],
-      },
-    ]
+    options.agentDefinitions?.() ?? rosterDefinitionSummaries()
   const broadcastWorkspace = (message: WorkspaceServerMessage): void => {
     for (const socket of sockets)
       if (socket.data.scope === 'workspace') send(socket, message)
@@ -970,7 +921,7 @@ export function createCoordinator(options: {
         const input = await messageInputFrom(request)
         if ('error' in input) return cors(json({ error: input.error }, 400))
         const { text, files } = input
-        const mention = /(^|\s)@(software-engineer|antboy)\b\s*/
+        const mention = rosterMentionPattern()
         const mentionMatch = text.match(mention)
         const agentDefinitionId = mentionMatch?.[2]
         const isAgentMessage = Boolean(agentDefinitionId)
@@ -979,18 +930,24 @@ export function createCoordinator(options: {
           : undefined
         if (isAgentMessage && !task)
           return cors(json({ error: 'Agent task is required' }, 400))
-        if (task && agentDefinitionId && options.agentReady && !options.agentReady(agentDefinitionId))
+        if (
+          task &&
+          agentDefinitionId &&
+          options.agentReady &&
+          !options.agentReady(agentDefinitionId)
+        ) {
+          const person = rosterPerson(agentDefinitionId)
           return cors(
             json(
               {
-                error:
-                  agentDefinitionId === 'software-engineer'
-                    ? 'Cursor agent runtime is not configured'
-                    : 'LLM provider is not configured',
+                error: person
+                  ? rosterNotConfiguredMessage(person.kind)
+                  : 'Unknown agent',
               },
               409,
             ),
           )
+        }
         let attachments
         try {
           attachments = await stageAttachments(files, attachmentsDirectory)
@@ -1275,7 +1232,6 @@ if (import.meta.main) {
     { readAsanaConfiguration },
     { createGitHubCliClient },
     { createMcpGatewayHttpServer },
-    { agentParticipant },
     { createAppleContainerClient },
     { createAppleContainerSandboxProvider },
     { createDockerSandboxProvider },
@@ -1285,12 +1241,11 @@ if (import.meta.main) {
     import('./admission'),
     import('./llm-config'),
     import('./cursor-runtime-config'),
-    import('../../../agents/software-engineer'),
+    import('../../../agents/roster'),
     import('../../../agents/software-engineer-adapters'),
     import('../../../mcp/asana'),
     import('../../../mcp/github'),
     import('../../../mcp/http'),
-    import('./room-store'),
     import('../../../sdk/src'),
     import('../../../providers/apple-container-sandbox'),
     import('../../../providers/docker-sandbox'),
@@ -1346,11 +1301,6 @@ if (import.meta.main) {
               messages.postMessage(input)
             },
           },
-          agent: (grantContext) =>
-            agentParticipant(
-              (grantContext as { agentDefinitionId?: string } | undefined)
-                ?.agentDefinitionId ?? 'software-engineer',
-            ),
         }),
         ...(linearAccessToken
           ? [
@@ -1428,10 +1378,13 @@ if (import.meta.main) {
         return signedIn.ok ? signedIn : created
       },
     },
-    agentReady: (agentDefinitionId = 'software-engineer') =>
-      agentDefinitionId === 'software-engineer'
+    agentReady: (agentDefinitionId) => {
+      const person = rosterPerson(agentDefinitionId ?? '')
+      if (!person) return false
+      return person.kind === 'cursor'
         ? cursorRuntime.public().configured
-        : llm.public().configured,
+        : llm.public().configured
+    },
   })
   process.stdout.write(`Coordinator listening on ${coordinator.port}\n`)
   const setupToken = admissionStore.ensureSetupToken()

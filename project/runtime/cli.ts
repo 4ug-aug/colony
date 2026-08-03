@@ -16,6 +16,10 @@ const modelProvider = (): "openai" | "custom" => {
 };
 
 try {
+  const apiKey = required("SWEAT_MODEL_API_KEY");
+  delete Bun.env.SWEAT_MODEL_API_KEY;
+  delete process.env.SWEAT_MODEL_API_KEY;
+
   await runAgent(
     {
       task: required("SWEAT_AGENT_TASK"),
@@ -24,7 +28,7 @@ try {
       model: {
         provider: modelProvider(),
         baseUrl: required("SWEAT_MODEL_BASE_URL"),
-        apiKey: required("SWEAT_MODEL_API_KEY"),
+        apiKey,
         model: required("SWEAT_MODEL_NAME"),
       },
       capabilitySession: Bun.env.SWEAT_MCP_URL && Bun.env.SWEAT_MCP_TOKEN

@@ -1,3 +1,4 @@
+import type { WorkspaceAgentAdapter } from "./roster";
 import type { Octokit } from "octokit";
 import { createGitHubRepositoryCheckoutSource } from "../inputs/github";
 import { createAsanaMcpUpstream } from "../mcp/asana";
@@ -7,38 +8,29 @@ import {
   createWorkspaceMcpUpstream,
   type WorkspaceRoomPort,
 } from "../mcp/workspace";
-import type { SoftwareEngineerAdapter } from "./software-engineer";
-
-type WorkspaceAgentIdentity = { id: string; name: string; image?: string };
+import { STEP_TEXT_LIMIT } from "../runtime/step";
+import { rosterParticipant } from "./roster-meta";
 
 export function createWorkspaceSoftwareEngineerAdapter(options: {
   port: WorkspaceRoomPort;
-  agent:
-    | WorkspaceAgentIdentity
-    | ((grantContext: unknown) => WorkspaceAgentIdentity);
-}): SoftwareEngineerAdapter {
+}): WorkspaceAgentAdapter {
   return {
     capability: {
       id: "workspace.room",
       applies({ grantContext }) {
-        return Boolean(
-          (grantContext as { roomId?: string } | undefined)?.roomId,
-        );
+        return Boolean(grantContext?.roomId);
       },
       createUpstream({ grantContext }) {
-        const roomId = (grantContext as { roomId?: string } | undefined)
-          ?.roomId;
+        const roomId = grantContext?.roomId;
         if (!roomId) {
           throw new Error("A room id is required for the workspace capability");
         }
-        const agent =
-          typeof options.agent === "function"
-            ? options.agent(grantContext)
-            : options.agent;
         return createWorkspaceMcpUpstream({
           port: options.port,
           roomId,
-          agent,
+          agent: rosterParticipant(
+            grantContext?.agentDefinitionId ?? "software-engineer",
+          ),
         });
       },
     },
@@ -47,7 +39,7 @@ export function createWorkspaceSoftwareEngineerAdapter(options: {
 
 export function createLinearSoftwareEngineerAdapter(options: {
   accessToken: string;
-}): SoftwareEngineerAdapter {
+}): WorkspaceAgentAdapter {
   return {
     capability: {
       id: "linear.issues",
@@ -59,7 +51,7 @@ export function createLinearSoftwareEngineerAdapter(options: {
 export function createAsanaSoftwareEngineerAdapter(options: {
   apiToken: string;
   projectGid: string;
-}): SoftwareEngineerAdapter {
+}): WorkspaceAgentAdapter {
   return {
     capability: {
       id: "asana.tasks",
@@ -73,7 +65,7 @@ export function createGitHubSoftwareEngineerAdapter(options: {
   repository: string;
   base: string;
   verifyCommand?: string;
-}): SoftwareEngineerAdapter {
+}): WorkspaceAgentAdapter {
   return {
     repository: {
       input: {
@@ -118,7 +110,7 @@ export function createGitHubSoftwareEngineerAdapter(options: {
                   const output = [result.stdout, result.stderr]
                     .filter(Boolean)
                     .join("\n")
-                    .slice(-20_000);
+                    .slice(-STEP_TEXT_LIMIT);
                   throw new Error(
                     `Verification failed with code ${result.exitCode}${
                       output ? `:\n${output}` : ""
@@ -132,3 +124,5 @@ export function createGitHubSoftwareEngineerAdapter(options: {
       : {}),
   };
 }
+
+export type { WorkspaceAgentAdapter };

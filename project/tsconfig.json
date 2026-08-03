@@ -5,6 +5,9 @@
       "moduleResolution": "bundler",
       "strict": true,
       "noEmit": true,
+      // Container runtimes run TypeScript directly (node --experimental-strip-types),
+      // which requires the .ts extension on their imports.
+      "allowImportingTsExtensions": true,
       "types": ["bun", "node"]
     },
     "include": ["./*"]

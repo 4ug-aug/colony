@@ -18,7 +18,7 @@ import {
   type Step,
 } from './run-control'
 import type { AttachmentInput } from '../../../inputs/repository'
-import { createSoftwareEngineerExecutor } from '../../../agents/software-engineer'
+import { createWorkspaceAgentsExecutor } from '../../../agents/roster'
 import { createAppleContainerClient } from '../../../sdk/src'
 import { createAppleContainerSandboxProvider } from '../../../providers/apple-container-sandbox'
 import {
@@ -862,7 +862,7 @@ test('an attachment preparation failure leaves the durable message and failed ru
   const store = new MemoryRoomStore()
   const containerCalls: string[][] = []
   const control = createRunControl(
-    createSoftwareEngineerExecutor({
+    createWorkspaceAgentsExecutor({
       cursor: () => ({
         apiKey: 'cursor-key',
         model: 'composer-2.5',

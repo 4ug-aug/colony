@@ -1,11 +1,6 @@
-export interface AgentRole {
-  id: string;
-  instructions: string;
-  requestedCapabilities: readonly {
-    id: string;
-    tools: readonly string[];
-  }[];
-}
+import type { AgentRole } from "./role";
+
+export type { AgentRole } from "./role";
 
 export const softwareEngineerRole: AgentRole = {
   id: "software-engineer",

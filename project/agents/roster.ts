@@ -9,6 +9,7 @@ import {
   type AgentRuntimeKind,
   type CursorRuntimeConfig,
 } from "./definition";
+import type { AgentGrantContext } from "./grant-context";
 import {
   createRepositoryWorkspaceProvisioner,
   type AttachmentInput,
@@ -18,8 +19,7 @@ import {
   type WorkspaceInput,
 } from "../inputs/repository";
 import { createRoutingAgentRuntime } from "../providers/routing-agent-runtime";
-import { antboyRole } from "../roles/antboy";
-import { softwareEngineerRole } from "../roles/software-engineer";
+import type { AgentRole } from "../roles/role";
 import type { OpenAICompatibleModel } from "../runtime/openai-agents";
 import { createCapabilitySessionFactory } from "../mcp/session";
 import {
@@ -28,10 +28,13 @@ import {
   type McpUpstream,
 } from "../mcp/gateway";
 import type { Sandbox, SandboxProvider } from "../sandboxes";
-import type { AgentRole } from "../roles/software-engineer";
+import {
+  SOFTWARE_ENGINEER_ID,
+  WORKSPACE_ROSTER,
+  rosterNotConfiguredMessage,
+} from "./roster-meta";
 
-export const SOFTWARE_ENGINEER_ID = softwareEngineerRole.id;
-export const ANTBOY_ID = antboyRole.id;
+export * from "./roster-meta";
 
 const defaultLimits = {
   maxDurationMs: 30 * 60 * 1000,
@@ -42,8 +45,14 @@ const defaultLimits = {
 interface AgentCapabilityContext {
   workspace?: PreparedWorkspace;
   sandbox?: Pick<Sandbox, "exec">;
-  grantContext?: unknown;
+  grantContext?: AgentGrantContext;
 }
+
+/**
+ * Eligibility is decided before a workspace or sandbox exists, so `applies`
+ * sees only the grant context. Gate on prepared inputs in `createUpstream`.
+ */
+type AgentEligibilityContext = Pick<AgentCapabilityContext, "grantContext">;
 
 export interface WorkspaceAgentAdapter {
   repository?: {
@@ -53,13 +62,10 @@ export interface WorkspaceAgentAdapter {
   capability?: {
     id: string;
     resources?: McpGrant["resources"];
-    applies?(context: AgentCapabilityContext): boolean;
+    applies?(context: AgentEligibilityContext): boolean;
     createUpstream(context: AgentCapabilityContext): McpUpstream;
   };
 }
-
-/** @deprecated Use WorkspaceAgentAdapter */
-export type SoftwareEngineerAdapter = WorkspaceAgentAdapter;
 
 export type WorkspaceAgentStartRunRequest = Omit<
   StartRunRequest<WorkspaceInput>,
@@ -69,25 +75,11 @@ export type WorkspaceAgentStartRunRequest = Omit<
   agentDefinitionId?: string;
 };
 
-/** @deprecated Use WorkspaceAgentStartRunRequest */
-export type SoftwareEngineerStartRunRequest = WorkspaceAgentStartRunRequest;
-
 export type WorkspaceAgentExecutor = Omit<
   RunExecutor<WorkspaceInput>,
   "startRun"
 > & {
   startRun(request: WorkspaceAgentStartRunRequest): string;
-};
-
-/** @deprecated Use WorkspaceAgentExecutor */
-export type SoftwareEngineerExecutor = WorkspaceAgentExecutor;
-
-type RosterPerson = {
-  role: AgentRole;
-  kind: AgentRuntimeKind;
-  image: string;
-  /** Include GitHub repository checkout inputs when starting this person. */
-  includeRepository: boolean;
 };
 
 function personCapabilities(role: AgentRole): Map<string, readonly string[]> {
@@ -100,7 +92,8 @@ function personCapabilities(role: AgentRole): Map<string, readonly string[]> {
 }
 
 /**
- * Workspace roster: software-engineer (cursor + repo) and antboy (openai-agents, no repo).
+ * Workspace roster executor: software-engineer (cursor + repo) and antboy
+ * (openai-agents, no repo).
  */
 export function createWorkspaceAgentsExecutor(options: {
   model?: () => OpenAICompatibleModel;
@@ -135,32 +128,24 @@ export function createWorkspaceAgentsExecutor(options: {
     Bun.env.SWEAT_CURSOR_AGENT_IMAGE ??
     "sweat-agent-cursor:latest";
 
-  const people: RosterPerson[] = [
-    {
-      role: softwareEngineerRole,
-      kind: "cursor",
-      image: cursorImage,
-      includeRepository: true,
-    },
-    {
-      role: antboyRole,
-      kind: "openai-agents",
-      image: openaiImage,
-      includeRepository: false,
-    },
-  ];
+  const imagesByKind: Record<AgentRuntimeKind, string> = {
+    cursor: cursorImage,
+    "openai-agents": openaiImage,
+  };
 
-  const byId = new Map(people.map((person) => [person.role.id, person]));
-  const allRequested = new Map<string, Map<string, readonly string[]>>();
-  for (const person of people) {
-    allRequested.set(person.role.id, personCapabilities(person.role));
-  }
-
-  // Validate adapters against the union of requested capabilities (SE requests GitHub).
-  const unionRequested = personCapabilities(softwareEngineerRole);
-  for (const capability of antboyRole.requestedCapabilities) {
-    if (!unionRequested.has(capability.id)) {
-      unionRequested.set(capability.id, capability.tools);
+  const byId = new Map(
+    WORKSPACE_ROSTER.map((person) => [person.id, person] as const),
+  );
+  const allRequested = new Map(
+    WORKSPACE_ROSTER.map((person) => [
+      person.id,
+      personCapabilities(person.role),
+    ] as const),
+  );
+  const unionRequested = new Map<string, readonly string[]>();
+  for (const requested of allRequested.values()) {
+    for (const [id, tools] of requested) {
+      if (!unionRequested.has(id)) unionRequested.set(id, tools);
     }
   }
 
@@ -197,16 +182,37 @@ export function createWorkspaceAgentsExecutor(options: {
     );
   }
 
+  const eligibleAdapters = (
+    agentDefinitionId: string,
+    grantContext: AgentGrantContext | undefined,
+  ) => {
+    const requested = allRequested.get(agentDefinitionId);
+    if (!requested) return [];
+    return capabilityAdapters.filter((adapter) => {
+      if (!requested.has(adapter.id)) return false;
+      return adapter.applies ? adapter.applies({ grantContext }) : true;
+    });
+  };
+
   const capabilities = capabilityAdapters.length
     ? createCapabilitySessionFactory({
-        createGateway: (context) =>
-          createMcpGateway({
-            upstreams: capabilityAdapters
-              .filter((adapter) =>
-                adapter.applies ? adapter.applies(context) : true,
-              )
-              .map((adapter) => adapter.createUpstream(context)),
-          }),
+        // Same eligibility decision as startRun, from the same function, so the
+        // gateway can never expose an upstream the person did not request.
+        createGateway: (context) => {
+          const eligible = eligibleAdapters(
+            context.grantContext?.agentDefinitionId ?? SOFTWARE_ENGINEER_ID,
+            context.grantContext,
+          );
+          return createMcpGateway({
+            upstreams: eligible.map((adapter) =>
+              adapter.createUpstream({
+                workspace: context.workspace,
+                sandbox: context.sandbox,
+                grantContext: context.grantContext,
+              }),
+            ),
+          });
+        },
         createEndpoint: options.createCapabilityEndpoint!,
       })
     : undefined;
@@ -216,15 +222,16 @@ export function createWorkspaceAgentsExecutor(options: {
       resolve(id) {
         const person = byId.get(id);
         if (!person) return undefined;
+        const image = imagesByKind[person.kind];
         if (person.kind === "cursor") {
           if (!options.cursor) return undefined;
           return {
-            id: person.role.id,
+            id: person.id,
             instructions: person.role.instructions,
             requestedCapabilities: person.role.requestedCapabilities,
             runtime: {
               kind: "cursor",
-              image: person.image,
+              image,
               cursor: options.cursor(),
             },
             executionPolicy: defaultLimits,
@@ -232,12 +239,12 @@ export function createWorkspaceAgentsExecutor(options: {
         }
         if (!options.model) return undefined;
         return {
-          id: person.role.id,
+          id: person.id,
           instructions: person.role.instructions,
           requestedCapabilities: person.role.requestedCapabilities,
           runtime: {
             kind: "openai-agents",
-            image: person.image,
+            image,
             model: options.model(),
           },
           executionPolicy: defaultLimits,
@@ -267,19 +274,19 @@ export function createWorkspaceAgentsExecutor(options: {
         throw new Error(`Unknown agent definition: ${agentDefinitionId}`);
       }
       if (person.kind === "cursor" && !options.cursor) {
-        throw new Error("Cursor agent runtime is not configured");
+        throw new Error(rosterNotConfiguredMessage("cursor"));
       }
       if (person.kind === "openai-agents" && !options.model) {
-        throw new Error("LLM provider is not configured");
+        throw new Error(rosterNotConfiguredMessage("openai-agents"));
       }
 
+      const grantContext: AgentGrantContext = {
+        ...(runRequest.grantContext ?? {}),
+        agentDefinitionId,
+      };
+      const eligible = eligibleAdapters(agentDefinitionId, grantContext);
+
       const requested = allRequested.get(agentDefinitionId)!;
-      const eligible = capabilityAdapters.filter((adapter) => {
-        if (!requested.has(adapter.id)) return false;
-        return adapter.applies
-          ? adapter.applies({ grantContext: runRequest.grantContext })
-          : true;
-      });
       const eligibleTools = eligible.flatMap(
         (adapter) => requested.get(adapter.id) ?? [],
       );
@@ -296,6 +303,7 @@ export function createWorkspaceAgentsExecutor(options: {
         : [];
       return executor.startRun({
         ...runRequest,
+        grantContext,
         task: `${task}${attachmentNote}`,
         agentDefinitionId,
         inputs: [...repoInputs, ...attachments],
@@ -314,6 +322,3 @@ export function createWorkspaceAgentsExecutor(options: {
     },
   };
 }
-
-/** @deprecated Use createWorkspaceAgentsExecutor */
-export const createSoftwareEngineerExecutor = createWorkspaceAgentsExecutor;

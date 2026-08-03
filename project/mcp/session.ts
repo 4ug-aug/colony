@@ -1,4 +1,5 @@
 import type { McpGateway, McpGrant } from "./gateway";
+import type { AgentGrantContext } from "../agents/grant-context";
 import type { PreparedWorkspace } from "../runs";
 import type { Sandbox } from "../sandboxes";
 
@@ -10,21 +11,24 @@ export interface CapabilitySessionBinding {
   revoke(): void | Promise<void>;
 }
 
+export type CapabilitySessionContext = {
+  workspace?: PreparedWorkspace;
+  sandbox?: Pick<Sandbox, "exec">;
+  grantContext?: AgentGrantContext;
+};
+
 export interface CapabilitySessionFactory {
   create(
     grant: McpGrant,
-    context?: { workspace?: PreparedWorkspace; sandbox?: Pick<Sandbox, "exec">; grantContext?: unknown },
+    context?: CapabilitySessionContext,
   ): CapabilitySessionBinding | Promise<CapabilitySessionBinding>;
 }
 
 export function createCapabilitySessionFactory(options: {
   gateway?: McpGateway;
-  createGateway?: (context: {
-    grant: McpGrant;
-    workspace?: PreparedWorkspace;
-    sandbox?: Pick<Sandbox, "exec">;
-    grantContext?: unknown;
-  }) => McpGateway;
+  createGateway?: (
+    context: CapabilitySessionContext & { grant: McpGrant },
+  ) => McpGateway;
   url?: string;
   createEndpoint?: (gateway: McpGateway) => { url: string; close(): Promise<void> };
 }): CapabilitySessionFactory {
@@ -37,7 +41,9 @@ export function createCapabilitySessionFactory(options: {
   return {
     async create(grant, context = {}) {
       const { workspace, sandbox, grantContext } = context;
-      const gateway = options.createGateway?.({ grant, workspace, sandbox, grantContext }) ?? options.gateway!;
+      const gateway =
+        options.createGateway?.({ grant, workspace, sandbox, grantContext }) ??
+        options.gateway!;
       const session = gateway.createSession(grant);
       const endpoint = options.createEndpoint?.(gateway);
       try {

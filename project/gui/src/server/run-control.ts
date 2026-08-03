@@ -1,9 +1,6 @@
 import type { RunInput, RunRecord, Step } from '../../../runs'
-import type { WorkspaceAgentExecutor } from '../../../agents/software-engineer'
-import {
-  ANTBOY_ID,
-  SOFTWARE_ENGINEER_ID,
-} from '../../../agents/software-engineer'
+import type { WorkspaceAgentExecutor } from '../../../agents/roster'
+import { SOFTWARE_ENGINEER_ID } from '../../../agents/roster'
 import type { AttachmentInput } from '../../../inputs/repository'
 
 export type RunProvider = 'openai' | 'custom' | 'cursor'
@@ -67,9 +64,8 @@ export function runSummary<Input extends RunInput>(
     stderr,
     definition: { id: agentId },
   } = run
-  const kind = run.definition.runtime?.kind
-  const cursor = run.definition.runtime?.cursor
-  const model = run.definition.runtime?.model
+  const runtime = run.definition.runtime
+  const kind = runtime?.kind
   return {
     id,
     task,
@@ -83,10 +79,17 @@ export function runSummary<Input extends RunInput>(
     stderr,
     agentId,
     provider:
-      kind === 'cursor' || cursor
+      kind === 'cursor'
         ? 'cursor'
-        : (model?.provider ?? 'openai'),
-    model: cursor?.model ?? model?.model ?? '',
+        : runtime && 'model' in runtime
+          ? (runtime.model.provider ?? 'openai')
+          : 'openai',
+    model:
+      runtime && 'cursor' in runtime
+        ? runtime.cursor.model
+        : runtime && 'model' in runtime
+          ? runtime.model.model
+          : '',
   }
 }
 
@@ -133,5 +136,3 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
     },
   }
 }
-
-export { ANTBOY_ID, SOFTWARE_ENGINEER_ID }

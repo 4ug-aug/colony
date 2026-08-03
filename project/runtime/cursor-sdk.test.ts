@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import {
   boundStepText,
-  CURSOR_STEP_TEXT_LIMIT,
-  cursorCredentialStillInEnv,
+  STEP_TEXT_LIMIT,
+} from "./step";
+import {
   mapCursorEventToSteps,
   runCursorAgent,
+  scrubCursorApiKeysFromEnv,
   takeCursorApiKeyFromEnv,
   type CursorAgentFactory,
   type CursorSdkMessage,
@@ -20,10 +22,9 @@ test("takeCursorApiKeyFromEnv clears SWEAT_CURSOR_API_KEY and CURSOR_API_KEY", (
   expect(env.SWEAT_CURSOR_API_KEY).toBeUndefined();
   expect(env.CURSOR_API_KEY).toBeUndefined();
   expect(env.PATH).toBe("/usr/bin");
-  expect(cursorCredentialStillInEnv(env)).toBe(false);
 });
 
-test("mapCursorEventToSteps maps assistant text and ignores thinking", () => {
+test("mapCursorEventToSteps ignores assistant and thinking (coalesced elsewhere)", () => {
   const assistant: CursorSdkMessage = {
     type: "assistant",
     message: {
@@ -37,9 +38,7 @@ test("mapCursorEventToSteps maps assistant text and ignores thinking", () => {
     type: "thinking",
     text: "secret chain of thought",
   };
-  expect(mapCursorEventToSteps(assistant)).toEqual([
-    expect.objectContaining({ kind: "message", text: "Hello" }),
-  ]);
+  expect(mapCursorEventToSteps(assistant)).toEqual([]);
   expect(mapCursorEventToSteps(thinking)).toEqual([]);
 });
 
@@ -77,7 +76,7 @@ test("mapCursorEventToSteps pairs tool start and completion", () => {
 });
 
 test("boundStepText truncates oversized payloads", () => {
-  const huge = "x".repeat(CURSOR_STEP_TEXT_LIMIT + 50);
+  const huge = "x".repeat(STEP_TEXT_LIMIT + 50);
   const text = boundStepText(huge);
   expect(text.length).toBeLessThan(huge.length);
   expect(text.endsWith("…[truncated]")).toBe(true);
@@ -148,29 +147,25 @@ test("runCursorAgent flushes coalesced assistant text before tool calls", async 
           } satisfies CursorSdkMessage;
           yield {
             type: "assistant",
-            message: { content: [{ type: "text", text: "around." }] },
+            message: { content: [{ type: "text", text: "now" }] },
           } satisfies CursorSdkMessage;
           yield {
             type: "tool_call",
-            call_id: "c1",
+            call_id: "t1",
             name: "shell",
             status: "running",
             args: { command: "ls" },
           } satisfies CursorSdkMessage;
           yield {
             type: "tool_call",
-            call_id: "c1",
+            call_id: "t1",
             name: "shell",
             status: "completed",
             result: "ok",
           } satisfies CursorSdkMessage;
-          yield {
-            type: "assistant",
-            message: { content: [{ type: "text", text: "Done." }] },
-          } satisfies CursorSdkMessage;
         },
         async wait() {
-          return { status: "finished", result: "Done." };
+          return { status: "finished", result: "Looking now" };
         },
       };
     },
@@ -181,41 +176,43 @@ test("runCursorAgent flushes coalesced assistant text before tool calls", async 
     {
       task: "t",
       instructions: "i",
-      agentId: "a",
+      agentId: "software-engineer",
       apiKey: "k",
       model: "composer-2.5",
     },
     { createAgent, onStep: (step) => steps.push(step) },
   );
 
-  expect(steps.map((s) => ({ kind: s.kind, text: s.text }))).toEqual([
-    { kind: "message", text: "Looking around." },
-    { kind: "tool_call", text: JSON.stringify({ command: "ls" }) },
-    { kind: "tool_result", text: "ok" },
-    { kind: "message", text: "Done." },
-  ]);
+  expect(steps[0]).toMatchObject({ kind: "message", text: "Looking now" });
+  expect(steps[1]).toMatchObject({ kind: "tool_call", tool: "shell" });
 });
 
-test("runCursorAgent refuses to start if the key is still in process.env", async () => {
+test("runCursorAgent scrubs residual Cursor keys from process.env", async () => {
   const previous = process.env.SWEAT_CURSOR_API_KEY;
   process.env.SWEAT_CURSOR_API_KEY = "leaked";
   try {
-    await expect(
-      runCursorAgent(
-        {
-          task: "t",
-          instructions: "i",
-          agentId: "a",
-          apiKey: "leaked",
-          model: "composer-2.5",
-        },
-        {
-          createAgent: async () => {
-            throw new Error("should not create");
+    const createAgent: CursorAgentFactory = async () => ({
+      async send() {
+        return {
+          async *stream() {},
+          async wait() {
+            return { status: "finished", result: "ok" };
           },
-        },
-      ),
-    ).rejects.toThrow(/removed from process\.env/);
+        };
+      },
+      async [Symbol.asyncDispose]() {},
+    });
+    await runCursorAgent(
+      {
+        task: "t",
+        instructions: "i",
+        agentId: "a",
+        apiKey: "request-key",
+        model: "composer-2.5",
+      },
+      { createAgent },
+    );
+    expect(process.env.SWEAT_CURSOR_API_KEY).toBeUndefined();
   } finally {
     if (previous === undefined) delete process.env.SWEAT_CURSOR_API_KEY;
     else process.env.SWEAT_CURSOR_API_KEY = previous;
@@ -223,30 +220,21 @@ test("runCursorAgent refuses to start if the key is still in process.env", async
 });
 
 test("trust boundary: shell tool result must not contain the Cursor API key", async () => {
-  const apiKey = "cursor-key-must-not-leak";
-  const steps: Array<{ kind: string; text: string }> = [];
-
-  // Simulate the required hostile-env check: after bootstrap the shell sees no key.
+  const apiKey = "super-secret-cursor-key";
   const envAfterBootstrap: Record<string, string | undefined> = {
     SWEAT_CURSOR_API_KEY: apiKey,
+    CURSOR_API_KEY: apiKey,
     PATH: "/usr/bin",
   };
   const taken = takeCursorApiKeyFromEnv(envAfterBootstrap);
   expect(taken).toBe(apiKey);
-  expect(cursorCredentialStillInEnv(envAfterBootstrap)).toBe(false);
+  scrubCursorApiKeysFromEnv(envAfterBootstrap);
 
+  const steps: Array<{ kind: string; text: string }> = [];
   const createAgent: CursorAgentFactory = async () => ({
     async send() {
       return {
         async *stream() {
-          yield {
-            type: "tool_call",
-            call_id: "env-1",
-            name: "shell",
-            status: "running",
-            args: { command: "env" },
-          } satisfies CursorSdkMessage;
-          // Shell inherits process env only — after takeCursorApiKeyFromEnv, no key.
           const shellEnv = Object.entries(envAfterBootstrap)
             .filter(([, value]) => value !== undefined)
             .map(([key, value]) => `${key}=${value}`)

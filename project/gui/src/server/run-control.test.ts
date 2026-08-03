@@ -1,27 +1,45 @@
 import { expect, test } from 'bun:test'
 import { createRunControl } from './run-control'
 import type {
-  SoftwareEngineerExecutor,
-  SoftwareEngineerStartRunRequest,
-} from '../../../agents/software-engineer'
+  WorkspaceAgentExecutor,
+  WorkspaceAgentStartRunRequest,
+} from '../../../agents/roster'
 
 function captureExecutor(
-  capture: (request: SoftwareEngineerStartRunRequest) => void,
-): SoftwareEngineerExecutor {
+  capture: (request: WorkspaceAgentStartRunRequest) => void,
+): WorkspaceAgentExecutor {
   return {
     startRun: (request) => {
       capture(request)
       request.onCreate?.({
         id: 'run-1',
         task: request.task,
-        definition: { id: 'software-engineer' },
+        definition: {
+          id: 'software-engineer',
+          instructions: '',
+          requestedCapabilities: [],
+          runtime: {
+            kind: 'cursor',
+            image: 'cursor:latest',
+            cursor: { apiKey: 'k', model: 'm' },
+          },
+          executionPolicy: {
+            maxDurationMs: 1,
+            maxOutputBytes: 1,
+            maxSteps: 1,
+          },
+        },
         state: 'preparing',
         createdAt: 0,
         stdout: '',
         stderr: '',
-      } as Parameters<
-        NonNullable<SoftwareEngineerStartRunRequest['onCreate']>
-      >[0])
+        inputs: [],
+        effectiveLimits: {
+          maxDurationMs: 1,
+          maxOutputBytes: 1,
+          maxSteps: 1,
+        },
+      })
       return 'run-1'
     },
     getRun: () => undefined,
@@ -33,7 +51,7 @@ function captureExecutor(
 }
 
 test('passes room context and attachment descriptors without assembling inputs', () => {
-  let request: SoftwareEngineerStartRunRequest | undefined
+  let request: WorkspaceAgentStartRunRequest | undefined
   const control = createRunControl(
     captureExecutor((value) => {
       request = value

@@ -21,6 +21,7 @@ import {
 } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '#/components/ui/button'
+import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import type { MentionableAccount } from './types'
 
 type MentionItem = {
@@ -96,23 +97,6 @@ function SelectedFile({
     </div>
   )
 }
-
-const agents: MentionItem[] = [
-  {
-    id: 'software-engineer',
-    label: 'software-engineer',
-    name: 'Software engineer',
-    description: 'Build, debug, and review code in a repository',
-    kind: 'agent',
-  },
-  {
-    id: 'antboy',
-    label: 'antboy',
-    name: 'antboy',
-    description: 'Collaborative teammate for room and task work',
-    kind: 'agent',
-  },
-]
 
 function suggestionMenu(
   mentionOpen: { current: boolean },
@@ -249,6 +233,14 @@ export const MessageComposer = forwardRef<
   { value, onChange, onSubmit, disabled, roomName, mentionableAccounts },
   ref,
 ) {
+  const { data: agentDefinitions = [] } = useAgentDefinitions()
+  const agents: MentionItem[] = agentDefinitions.map((agent) => ({
+    id: agent.id,
+    label: agent.id,
+    name: agent.name,
+    description: agent.description,
+    kind: 'agent',
+  }))
   const mentionOpen = useRef(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const fileInput = useRef<HTMLInputElement | null>(null)
@@ -376,7 +368,7 @@ export const MessageComposer = forwardRef<
           .run()
       },
     }),
-    [editor],
+    [editor, agents],
   )
 
   useEffect(() => {

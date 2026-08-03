@@ -66,79 +66,24 @@ import {
 import type { Author, Room } from '#/features/rooms/types'
 import type { RoomNotification } from '#/features/rooms/room-notifications'
 import { canDeleteRoom } from '#/features/rooms/permissions'
+import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { isTauriRuntime } from '#/lib/server-config'
 import { cn } from '#/lib/utils'
 
-type SidebarAgentCapability = {
-  name: string
-  icon?: string
-  invertOnDark: boolean
-  tools: readonly string[]
+const capabilityIcons: Record<
+  string,
+  { icon?: string; invertOnDark?: boolean }
+> = {
+  'linear.issues': { icon: '/icons/linear.svg' },
+  'github.pull-requests': { icon: '/icons/github.svg', invertOnDark: true },
+  'asana.tasks': { icon: '/icons/asana.svg' },
+  'workspace.room': {},
 }
 
-type SidebarAgent = {
-  id: string
-  name: string
-  description: string
-  icon: typeof Bot
-  capabilities: readonly SidebarAgentCapability[]
+const agentIcons: Record<string, typeof Bot> = {
+  'software-engineer': Bot,
+  antboy: BotMessageSquare,
 }
-
-const linearCapability: SidebarAgentCapability = {
-  name: 'Linear issues',
-  icon: '/icons/linear.svg',
-  invertOnDark: false,
-  tools: ['Get issues', 'List issues', 'Save comments', 'Save issues'],
-}
-
-const asanaCapability: SidebarAgentCapability = {
-  name: 'Asana tasks',
-  icon: '/icons/asana.svg',
-  invertOnDark: false,
-  tools: [
-    'Get project',
-    'Create tasks',
-    'List tasks',
-    'Get task details',
-    'Read comments',
-    'Update completion',
-    'Add comments',
-  ],
-}
-
-const roomCapability: SidebarAgentCapability = {
-  name: 'Room context',
-  invertOnDark: false,
-  tools: ['Read messages', 'Post messages'],
-}
-
-const sidebarAgents: readonly SidebarAgent[] = [
-  {
-    id: 'software-engineer',
-    name: 'Software engineer',
-    description: 'Build, debug, and review code in a checked-out repository.',
-    icon: Bot,
-    capabilities: [
-      linearCapability,
-      {
-        name: 'GitHub pull requests',
-        icon: '/icons/github.svg',
-        invertOnDark: true,
-        tools: ['Create pull requests', 'Wait for pull request checks'],
-      },
-      asanaCapability,
-      roomCapability,
-    ],
-  },
-  {
-    id: 'antboy',
-    name: 'antboy',
-    description:
-      'Collaborative teammate for room and task work without a GitHub checkout.',
-    icon: BotMessageSquare,
-    capabilities: [linearCapability, asanaCapability, roomCapability],
-  },
-]
 
 export type DashboardView = 'room' | 'account' | 'workspace' | 'schedules'
 
@@ -171,6 +116,7 @@ export function RoomSidebar({
   onOpenSchedules: () => void
   user: Author
 }) {
+  const { data: agents = [] } = useAgentDefinitions()
   const [creating, setCreating] = useState(false)
   const [roomName, setRoomName] = useState('')
   const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>(
@@ -217,8 +163,8 @@ export function RoomSidebar({
           <SidebarGroupLabel>Agents</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {sidebarAgents.map((agent) => {
-                const Icon = agent.icon
+              {agents.map((agent) => {
+                const Icon = agentIcons[agent.id] ?? Bot
                 return (
                   <SidebarMenuItem key={agent.id}>
                     <HoverCard>
@@ -247,31 +193,36 @@ export function RoomSidebar({
                           </p>
                         </div>
                         <div className="mt-3 flex flex-col gap-3">
-                          {agent.capabilities.map((capability) => (
-                            <div
-                              key={capability.name}
-                              className="flex flex-col gap-1"
-                            >
-                              <div className="flex items-center gap-2">
-                                {capability.icon && (
-                                  <img
-                                    src={capability.icon}
-                                    alt=""
-                                    className={cn(
-                                      'size-4 shrink-0',
-                                      capability.invertOnDark && 'dark:invert',
-                                    )}
-                                  />
-                                )}
-                                <p className="text-xs font-medium">
-                                  {capability.name}
+                          {agent.capabilities.map((capability) => {
+                            const presentation =
+                              capabilityIcons[capability.id] ?? {}
+                            return (
+                              <div
+                                key={capability.id}
+                                className="flex flex-col gap-1"
+                              >
+                                <div className="flex items-center gap-2">
+                                  {presentation.icon && (
+                                    <img
+                                      src={presentation.icon}
+                                      alt=""
+                                      className={cn(
+                                        'size-4 shrink-0',
+                                        presentation.invertOnDark &&
+                                          'dark:invert',
+                                      )}
+                                    />
+                                  )}
+                                  <p className="text-xs font-medium">
+                                    {capability.name}
+                                  </p>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {capability.tools.join(' · ')}
                                 </p>
                               </div>
-                              <p className="text-xs text-muted-foreground">
-                                {capability.tools.join(' · ')}
-                              </p>
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </HoverCardContent>
                     </HoverCard>

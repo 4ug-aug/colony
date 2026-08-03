@@ -1,4 +1,4 @@
-import type { AgentRole } from "./software-engineer";
+import type { AgentRole } from "./role";
 
 export const antboyRole: AgentRole = {
   id: "antboy",

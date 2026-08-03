@@ -13,8 +13,7 @@ export function createRoutingAgentRuntime(options: {
   const cursor = options.cursor ?? createCursorSdkRuntime({});
   return {
     run: async (sandbox, request: RuntimeRequest) => {
-      const kind = request.definition.runtime.kind;
-      if (kind === "cursor") {
+      if (request.definition.runtime.kind === "cursor") {
         return cursor.run(sandbox, request);
       }
       return openai.run(sandbox, request);

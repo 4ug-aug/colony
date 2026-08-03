@@ -11,7 +11,30 @@ export interface CursorRuntimeConfig {
   model: string;
 }
 
+/** Agent-loop runtimes a workspace person can declare. */
 export type AgentRuntimeKind = "cursor" | "openai-agents";
+
+export type AgentRuntimeConfig =
+  | {
+      kind: "cursor";
+      /** Explicit container image for this person; never derived from kind alone. */
+      image: string;
+      cursor: CursorRuntimeConfig;
+    }
+  | {
+      kind: "openai-agents";
+      /** Explicit container image for this person; never derived from kind alone. */
+      image: string;
+      model: ModelRuntimeConfig;
+    }
+  | {
+      /**
+       * A fixed command supplied by the provider rather than a model-driven
+       * agent loop. Carries no credentials because it never calls a model.
+       */
+      kind: "command";
+      image: string;
+    };
 
 export interface AgentDefinition {
   id: string;
@@ -20,15 +43,7 @@ export interface AgentDefinition {
     id: string;
     tools: readonly string[];
   }[];
-  runtime: {
-    kind: AgentRuntimeKind;
-    /** Explicit container image for this person; never derived from kind alone. */
-    image: string;
-    /** Injected when kind is openai-agents. */
-    model?: ModelRuntimeConfig;
-    /** Injected when kind is cursor. */
-    cursor?: CursorRuntimeConfig;
-  };
+  runtime: AgentRuntimeConfig;
   executionPolicy: {
     maxDurationMs: number;
     maxOutputBytes: number;

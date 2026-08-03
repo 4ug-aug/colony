@@ -1,3 +1,4 @@
+import { rosterMentionHandles } from '../../../agents/roster-people'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -48,7 +49,7 @@ export function Markdown({
   components?: Components
   mentions?: string[]
 }) {
-  const handles = new Set(['software-engineer', 'antboy', ...mentions])
+  const handles = new Set([...rosterMentionHandles(), ...mentions])
   const escaped = [...handles]
     .map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')

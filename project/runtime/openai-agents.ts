@@ -18,6 +18,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import OpenAI from "openai";
 
 import type { Step } from "./step";
+import { STEP_TEXT_LIMIT } from "./step";
 import type { CapabilitySessionBinding } from "../mcp/session";
 
 export interface OpenAICompatibleModel {
@@ -319,8 +320,8 @@ async function runShell(command: string): Promise<string> {
 
   return JSON.stringify({
     exitCode,
-    stdout: stdout.slice(0, 20_000),
-    stderr: stderr.slice(0, 20_000),
+    stdout: stdout.slice(0, STEP_TEXT_LIMIT),
+    stderr: stderr.slice(0, STEP_TEXT_LIMIT),
   });
 }
 

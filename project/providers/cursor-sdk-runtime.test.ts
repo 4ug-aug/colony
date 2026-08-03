@@ -56,7 +56,7 @@ test("the Cursor runtime passes the definition and task to its container command
   expect(typeof _onOutput).toBe("function");
 });
 
-test("the Cursor runtime rejects definitions without cursor config", async () => {
+test("the Cursor runtime rejects openai-agents definitions", async () => {
   const runtime = createCursorSdkRuntime();
   await expect(
     runtime.run(
@@ -68,10 +68,18 @@ test("the Cursor runtime rejects definitions without cursor config", async () =>
       {
         task: "t",
         definition: {
-          id: "software-engineer",
+          id: "antboy",
           instructions: "x",
           requestedCapabilities: [],
-          runtime: { kind: "openai-agents", image: "sweat-agent:latest" },
+          runtime: {
+            kind: "openai-agents",
+            image: "sweat-agent:latest",
+            model: {
+              baseUrl: "https://example/v1",
+              apiKey: "k",
+              model: "m",
+            },
+          },
           executionPolicy: {
             maxDurationMs: 1000,
             maxOutputBytes: 1000,
@@ -80,7 +88,7 @@ test("the Cursor runtime rejects definitions without cursor config", async () =>
         },
       },
     ),
-  ).rejects.toThrow(/no Cursor runtime configuration/);
+  ).rejects.toThrow(/not a Cursor runtime/);
 });
 
 const minimalDefinition = {

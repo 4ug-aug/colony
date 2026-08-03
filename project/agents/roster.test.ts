@@ -13,7 +13,7 @@ import {
   SOFTWARE_ENGINEER_ID,
   createWorkspaceAgentsExecutor,
   type WorkspaceAgentAdapter,
-} from "./software-engineer";
+} from "./roster";
 
 const cursorConfig = () => ({
   apiKey: "cursor-key",
@@ -301,4 +301,108 @@ test("software-engineer start requires cursor; antboy start requires model", () 
       agentDefinitionId: SOFTWARE_ENGINEER_ID,
     }),
   ).toThrow("Cursor agent runtime is not configured");
+});
+
+test("antboy runs in a room while a GitHub adapter is configured", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const roomAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "workspace.room",
+      applies: ({ grantContext }) =>
+        Boolean((grantContext as { roomId?: string } | undefined)?.roomId),
+      createUpstream: () => ({
+        listTools: async () => [
+          { name: "workspace.read_messages" },
+          { name: "workspace.post_message" },
+        ],
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const githubAdapter: WorkspaceAgentAdapter = {
+    repository: {
+      input: {
+        type: "repository",
+        provider: "github",
+        repository: "acme/widgets",
+        revision: "main",
+      },
+      source: {
+        provider: "github",
+        checkout: async () => ({ revision: "abc123" }),
+      },
+    },
+    capability: {
+      id: "github.pull-requests",
+      resources: [{ provider: "github", repository: "acme/widgets" }],
+      createUpstream({ workspace }) {
+        if (workspace?.git?.repository !== "acme/widgets") {
+          throw new Error(
+            "GitHub capability and prepared repository must match",
+          );
+        }
+        return {
+          listTools: async () => [{ name: "github.create_pull_request" }],
+          callTool: async () => ({}),
+        };
+      },
+    },
+  };
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    adapters: [roomAdapter, githubAdapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-antboy",
+    }),
+  });
+
+  const id = executor.startRun({
+    task: "summarize the room",
+    agentDefinitionId: ANTBOY_ID,
+    grantContext: { roomId: "room-1", agentDefinitionId: ANTBOY_ID },
+  });
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+    await Bun.sleep(0);
+  }
+  const run = executor.getRun(id)!;
+  expect(run.state).toBe("succeeded");
+  expect(run.capabilityGrant?.tools ?? []).not.toContain(
+    "github.create_pull_request",
+  );
+});
+
+test("client-safe roster presentation never reaches role instructions", async () => {
+  // run-helpers.ts and markdown.tsx import roster-people from the GUI bundle.
+  // Anything it reaches transitively ships to the browser, so role modules
+  // (which own system instructions) must stay out of its import graph.
+  const seen = new Set<string>();
+  const visit = async (path: string): Promise<void> => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    const source = await Bun.file(path).text();
+    const directory = path.slice(0, path.lastIndexOf("/"));
+    for (const match of source.matchAll(/from\s+"(\.[^"]+)"/g)) {
+      const resolved = Bun.resolveSync(match[1]!, directory);
+      expect(resolved).not.toContain("/roles/");
+      await visit(resolved);
+    }
+  };
+
+  await visit(Bun.resolveSync("./roster-people.ts", import.meta.dir));
+  expect(seen.size).toBeGreaterThan(1);
 });

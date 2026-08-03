@@ -1,6 +1,8 @@
 export * from "./agents/definition";
+export * from "./agents/grant-context";
 export * from "./agents/light-agent";
-export * from "./agents/software-engineer";
+export * from "./agents/roster";
+export * from "./agents/roster-meta";
 export * from "./agents/software-engineer-adapters";
 export * from "./inputs/github";
 export * from "./inputs/repository";
@@ -19,6 +21,7 @@ export * from "./runs";
 export * from "./runtime/cursor-sdk";
 export * from "./runtime/openai-agents";
 export * from "./runtime/step";
+export * from "./roles/role";
 export * from "./roles/software-engineer";
 export * from "./roles/antboy";
 export * from "./sandboxes";

@@ -1,9 +1,7 @@
+import { rosterMentionHandles } from '../../../agents/roster-meta'
 import type { RoomUser } from './room-store'
 
-export const AGENT_MENTION_HANDLES = new Set([
-  'software-engineer',
-  'antboy',
-])
+export const AGENT_MENTION_HANDLES = rosterMentionHandles()
 
 const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 

@@ -1,0 +1,66 @@
+// Server-side roster: pairs the client-safe presentation in ./roster-people
+// with the role modules that own each person's system instructions.
+
+import { antboyRole } from "../roles/antboy";
+import type { AgentRole } from "../roles/role";
+import { softwareEngineerRole } from "../roles/software-engineer";
+import type { AgentRuntimeKind } from "./definition";
+import {
+  ANTBOY_ID,
+  SOFTWARE_ENGINEER_ID,
+  WORKSPACE_PEOPLE,
+  capabilityPresentation,
+  type WorkspacePerson,
+} from "./roster-people";
+
+export * from "./roster-people";
+
+export type WorkspaceRosterPerson = WorkspacePerson & { role: AgentRole };
+
+const rolesById: Record<string, AgentRole> = {
+  [SOFTWARE_ENGINEER_ID]: softwareEngineerRole,
+  [ANTBOY_ID]: antboyRole,
+};
+
+export const WORKSPACE_ROSTER: readonly WorkspaceRosterPerson[] =
+  WORKSPACE_PEOPLE.map((person) => {
+    const role = rolesById[person.id];
+    if (!role) {
+      throw new Error(`Workspace person ${person.id} has no role`);
+    }
+    if (role.id !== person.id) {
+      throw new Error(
+        `Role ${role.id} does not match workspace person ${person.id}`,
+      );
+    }
+    return { ...person, role };
+  });
+
+export function rosterRole(id: string): AgentRole | undefined {
+  return rolesById[id];
+}
+
+export type RosterDefinitionSummary = {
+  id: string;
+  name: string;
+  description: string;
+  kind: AgentRuntimeKind;
+  capabilities: { id: string; name: string; tools: string[] }[];
+};
+
+export function rosterDefinitionSummaries(): RosterDefinitionSummary[] {
+  return WORKSPACE_ROSTER.map((person) => ({
+    id: person.id,
+    name: person.name,
+    description: person.description,
+    kind: person.kind,
+    capabilities: person.role.requestedCapabilities.map((capability) => {
+      const presentation = capabilityPresentation[capability.id];
+      return {
+        id: capability.id,
+        name: presentation?.name ?? capability.id,
+        tools: capability.tools.map((tool) => presentation?.tools[tool] ?? tool),
+      };
+    }),
+  }));
+}

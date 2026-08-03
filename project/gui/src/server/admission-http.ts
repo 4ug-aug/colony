@@ -265,15 +265,8 @@ export function createAdmissionHttpHandler(
             }),
           )
         } catch (error) {
-          return json(
-            {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : 'Invalid Cursor agent runtime',
-            },
-            400,
-          )
+          console.error('Cursor agent runtime save failed:', error)
+          return json({ error: 'Unable to save Cursor agent runtime' }, 400)
         }
       }
     }
@@ -288,15 +281,8 @@ export function createAdmissionHttpHandler(
       try {
         return json({ models: await options.cursorRuntime.listModels() })
       } catch (error) {
-        return json(
-          {
-            error:
-              error instanceof Error
-                ? error.message
-                : 'Unable to list Cursor models',
-          },
-          400,
-        )
+        console.error('Cursor model list failed:', error)
+        return json({ error: 'Unable to list Cursor models' }, 400)
       }
     }
 

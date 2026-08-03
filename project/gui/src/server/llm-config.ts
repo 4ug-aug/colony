@@ -1,23 +1,14 @@
 import {
-  createCipheriv,
-  createDecipheriv,
-  hkdfSync,
-  randomBytes,
-} from 'node:crypto'
-
-import {
   OPENAI_DEFAULT_BASE_URL,
   type OpenAICompatibleModel,
 } from '../../../runtime/openai-agents'
+import {
+  createSecretBox,
+  validModel,
+  type Sqlite,
+} from './secret-box'
 
 export type LlmProvider = 'openai' | 'custom'
-
-type Sqlite = {
-  prepare(sql: string): {
-    get(...values: unknown[]): unknown
-    run(...values: unknown[]): unknown
-  }
-}
 
 type StoredConfig = {
   provider: LlmProvider
@@ -42,40 +33,7 @@ export type LlmConfigInput = {
   apiKey?: string
 }
 
-const encryptionKey = (): Buffer => {
-  const secret = process.env.BETTER_AUTH_SECRET
-  if (!secret) throw new Error('BETTER_AUTH_SECRET is required')
-  return Buffer.from(
-    hkdfSync('sha256', secret, 'sweat-llm-config', 'api-key-encryption', 32),
-  )
-}
-
-const encrypted = (value: string) => {
-  const iv = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', encryptionKey(), iv)
-  const ciphertext = Buffer.concat([
-    cipher.update(value, 'utf8'),
-    cipher.final(),
-  ])
-  return {
-    ciphertext: ciphertext.toString('base64'),
-    iv: iv.toString('base64'),
-    tag: cipher.getAuthTag().toString('base64'),
-  }
-}
-
-const decrypted = (value: StoredConfig): string => {
-  const decipher = createDecipheriv(
-    'aes-256-gcm',
-    encryptionKey(),
-    Buffer.from(value.api_key_iv, 'base64'),
-  )
-  decipher.setAuthTag(Buffer.from(value.api_key_tag, 'base64'))
-  return Buffer.concat([
-    decipher.update(Buffer.from(value.api_key_ciphertext, 'base64')),
-    decipher.final(),
-  ]).toString('utf8')
-}
+const { encrypt, decrypt } = createSecretBox('sweat-llm-config')
 
 const validBaseUrl = (value: unknown): string | undefined => {
   if (typeof value !== 'string' || !value.trim()) return undefined
@@ -91,11 +49,6 @@ const validBaseUrl = (value: unknown): string | undefined => {
 
 const validProvider = (value: unknown): LlmProvider | undefined =>
   value === 'openai' || value === 'custom' ? value : undefined
-
-const validModel = (value: unknown): string | undefined =>
-  typeof value === 'string' && value.trim() && value.trim().length <= 200
-    ? value.trim()
-    : undefined
 
 export function createWorkspaceLlmConfig(sqlite: Sqlite) {
   const read = (): StoredConfig | undefined =>
@@ -128,7 +81,7 @@ export function createWorkspaceLlmConfig(sqlite: Sqlite) {
       const apiKey = input.apiKey?.trim()
       if (!provider || !baseUrl || !model || (!current && !apiKey))
         throw new Error('Provider, base URL, model, and API key are required')
-      const secret = apiKey ? encrypted(apiKey) : undefined
+      const secret = apiKey ? encrypt(apiKey) : undefined
       sqlite
         .prepare(
           `INSERT INTO workspace_llm_config
@@ -159,7 +112,7 @@ export function createWorkspaceLlmConfig(sqlite: Sqlite) {
         provider: config.provider,
         baseUrl: config.base_url,
         model: config.model,
-        apiKey: decrypted(config),
+        apiKey: decrypt(config),
       }
     },
   }

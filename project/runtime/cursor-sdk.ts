@@ -1,6 +1,4 @@
-import type { Step } from "./step.ts";
-
-export const CURSOR_STEP_TEXT_LIMIT = 20_000;
+import { boundStepText, type Step } from "./step.ts";
 
 export interface CursorCapabilitySession {
   url: string;
@@ -70,20 +68,6 @@ export type CursorAgentFactory = (options: {
   >;
 }) => Promise<CursorSdkAgent>;
 
-export function boundStepText(value: unknown): string {
-  let text: string;
-  if (typeof value === "string") text = value;
-  else {
-    try {
-      text = JSON.stringify(value);
-    } catch {
-      text = String(value);
-    }
-  }
-  if (text.length <= CURSOR_STEP_TEXT_LIMIT) return text;
-  return `${text.slice(0, CURSOR_STEP_TEXT_LIMIT)}\n…[truncated]`;
-}
-
 export function assistantText(message: Extract<CursorSdkMessage, { type: "assistant" }>): string {
   return message.message.content
     .filter((block): block is { type: "text"; text: string } => block.type === "text")
@@ -91,13 +75,10 @@ export function assistantText(message: Extract<CursorSdkMessage, { type: "assist
     .join("");
 }
 
+/** Maps non-assistant Cursor stream events to Sweat steps (assistant is coalesced in runCursorAgent). */
 export function mapCursorEventToSteps(event: CursorSdkMessage): Step[] {
   const at = Date.now();
-  if (event.type === "thinking") return [];
-  if (event.type === "assistant") {
-    const text = assistantText(event);
-    return text ? [{ kind: "message", text, at }] : [];
-  }
+  if (event.type === "thinking" || event.type === "assistant") return [];
   if (event.type === "tool_call") {
     const toolEvent = event as Extract<CursorSdkMessage, { type: "tool_call" }>;
     if (toolEvent.status === "running") {
@@ -135,16 +116,17 @@ export function takeCursorApiKeyFromEnv(
   env: Record<string, string | undefined> = process.env,
 ): string {
   const apiKey = env.SWEAT_CURSOR_API_KEY ?? env.CURSOR_API_KEY;
-  delete env.SWEAT_CURSOR_API_KEY;
-  delete env.CURSOR_API_KEY;
+  scrubCursorApiKeysFromEnv(env);
   if (!apiKey) throw new Error("SWEAT_CURSOR_API_KEY is required");
   return apiKey;
 }
 
-export function cursorCredentialStillInEnv(
+/** Remove Cursor key material from env; does not read a key value. */
+export function scrubCursorApiKeysFromEnv(
   env: Record<string, string | undefined> = process.env,
-): boolean {
-  return Boolean(env.SWEAT_CURSOR_API_KEY || env.CURSOR_API_KEY);
+): void {
+  delete env.SWEAT_CURSOR_API_KEY;
+  delete env.CURSOR_API_KEY;
 }
 
 export async function runCursorAgent(
@@ -154,11 +136,8 @@ export async function runCursorAgent(
     onStep?: (step: Step) => void;
   } = {},
 ): Promise<string> {
-  if (cursorCredentialStillInEnv()) {
-    throw new Error(
-      "Cursor API key must be removed from process.env before Agent.create",
-    );
-  }
+  // Key travels only on the request; scrub residual env so shell tools cannot see it.
+  scrubCursorApiKeysFromEnv();
 
   const createAgent =
     dependencies.createAgent ??

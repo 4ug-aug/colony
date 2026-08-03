@@ -1,3 +1,4 @@
+import { rosterParticipant } from '../../../agents/roster-people'
 import type { RunState } from '../../../runs'
 import type { RunSummary } from './run-control'
 
@@ -65,22 +66,7 @@ export type RoomAttention = {
   createdAt: number
 }
 
-const AGENT_PARTICIPANTS: Record<
-  string,
-  { id: string; name: string; image?: string }
-> = {
-  'software-engineer': { id: 'software-engineer', name: 'Software engineer' },
-  antboy: { id: 'antboy', name: 'antboy' },
-}
-export function agentParticipant(definitionId: string): {
-  id: string
-  name: string
-  image?: string
-} {
-  return (
-    AGENT_PARTICIPANTS[definitionId] ?? { id: definitionId, name: definitionId }
-  )
-}
+export const agentParticipant = rosterParticipant
 export type RoomRun = RunSummary & {
   roomId: string
   triggerMessageId: string

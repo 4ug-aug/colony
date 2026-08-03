@@ -22,7 +22,15 @@ test("a command agent executes its task inside the sandbox", async () => {
       id: "light-agent",
       instructions: "Run the task.",
       requestedCapabilities: [],
-      runtime: { kind: "openai-agents", image: "alpine:latest" },
+      runtime: {
+        kind: "openai-agents",
+        image: "alpine:latest",
+        model: {
+          baseUrl: "http://unused.invalid/v1",
+          apiKey: "unused",
+          model: "unused",
+        },
+      },
       executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 1000, maxSteps: 100 },
     },
   });

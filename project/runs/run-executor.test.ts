@@ -12,7 +12,11 @@ const definition: AgentDefinition = {
   id: "test-agent",
   instructions: "test instructions",
   requestedCapabilities: [{ id: "linear.issues", tools: ["linear.get_issue"] }],
-  runtime: { kind: "openai-agents", image: "test:latest" },
+  runtime: {
+    kind: "openai-agents",
+    image: "test:latest",
+    model: { baseUrl: "http://example/v1", apiKey: "k", model: "m" },
+  },
   executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 20, maxSteps: 100 },
 };
 

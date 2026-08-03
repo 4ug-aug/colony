@@ -8,6 +8,7 @@ import type {
 import type { CapabilitySessionBinding, CapabilitySessionFactory } from "../mcp/session";
 import type { McpGrant } from "../mcp/gateway";
 import type { AgentDefinition, AgentDefinitionResolver } from "../agents/definition";
+import type { AgentGrantContext } from "../agents/grant-context";
 import type { Step } from "../runtime/step";
 
 const snapshot = <T>(value: T): T => structuredClone(value);
@@ -38,7 +39,7 @@ export interface RunRecord<Input extends RunInput = RunInput> {
   definition: AgentDefinition;
   inputs: readonly Input[];
   capabilityGrant?: McpGrant;
-  grantContext?: unknown;
+  grantContext?: AgentGrantContext;
   effectiveLimits: RunLimits;
   stdout: string;
   stderr: string;
@@ -119,7 +120,7 @@ export interface StartRunRequest<Input extends RunInput = never> {
   task: string;
   inputs?: readonly Input[];
   capabilityGrant?: McpGrant;
-  grantContext?: unknown;
+  grantContext?: AgentGrantContext;
   maxDurationMs?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
