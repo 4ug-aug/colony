@@ -3,12 +3,9 @@ import {
   MCPServers,
   MCPServerStreamableHttp,
   type Model,
-  type ModelRequest,
   type ModelProvider,
-  type ModelResponse,
-  OpenAIResponsesModel,
+  OpenAIChatCompletionsModel,
   OpenAIProvider,
-  type ResponseStreamEvent,
   Runner,
   tool,
   type ToolOutputImage,
@@ -64,112 +61,6 @@ export function toolOutputText(output: unknown): string {
   return String(output);
 }
 
-type TokenDetails = Record<string, number>;
-type SanitizableUsage = {
-  inputTokensDetails?: TokenDetails | TokenDetails[];
-  outputTokensDetails?: TokenDetails | TokenDetails[];
-  requestUsageEntries?: Array<{
-    inputTokensDetails?: TokenDetails;
-    outputTokensDetails?: TokenDetails;
-  }>;
-};
-
-function numericDetails(details: TokenDetails): TokenDetails {
-  return Object.fromEntries(
-    Object.entries(details).filter(([, value]) => typeof value === "number"),
-  );
-}
-
-export function sanitizeUsageDetails(usage: SanitizableUsage): void {
-  if (usage.inputTokensDetails) {
-    usage.inputTokensDetails = Array.isArray(usage.inputTokensDetails)
-      ? usage.inputTokensDetails.map(numericDetails)
-      : numericDetails(usage.inputTokensDetails);
-  }
-  if (usage.outputTokensDetails) {
-    usage.outputTokensDetails = Array.isArray(usage.outputTokensDetails)
-      ? usage.outputTokensDetails.map(numericDetails)
-      : numericDetails(usage.outputTokensDetails);
-  }
-  for (const entry of usage.requestUsageEntries ?? []) {
-    if (entry.inputTokensDetails) {
-      entry.inputTokensDetails = numericDetails(entry.inputTokensDetails);
-    }
-    if (entry.outputTokensDetails) {
-      entry.outputTokensDetails = numericDetails(entry.outputTokensDetails);
-    }
-  }
-}
-
-const responseItemStatuses = new Set([
-  "in_progress",
-  "completed",
-  "incomplete",
-]);
-
-export function sanitizeOutputStatuses(output: unknown[]): void {
-  for (const value of output) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-    const item = value as Record<string, unknown>;
-    if (
-      (item.type === "message" || item.type === "function_call") &&
-      !responseItemStatuses.has(String(item.status))
-    ) {
-      item.status = "completed";
-    }
-  }
-}
-
-function flattenTextToolOutputs(
-  input: ModelRequest["input"],
-): ModelRequest["input"] {
-  if (typeof input === "string") return input;
-  return input.map((item) => {
-    if (
-      item.type !== "function_call_result" ||
-      !Array.isArray(item.output) ||
-      !item.output.every((part) => part.type === "input_text")
-    ) {
-      return item;
-    }
-    return {
-      ...item,
-      output: item.output.map((part) => part.text).join("\n"),
-    };
-  });
-}
-
-class CompatibleResponsesModel extends OpenAIResponsesModel {
-  protected override _buildResponsesCreateRequest(
-    request: ModelRequest,
-    stream: boolean,
-  ) {
-    return super._buildResponsesCreateRequest({
-      ...request,
-      input: flattenTextToolOutputs(request.input),
-    }, stream);
-  }
-
-  override async getResponse(request: ModelRequest): Promise<ModelResponse> {
-    const response = await super.getResponse(request);
-    sanitizeUsageDetails(response.usage);
-    sanitizeOutputStatuses(response.output);
-    return response;
-  }
-
-  override async *getStreamedResponse(
-    request: ModelRequest,
-  ): AsyncIterable<ResponseStreamEvent> {
-    for await (const event of super.getStreamedResponse(request)) {
-      if (event.type === "response_done") {
-        sanitizeUsageDetails(event.response.usage);
-        sanitizeOutputStatuses(event.response.output);
-      }
-      yield event;
-    }
-  }
-}
-
 export function createModelProvider(
   model: OpenAICompatibleModel,
 ): ModelProvider {
@@ -178,7 +69,7 @@ export function createModelProvider(
     const client = new OpenAI({ apiKey: model.apiKey, baseURL });
     return {
       getModel: (name) =>
-        new CompatibleResponsesModel(client, name ?? model.model),
+        new OpenAIChatCompletionsModel(client, name ?? model.model),
     };
   }
   return new OpenAIProvider({
