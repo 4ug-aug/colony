@@ -12,6 +12,7 @@ import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
 import { SchedulesPage } from '#/features/schedules/schedules-page'
 import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
+import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import {
   ArrowDown,
   CalendarClock,
@@ -63,6 +64,7 @@ export function Dashboard({
     hasOlderMessages,
     notificationByRoom,
   } = useRooms(user.id)
+  const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
   const [view, setView] = useState<DashboardView>('room')
   const [selectedRunId, setSelectedRunId] = useState<string>()
   const [editingMessage, setEditingMessage] = useState<RoomMessage>()
@@ -142,7 +144,11 @@ export function Dashboard({
     : undefined
 
   return (
-    <SidebarProvider style={titleBarVars()}>
+    <SidebarProvider
+      open={sidebarOpen}
+      onOpenChange={setSidebarOpen}
+      style={titleBarVars()}
+    >
       <WindowToolbar />
       <RoomSidebar
         rooms={rooms}
