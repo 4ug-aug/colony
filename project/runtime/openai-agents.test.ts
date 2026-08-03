@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   OpenAIChatCompletionsModel,
   OpenAIResponsesModel,
+  Usage,
   type ModelRequest,
   type ResponseStreamEvent,
 } from "@openai/agents";
@@ -11,9 +12,12 @@ import { join } from "node:path";
 import OpenAI from "openai";
 import type { Step } from "./step";
 import {
+  CompatibleResponsesModel,
   createModelProvider,
   normalizeModelBaseUrl,
   runAgent,
+  sanitizeOutputStatuses,
+  sanitizeUsageDetails,
   toolOutputText,
 } from "./openai-agents";
 
@@ -88,7 +92,7 @@ test("OpenAI's root URL uses its versioned API path", () => {
   );
 });
 
-test("custom providers use Chat Completions while OpenAI uses Responses", async () => {
+test("custom providers normalize MLflow Responses extensions", async () => {
   const model = {
     baseUrl: "https://models.example/v1",
     apiKey: "test-key",
@@ -99,10 +103,80 @@ test("custom providers use Chat Completions while OpenAI uses Responses", async 
     ...model,
     provider: "custom",
   }).getModel();
-  expect(customModel).toBeInstanceOf(OpenAIChatCompletionsModel);
+  expect(customModel).toBeInstanceOf(CompatibleResponsesModel);
+  expect(customModel).toBeInstanceOf(OpenAIResponsesModel);
   expect(
     await createModelProvider({ ...model, provider: "openai" }).getModel(),
   ).toBeInstanceOf(OpenAIResponsesModel);
+
+  const usage = new Usage({
+    inputTokens: 3,
+    outputTokens: 2,
+    totalTokens: 5,
+    inputTokensDetails: {
+      cached_tokens: 1,
+      input_tokens_per_turn: [3],
+    } as unknown as Record<string, number>,
+    outputTokensDetails: {
+      reasoning_tokens: 0,
+      output_tokens_per_turn: [2],
+    } as unknown as Record<string, number>,
+    requestUsageEntries: [{
+      inputTokens: 3,
+      outputTokens: 2,
+      totalTokens: 5,
+      inputTokensDetails: {
+        cached_tokens: 1,
+        cached_tokens_per_turn: [1],
+      } as unknown as Record<string, number>,
+      outputTokensDetails: {
+        reasoning_tokens: 0,
+        tool_output_tokens_per_turn: [0],
+      } as unknown as Record<string, number>,
+    }],
+  });
+  sanitizeUsageDetails(usage);
+  expect(usage.inputTokensDetails).toEqual([{ cached_tokens: 1 }]);
+  expect(usage.outputTokensDetails).toEqual([{ reasoning_tokens: 0 }]);
+  expect(usage.requestUsageEntries?.[0]?.inputTokensDetails).toEqual({
+    cached_tokens: 1,
+  });
+  expect(usage.requestUsageEntries?.[0]?.outputTokensDetails).toEqual({
+    reasoning_tokens: 0,
+  });
+
+  const output = [
+    { type: "message", status: "complete" },
+    { type: "function_call", status: null },
+    { type: "hosted_tool_call", status: "failed" },
+  ];
+  sanitizeOutputStatuses(output);
+  expect(output.map((item) => item.status)).toEqual([
+    "completed",
+    "completed",
+    "failed",
+  ]);
+
+  const request = (customModel as CompatibleResponsesModel & {
+    _buildResponsesCreateRequest(
+      request: ModelRequest,
+      stream: boolean,
+    ): { requestData: { input: Array<{ output?: unknown }> } };
+  })._buildResponsesCreateRequest({
+    input: [{
+      type: "function_call_result",
+      name: "workspace.read_messages",
+      callId: "call-1",
+      status: "completed",
+      output: [{ type: "input_text", text: "[augusttollerup] hello" }],
+    }],
+    modelSettings: {},
+    tools: [],
+    outputType: "text",
+    handoffs: [],
+    tracing: false,
+  }, true).requestData;
+  expect(request.input[0]?.output).toBe("[augusttollerup] hello");
 });
 
 test("tool results preserve structured output as JSON", () => {
