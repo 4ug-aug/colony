@@ -1256,6 +1256,7 @@ if (import.meta.main) {
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
   const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
+  const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
   const github = githubRepository ? await createGitHubCliClient() : undefined
   const capabilityUrl = (u: string): string =>
     u.replace(
@@ -1264,7 +1265,11 @@ if (import.meta.main) {
     )
   const sandboxProvider =
     sandboxProviderName === 'docker'
-      ? createDockerSandboxProvider()
+      ? createDockerSandboxProvider({
+          ...(agentCaCertificate
+            ? { caCertificate: agentCaCertificate }
+            : {}),
+        })
       : createAppleContainerSandboxProvider({
           container: createAppleContainerClient(),
         })

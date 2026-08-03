@@ -30,6 +30,7 @@ test("a Docker container behaves as a sandbox", async () => {
   const provider = createDockerSandboxProvider({
     runner,
     createId: () => "sandbox-1",
+    caCertificate: "/etc/company-ca.pem",
   });
 
   const sandbox = await provider.create({
@@ -65,6 +66,8 @@ test("a Docker container behaves as a sandbox", async () => {
           "--add-host",
           "host.container.internal:host-gateway",
           "--volume",
+          "/etc/company-ca.pem:/etc/ssl/certs/sweat-extra-ca.pem:ro",
+          "--volume",
           "/tmp/work:/work",
           "alpine:latest",
           "sh",
@@ -80,6 +83,8 @@ test("a Docker container behaves as a sandbox", async () => {
           "MODEL=test",
           "--env",
           "EMPTY",
+          "--env",
+          "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/sweat-extra-ca.pem",
           "--workdir",
           "/work",
           "sandbox-1",
@@ -94,6 +99,12 @@ test("a Docker container behaves as a sandbox", async () => {
       },
     ],
   });
+});
+
+test("a Docker agent CA certificate path must be absolute", () => {
+  expect(() =>
+    createDockerSandboxProvider({ caCertificate: "company-ca.pem" }),
+  ).toThrow("Docker agent CA certificate path must be absolute");
 });
 
 test("disposing a Docker sandbox twice only removes it once", async () => {

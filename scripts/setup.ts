@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 export type SandboxProvider = "apple-container" | "docker";
 
@@ -381,6 +381,25 @@ async function configureServer(path: string): Promise<void> {
     "SWEAT_AGENT_IMAGE",
     existing("SWEAT_AGENT_IMAGE") ?? defaultAgentImage,
   );
+  if (provider === "docker") {
+    const configuredCaCertificate = await input(
+      "Agent CA certificate bundle (optional)",
+      existing("SWEAT_AGENT_CA_CERT"),
+    );
+    if (configuredCaCertificate) {
+      const caCertificate = isAbsolute(configuredCaCertificate)
+        ? configuredCaCertificate
+        : resolve(root, configuredCaCertificate);
+      if (!(await stat(caCertificate)).isFile()) {
+        throw new Error(`Agent CA certificate is not a file: ${caCertificate}`);
+      }
+      document = setEnvValue(
+        document,
+        "SWEAT_AGENT_CA_CERT",
+        caCertificate,
+      );
+    }
+  }
 
   const githubConfigured = Boolean(existing("SWEAT_GITHUB_REPOSITORY"));
   const linearConfigured = Boolean(existing("LINEAR_MCP_API_KEY"));
