@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 
 export type SandboxProvider = "apple-container" | "docker";
@@ -15,9 +15,14 @@ type CommandOptions = {
   env?: Record<string, string | undefined>;
 };
 
-const root = join(import.meta.dir, "..");
+const root = join(import.meta.dirname, "..");
 const defaultEnvPath = join(root, ".env.local");
 const defaultAgentImage = "ghcr.io/4ug-aug/sweat-v2-agent:latest";
+// Docker 26+; add version gating only if older rootless engines need support.
+const rootlessDockerMcpHost = "http://10.0.2.2";
+const rootlessDockerOverride = `[Service]
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false
+`;
 const releaseApi =
   "https://api.github.com/repos/4ug-aug/sweat-v2/releases/latest";
 let inputBuffer = "";
@@ -214,6 +219,24 @@ async function run(
     throw new Error(`Command failed: ${command} ${args.join(" ")}`);
 }
 
+async function output(
+  command: string,
+  args: readonly string[],
+): Promise<string> {
+  const child = Bun.spawn([command, ...args], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+  const [exitCode, stdout] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+  ]);
+  if (exitCode !== 0)
+    throw new Error(`Command failed: ${command} ${args.join(" ")}`);
+  return stdout.trim();
+}
+
 async function available(command: string): Promise<boolean> {
   const child = Bun.spawn(
     ["sh", "-c", 'command -v "$1" >/dev/null 2>&1', "setup", command],
@@ -222,7 +245,11 @@ async function available(command: string): Promise<boolean> {
   return (await child.exited) === 0;
 }
 
-async function requireRuntime(provider: SandboxProvider): Promise<void> {
+export function usesRootlessDocker(securityOptions: string): boolean {
+  return securityOptions.includes("name=rootless");
+}
+
+async function requireRuntime(provider: SandboxProvider): Promise<boolean> {
   if (!(await available(provider === "docker" ? "docker" : "container"))) {
     throw new Error(
       provider === "docker"
@@ -230,8 +257,33 @@ async function requireRuntime(provider: SandboxProvider): Promise<void> {
         : "Apple Container is required. Install it from https://github.com/apple/container and rerun make setup.",
     );
   }
-  if (provider === "docker") await run("docker", ["info"]);
-  else await run("container", ["system", "start"]);
+  if (provider === "docker") {
+    return usesRootlessDocker(
+      await output("docker", ["info", "--format", "{{json .SecurityOptions}}"]),
+    );
+  }
+  await run("container", ["system", "start"]);
+  return false;
+}
+
+async function configureRootlessDocker(): Promise<void> {
+  if (!(await available("systemctl"))) {
+    throw new Error(
+      "Rootless Docker requires systemd user services for automatic setup.",
+    );
+  }
+  const configHome = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
+  const path = join(
+    configHome,
+    "systemd/user/docker.service.d/sweat-host-loopback.conf",
+  );
+  if ((await readOptional(path)) === rootlessDockerOverride) return;
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, rootlessDockerOverride);
+  console.log("Enabled host access for rootless Docker agent containers.");
+  await run("systemctl", ["--user", "daemon-reload"]);
+  await run("systemctl", ["--user", "restart", "docker"]);
 }
 
 async function requireGitHubCli(): Promise<void> {
@@ -382,8 +434,16 @@ async function configureServer(path: string): Promise<void> {
   }
 
   closeInput();
+  const rootlessDocker = await requireRuntime(provider);
+  if (rootlessDocker) {
+    await configureRootlessDocker();
+    document = setEnvValue(
+      document,
+      "SWEAT_MCP_HOST",
+      existing("SWEAT_MCP_HOST") ?? rootlessDockerMcpHost,
+    );
+  }
   await saveEnv(path, current, document);
-  await requireRuntime(provider);
   await run("bun", ["install", "--cwd", "project", "--frozen-lockfile"]);
   await run("bun", ["install", "--cwd", "project/gui", "--frozen-lockfile"]);
   const commandEnv = { ...process.env, ENV_FILE: path };

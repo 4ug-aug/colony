@@ -4,6 +4,7 @@ import {
   readEnvValue,
   selectUniversalDmg,
   setEnvValue,
+  usesRootlessDocker,
 } from "./setup";
 
 test("reads and updates env values without dropping comments or unrelated keys", () => {
@@ -22,6 +23,11 @@ test("reads and updates env values without dropping comments or unrelated keys",
 test("defaults the sandbox to Apple Container on macOS and Docker elsewhere", () => {
   expect(defaultSandboxProvider("darwin")).toBe("apple-container");
   expect(defaultSandboxProvider("linux")).toBe("docker");
+});
+
+test("detects rootless Docker security options", () => {
+  expect(usesRootlessDocker('["name=seccomp","name=rootless"]')).toBe(true);
+  expect(usesRootlessDocker('["name=seccomp"]')).toBe(false);
 });
 
 test("selects the universal DMG from release assets", () => {
