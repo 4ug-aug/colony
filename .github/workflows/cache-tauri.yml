@@ -1,0 +1,45 @@
+name: Cache Tauri
+
+# Warm the Rust/Tauri cache on main so tag-scoped release runs can restore it.
+# GitHub Actions caches are ref-scoped; releases can read the default branch cache
+# but cannot reuse caches saved by other tags.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "project/gui/src-tauri/**"
+      - "project/gui/package.json"
+      - "project/gui/bun.lock"
+      - ".github/workflows/cache-tauri.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: project/gui/src-tauri
+          shared-key: tauri-universal
+          cache-targets: true
+
+      - name: Install GUI dependencies
+        run: bun install --cwd project/gui --frozen-lockfile
+
+      - name: Warm release build cache
+        run: |
+          bun run --cwd project/gui tauri build --target universal-apple-darwin

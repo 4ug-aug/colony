@@ -71,11 +71,14 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      # Restore from main (default branch). Do not save on tags — those caches
+      # are ref-scoped and cannot be reused by later releases.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: project/gui/src-tauri
           shared-key: tauri-universal
           cache-targets: true
+          save-if: false
 
       - name: Install dependencies
         run: |
