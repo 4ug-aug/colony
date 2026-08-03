@@ -54,7 +54,7 @@
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "simple-icons": "15.15.0",
+    "simple-icons": "16.28.0",
     "tailwind-merge": "^3.0.2",
     "tailwindcss": "^4.1.18",
     "tw-animate-css": "^1.3.6"

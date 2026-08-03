@@ -2,6 +2,11 @@ import type { AdmissionStore } from './admission'
 import type { RoomUser } from './room-store'
 import { AGENT_MENTION_HANDLES } from './attention'
 import type { LlmConfigInput, PublicLlmConfig } from './llm-config'
+import type {
+  CursorModelSummary,
+  CursorRuntimeConfigInput,
+  PublicCursorRuntimeConfig,
+} from './cursor-runtime-config'
 
 type AccountInput = {
   email: string
@@ -31,6 +36,11 @@ export type AdmissionOptions = {
   llm?: {
     public(): PublicLlmConfig
     save(input: LlmConfigInput): PublicLlmConfig
+  }
+  cursorRuntime?: {
+    public(): PublicCursorRuntimeConfig
+    save(input: CursorRuntimeConfigInput): Promise<PublicCursorRuntimeConfig>
+    listModels(): Promise<CursorModelSummary[]>
   }
 }
 
@@ -233,6 +243,60 @@ export function createAdmissionHttpHandler(
             400,
           )
         }
+      }
+    }
+
+    if (
+      url.pathname === '/api/workspace/settings/cursor-runtime' &&
+      options.cursorRuntime
+    ) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      if (request.method === 'GET') return json(options.cursorRuntime.public())
+      if (request.method === 'POST') {
+        const body = await readBody(request)
+        try {
+          return json(
+            await options.cursorRuntime.save({
+              model: typeof body?.model === 'string' ? body.model : '',
+              ...(typeof body?.apiKey === 'string'
+                ? { apiKey: body.apiKey }
+                : {}),
+            }),
+          )
+        } catch (error) {
+          return json(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Invalid Cursor agent runtime',
+            },
+            400,
+          )
+        }
+      }
+    }
+
+    if (
+      url.pathname === '/api/workspace/settings/cursor-runtime/models' &&
+      options.cursorRuntime &&
+      request.method === 'GET'
+    ) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      try {
+        return json({ models: await options.cursorRuntime.listModels() })
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to list Cursor models',
+          },
+          400,
+        )
       }
     }
 

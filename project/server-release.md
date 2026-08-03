@@ -35,6 +35,11 @@ docker pull ghcr.io/4ug-aug/sweat-v2-agent:<release-tag>
 bun src/server/coordinator.js
 ```
 
+Optional Cursor agent runs also need
+`SWEAT_CURSOR_AGENT_IMAGE=ghcr.io/4ug-aug/sweat-v2-agent-cursor:<release-tag>`
+and a pull of that image. Configure the Cursor API key under Workspace → Cursor
+agent runtime.
+
 If the package is private, authenticate the selected container runtime with
 GitHub Container Registry before pulling.
 

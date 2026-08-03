@@ -44,6 +44,7 @@ class FakeRunControl implements RunControl {
   requests: Array<{
     task: string
     roomId: string
+    agentDefinitionId?: string
     attachments?: readonly AttachmentInput[]
   }> = []
   listRuns() {
@@ -61,16 +62,18 @@ class FakeRunControl implements RunControl {
     task: string,
     context: {
       roomId: string
+      agentDefinitionId?: string
       attachments?: readonly AttachmentInput[]
       onCreate: (run: RunSummary) => Output
     },
   ): Output {
+    const agentId = context.agentDefinitionId ?? 'software-engineer'
     const run: RunSummary = {
       id: crypto.randomUUID(),
       task,
-      agentId: 'software-engineer',
-      provider: 'openai',
-      model: 'gpt-4.1-mini',
+      agentId,
+      provider: agentId === 'software-engineer' ? 'cursor' : 'openai',
+      model: agentId === 'software-engineer' ? 'composer-2.5' : 'gpt-4.1-mini',
       state: 'preparing',
       createdAt: Date.now(),
       stdout: '',
@@ -79,6 +82,9 @@ class FakeRunControl implements RunControl {
     this.requests.push({
       task,
       roomId: context.roomId,
+      ...(context.agentDefinitionId
+        ? { agentDefinitionId: context.agentDefinitionId }
+        : {}),
       ...(context.attachments ? { attachments: context.attachments } : {}),
     })
     const created = context.onCreate(run)
@@ -548,6 +554,71 @@ test('two clients receive durable room messages and agent runs', async () => {
   }
 })
 
+test('agentReady gates software-engineer on Cursor and antboy on LLM', async () => {
+  const control = new FakeRunControl()
+  const store = new MemoryRoomStore()
+  const ready = new Set<string>()
+  const coordinator = createCoordinator({
+    control,
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: authorized,
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+    agentReady: (id = 'software-engineer') => ready.has(id),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const blockedSe = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@software-engineer Fix it' }),
+    })
+    expect(blockedSe.status).toBe(409)
+    expect(await blockedSe.json()).toEqual({
+      error: 'Cursor agent runtime is not configured',
+    })
+
+    const blockedAntboy = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@antboy Help with the task' }),
+    })
+    expect(blockedAntboy.status).toBe(409)
+    expect(await blockedAntboy.json()).toEqual({
+      error: 'LLM provider is not configured',
+    })
+
+    ready.add('antboy')
+    const antboy = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@antboy Help with the task' }),
+    })
+    expect(antboy.status).toBe(202)
+    expect(control.requests).toEqual([
+      {
+        task: 'Help with the task',
+        roomId: GENERAL_ROOM_ID,
+        agentDefinitionId: 'antboy',
+        attachments: [],
+      },
+    ])
+  } finally {
+    coordinator.stop()
+  }
+})
+
 test('room history is paginated over HTTP and in the realtime snapshot', async () => {
   const store = new MemoryRoomStore()
   for (let index = 0; index < 51; index++)
@@ -738,6 +809,7 @@ test('a multipart software-engineer message is durable and forwards only its des
       {
         task: 'Review this brief',
         roomId: GENERAL_ROOM_ID,
+        agentDefinitionId: 'software-engineer',
         attachments: [
           {
             type: 'attachment',
@@ -791,11 +863,9 @@ test('an attachment preparation failure leaves the durable message and failed ru
   const containerCalls: string[][] = []
   const control = createRunControl(
     createSoftwareEngineerExecutor({
-      model: () => ({
-        provider: 'openai',
-        baseUrl: 'https://models.example/v1',
-        apiKey: 'test-key',
-        model: 'test-model',
+      cursor: () => ({
+        apiKey: 'cursor-key',
+        model: 'composer-2.5',
       }),
       sandboxProvider: createAppleContainerSandboxProvider({
         createId: () => 'run-missing-attachment',

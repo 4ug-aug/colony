@@ -19,4 +19,5 @@ test('account mentions use exact handles and punctuation boundaries', () => {
   ).toEqual(['ada', 'ann'])
   expect(mentionedAccounts('@Ada @annette email@ada', accounts)).toEqual([])
   expect(mentionedAccounts('@software-engineer fix it', accounts)).toEqual([])
+  expect(mentionedAccounts('@antboy fix it', accounts)).toEqual([])
 })

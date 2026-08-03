@@ -28,7 +28,7 @@ type ActivityRun = {
   id: string
   roomId: string
   agentId: string
-  provider: 'openai' | 'custom'
+  provider: 'openai' | 'custom' | 'cursor'
   model: string
   task: string
   requestedBy: Person

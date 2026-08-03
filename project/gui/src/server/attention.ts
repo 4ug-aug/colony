@@ -1,6 +1,9 @@
 import type { RoomUser } from './room-store'
 
-export const AGENT_MENTION_HANDLES = new Set(['software-engineer'])
+export const AGENT_MENTION_HANDLES = new Set([
+  'software-engineer',
+  'antboy',
+])
 
 const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 

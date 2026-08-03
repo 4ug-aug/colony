@@ -25,7 +25,7 @@ export type ScheduleRun = {
   startedBy?: { id: string; name: string; image?: string }
   task: string
   agentId: string
-  provider: 'openai' | 'custom'
+  provider: 'openai' | 'custom' | 'cursor'
   model: string
   state: 'preparing' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   createdAt: number

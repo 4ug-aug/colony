@@ -102,7 +102,14 @@ const agents: MentionItem[] = [
     id: 'software-engineer',
     label: 'software-engineer',
     name: 'Software engineer',
-    description: 'Build, debug, and review code',
+    description: 'Build, debug, and review code in a repository',
+    kind: 'agent',
+  },
+  {
+    id: 'antboy',
+    label: 'antboy',
+    name: 'antboy',
+    description: 'Collaborative teammate for room and task work',
     kind: 'agent',
   },
 ]

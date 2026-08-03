@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import {
   Bot,
+  BotMessageSquare,
   CalendarClock,
   Hash,
   Lock,
@@ -68,40 +69,76 @@ import { canDeleteRoom } from '#/features/rooms/permissions'
 import { isTauriRuntime } from '#/lib/server-config'
 import { cn } from '#/lib/utils'
 
-const softwareEngineerCapabilities = [
+type SidebarAgentCapability = {
+  name: string
+  icon?: string
+  invertOnDark: boolean
+  tools: readonly string[]
+}
+
+type SidebarAgent = {
+  id: string
+  name: string
+  description: string
+  icon: typeof Bot
+  capabilities: readonly SidebarAgentCapability[]
+}
+
+const linearCapability: SidebarAgentCapability = {
+  name: 'Linear issues',
+  icon: '/icons/linear.svg',
+  invertOnDark: false,
+  tools: ['Get issues', 'List issues', 'Save comments', 'Save issues'],
+}
+
+const asanaCapability: SidebarAgentCapability = {
+  name: 'Asana tasks',
+  icon: '/icons/asana.svg',
+  invertOnDark: false,
+  tools: [
+    'Get project',
+    'Create tasks',
+    'List tasks',
+    'Get task details',
+    'Read comments',
+    'Update completion',
+    'Add comments',
+  ],
+}
+
+const roomCapability: SidebarAgentCapability = {
+  name: 'Room context',
+  invertOnDark: false,
+  tools: ['Read messages', 'Post messages'],
+}
+
+const sidebarAgents: readonly SidebarAgent[] = [
   {
-    name: 'Linear issues',
-    icon: '/icons/linear.svg',
-    invertOnDark: false,
-    tools: ['Get issues', 'List issues', 'Save comments', 'Save issues'],
-  },
-  {
-    name: 'GitHub pull requests',
-    icon: '/icons/github.svg',
-    invertOnDark: true,
-    tools: ['Create pull requests', 'Wait for pull request checks'],
-  },
-  {
-    name: 'Asana tasks',
-    icon: '/icons/asana.svg',
-    invertOnDark: false,
-    tools: [
-      'Get project',
-      'Create tasks',
-      'List tasks',
-      'Get task details',
-      'Read comments',
-      'Update completion',
-      'Add comments',
+    id: 'software-engineer',
+    name: 'Software engineer',
+    description: 'Build, debug, and review code in a checked-out repository.',
+    icon: Bot,
+    capabilities: [
+      linearCapability,
+      {
+        name: 'GitHub pull requests',
+        icon: '/icons/github.svg',
+        invertOnDark: true,
+        tools: ['Create pull requests', 'Wait for pull request checks'],
+      },
+      asanaCapability,
+      roomCapability,
     ],
   },
   {
-    name: 'Room context',
-    icon: undefined,
-    invertOnDark: false,
-    tools: ['Read messages', 'Post messages'],
+    id: 'antboy',
+    name: 'antboy',
+    description:
+      'Collaborative teammate for room and task work without a GitHub checkout.',
+    icon: BotMessageSquare,
+    capabilities: [linearCapability, asanaCapability, roomCapability],
   },
-] as const
+]
 
 export type DashboardView = 'room' | 'account' | 'workspace' | 'schedules'
 
@@ -180,60 +217,67 @@ export function RoomSidebar({
           <SidebarGroupLabel>Agents</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <HoverCard>
-                  <HoverCardTrigger
-                    delay={150}
-                    closeDelay={100}
-                    render={
-                      <SidebarMenuButton
-                        aria-label="Software engineer. View capabilities."
-                        onClick={() => onMentionAgent('software-engineer')}
-                      />
-                    }
-                  >
-                    <Bot />
-                    <span>Software engineer</span>
-                  </HoverCardTrigger>
-                  <HoverCardContent side="right" align="start" className="w-80">
-                    <div className="flex flex-col gap-1">
-                      <h2 className="text-sm font-semibold">
-                        Software engineer
-                      </h2>
-                      <p className="text-xs text-muted-foreground">
-                        Build, debug, and review code.
-                      </p>
-                    </div>
-                    <div className="mt-3 flex flex-col gap-3">
-                      {softwareEngineerCapabilities.map((capability) => (
-                        <div
-                          key={capability.name}
-                          className="flex flex-col gap-1"
-                        >
-                          <div className="flex items-center gap-2">
-                            {capability.icon && (
-                              <img
-                                src={capability.icon}
-                                alt=""
-                                className={cn(
-                                  'size-4 shrink-0',
-                                  capability.invertOnDark && 'dark:invert',
-                                )}
-                              />
-                            )}
-                            <p className="text-xs font-medium">
-                              {capability.name}
-                            </p>
-                          </div>
+              {sidebarAgents.map((agent) => {
+                const Icon = agent.icon
+                return (
+                  <SidebarMenuItem key={agent.id}>
+                    <HoverCard>
+                      <HoverCardTrigger
+                        delay={150}
+                        closeDelay={100}
+                        render={
+                          <SidebarMenuButton
+                            aria-label={`${agent.name}. View capabilities.`}
+                            onClick={() => onMentionAgent(agent.id)}
+                          />
+                        }
+                      >
+                        <Icon />
+                        <span>{agent.name}</span>
+                      </HoverCardTrigger>
+                      <HoverCardContent
+                        side="right"
+                        align="start"
+                        className="w-80"
+                      >
+                        <div className="flex flex-col gap-1">
+                          <h2 className="text-sm font-semibold">{agent.name}</h2>
                           <p className="text-xs text-muted-foreground">
-                            {capability.tools.join(' · ')}
+                            {agent.description}
                           </p>
                         </div>
-                      ))}
-                    </div>
-                  </HoverCardContent>
-                </HoverCard>
-              </SidebarMenuItem>
+                        <div className="mt-3 flex flex-col gap-3">
+                          {agent.capabilities.map((capability) => (
+                            <div
+                              key={capability.name}
+                              className="flex flex-col gap-1"
+                            >
+                              <div className="flex items-center gap-2">
+                                {capability.icon && (
+                                  <img
+                                    src={capability.icon}
+                                    alt=""
+                                    className={cn(
+                                      'size-4 shrink-0',
+                                      capability.invertOnDark && 'dark:invert',
+                                    )}
+                                  />
+                                )}
+                                <p className="text-xs font-medium">
+                                  {capability.name}
+                                </p>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {capability.tools.join(' · ')}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </HoverCardContent>
+                    </HoverCard>
+                  </SidebarMenuItem>
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -63,8 +63,14 @@ future Tauri shell. The client does not own room state or execution.
 
 ## Decisions
 
-- Use a generic in-container Node/Bun runtime, backed by the OpenAI Agents SDK.
-- Keep model configuration OpenAI-compatible and provider-neutral: `{ provider, baseUrl, apiKey, model }`.
+- Use a generic in-container Node/Bun runtime, backed by the OpenAI Agents SDK
+  by default.
+- Keep OpenAI-compatible model configuration provider-neutral:
+  `{ provider, baseUrl, apiKey, model }` under Workspace → LLM provider.
+- Offer Cursor as an optional **agent-runtime** adapter (`@cursor/sdk` in a
+  dedicated Node 22.13+ image), configured under Workspace → Cursor agent
+  runtime and declared on the `software-engineer` person via `runtime.kind`.
+  Do not fold Cursor into the OpenAI-compatible LLM provider form.
 - Treat CLI coding agents as optional adapters, not the core architecture.
 - Keep role instructions and requested capabilities declarative.
 - Select the sandbox provider explicitly when composing the Sweat server. The
@@ -100,6 +106,9 @@ future Tauri shell. The client does not own room state or execution.
   login, single-use invitations, and member suspension.
 - Apple Container sandbox provider with automatic cleanup.
 - Generic Bun agent image and an asynchronous software-engineer run executor.
+- Optional Cursor agent runtime image (Node 22.13+, `@cursor/sdk`) for
+  `software-engineer` (`runtime.kind: cursor`) via Workspace → Cursor agent
+  runtime; `antboy` uses the OpenAI Agents image and Workspace LLM provider.
 - OpenAI-compatible model calls, a shell tool, and shell subprocesses without
   model credentials.
 - A composable MCP gateway core that issues expiring sessions and filters tools,

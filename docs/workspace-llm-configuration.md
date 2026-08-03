@@ -52,3 +52,10 @@ URL.
 The Apple Container host alias must be available after each macOS restart; see
 the [container setup](../project/README.md#troubleshooting). If Ollama runs on
 another machine, use that machine's reachable HTTP URL instead of `localhost`.
+
+## Cursor agent runtime
+
+Cursor is **not** configured here. Use **Workspace → Cursor agent runtime** for
+the Cursor API key and model catalog used by `@software-engineer`. The
+OpenAI-compatible settings on this page power `@antboy`. See
+[docs/research/cursor-provider.md](research/cursor-provider.md).

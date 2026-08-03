@@ -52,7 +52,7 @@ export type RoomRun = {
   requestedBy: Author
   task: string
   agentId: string
-  provider: 'openai' | 'custom'
+  provider: 'openai' | 'custom' | 'cursor'
   model: string
   state: 'preparing' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   createdAt: number

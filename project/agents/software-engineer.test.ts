@@ -9,11 +9,24 @@ import {
 } from "../sdk/src";
 import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import {
-  createSoftwareEngineerExecutor,
-  type SoftwareEngineerAdapter,
+  ANTBOY_ID,
+  SOFTWARE_ENGINEER_ID,
+  createWorkspaceAgentsExecutor,
+  type WorkspaceAgentAdapter,
 } from "./software-engineer";
 
-test("a configured adapter binds its repository and capabilities to every run", async () => {
+const cursorConfig = () => ({
+  apiKey: "cursor-key",
+  model: "composer-2.5",
+});
+
+const modelConfig = () => ({
+  baseUrl: "https://models.example/v1",
+  apiKey: "test-key",
+  model: "test-model",
+});
+
+test("software-engineer resolves to cursor kind with repository inputs and github grant", async () => {
   const calls: Array<{ args: readonly string[]; options?: CommandOptions }> =
     [];
   const runner: CommandRunner = {
@@ -28,7 +41,7 @@ test("a configured adapter binds its repository and capabilities to every run", 
     },
   };
   let preparedRepository: string | undefined;
-  const adapter: SoftwareEngineerAdapter = {
+  const adapter: WorkspaceAgentAdapter = {
     repository: {
       input: {
         type: "repository",
@@ -63,13 +76,12 @@ test("a configured adapter binds its repository and capabilities to every run", 
       },
     },
   };
-  let configuredModel = {
-    baseUrl: "https://models.example/v1",
-    apiKey: "test-key",
-    model: "test-model",
-  };
-  const executor = createSoftwareEngineerExecutor({
-    model: () => configuredModel,
+  let configuredCursor = cursorConfig();
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: () => configuredCursor,
+    model: modelConfig,
+    cursorImage: "sweat-agent-cursor:test",
+    image: "sweat-agent:test",
     adapters: [adapter],
     createCapabilityEndpoint: () => ({
       url: "http://capabilities.example/mcp",
@@ -81,17 +93,21 @@ test("a configured adapter binds its repository and capabilities to every run", 
     }),
   });
 
-  const id = executor.startRun({ task: "fix the issue" });
-  configuredModel = { ...configuredModel, model: "changed-after-start" };
+  const id = executor.startRun({
+    task: "fix the issue",
+    agentDefinitionId: SOFTWARE_ENGINEER_ID,
+  });
+  configuredCursor = { ...configuredCursor, model: "changed-after-start" };
   while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
     await Bun.sleep(0);
   }
 
   const run = executor.getRun(id)!;
-  const containerRun = calls.find(({ args }) => args[0] === "run")!;
-  const containerExec = calls.find(({ args }) => args[0] === "exec")!;
+  expect(run.definition.id).toBe(SOFTWARE_ENGINEER_ID);
+  expect(run.definition.runtime.kind).toBe("cursor");
+  expect(run.definition.runtime.cursor?.model).toBe("composer-2.5");
+  expect(run.definition.runtime.image).toBe("sweat-agent-cursor:test");
   expect(run.inputs).toEqual([adapter.repository!.input]);
-  expect(run.definition.runtime.model?.model).toBe("test-model");
   expect(run.capabilityGrant?.tools).toEqual([
     "github.create_pull_request",
     "github.wait_for_pull_request_checks",
@@ -100,18 +116,88 @@ test("a configured adapter binds its repository and capabilities to every run", 
     { provider: "github", repository: "acme/widgets" },
   ]);
   expect(preparedRepository).toBe("acme/widgets");
-  expect(containerRun.args.some((arg) => arg.endsWith(":/work"))).toBe(true);
-  expect(containerExec.args).toContain("/work");
+});
+
+test("antboy resolves to openai-agents without repository inputs or github tools", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const adapter: WorkspaceAgentAdapter = {
+    repository: {
+      input: {
+        type: "repository",
+        provider: "github",
+        repository: "acme/widgets",
+        revision: "main",
+      },
+      source: {
+        provider: "github",
+        async checkout(_input, directory) {
+          await writeFile(`${directory}/README.md`, "widgets");
+          return { revision: "abc123" };
+        },
+      },
+    },
+    capability: {
+      id: "github.pull-requests",
+      resources: [{ provider: "github", repository: "acme/widgets" }],
+      createUpstream() {
+        return {
+          async listTools() {
+            return [{ name: "github.create_pull_request" }];
+          },
+          async callTool() {
+            return {};
+          },
+        };
+      },
+    },
+  };
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    cursorImage: "sweat-agent-cursor:test",
+    image: "sweat-agent:test",
+    adapters: [adapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-antboy",
+    }),
+  });
+
+  const id = executor.startRun({
+    task: "summarize the room",
+    agentDefinitionId: ANTBOY_ID,
+  });
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+    await Bun.sleep(0);
+  }
+
+  const run = executor.getRun(id)!;
+  expect(run.definition.id).toBe(ANTBOY_ID);
+  expect(run.definition.runtime.kind).toBe("openai-agents");
+  expect(run.definition.runtime.model?.model).toBe("test-model");
+  expect(run.definition.runtime.image).toBe("sweat-agent:test");
+  expect(run.inputs).toEqual([]);
+  expect(run.capabilityGrant).toBeUndefined();
 });
 
 test("a repository-scoped capability cannot be configured without its repository", () => {
   expect(() =>
-    createSoftwareEngineerExecutor({
-      model: () => ({
-        baseUrl: "https://models.example/v1",
-        apiKey: "test-key",
-        model: "test-model",
-      }),
+    createWorkspaceAgentsExecutor({
+      model: modelConfig,
+      cursor: cursorConfig,
       adapters: [
         {
           capability: {
@@ -128,11 +214,18 @@ test("a repository-scoped capability cannot be configured without its repository
         url: "http://capabilities.example/mcp",
         close: async () => {},
       }),
+      sandboxProvider: createAppleContainerSandboxProvider({
+        container: createAppleContainerClient({
+          async run(args) {
+            return { args, exitCode: 0, stdout: "", stderr: "" };
+          },
+        }),
+      }),
     }),
   ).toThrow("requires its repository adapter");
 });
 
-test("request attachments become workspace inputs and an auditable task note", async () => {
+test("antboy attachments become workspace inputs and an auditable task note", async () => {
   const bytes = new TextEncoder().encode("brief\n");
   const attachment = {
     type: "attachment" as const,
@@ -152,12 +245,8 @@ test("request attachments become workspace inputs and an auditable task note", a
       return { args, exitCode: 0, stdout, stderr: "" };
     },
   };
-  const executor = createSoftwareEngineerExecutor({
-    model: () => ({
-      baseUrl: "https://models.example/v1",
-      apiKey: "test-key",
-      model: "test-model",
-    }),
+  const executor = createWorkspaceAgentsExecutor({
+    model: modelConfig,
     attachmentSource: {
       async read(id) {
         return id === attachment.id ? { ...attachment, bytes } : undefined;
@@ -171,6 +260,7 @@ test("request attachments become workspace inputs and an auditable task note", a
 
   const id = executor.startRun({
     task: "review the brief",
+    agentDefinitionId: ANTBOY_ID,
     attachments: [attachment],
   });
   while (["preparing", "running"].includes(executor.getRun(id)?.state ?? ""))
@@ -180,4 +270,35 @@ test("request attachments become workspace inputs and an auditable task note", a
   expect(executor.getRun(id)?.task).toBe(
     "review the brief\n\nAttachments (inspect these paths before acting):\n- brief.txt: /work/.sweat/attachments/attachment-1/brief.txt",
   );
+});
+
+test("software-engineer start requires cursor; antboy start requires model", () => {
+  const sandboxProvider = createAppleContainerSandboxProvider({
+    container: createAppleContainerClient({
+      async run(args) {
+        return { args, exitCode: 0, stdout: "", stderr: "" };
+      },
+    }),
+  });
+  const cursorOnly = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    sandboxProvider,
+  });
+  expect(() =>
+    cursorOnly.startRun({
+      task: "hi",
+      agentDefinitionId: ANTBOY_ID,
+    }),
+  ).toThrow("LLM provider is not configured");
+
+  const modelOnly = createWorkspaceAgentsExecutor({
+    model: modelConfig,
+    sandboxProvider,
+  });
+  expect(() =>
+    modelOnly.startRun({
+      task: "hi",
+      agentDefinitionId: SOFTWARE_ENGINEER_ID,
+    }),
+  ).toThrow("Cursor agent runtime is not configured");
 });

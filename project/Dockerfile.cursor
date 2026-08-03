@@ -1,0 +1,21 @@
+FROM node:22.13-bookworm-slim
+
+ARG SWEAT_VERSION=dev
+
+LABEL org.opencontainers.image.source="https://github.com/4ug-aug/sweat-v2" \
+      org.opencontainers.image.version="$SWEAT_VERSION" \
+      org.opencontainers.image.title="sweat-agent-cursor"
+
+WORKDIR /app
+RUN apt-get update && apt-get install --yes --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package.cursor.json ./package.json
+COPY package.cursor-lock.json ./package-lock.json
+RUN npm ci --omit=dev
+
+COPY runtime/step.ts /app/runtime/step.ts
+COPY runtime/cursor-sdk.ts /app/runtime/cursor-sdk.ts
+COPY runtime/cursor-cli.ts /app/runtime/cursor-cli.ts
+
+WORKDIR /work

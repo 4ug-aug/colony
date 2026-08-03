@@ -22,6 +22,7 @@ test("the OpenAI runtime passes the definition and task to its container command
         instructions: "Inspect and verify.",
         requestedCapabilities: [],
         runtime: {
+          kind: "openai-agents",
           image: "sweat-agent:latest",
           model: {
             provider: "custom",
@@ -73,6 +74,7 @@ test("the OpenAI runtime routes a host-local model through the container host", 
         instructions: "Inspect and verify.",
         requestedCapabilities: [],
         runtime: {
+          kind: "openai-agents",
           image: "sweat-agent:latest",
           model: {
             baseUrl: "http://localhost:11434/v1",
@@ -96,6 +98,7 @@ const minimalDefinition = {
   instructions: "Do stuff.",
   requestedCapabilities: [] as const,
   runtime: {
+    kind: "openai-agents" as const,
     image: "sweat-agent:latest",
     model: { baseUrl: "https://models.example/v1", apiKey: "key", model: "m" },
   },

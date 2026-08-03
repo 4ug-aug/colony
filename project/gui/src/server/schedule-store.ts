@@ -32,7 +32,7 @@ export type ScheduleRun = {
   startedBy?: ScheduleActor
   task: string
   agentId: string
-  provider: 'openai' | 'custom'
+  provider: 'openai' | 'custom' | 'cursor'
   model: string
   state: RunState
   createdAt: number
@@ -126,7 +126,7 @@ type ScheduleRunRow = {
   started_image: string | null
   task: string
   agent_id: string
-  provider: 'openai' | 'custom'
+  provider: 'openai' | 'custom' | 'cursor'
   model: string
   state: RunState
   created_at: number

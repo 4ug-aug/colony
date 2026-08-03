@@ -99,9 +99,17 @@ definition.
 _Avoid_: Task prompt
 
 **Model endpoint**: The OpenAI-compatible provider URL selected by the
-workspace and resolved into one run's model configuration. It may be a hosted
-service or a model server operated elsewhere on the customer's network.
-_Avoid_: Sandbox provider, model runtime
+workspace and resolved into one run's model configuration when that run's
+agent runtime kind is `openai-agents`. It may be a hosted service or a model
+server operated elsewhere on the customer's network.
+_Avoid_: Sandbox provider, agent runtime kind, Cursor runtime
+
+**Agent runtime kind**: Which in-sandbox agent loop a person uses — currently
+`cursor` (Cursor local SDK) or `openai-agents` (OpenAI Agents SDK against a
+model endpoint). Declared on the agent definition with an explicit container
+image; credentials are resolved by composition from workspace settings, never
+stored on the definition.
+_Avoid_: Sandbox provider, model endpoint, LLM provider (UI label for model endpoint config)
 
 **Step**: A single recorded event in a run's execution. A run produces an
 ordered **step history**. V1 has three step kinds:
@@ -136,9 +144,19 @@ Run/job            -> what should it do now?
 Sandbox            -> where does it execute?
 ```
 
-An **agent definition** names a role (for example `software-engineer`,
-`researcher`, or `support-triage`) and defines its instructions, model
-configuration, allowed tools/capabilities, image, and execution limits.
+An **agent definition** is one person in the workspace (for example
+`software-engineer` or `antboy`). It defines that person's system instructions,
+requested capabilities, **agent runtime kind**, explicit container image, and
+execution limits. It does not hold provider credentials or choose run inputs.
+
+**software-engineer**: The coding person. Runtime kind `cursor`, with GitHub
+and repository checkout among its capabilities when granted.
+_Avoid_: software-engineer-cursor, Cursor engineer
+
+**antboy**: A non-GitHub collaborator person. Runtime kind `openai-agents`,
+with room, task, shell, and attachment access when granted, but no GitHub
+capability and no repository clone into `/work`.
+_Avoid_: general-purpose agent, assistant
 
 A **run/job** selects an agent definition and supplies its task plus optional
 context.
@@ -150,16 +168,18 @@ must not assume a repository or GitHub.
 **Sandbox provider**: The explicitly deployment-selected adapter that creates,
 executes within, and disposes of a sandbox. It fulfils the same sandbox launch
 contract regardless of the container technology underneath.
-_Avoid_: Runtime, agent provider
+_Avoid_: Runtime, agent provider, agent runtime kind
 
 ## Runtime and models
 
-The agent reasoning loop runs inside the disposable sandbox container. Use a
-generic container entrypoint such as `sweat-agent run /run/job.json`; do not
-create role-specific container entrypoints.
+The agent reasoning loop runs inside the disposable sandbox container. Each
+person declares an **agent runtime kind** and an explicit image; composition
+injects the matching workspace credentials. Do not duplicate a person merely to
+select a different engine. See
+[ADR 0008](docs/adr/0008-agent-runtime-kind-on-definition.md).
 
-The first intended runtime is a Node/TypeScript agent SDK. Model configuration
-should remain OpenAI-compatible and provider-neutral, with an explicit provider identity:
+For `openai-agents`, model configuration remains OpenAI-compatible and
+provider-neutral:
 
 ```ts
 {
@@ -167,15 +187,14 @@ should remain OpenAI-compatible and provider-neutral, with an explicit provider 
 }
 ```
 
-CLI coding agents (such as Codex or Claude Code) are optional runtime adapters,
-not the platform architecture.
+For `cursor`, the workspace supplies a Cursor API key and model id; inference
+stays Cursor-hosted.
 
 The sandbox launch contract is deliberately small: task, agent definition and
-instructions, model configuration, an optional scoped MCP session, and `/work`
-as its current directory. It does not receive Run IDs, repository or provider
-details, or upstream provider credentials. The model API key and MCP session
-token are technical credentials required by the runtime; tool subprocesses
-must not inherit them.
+instructions, runtime credentials for that kind, an optional scoped MCP session,
+and `/work` as its current directory. It does not receive Run IDs, repository or
+provider details, or upstream provider credentials. Runtime API keys and the MCP
+session token are technical credentials; tool subprocesses must not inherit them.
 
 ## Roles and capabilities
 

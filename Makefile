@@ -82,11 +82,23 @@ agent: env
 	@provider="$${SWEAT_SANDBOX_PROVIDER:-$$(sed -n 's/^SWEAT_SANDBOX_PROVIDER=//p' "$(ENV_FILE)" | tail -n 1)}"; \
 	image="$${SWEAT_AGENT_IMAGE:-$$(sed -n 's/^SWEAT_AGENT_IMAGE=//p' "$(ENV_FILE)" | tail -n 1)}"; \
 	image="$${image#\"}"; image="$${image%\"}"; \
+	cursor_image="$${SWEAT_CURSOR_AGENT_IMAGE:-$$(sed -n 's/^SWEAT_CURSOR_AGENT_IMAGE=//p' "$(ENV_FILE)" | tail -n 1)}"; \
+	cursor_image="$${cursor_image#\"}"; cursor_image="$${cursor_image%\"}"; \
 	case "$$provider" in \
 		apple-container) \
-			case "$$image" in */*|*@*) container image pull "$$image" ;; *) cd project && bun $(BUN_ENV) run agent:build ;; esac ;; \
+			case "$$image" in */*|*@*) container image pull "$$image" ;; *) cd project && bun $(BUN_ENV) run agent:build ;; esac; \
+			case "$$cursor_image" in \
+				"") ;; \
+				*/*|*@*) container image pull "$$cursor_image" ;; \
+				*) cd project && bun $(BUN_ENV) run agent:build:cursor ;; \
+			esac ;; \
 		docker) \
-			case "$$image" in */*|*@*) docker pull "$$image" ;; *) docker build -t sweat-agent:latest project ;; esac ;; \
+			case "$$image" in */*|*@*) docker pull "$$image" ;; *) docker build -t sweat-agent:latest project ;; esac; \
+			case "$$cursor_image" in \
+				"") ;; \
+				*/*|*@*) docker pull "$$cursor_image" ;; \
+				*) docker build -f project/Dockerfile.cursor -t sweat-agent-cursor:latest project ;; \
+			esac ;; \
 		*) echo "SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker"; exit 2 ;; \
 	esac
 

@@ -4,6 +4,7 @@ import { ProviderIcon } from '#/components/provider-icon'
 import { useTheme } from '#/components/theme-provider'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
+import { llmProviderName, type RuntimeProvider } from '#/lib/llm-provider'
 import { terminal, type RunState } from './run-helpers'
 
 function DitherTile({
@@ -11,7 +12,7 @@ function DitherTile({
   provider,
 }: {
   active: boolean
-  provider: 'openai' | 'custom'
+  provider: RuntimeProvider
 }) {
   const { theme } = useTheme()
   const dark =
@@ -59,7 +60,7 @@ export function RunActivitySplitHeader({
   onCancel,
 }: {
   agent: string
-  provider: 'openai' | 'custom'
+  provider: RuntimeProvider
   model: string
   state: RunState
   status: string
@@ -78,9 +79,8 @@ export function RunActivitySplitHeader({
               key={status}
               className="truncate text-xs text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-0.5 duration-300"
             >
-              {model || 'Unknown model'} ·{' '}
-              {provider === 'openai' ? 'OpenAI' : 'Custom / OpenAI-compatible'}{' '}
-              · {status}
+              {model || 'Unknown model'} · {llmProviderName(provider)} ·{' '}
+              {status}
             </p>
           </div>
           {!terminal(state) && (

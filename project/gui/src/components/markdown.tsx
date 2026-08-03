@@ -48,7 +48,7 @@ export function Markdown({
   components?: Components
   mentions?: string[]
 }) {
-  const handles = new Set(['software-engineer', ...mentions])
+  const handles = new Set(['software-engineer', 'antboy', ...mentions])
   const escaped = [...handles]
     .map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')

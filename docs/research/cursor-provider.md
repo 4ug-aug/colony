@@ -1,6 +1,8 @@
 # Cursor as a Sweat agent runtime
 
-Status: research only. No application code was changed.
+Status: implemented as an optional agent-runtime path. See also
+[workspace LLM configuration](../workspace-llm-configuration.md) (OpenAI-compatible
+only) and the Cursor settings section in Workspace settings.
 
 ## Recommendation
 
@@ -101,9 +103,25 @@ not expose it to the web or Tauri clients. [SDK authentication and billing](http
 1. Can a direct `apiKey` SDK option be observed by a Cursor shell subprocess?
    Cursor documents that local agents inherit their process environment; run a
    hostile-environment integration test before treating the adapter as safe.
+   **Resolved for v1:** the container CLI reads `SWEAT_CURSOR_API_KEY`, deletes
+   it (and `CURSOR_API_KEY`) from `process.env` before `Agent.create`, and the
+   contract suite asserts shell/`env` tool output cannot observe the key.
 2. Does Cursor's nested local sandbox work inside both supported Sweat
    container providers without blocking the Cursor API or MCP gateway?
+   **Deferred:** nested `sandboxOptions` stays off; Sweat's outer sandbox is
+   the security boundary.
 3. Does the Cursor service-account/key and plan selected by an operator permit
    the intended models and concurrent run volume? The SDK says its model catalog
    is account/team-specific, so validate that catalog rather than promising a
    fixed model name.
+   **Resolved for v1:** save validates the model id against
+   `Cursor.models.list({ apiKey })`.
+
+## Operator path (implemented)
+
+- Configure **Workspace → Cursor agent runtime** (API key + model). Distinct
+  from LLM provider settings.
+- Use `@software-engineer` (Cursor runtime + repository) or `@antboy`
+  (OpenAI Agents + Workspace LLM, no GitHub checkout) in a room or schedule.
+- Set `SWEAT_CURSOR_AGENT_IMAGE` to the Node 22.13+ Cursor agent image
+  (`sweat-agent-cursor` / `ghcr.io/...-agent-cursor`).

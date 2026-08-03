@@ -6,8 +6,11 @@ export type RunState = 'preparing' | 'running' | 'succeeded' | 'failed' | 'cance
 export const terminal = (state: RunState) =>
   state === 'succeeded' || state === 'failed' || state === 'cancelled'
 
-export const agentName = (agentId: string) =>
-  agentId === 'software-engineer' ? 'Software engineer' : agentId
+export const agentName = (agentId: string) => {
+  if (agentId === 'software-engineer') return 'Software engineer'
+  if (agentId === 'antboy') return 'antboy'
+  return agentId
+}
 
 export function runStatus(run: RoomRun, step?: Step) {
   if (step) return stepLabel(step)

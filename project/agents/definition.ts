@@ -5,6 +5,14 @@ export interface ModelRuntimeConfig {
   model: string;
 }
 
+/** Cursor agent-runtime credentials. Distinct from OpenAI-compatible ModelRuntimeConfig. */
+export interface CursorRuntimeConfig {
+  apiKey: string;
+  model: string;
+}
+
+export type AgentRuntimeKind = "cursor" | "openai-agents";
+
 export interface AgentDefinition {
   id: string;
   instructions: string;
@@ -13,8 +21,13 @@ export interface AgentDefinition {
     tools: readonly string[];
   }[];
   runtime: {
+    kind: AgentRuntimeKind;
+    /** Explicit container image for this person; never derived from kind alone. */
     image: string;
+    /** Injected when kind is openai-agents. */
     model?: ModelRuntimeConfig;
+    /** Injected when kind is cursor. */
+    cursor?: CursorRuntimeConfig;
   };
   executionPolicy: {
     maxDurationMs: number;

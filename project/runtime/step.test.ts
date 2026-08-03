@@ -68,7 +68,7 @@ const definition: AgentDefinition = {
   id: "test-agent",
   instructions: "test instructions",
   requestedCapabilities: [],
-  runtime: { image: "test:latest" },
+  runtime: { kind: "openai-agents", image: "test:latest" },
   executionPolicy: { maxDurationMs: 5000, maxOutputBytes: 1024 * 1024, maxSteps: 100 },
 };
 

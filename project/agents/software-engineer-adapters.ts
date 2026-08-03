@@ -9,9 +9,13 @@ import {
 } from "../mcp/workspace";
 import type { SoftwareEngineerAdapter } from "./software-engineer";
 
+type WorkspaceAgentIdentity = { id: string; name: string; image?: string };
+
 export function createWorkspaceSoftwareEngineerAdapter(options: {
   port: WorkspaceRoomPort;
-  agent: { id: string; name: string; image?: string };
+  agent:
+    | WorkspaceAgentIdentity
+    | ((grantContext: unknown) => WorkspaceAgentIdentity);
 }): SoftwareEngineerAdapter {
   return {
     capability: {
@@ -27,10 +31,14 @@ export function createWorkspaceSoftwareEngineerAdapter(options: {
         if (!roomId) {
           throw new Error("A room id is required for the workspace capability");
         }
+        const agent =
+          typeof options.agent === "function"
+            ? options.agent(grantContext)
+            : options.agent;
         return createWorkspaceMcpUpstream({
           port: options.port,
           roomId,
-          agent: options.agent,
+          agent,
         });
       },
     },

@@ -41,6 +41,14 @@ type LlmConfig = {
   baseUrl?: string
   model?: string
 }
+type CursorRuntimeConfig = {
+  configured: boolean
+  model?: string
+}
+type CursorModel = {
+  id: string
+  displayName: string
+}
 
 export function WorkspaceSettingsPage({
   currentUserId,
@@ -60,17 +68,28 @@ export function WorkspaceSettingsPage({
   const [baseUrl, setBaseUrl] = useState(defaultLlmBaseUrl('openai'))
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [cursorRuntime, setCursorRuntime] = useState<CursorRuntimeConfig>({
+    configured: false,
+  })
+  const [cursorModel, setCursorModel] = useState('')
+  const [cursorApiKey, setCursorApiKey] = useState('')
+  const [cursorModels, setCursorModels] = useState<CursorModel[]>([])
 
   const load = async () => {
     setError(undefined)
-    const [memberResponse, invitationResponse, llmResponse] = await Promise.all(
-      [
+    const [memberResponse, invitationResponse, llmResponse, cursorResponse] =
+      await Promise.all([
         apiFetch('/api/workspace/settings/members'),
         apiFetch('/api/workspace/invitations'),
         apiFetch('/api/workspace/settings/llm'),
-      ],
+        apiFetch('/api/workspace/settings/cursor-runtime'),
+      ])
+    if (
+      !memberResponse.ok ||
+      !invitationResponse.ok ||
+      !llmResponse.ok ||
+      !cursorResponse.ok
     )
-    if (!memberResponse.ok || !invitationResponse.ok || !llmResponse.ok)
       throw new Error('Could not load workspace settings')
     setMembers(((await memberResponse.json()) as { users: Member[] }).users)
     setInvitations(
@@ -82,6 +101,22 @@ export function WorkspaceSettingsPage({
     setProvider(config.provider ?? 'openai')
     setBaseUrl(config.baseUrl ?? defaultLlmBaseUrl(config.provider ?? 'openai'))
     setModel(config.model ?? '')
+    const cursor = (await cursorResponse.json()) as CursorRuntimeConfig
+    setCursorRuntime(cursor)
+    setCursorModel(cursor.model ?? '')
+    if (cursor.configured) {
+      const modelsResponse = await apiFetch(
+        '/api/workspace/settings/cursor-runtime/models',
+      )
+      if (modelsResponse.ok) {
+        const body = (await modelsResponse.json()) as { models: CursorModel[] }
+        setCursorModels(body.models)
+      } else {
+        setCursorModels([])
+      }
+    } else {
+      setCursorModels([])
+    }
   }
 
   useEffect(() => {
@@ -175,6 +210,33 @@ export function WorkspaceSettingsPage({
       setApiKey('')
     })
 
+  const saveCursorRuntime = () =>
+    mutate(async () => {
+      const response = await apiFetch('/api/workspace/settings/cursor-runtime', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: cursorModel,
+          apiKey: cursorApiKey,
+        }),
+      })
+      const result = (await response.json()) as CursorRuntimeConfig & {
+        error?: string
+      }
+      if (!response.ok)
+        throw new Error(result.error ?? 'Could not save Cursor runtime')
+      setCursorRuntime(result)
+      setCursorModel(result.model ?? '')
+      setCursorApiKey('')
+      const modelsResponse = await apiFetch(
+        '/api/workspace/settings/cursor-runtime/models',
+      )
+      if (modelsResponse.ok) {
+        const body = (await modelsResponse.json()) as { models: CursorModel[] }
+        setCursorModels(body.models)
+      }
+    })
+
   return (
     <div className="mx-auto w-full max-w-full space-y-6 p-4 sm:p-8">
       {error && (
@@ -266,6 +328,76 @@ export function WorkspaceSettingsPage({
                 'Not configured'
               )}
          
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b pb-4">
+        <h2 className="font-semibold">Cursor agent runtime</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Optional Cursor local SDK runtime for{' '}
+          <code className="text-xs">@software-engineer</code> runs. This is
+          separate from the OpenAI-compatible LLM provider used by{' '}
+          <code className="text-xs">@antboy</code>.
+        </p>
+        <div className="mt-4 grid max-w-xl gap-3">
+          <Input
+            aria-label="Cursor API key"
+            disabled={busy || loading}
+            onChange={(event) => setCursorApiKey(event.target.value)}
+            placeholder={
+              cursorRuntime.configured
+                ? 'Leave blank to keep current key'
+                : 'Cursor API key'
+            }
+            type="password"
+            value={cursorApiKey}
+          />
+          {cursorModels.length > 0 ? (
+            <Select
+              value={cursorModel}
+              disabled={busy || loading}
+              onValueChange={(value) => setCursorModel(value ?? '')}
+            >
+              <SelectTrigger className="w-full" aria-label="Cursor model">
+                <SelectValue placeholder="Select a Cursor model" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {cursorModels.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              aria-label="Cursor model"
+              disabled={busy || loading}
+              onChange={(event) => setCursorModel(event.target.value)}
+              placeholder="composer-2.5"
+              value={cursorModel}
+            />
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              disabled={busy || loading}
+              onClick={() => void saveCursorRuntime()}
+            >
+              Save Cursor runtime
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              {cursorRuntime.configured ? (
+                <span className="inline-flex items-center gap-1 text-green-600">
+                  <Check className="w-4 h-4" />
+                  Configured
+                </span>
+              ) : (
+                'Not configured'
+              )}
             </span>
           </div>
         </div>

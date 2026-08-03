@@ -17,7 +17,7 @@ export const lightAgentDefinition: AgentDefinition = {
   id: "light-agent",
   instructions: "Run the supplied task and report the result.",
   requestedCapabilities: [],
-  runtime: { image: "alpine:latest" },
+  runtime: { kind: "openai-agents", image: "alpine:latest" },
   executionPolicy: { maxDurationMs: 30 * 60 * 1000, maxOutputBytes: 1024 * 1024, maxSteps: 500 },
 };
 

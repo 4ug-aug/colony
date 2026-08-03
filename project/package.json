@@ -6,10 +6,12 @@
   "exports": "./index.ts",
   "scripts": {
     "agent:build": "container build -t sweat-agent:latest .",
+    "agent:build:cursor": "container build -f Dockerfile.cursor -t sweat-agent-cursor:latest .",
     "test": "bun test",
     "test:e2e": "RUN_CONTAINER_E2E=1 bun test e2e/light-agent.e2e.test.ts"
   },
   "dependencies": {
+    "@cursor/sdk": "^1.0.26",
     "@openai/agents": "^0.13.5",
     "octokit": "^5.0.5"
   },

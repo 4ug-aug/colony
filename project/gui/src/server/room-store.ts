@@ -70,6 +70,7 @@ const AGENT_PARTICIPANTS: Record<
   { id: string; name: string; image?: string }
 > = {
   'software-engineer': { id: 'software-engineer', name: 'Software engineer' },
+  antboy: { id: 'antboy', name: 'antboy' },
 }
 export function agentParticipant(definitionId: string): {
   id: string
@@ -197,7 +198,7 @@ type RunRow = {
   created_at: number
   task: string
   agent_id: string
-  provider: 'openai' | 'custom'
+  provider: 'openai' | 'custom' | 'cursor'
   model: string
   state: RunState
   started_at: number | null

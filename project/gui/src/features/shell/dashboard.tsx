@@ -1,4 +1,17 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Button } from '#/components/ui/button'
+import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
+import { AccountSettingsPage } from '#/features/account/account-settings'
+import { MembersPanel } from '#/features/members/members-panel'
+import type { MessageComposerHandle } from '#/features/rooms/message-composer'
+import { MessageComposer } from '#/features/rooms/message-composer'
+import { Timeline } from '#/features/rooms/room-timeline'
+import type { Author } from '#/features/rooms/types'
+import { useRooms } from '#/features/rooms/use-rooms'
+import { ActiveAgents } from '#/features/runs/active-agents'
+import { RunActivityRail } from '#/features/runs/run-activity-rail'
+import { SchedulesPage } from '#/features/schedules/schedules-page'
+import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
 import {
   ArrowDown,
   CalendarClock,
@@ -9,23 +22,10 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
-import { SchedulesPage } from '#/features/schedules/schedules-page'
-import { useRooms } from '#/features/rooms/use-rooms'
-import { RoomSidebar } from './room-sidebar'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { DashboardView } from './room-sidebar'
-import { Timeline } from '#/features/rooms/room-timeline'
-import { MessageComposer } from '#/features/rooms/message-composer'
-import type { MessageComposerHandle } from '#/features/rooms/message-composer'
-import { MembersPanel } from '#/features/members/members-panel'
-import { ActiveAgents } from '#/features/runs/active-agents'
-import { RunActivityRail } from '#/features/runs/run-activity-rail'
-import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
-import type { Author } from '#/features/rooms/types'
-import { AccountSettingsPage } from '#/features/account/account-settings'
-import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
+import { RoomSidebar } from './room-sidebar'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
-import { BrailleLoader } from '#/components/ui/braille-loader'
-import { Button } from '#/components/ui/button'
 
 const bottomScrollThreshold = 150
 const historyTopThreshold = 80
@@ -278,12 +278,11 @@ export function Dashboard({
                 </section>
                 <Button
                   type="button"
-                  variant="outline"
                   size="sm"
                   aria-hidden={atBottom}
                   tabIndex={atBottom ? -1 : 0}
                   data-visible={!atBottom}
-                  className="scroll-to-bottom-button absolute right-5 bottom-4 rounded-sm bg-background/95 shadow-md sm:right-8"
+                  className="scroll-to-bottom-button absolute right-5 bottom-4 rounded-sm shadow-md sm:right-8"
                   onClick={() => {
                     const el = scrollRef.current
                     el?.scrollTo({

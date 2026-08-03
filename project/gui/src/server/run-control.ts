@@ -1,6 +1,12 @@
 import type { RunInput, RunRecord, Step } from '../../../runs'
-import type { SoftwareEngineerExecutor } from '../../../agents/software-engineer'
+import type { WorkspaceAgentExecutor } from '../../../agents/software-engineer'
+import {
+  ANTBOY_ID,
+  SOFTWARE_ENGINEER_ID,
+} from '../../../agents/software-engineer'
 import type { AttachmentInput } from '../../../inputs/repository'
+
+export type RunProvider = 'openai' | 'custom' | 'cursor'
 
 export type RunSummary = Pick<
   RunRecord,
@@ -16,7 +22,7 @@ export type RunSummary = Pick<
   | 'stderr'
 > & {
   agentId: string
-  provider: 'openai' | 'custom'
+  provider: RunProvider
   model: string
 }
 
@@ -25,11 +31,13 @@ export type { Step }
 export type RunStartContext<Output> =
   | {
       roomId: string
+      agentDefinitionId?: string
       attachments?: readonly AttachmentInput[]
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
   | {
       scheduleId: string
+      agentDefinitionId?: string
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
 
@@ -59,6 +67,9 @@ export function runSummary<Input extends RunInput>(
     stderr,
     definition: { id: agentId },
   } = run
+  const kind = run.definition.runtime?.kind
+  const cursor = run.definition.runtime?.cursor
+  const model = run.definition.runtime?.model
   return {
     id,
     task,
@@ -71,13 +82,16 @@ export function runSummary<Input extends RunInput>(
     stdout,
     stderr,
     agentId,
-    provider: run.definition.runtime?.model?.provider ?? 'openai',
-    model: run.definition.runtime?.model?.model ?? '',
+    provider:
+      kind === 'cursor' || cursor
+        ? 'cursor'
+        : (model?.provider ?? 'openai'),
+    model: cursor?.model ?? model?.model ?? '',
   }
 }
 
 type RunControlExecutor = Pick<
-  SoftwareEngineerExecutor,
+  WorkspaceAgentExecutor,
   'startRun' | 'subscribe' | 'subscribeSteps' | 'cancelRun'
 >
 
@@ -91,12 +105,15 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
       context: RunStartContext<Output>,
     ): NonNullable<Output> => {
       let created: NonNullable<Output> | undefined
+      const agentDefinitionId =
+        context.agentDefinitionId ?? SOFTWARE_ENGINEER_ID
       executor.startRun({
         task,
+        agentDefinitionId,
         grantContext:
           'roomId' in context
-            ? { roomId: context.roomId }
-            : { scheduleId: context.scheduleId },
+            ? { roomId: context.roomId, agentDefinitionId }
+            : { scheduleId: context.scheduleId, agentDefinitionId },
         ...('roomId' in context && context.attachments
           ? { attachments: context.attachments }
           : {}),
@@ -116,3 +133,5 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
     },
   }
 }
+
+export { ANTBOY_ID, SOFTWARE_ENGINEER_ID }

@@ -57,6 +57,10 @@ test('passes room context and attachment descriptors without assembling inputs',
   })
 
   expect(request?.task).toBe('summarize ORI-198')
-  expect(request?.grantContext).toEqual({ roomId: 'room-1' })
+  expect(request?.agentDefinitionId).toBe('software-engineer')
+  expect(request?.grantContext).toEqual({
+    roomId: 'room-1',
+    agentDefinitionId: 'software-engineer',
+  })
   expect(request?.attachments).toEqual(attachments)
 })

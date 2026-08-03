@@ -271,7 +271,7 @@ export function createCoordinator(options: {
   attachmentDirectory?: string
   port?: number
   admission?: AdmissionOptions
-  agentReady?: () => boolean
+  agentReady?: (agentDefinitionId?: string) => boolean
   scheduleStore?: ScheduleStore
   agentDefinitions?: () => AgentDefinitionSummary[]
 }) {
@@ -312,7 +312,7 @@ export function createCoordinator(options: {
       {
         id: 'software-engineer',
         name: 'Software engineer',
-        description: 'Build, debug, and review code.',
+        description: 'Build, debug, and review code in a checked-out repository.',
         capabilities: [
           {
             id: 'linear.issues',
@@ -328,6 +328,39 @@ export function createCoordinator(options: {
             id: 'github.pull-requests',
             name: 'GitHub pull requests',
             tools: ['Create pull requests', 'Wait for pull request checks'],
+          },
+          {
+            id: 'workspace.room',
+            name: 'Room',
+            tools: ['Read messages', 'Post messages'],
+          },
+        ],
+      },
+      {
+        id: 'antboy',
+        name: 'antboy',
+        description:
+          'Collaborative teammate for room and task work without a GitHub checkout.',
+        capabilities: [
+          {
+            id: 'linear.issues',
+            name: 'Linear issues',
+            tools: [
+              'Get issues',
+              'List issues',
+              'Save comments',
+              'Save issues',
+            ],
+          },
+          {
+            id: 'asana.tasks',
+            name: 'Asana tasks',
+            tools: ['List and update tasks', 'Comments'],
+          },
+          {
+            id: 'workspace.room',
+            name: 'Room',
+            tools: ['Read messages', 'Post messages'],
           },
         ],
       },
@@ -937,15 +970,27 @@ export function createCoordinator(options: {
         const input = await messageInputFrom(request)
         if ('error' in input) return cors(json({ error: input.error }, 400))
         const { text, files } = input
-        const mention = /(^|\s)@software-engineer\b\s*/
-        const isAgentMessage = mention.test(text)
+        const mention = /(^|\s)@(software-engineer|antboy)\b\s*/
+        const mentionMatch = text.match(mention)
+        const agentDefinitionId = mentionMatch?.[2]
+        const isAgentMessage = Boolean(agentDefinitionId)
         const task = isAgentMessage
           ? text.replace(mention, (_, prefix: string) => prefix).trim()
           : undefined
         if (isAgentMessage && !task)
           return cors(json({ error: 'Agent task is required' }, 400))
-        if (task && options.agentReady && !options.agentReady())
-          return cors(json({ error: 'LLM provider is not configured' }, 409))
+        if (task && agentDefinitionId && options.agentReady && !options.agentReady(agentDefinitionId))
+          return cors(
+            json(
+              {
+                error:
+                  agentDefinitionId === 'software-engineer'
+                    ? 'Cursor agent runtime is not configured'
+                    : 'LLM provider is not configured',
+              },
+              409,
+            ),
+          )
         let attachments
         try {
           attachments = await stageAttachments(files, attachmentsDirectory)
@@ -985,6 +1030,7 @@ export function createCoordinator(options: {
         try {
           const run = options.control.start(task, {
             roomId,
+            agentDefinitionId,
             attachments: attachments.map((attachment) => ({
               type: 'attachment' as const,
               id: attachment.id,
@@ -1218,7 +1264,8 @@ if (import.meta.main) {
     { betterAuthSessionAuthenticator },
     { createAdmissionStore },
     { createWorkspaceLlmConfig },
-    { createSoftwareEngineerExecutor },
+    { createWorkspaceCursorRuntimeConfig },
+    { createWorkspaceAgentsExecutor },
     {
       createAsanaSoftwareEngineerAdapter,
       createGitHubSoftwareEngineerAdapter,
@@ -1237,6 +1284,7 @@ if (import.meta.main) {
     import('./session-auth'),
     import('./admission'),
     import('./llm-config'),
+    import('./cursor-runtime-config'),
     import('../../../agents/software-engineer'),
     import('../../../agents/software-engineer-adapters'),
     import('../../../mcp/asana'),
@@ -1249,6 +1297,7 @@ if (import.meta.main) {
   ])
   const admissionStore = createAdmissionStore(sqlite)
   const llm = createWorkspaceLlmConfig(sqlite)
+  const cursorRuntime = createWorkspaceCursorRuntimeConfig(sqlite)
   const authContext = await auth.$context
   const store = createSqliteRoomStore(sqlite)
   const scheduleStore = createSqliteScheduleStore(sqlite)
@@ -1276,10 +1325,12 @@ if (import.meta.main) {
           container: createAppleContainerClient(),
         })
   const control = createRunControl(
-    createSoftwareEngineerExecutor({
+    createWorkspaceAgentsExecutor({
       sandboxProvider,
       image: process.env.SWEAT_AGENT_IMAGE,
+      cursorImage: process.env.SWEAT_CURSOR_AGENT_IMAGE,
       model: () => llm.model(),
+      cursor: () => cursorRuntime.cursor(),
       attachmentSource: createRoomAttachmentSource({
         store,
         directory: attachmentsDirectory,
@@ -1295,7 +1346,11 @@ if (import.meta.main) {
               messages.postMessage(input)
             },
           },
-          agent: agentParticipant('software-engineer'),
+          agent: (grantContext) =>
+            agentParticipant(
+              (grantContext as { agentDefinitionId?: string } | undefined)
+                ?.agentDefinitionId ?? 'software-engineer',
+            ),
         }),
         ...(linearAccessToken
           ? [
@@ -1345,6 +1400,7 @@ if (import.meta.main) {
     admission: {
       store: admissionStore,
       llm,
+      cursorRuntime,
       listUsers: () => authContext.internalAdapter.listUsers(100),
       banUser: (request, userId) =>
         auth.api.banUser({ body: { userId }, headers: request.headers }),
@@ -1372,7 +1428,10 @@ if (import.meta.main) {
         return signedIn.ok ? signedIn : created
       },
     },
-    agentReady: () => llm.public().configured,
+    agentReady: (agentDefinitionId = 'software-engineer') =>
+      agentDefinitionId === 'software-engineer'
+        ? cursorRuntime.public().configured
+        : llm.public().configured,
   })
   process.stdout.write(`Coordinator listening on ${coordinator.port}\n`)
   const setupToken = admissionStore.ensureSetupToken()
