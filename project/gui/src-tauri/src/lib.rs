@@ -1,9 +1,20 @@
 use tauri::{Manager, Url};
 use tauri_plugin_opener::OpenerExt;
 
-fn should_open_externally(current: &Url, target: &Url) -> bool {
+// Called from a synchronous webview callback on the UI thread, so it must not
+// touch blocking runtime getters like `webview.url()`. Those reenter the event
+// loop, and on Windows that wedges the very first navigation: the window paints
+// white, the title bar reads "not responding", and no page ever loads. Deriving
+// the app's own origin statically avoids the getter entirely.
+fn should_open_externally(target: &Url) -> bool {
   match target.scheme() {
-    "http" | "https" => current.origin() != target.origin(),
+    // Sweat serves itself from `tauri://localhost` on macOS and Linux and from
+    // `http://tauri.localhost` on Windows; in development it is the Vite server
+    // on localhost. Every other web address belongs in the user's browser.
+    "http" | "https" => !matches!(
+      target.host_str(),
+      Some("tauri.localhost" | "localhost" | "127.0.0.1")
+    ),
     "mailto" | "tel" => true,
     _ => false,
   }
@@ -38,19 +49,20 @@ pub fn run() {
     .plugin(
       tauri::plugin::Builder::<_, ()>::new("external-links")
         .on_navigation(|webview, target| {
-          let should_open = webview
-            .url()
-            .is_ok_and(|current| should_open_externally(&current, target));
-          if should_open {
-            if let Err(error) = webview
-              .app_handle()
-              .opener()
-              .open_url(target.as_str(), None::<&str>)
-            {
-              log::error!("failed to open external URL: {error}");
-            }
+          // First statement in the hook, so a hang inside it stays attributable
+          // to this hook rather than to the webview that never loaded.
+          log::info!("navigation to {target}");
+          if !should_open_externally(target) {
+            return true;
           }
-          !should_open
+          if let Err(error) = webview
+            .app_handle()
+            .opener()
+            .open_url(target.as_str(), None::<&str>)
+          {
+            log::error!("failed to open external URL: {error}");
+          }
+          false
         })
         .build(),
     )
@@ -105,22 +117,26 @@ mod tests {
 
   #[test]
   fn only_safe_external_links_leave_the_webview() {
-    let current = Url::parse("tauri://localhost/rooms/1").unwrap();
-
+    // The three origins Sweat serves itself from must stay in the webview; the
+    // Windows one is what the first navigation uses, so getting it wrong here
+    // bounces the whole app out to a browser on launch.
     assert!(!should_open_externally(
-      &current,
       &Url::parse("tauri://localhost/rooms/2").unwrap()
     ));
+    assert!(!should_open_externally(
+      &Url::parse("http://tauri.localhost/rooms/2").unwrap()
+    ));
+    assert!(!should_open_externally(
+      &Url::parse("http://localhost:3000/rooms/2").unwrap()
+    ));
+
     assert!(should_open_externally(
-      &current,
       &Url::parse("https://example.com").unwrap()
     ));
     assert!(should_open_externally(
-      &current,
       &Url::parse("mailto:hello@example.com").unwrap()
     ));
     assert!(!should_open_externally(
-      &current,
       &Url::parse("javascript:alert(1)").unwrap()
     ));
   }
