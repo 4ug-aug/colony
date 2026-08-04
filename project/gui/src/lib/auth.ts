@@ -4,13 +4,20 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin } from 'better-auth/plugins/admin'
 import { username } from 'better-auth/plugins/username'
 import { authSchema, db } from '#/lib/database'
+import { DESKTOP_ORIGINS } from '#/lib/desktop-origins'
 
-const appOrigin = process.env.SWEAT_GUI_ORIGIN ?? 'tauri://localhost'
+const appOrigin = process.env.SWEAT_GUI_ORIGIN ?? DESKTOP_ORIGINS[0]!
+// Every desktop origin is trusted, not just the configured one: a single
+// server serves macOS, Linux, and Windows clients, and each reports a
+// different origin for the same app.
 const trustedOrigins = [
-  appOrigin,
-  ...(new URL(appOrigin).hostname === 'localhost'
-    ? ['http://localhost:*']
-    : []),
+  ...new Set([
+    appOrigin,
+    ...DESKTOP_ORIGINS,
+    ...(new URL(appOrigin).hostname === 'localhost'
+      ? ['http://localhost:*']
+      : []),
+  ]),
 ]
 
 export const auth = betterAuth({

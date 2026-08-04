@@ -21,6 +21,7 @@ import {
   type AdmissionOptions,
 } from './admission-http'
 import { canDeleteRoom } from '#/features/rooms/permissions'
+import { isDesktopOrigin } from '#/lib/desktop-origins'
 import { mentionedAccounts } from './attention'
 import {
   rosterDefinitionSummaries,
@@ -168,7 +169,7 @@ export const allowedOrigin = (
   configured: string,
 ): string | undefined => {
   if (origin === configured) return origin
-  if (origin === 'tauri://localhost') return origin
+  if (isDesktopOrigin(origin)) return origin
   if (
     new URL(configured).hostname === 'localhost' &&
     origin !== null &&

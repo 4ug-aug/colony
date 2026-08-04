@@ -2467,13 +2467,17 @@ test('member removing themselves (leave) is allowed and gets room.removed', asyn
   }
 })
 
-test('allowedOrigin permits tauri://localhost regardless of configured origin', () => {
-  expect(allowedOrigin('tauri://localhost', 'http://localhost:3000')).toBe(
+test('allowedOrigin permits every desktop origin regardless of configured origin', () => {
+  // Windows reports `http://tauri.localhost` where macOS and Linux report
+  // `tauri://localhost`. Missing the Windows one 403s the whole app.
+  for (const origin of [
     'tauri://localhost',
-  )
-  expect(allowedOrigin('tauri://localhost', 'https://app.example.com')).toBe(
-    'tauri://localhost',
-  )
+    'http://tauri.localhost',
+    'https://tauri.localhost',
+  ]) {
+    expect(allowedOrigin(origin, 'http://localhost:3000')).toBe(origin)
+    expect(allowedOrigin(origin, 'https://app.example.com')).toBe(origin)
+  }
 })
 
 test('allowedOrigin rejects disallowed origins', () => {
