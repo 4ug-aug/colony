@@ -21,6 +21,7 @@ import { Toaster } from '#/components/ui/toast'
 import { WindowDragRegion } from '#/features/shell/window-toolbar'
 import { initInviteDeepLinks } from '#/lib/invite-deep-link'
 import { createAppQueryClient } from '#/lib/query-client'
+import { initErrorReporting, logBoot, reportError } from '#/lib/diagnostics'
 
 const rootEl = document.getElementById('root')!
 const root = createRoot(rootEl)
@@ -37,7 +38,8 @@ class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('App render failed', error, info)
+    reportError('app render failed', error)
+    console.error('component stack', info.componentStack)
   }
 
   render() {
@@ -113,9 +115,14 @@ function EntryFlow({ needsServer }: { needsServer: boolean }) {
   )
 }
 
+initErrorReporting()
+logBoot('module-loaded')
+
 initServerConfig()
+  .then(() => logBoot('config-loaded'))
   .then(initInviteDeepLinks)
   .then(() => {
+    logBoot('deep-links-ready')
     const needsServer = isTauriRuntime() && !currentServerBase()
     if (!needsServer) initAuthClient()
     root.render(
@@ -133,8 +140,15 @@ initServerConfig()
         </QueryClientProvider>
       </StrictMode>,
     )
+    logBoot('render-called')
+    // Runs only once the webview has actually had a chance to paint. If the log
+    // stops at `render-called`, the UI thread hung mid-paint (a blocked or
+    // spinning script, e.g. WebGL on a machine without working acceleration)
+    // rather than throwing anything an error handler could catch.
+    requestAnimationFrame(() => logBoot('first-paint'))
   })
   .catch((err: unknown) => {
+    reportError('startup failed', err)
     root.render(
       <StrictMode>
         <WindowDragRegion />

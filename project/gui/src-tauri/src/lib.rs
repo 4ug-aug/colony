@@ -52,13 +52,25 @@ pub fn run() {
     .plugin(tauri_plugin_websocket::init())
     .plugin(tauri_plugin_store::Builder::default().build())
     .setup(|app| {
-      if cfg!(debug_assertions) {
-        app.handle().plugin(
-          tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build(),
-        )?;
-      }
+      // Installed builds have no web inspector, so the log file is the only
+      // channel for diagnosing a report like "blank window". Keep LogDir in
+      // release; it is the file a user can be asked to send back.
+      app.handle().plugin(
+        tauri_plugin_log::Builder::default()
+          .level(log::LevelFilter::Info)
+          .targets([
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+              file_name: None,
+            }),
+          ])
+          .build(),
+      )?;
+      log::info!(
+        "sweat {} starting on {}",
+        app.package_info().version,
+        std::env::consts::OS
+      );
       Ok(())
     })
     .run(tauri::generate_context!())

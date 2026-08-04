@@ -91,6 +91,24 @@ The current builds are not signed. If macOS blocks the first launch,
 Control-click Sweat, choose **Open**, then confirm. If Windows SmartScreen warns
 about an unrecognized publisher, choose **More info**, then **Run anyway**.
 
+### Diagnosing an installed build
+
+Installed builds write a log you can ask a user to send back:
+
+| Platform | Path |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\com.sweat.desktop\logs\Sweat.log` |
+| macOS | `~/Library/Logs/com.sweat.desktop/Sweat.log` |
+
+Startup logs an ordered `boot:` breadcrumb per phase, so the **last line decides
+the diagnosis**. A log that stops at `render-called` without reaching
+`first-paint` means the UI thread hung mid-paint — no error is thrown in that
+case, and the missing breadcrumb is the only evidence. Stopping at
+`module-loaded` means startup never got past reading the stored server URL.
+
+Installers carry no web inspector. Run the **Debug Windows Build** workflow from
+the Actions tab to get an installer with right-click → **Inspect** enabled.
+
 ## Development
 
 ```bash
