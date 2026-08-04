@@ -135,6 +135,7 @@ export interface RunExecutor<Input extends RunInput = never> {
   subscribe(listener: (record: RunRecord<Input>) => void): () => void;
   subscribeSteps(listener: (runId: string, step: Step) => void): () => void;
   cancelRun(id: string): Promise<RunRecord<Input> | undefined>;
+  stop(): Promise<void>;
 }
 
 export interface PreparedInputs {
@@ -199,6 +200,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   const sandboxes = new Map<string, Sandbox>();
   const disposed = new Map<string, Promise<void>>();
   const stepListeners = new Set<(runId: string, step: Step) => void>();
+  let stopping: Promise<void> | undefined;
 
   const publishStep = (runId: string, step: Step): void => {
     for (const listener of stepListeners) listener(runId, step);
@@ -345,8 +347,25 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     finish(record.id, { state: "failed", completedAt: now(), error: failure ?? "Run failed" });
   };
 
+  const cancelRun = async (id: string): Promise<RunRecord<Input> | undefined> => {
+    const record = store.get(id);
+    if (!record || terminal(record.state)) return record;
+    cancellation.add(id);
+    const sandbox = sandboxes.get(id);
+    if (sandbox) {
+      try {
+        await disposeSandbox(id, sandbox);
+      } catch {
+        // execute() records cleanup failure and makes the run failed.
+      }
+    }
+    await active.get(id);
+    return store.get(id);
+  };
+
   return {
     startRun(request) {
+      if (stopping) throw new Error("Run executor is stopping");
       const definitionId = request.agentDefinitionId ?? request.definitionId;
       if (!definitionId) throw new Error("Agent definition ID is required");
       const definition = dependencies.definitions.resolve(definitionId);
@@ -427,20 +446,12 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       return () => stepListeners.delete(listener);
     },
 
-    async cancelRun(id) {
-      const record = store.get(id);
-      if (!record || terminal(record.state)) return record;
-      cancellation.add(id);
-      const sandbox = sandboxes.get(id);
-      if (sandbox) {
-        try {
-          await disposeSandbox(id, sandbox);
-        } catch {
-          // execute() records cleanup failure and makes the run failed.
-        }
-      }
-      await active.get(id);
-      return store.get(id);
+    cancelRun,
+
+    stop() {
+      return stopping ??= (async () => {
+        await Promise.all([...active.keys()].map(cancelRun));
+      })();
     },
   };
 }

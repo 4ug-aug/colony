@@ -90,6 +90,7 @@ function fakeControl() {
       return created
     },
     cancel: async () => undefined,
+    stop: async () => undefined,
   }
   return {
     control,

@@ -47,6 +47,7 @@ function captureExecutor(
     subscribe: () => () => {},
     subscribeSteps: () => () => {},
     cancelRun: async () => undefined,
+    stop: async () => undefined,
   }
 }
 

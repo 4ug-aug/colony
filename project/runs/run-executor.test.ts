@@ -154,6 +154,39 @@ test("cancellation is idempotent and disposes the sandbox once", async () => {
   expect(disposed).toBe(1);
 });
 
+test("stop cancels active runs once and refuses new work", async () => {
+  let disposed = 0;
+  const releases = new Map<string, () => void>();
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => {
+      const id = crypto.randomUUID();
+      return {
+        id,
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => { disposed++; releases.get(id)?.(); },
+      };
+    } },
+    runtime: { run: async (sandbox) => {
+      await new Promise<void>((resolve) => releases.set(sandbox.id, resolve));
+      return { exitCode: 0, stdout: "", stderr: "" };
+    } },
+    createId: (() => { let id = 0; return () => `run-stop-${++id}`; })(),
+  });
+
+  const first = executor.startRun({ agentDefinitionId: "test-agent", task: "first" });
+  const second = executor.startRun({ agentDefinitionId: "test-agent", task: "second" });
+  await waitFor(() => executor.listRuns().every((run) => run.state === "running"));
+
+  await Promise.all([executor.stop(), executor.stop()]);
+
+  expect(executor.getRun(first)?.state).toBe("cancelled");
+  expect(executor.getRun(second)?.state).toBe("cancelled");
+  expect(disposed).toBe(2);
+  expect(() => executor.startRun({ agentDefinitionId: "test-agent", task: "late" }))
+    .toThrow("Run executor is stopping");
+});
+
 test("runtime and cleanup failures become failed runs", async () => {
   const executor = createRunExecutor({
     definitions: createInMemoryAgentDefinitionResolver([definition]),

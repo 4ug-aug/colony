@@ -46,6 +46,7 @@ export interface RunControl {
     context: RunStartContext<Output>,
   ): NonNullable<Output>
   cancel(runId: string): Promise<RunSummary | undefined>
+  stop(): Promise<void>
 }
 
 export function runSummary<Input extends RunInput>(
@@ -95,7 +96,7 @@ export function runSummary<Input extends RunInput>(
 
 type RunControlExecutor = Pick<
   WorkspaceAgentExecutor,
-  'startRun' | 'subscribe' | 'subscribeSteps' | 'cancelRun'
+  'startRun' | 'subscribe' | 'subscribeSteps' | 'cancelRun' | 'stop'
 >
 
 export function createRunControl(executor: RunControlExecutor): RunControl {
@@ -134,5 +135,6 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
       const run = await executor.cancelRun(runId)
       return run ? runSummary(run) : undefined
     },
+    stop: () => executor.stop(),
   }
 }

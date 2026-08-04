@@ -158,6 +158,7 @@ test('admission endpoints close open signup and enforce the administrator bounda
     subscribeSteps: () => () => undefined,
     start: () => '',
     cancel: async () => undefined,
+    stop: async () => undefined,
   } as unknown as RunControl
   const store = createSqliteRoomStore(sqlite)
   const coordinator = createCoordinator({

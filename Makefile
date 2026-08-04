@@ -7,13 +7,16 @@ SWEAT_DATABASE_PATH ?= $(abspath $(GUI)/sweat.sqlite)
 export SWEAT_DATABASE_PATH
 
 .DEFAULT_GOAL := help
-.PHONY: help env dev dev-seeded server migrate setup seed rotate-setup-token reset-admin-password agent gui coordinator test build check reset
+.PHONY: help env dev dev-seeded server service-install service-upgrade service-uninstall migrate setup seed rotate-setup-token reset-admin-password agent gui coordinator test build check reset
 
 help:
 	@echo "Sweat development commands"
 	@echo "  make dev                   Start the full stack with first-user setup"
 	@echo "  make dev-seeded            Start the full stack with reusable local accounts"
 	@echo "  make server                Start the complete backend for a separate client"
+	@echo "  make service-install       Run the server in the background on Linux"
+	@echo "  make service-upgrade       Refresh and restart the Linux background server"
+	@echo "  make service-uninstall     Remove the Linux background server"
 	@echo "  make gui                   Start only the browser client"
 	@echo "  make test                  Run tests"
 	@echo "  make check                 Run typecheck, tests, and production build"
@@ -51,6 +54,18 @@ dev-seeded: seed agent
 
 server: migrate agent
 	@$(MAKE) --no-print-directory coordinator
+
+service-install: env
+	@ENV_FILE="$(ENV_FILE)" bun scripts/service.ts install
+
+service-upgrade: env
+	@bun install --frozen-lockfile
+	@bun install --cwd project --frozen-lockfile
+	@bun install --cwd project/gui --frozen-lockfile
+	@ENV_FILE="$(ENV_FILE)" bun scripts/service.ts install
+
+service-uninstall:
+	@ENV_FILE="$(ENV_FILE)" bun scripts/service.ts uninstall
 
 migrate: env
 	@cd $(GUI) && bun $(BUN_ENV) run db:migrate

@@ -491,8 +491,11 @@ async function configureServer(path: string): Promise<void> {
   await run("make", ["agent"], { env: commandEnv });
   log.step("Running database migrations...");
   await run("make", ["migrate"], { env: commandEnv });
-
-  outro("Server setup complete. Start it with `make server` or `make dev`.");
+  outro(
+    process.platform === "linux"
+      ? "Server setup complete. Run `make service-install` for boot-time background operation, or `make server` for the foreground."
+      : "Server setup complete. Start it with `make server` or `make dev`.",
+  );
 }
 
 async function installMacApplication(): Promise<void> {

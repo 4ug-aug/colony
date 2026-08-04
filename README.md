@@ -44,6 +44,32 @@ and Docker. Install the selected runtime before running the wizard. Start the
 configured server with `make server` or the local full stack with `make dev`.
 Configure the model provider after first sign-in from Workspace Settings.
 
+On a Linux host with systemd, install the configured server as a background
+user process:
+
+```bash
+make service-install
+systemctl --user status sweat
+journalctl --user -u sweat -f
+```
+
+The installer enables user lingering so Sweat starts at boot without an
+interactive login. Use `systemctl --user start|stop|restart sweat` for normal
+operation and `make service-uninstall` to remove it. The unit points at this
+checkout and the Bun executable used during installation; rerun
+`make service-install` after moving either one. `make server` remains the
+foreground diagnostic command.
+
+To upgrade a running source-checkout server, update the checkout explicitly,
+then refresh its dependencies, agent image, unit paths, and process:
+
+```bash
+git pull --ff-only
+make service-upgrade
+```
+
+`make service-upgrade` does not modify Git history.
+
 The agent image is published to GitHub Container Registry for each release and
 must be publicly readable. To build the image from a local checkout instead,
 set `SWEAT_AGENT_IMAGE=sweat-agent:latest` before running `make agent`.

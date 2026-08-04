@@ -1,6 +1,7 @@
 # Server service management research
 
-Status: research only. No service implementation was added.
+Status: the minimal Linux/source-checkout slice is implemented. macOS and
+standalone release installation remain research only.
 
 ## Question
 
@@ -26,12 +27,13 @@ The service manager therefore needs to run the host Bun process as the same user
 
 ## Recommendation
 
-Use the operating system's service manager around the existing host Bun process:
+Use the operating system's service manager around the existing host Bun process.
+The first implemented slice is intentionally narrower than the full option set:
 
-- macOS: install a per-user launchd LaunchAgent.
-- Linux: install a systemd service, preferably a system service running as a dedicated account on a headless server; use a user service when Docker is intentionally user-scoped.
+- Linux source checkout: install a systemd user unit for the checkout owner and enable lingering for boot startup.
+- macOS LaunchAgent and Linux system-unit installation remain possible later deployment adapters.
 - Keep the foreground make server behavior for development and diagnostics.
-- Add an explicit service lifecycle later rather than silently changing the meaning of make server.
+- Expose only explicit install/uninstall commands; use systemctl and journalctl for lifecycle controls and logs.
 
 This preserves the current coordinator and its Apple Container/Docker providers. Do not containerize the coordinator as the first step.
 
@@ -97,23 +99,26 @@ Both can work, but they add another process manager without removing the platfor
 
 ## Constraints any implementation must handle
 
-1. **Separate install/update from service start.** make server currently performs migrations and image preparation before starting the process. The service command should run the coordinator directly; setup/update should handle migrations and image pulls.
+1. **Separate preparation from service start.** Installation prepares the agent image, while the unit runs the coordinator directly. The coordinator retains its idempotent startup migration so every start is safe.
 2. **Use a stable path.** A service must not point at a temporary or versioned release directory that disappears on update. Use a stable current path or regenerate/reload the service definition during an update.
-3. **Use absolute executables.** Service managers do not reproduce an interactive shell's PATH. Resolve Bun and the container CLI paths during installation.
-4. **Preserve persistent data.** SQLite and attachments/ must live outside replaceable release files and must be backed up together.
-5. **Handle runtime readiness.** A process manager can report Bun as running before the HTTP listener or container backend is usable. Status should include an HTTP readiness probe and a container-runtime check.
-6. **Handle shutdown deliberately.** The coordinator exposes a stop() method that closes subscriptions, schedules, and the Bun server, but the entrypoint does not install signal handlers. A service integration should either add signal handling or verify Bun's termination behavior so SIGTERM does not leave active work or sockets ambiguous.
-7. **Avoid duplicate instances.** The installer must detect an already-running foreground coordinator before binding port 3001 and make service ownership visible with status and logs.
+3. **Use a stable execution environment.** Service managers do not reproduce an interactive shell's PATH. The installed unit records the absolute Bun path and the installation-time PATH used to discover Docker and optional host CLIs.
+4. **Preserve persistent data.** The source checkout is the stable location for this slice. SQLite and attachments/ must be backed up together before replacing or moving it.
+5. **Handle runtime readiness.** Native status currently reports process state. HTTP and container-runtime readiness remain deferred diagnostics.
+6. **Handle shutdown deliberately.** Signal handling stops the Bun server and cancels active runs, allowing their sandboxes, workspaces, and capability sessions to be disposed before exit.
+7. **Avoid duplicate instances.** Port binding rejects a foreground coordinator already using the configured port; systemctl status and journal logs expose that failure without custom detection logic.
 8. **Treat Docker access as privileged.** Membership in the Docker socket's access group is powerful host access. The service account and provider choice need to be documented as part of setup.
 
-## Suggested implementation sequence
+## Implemented minimal slice
 
-1. Add a small service abstraction only at the Make/setup boundary: install, start, stop, restart, status, logs, and uninstall.
-2. Generate a LaunchAgent on macOS and a systemd unit on Linux from the same discovered installation paths.
-3. Keep make server as the foreground command and make the new service command explicit.
-4. Move image pulling and one-time migration into install/update, then make service restart operate only on the coordinator.
-5. Add a cross-platform readiness/status check and test generated service definitions without requiring a real boot cycle in CI.
+1. make service-install prepares the image and installs an enabled systemd user unit with absolute checkout, Bun, environment, database, and PATH values.
+2. loginctl lingering starts the user's manager at boot; the unit restarts the coordinator after failures and sends logs to the journal.
+3. After an explicit git pull, make service-upgrade installs locked dependencies, prepares the agent image, regenerates the unit, and restarts the coordinator.
+4. make service-uninstall removes only the unit. It deliberately leaves lingering unchanged because other user processes may rely on it.
+5. SIGTERM and SIGINT stop new server work and cancel active runs so their sandboxes are disposed before exit.
+6. make server remains the foreground command. systemctl and journalctl remain the operational interface rather than being wrapped by shallow Make targets.
+
+Deferred work includes macOS, standalone release installation, a system-wide Linux account, readiness probing, and automatic checkout updates.
 
 ## Conclusion
 
-Implement native host supervision first: macOS LaunchAgent plus Linux systemd. This gives real lifecycle controls while preserving the current Bun-hosted coordinator and its existing sandbox providers. Consider Docker Compose later only if production is intentionally narrowed to Docker and the coordinator becomes a published image.
+The minimal supported background deployment is now a Linux systemd user unit running the Bun coordinator from a stable source checkout. Add another native adapter only when a second deployment platform is required. Consider Docker Compose only if production is intentionally narrowed to Docker and the coordinator becomes a published image.

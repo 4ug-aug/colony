@@ -1224,16 +1224,18 @@ export function createCoordinator(options: {
       },
     },
   })
+  let stopping: Promise<void> | undefined
   return {
     port: server.port,
-    stop: () => {
-      unsubscribe()
-      unsubscribeMessages()
-      unsubscribeSteps()
-      if (scheduleInterval) clearInterval(scheduleInterval)
-      scheduleRunner?.stop()
-      server.stop(true)
-    },
+    stop: () =>
+      (stopping ??= (async () => {
+        unsubscribe()
+        unsubscribeMessages()
+        unsubscribeSteps()
+        if (scheduleInterval) clearInterval(scheduleInterval)
+        scheduleRunner?.stop()
+        await Promise.all([server.stop(true), options.control.stop()])
+      })()),
   }
 }
 
@@ -1425,4 +1427,21 @@ if (import.meta.main) {
   process.stdout.write(`Coordinator listening on ${coordinator.port}\n`)
   const setupToken = admissionStore.ensureSetupToken()
   if (setupToken) process.stdout.write(`Sweat setup token: ${setupToken}\n`)
+  let stopping = false
+  const stop = async () => {
+    if (stopping) return
+    stopping = true
+    process.off('SIGINT', stop)
+    process.off('SIGTERM', stop)
+    try {
+      await coordinator.stop()
+      sqlite.close()
+      process.exit(0)
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error)
+      process.exit(1)
+    }
+  }
+  process.once('SIGINT', stop)
+  process.once('SIGTERM', stop)
 }

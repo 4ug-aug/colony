@@ -47,6 +47,7 @@ class FakeRunControl implements RunControl {
     agentDefinitionId?: string
     attachments?: readonly AttachmentInput[]
   }> = []
+  stops = 0
   listRuns() {
     return this.runs
   }
@@ -103,6 +104,9 @@ class FakeRunControl implements RunControl {
     this.runs = this.runs.map((item) => (item.id === id ? changed : item))
     this.publish(changed)
     return changed
+  }
+  async stop() {
+    this.stops++
   }
   emitStep(runId: string, step: Step) {
     for (const listener of this.stepListeners) listener(runId, step)
@@ -574,8 +578,10 @@ test('two clients receive durable room messages and agent runs', async () => {
     a.socket.close()
     b.socket.close()
   } finally {
-    coordinator.stop()
+    await coordinator.stop()
   }
+  await coordinator.stop()
+  expect(control.stops).toBe(1)
 })
 
 test('agentReady gates software-engineer on Cursor and antboy on LLM', async () => {
