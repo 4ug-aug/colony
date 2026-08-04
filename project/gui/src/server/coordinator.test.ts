@@ -300,6 +300,68 @@ class MemoryRoomStore implements RoomStore {
         : {}),
     }
   }
+  listRoomHistoryAround(
+    roomId: string,
+    options: { messageId: string; limit: number },
+  ) {
+    const messages = this.listMessages(roomId).sort(
+      (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+    )
+    const index = messages.findIndex((message) => message.id === options.messageId)
+    if (index < 0) throw new Error('Message not found')
+    const limit = Math.max(1, Math.min(100, Math.floor(options.limit)))
+    let start = Math.max(0, index - Math.floor((limit - 1) / 2))
+    let end = Math.min(messages.length, start + limit)
+    start = Math.max(0, end - limit)
+    const page = messages.slice(start, end)
+    const ids = new Set(page.map(({ id }) => id))
+    const runs = this.listRuns(roomId).filter(
+      (run) =>
+        ids.has(run.triggerMessageId) ||
+        ['preparing', 'running'].includes(run.state),
+    )
+    const oldest = page[0]
+    return {
+      messages: page,
+      runs: runs.sort(
+        (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+      ),
+      ...(start > 0 && oldest
+        ? {
+            nextCursor: Buffer.from(
+              JSON.stringify({
+                createdAt: oldest.createdAt,
+                id: oldest.id,
+              }),
+            ).toString('base64url'),
+          }
+        : {}),
+    }
+  }
+  searchMessages(input: { userId: string; query: string; limit?: number }) {
+    const query = input.query.trim().toLowerCase()
+    if (query.length < 2) return []
+    const limit = Math.max(1, Math.min(50, Math.floor(input.limit ?? 20)))
+    const accessible = new Set(
+      this.listRoomsForUser(input.userId).map((room) => room.id),
+    )
+    return this.messages
+      .filter(
+        (message) =>
+          accessible.has(message.roomId) &&
+          message.text.toLowerCase().includes(query),
+      )
+      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+      .slice(0, limit)
+      .map((message) => ({
+        messageId: message.id,
+        roomId: message.roomId,
+        roomName: this.getRoom(message.roomId)?.name ?? message.roomId,
+        author: message.author,
+        text: message.text,
+        createdAt: message.createdAt,
+      }))
+  }
   listRuns(roomId: string) {
     return this.runs.filter((run) => run.roomId === roomId)
   }
@@ -709,6 +771,85 @@ test('room history is paginated over HTTP and in the realtime snapshot', async (
     expect(snapshot.messages).toHaveLength(50)
     expect(snapshot.nextCursor).toEqual(expect.any(String))
     socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('message search and around-history are available over HTTP', async () => {
+  const store = new MemoryRoomStore()
+  store.createRoom({
+    id: 'private-1',
+    name: 'Private',
+    visibility: 'private',
+    createdBy: 'user-1',
+  })
+  store.createMessage({
+    id: 'msg-public',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Deploy the rocket',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'msg-private',
+    roomId: 'private-1',
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Secret rocket',
+    createdAt: 2,
+  })
+  for (const [id, createdAt] of [
+    ['msg-a', 10],
+    ['msg-b', 11],
+    ['msg-c', 12],
+  ] as const)
+    store.createMessage({
+      id,
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'user', id: 'user-1', name: 'Ada' },
+      text: id,
+      createdAt,
+    })
+
+  const coordinator = createCoordinator({
+    control: new FakeRunControl(),
+    store,
+    messages: createRoomMessageHub(store),
+    authenticator: {
+      authenticate: async () => ({
+        id: 'user-2',
+        name: 'Bob',
+        role: 'member',
+      }),
+    },
+    authHandler: async () => new Response('ok'),
+    origin: 'http://gui.test',
+    port: await port(),
+  })
+  const base = `http://localhost:${coordinator.port}`
+  try {
+    const search = await fetch(`${base}/api/search/messages?q=rocket`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(search.status).toBe(200)
+    const body = (await search.json()) as {
+      hits: { messageId: string; roomName: string }[]
+    }
+    expect(body.hits.map((hit) => hit.messageId)).toEqual(['msg-public'])
+
+    const around = await fetch(
+      `${base}/api/rooms/general/messages?around=msg-b`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    expect(around.status).toBe(200)
+    const page = (await around.json()) as { messages: RoomMessage[] }
+    expect(page.messages.some((message) => message.id === 'msg-b')).toBe(true)
+
+    const missing = await fetch(
+      `${base}/api/rooms/general/messages?around=missing`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    expect(missing.status).toBe(404)
   } finally {
     coordinator.stop()
   }

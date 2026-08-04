@@ -7,6 +7,8 @@ import {
 } from './run-control'
 import {
   createSqliteRoomStore,
+  MESSAGE_SEARCH_DEFAULT_LIMIT,
+  MESSAGE_SEARCH_MAX_LIMIT,
   type RoomMessage,
   type RoomMessageMarker,
   type RoomRun,
@@ -838,6 +840,29 @@ export function createCoordinator(options: {
       }
       if (url.pathname === '/api/rooms' && request.method === 'GET')
         return cors(json({ rooms: roomsFor(user.id) }))
+      if (url.pathname === '/api/search/messages' && request.method === 'GET') {
+        const query = url.searchParams.get('q') ?? ''
+        const limitParam = url.searchParams.get('limit')
+        const parsedLimit =
+          limitParam != null && limitParam !== ''
+            ? Number.parseInt(limitParam, 10)
+            : MESSAGE_SEARCH_DEFAULT_LIMIT
+        const limit = Number.isFinite(parsedLimit)
+          ? Math.max(
+              1,
+              Math.min(MESSAGE_SEARCH_MAX_LIMIT, Math.floor(parsedLimit)),
+            )
+          : MESSAGE_SEARCH_DEFAULT_LIMIT
+        return cors(
+          json({
+            hits: options.store.searchMessages({
+              userId: user.id,
+              query,
+              limit,
+            }),
+          }),
+        )
+      }
       if (url.pathname === '/api/rooms' && request.method === 'POST') {
         const body = await roomBodyFrom(request)
         if (!body) return cors(json({ error: 'Invalid room name' }, 400))
@@ -897,24 +922,29 @@ export function createCoordinator(options: {
         const roomId = messages[1]!
         if (!options.store.canAccessRoom(roomId, user.id))
           return cors(json({ error: 'Room not found' }, 404))
+        const around = url.searchParams.get('around') ?? undefined
+        const cursor = url.searchParams.get('cursor') ?? undefined
+        if (around != null && cursor != null)
+          return cors(
+            json({ error: 'Use either around or cursor, not both' }, 400),
+          )
         try {
-          const page = options.store.listRoomHistoryPage(roomId, {
-            limit: roomHistoryPageSize,
-            cursor: url.searchParams.get('cursor') ?? undefined,
-          })
+          const page =
+            around != null
+              ? options.store.listRoomHistoryAround(roomId, {
+                  messageId: around,
+                  limit: roomHistoryPageSize,
+                })
+              : options.store.listRoomHistoryPage(roomId, {
+                  limit: roomHistoryPageSize,
+                  cursor,
+                })
           return cors(json(page))
         } catch (error) {
-          return cors(
-            json(
-              {
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : 'Invalid room history cursor',
-              },
-              400,
-            ),
-          )
+          const message =
+            error instanceof Error ? error.message : 'Invalid room history'
+          const status = message === 'Message not found' ? 404 : 400
+          return cors(json({ error: message }, status))
         }
       }
       const messageEdit = url.pathname.match(

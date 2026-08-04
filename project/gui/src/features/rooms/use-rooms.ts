@@ -95,7 +95,10 @@ export function useRooms(userId: string) {
   const [runs, setRuns] = useState<RoomRun[]>([])
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)
   const [loadingOlder, setLoadingOlder] = useState(false)
+  const [focusMessageId, setFocusMessageId] = useState<string>()
   const runsRef = useRef<RoomRun[]>([])
+  const messagesRef = useRef<RoomMessage[]>([])
+  const pendingFocusRef = useRef<string | undefined>(undefined)
   const [latestStepByRun, setLatestStepByRun] = useState<Map<string, Step>>(
     new Map(),
   )
@@ -123,6 +126,48 @@ export function useRooms(userId: string) {
   const drafts = useRef<Record<string, string>>({})
   const seenRoomMessagesRef = useRef(readSeenRoomMessages())
   const [seenVersion, setSeenVersion] = useState(0)
+
+  messagesRef.current = messages
+
+  const applyHistoryPage = useCallback((page: RoomHistoryPage) => {
+    setMessages(page.messages)
+    messagesRef.current = page.messages
+    runsRef.current = mergeRuns([], page.runs)
+    setRuns(runsRef.current)
+    nextCursorRef.current = page.nextCursor
+    setNextCursor(page.nextCursor)
+  }, [])
+
+  const loadAroundFocus = useCallback(
+    async (roomId: string, messageId: string) => {
+      try {
+        const response = await apiFetch(
+          `/api/rooms/${roomId}/messages?around=${encodeURIComponent(messageId)}`,
+        )
+        const page = (await response.json()) as RoomHistoryPage & {
+          error?: string
+        }
+        if (!response.ok) throw new Error(page.error ?? 'Unable to load message')
+        if (selectedRoomRef.current !== roomId) return
+        if (pendingFocusRef.current !== messageId) return
+        applyHistoryPage(page)
+        historyReadyRef.current = true
+        setFocusMessageId(messageId)
+        pendingFocusRef.current = undefined
+        setLoading(false)
+        setError(undefined)
+      } catch (reason) {
+        if (selectedRoomRef.current === roomId) {
+          setError(
+            reason instanceof Error ? reason.message : 'Unable to load message',
+          )
+          setLoading(false)
+        }
+        pendingFocusRef.current = undefined
+      }
+    },
+    [applyHistoryPage],
+  )
 
   const markRoomSeen = useCallback(
     (
@@ -346,16 +391,30 @@ export function useRooms(userId: string) {
               ),
             )
             if (!historyReadyRef.current) {
-              setMessages(mergeMessages([], event.messages))
-              runsRef.current = mergeRuns([], event.runs)
-              setRuns(runsRef.current)
-              nextCursorRef.current = event.nextCursor
-              setNextCursor(event.nextCursor)
-              historyReadyRef.current = true
+              const focusId = pendingFocusRef.current
+              if (
+                focusId &&
+                !event.messages.some((message) => message.id === focusId)
+              ) {
+                void loadAroundFocus(selectedRoomId, focusId)
+              } else {
+                setMessages(mergeMessages([], event.messages))
+                runsRef.current = mergeRuns([], event.runs)
+                setRuns(runsRef.current)
+                nextCursorRef.current = event.nextCursor
+                setNextCursor(event.nextCursor)
+                historyReadyRef.current = true
+                if (focusId) {
+                  setFocusMessageId(focusId)
+                  pendingFocusRef.current = undefined
+                }
+                setLoading(false)
+              }
             } else {
               setMessages((current) => mergeMessages(current, event.messages))
               runsRef.current = mergeRuns(runsRef.current, event.runs)
               setRuns(runsRef.current)
+              setLoading(false)
             }
             setLatestStepByRun(
               new Map(event.latestSteps.map((s) => [s.runId, s])),
@@ -363,7 +422,6 @@ export function useRooms(userId: string) {
             setLiveStepsByRun(
               new Map(event.latestSteps.map((step) => [step.runId, [step]])),
             )
-            setLoading(false)
             if (
               event.room.latestOtherMessage &&
               document.visibilityState === 'visible'
@@ -444,7 +502,7 @@ export function useRooms(userId: string) {
       if (retry) clearTimeout(retry)
       roomSocket.current?.close()
     }
-  }, [acknowledge, markRoomSeen, recordMessageActivity, selectedRoomId])
+  }, [acknowledge, loadAroundFocus, markRoomSeen, recordMessageActivity, selectedRoomId])
 
   const notificationByRoom = useMemo<Record<string, RoomNotification>>(
     () =>
@@ -557,6 +615,8 @@ export function useRooms(userId: string) {
     notificationByRoom,
     select: (roomId: string) => {
       if (roomId === selectedRoomId) return
+      pendingFocusRef.current = undefined
+      setFocusMessageId(undefined)
       setSelectedRoomId(roomId)
       localStorage.setItem(selectedRoomKey, roomId)
       historyReadyRef.current = false
@@ -572,6 +632,35 @@ export function useRooms(userId: string) {
       setLoading(true)
       setConnection('connecting')
     },
+    openMessage: (roomId: string, messageId: string) => {
+      pendingFocusRef.current = messageId
+      if (roomId === selectedRoomRef.current) {
+        if (messagesRef.current.some((message) => message.id === messageId)) {
+          setFocusMessageId(messageId)
+          pendingFocusRef.current = undefined
+          return
+        }
+        void loadAroundFocus(roomId, messageId)
+        return
+      }
+      setFocusMessageId(undefined)
+      setSelectedRoomId(roomId)
+      localStorage.setItem(selectedRoomKey, roomId)
+      historyReadyRef.current = false
+      nextCursorRef.current = undefined
+      loadingOlderRef.current = false
+      setMessages([])
+      setRuns([])
+      setNextCursor(undefined)
+      setLoadingOlder(false)
+      setLatestStepByRun(new Map())
+      setLiveStepsByRun(new Map())
+      setMentionableAccounts([])
+      setLoading(true)
+      setConnection('connecting')
+    },
+    focusMessageId,
+    clearFocusMessage: () => setFocusMessageId(undefined),
     draft: selectedRoomId ? (drafts.current[selectedRoomId] ?? '') : '',
     setDraft: (text: string) => {
       if (selectedRoomId) drafts.current[selectedRoomId] = text

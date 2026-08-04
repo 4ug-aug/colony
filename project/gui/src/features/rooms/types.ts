@@ -68,6 +68,14 @@ export type RoomHistoryPage = {
   runs: RoomRun[]
   nextCursor?: string
 }
+export type MessageSearchHit = {
+  messageId: string
+  roomId: string
+  roomName: string
+  author: Author
+  text: string
+  createdAt: number
+}
 export type RoomStreamMessage =
   | {
       type: 'room.snapshot'

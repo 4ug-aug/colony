@@ -7,6 +7,24 @@ import {
   type StoredStep,
 } from './room-store'
 
+const FTS_DDL = `
+  CREATE VIRTUAL TABLE room_message_fts USING fts5(
+    text,
+    content='room_message',
+    content_rowid='rowid'
+  );
+  CREATE TRIGGER room_message_ai AFTER INSERT ON room_message BEGIN
+    INSERT INTO room_message_fts(rowid, text) VALUES (new.rowid, new.text);
+  END;
+  CREATE TRIGGER room_message_ad AFTER DELETE ON room_message BEGIN
+    INSERT INTO room_message_fts(room_message_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+  END;
+  CREATE TRIGGER room_message_au AFTER UPDATE OF text ON room_message BEGIN
+    INSERT INTO room_message_fts(room_message_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+    INSERT INTO room_message_fts(rowid, text) VALUES (new.rowid, new.text);
+  END;
+`
+
 const SCHEMA_DDL = `
   CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
   INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
@@ -19,6 +37,7 @@ const SCHEMA_DDL = `
   CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, room_id TEXT NOT NULL, idx INTEGER NOT NULL, kind TEXT NOT NULL, tool TEXT, call_id TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL);
   CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE cascade, kind TEXT NOT NULL, source_id TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
+  ${FTS_DDL}
 `
 
 function makeRun(overrides: Partial<RoomRun> = {}): RoomRun {
@@ -835,5 +854,141 @@ test('room store updates message text and editedAt in place', () => {
       editedAt: 43,
     }),
   ).toBeUndefined()
+  sqlite.close()
+})
+
+test('searchMessages matches across accessible rooms only', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createRoom({
+    id: 'private-1',
+    name: 'Private',
+    visibility: 'private',
+    createdBy: 'user-1',
+  })
+  store.createMessage({
+    id: 'msg-public',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Deploy the rocket boosters',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'msg-private',
+    roomId: 'private-1',
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Secret rocket plans',
+    createdAt: 2,
+  })
+  store.createMessage({
+    id: 'msg-other',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Unrelated lunch plans',
+    createdAt: 3,
+  })
+
+  const forUser2 = store.searchMessages({ userId: 'user-2', query: 'rocket' })
+  expect(forUser2.map((hit) => hit.messageId)).toEqual(['msg-public'])
+  expect(forUser2[0]).toMatchObject({
+    roomId: GENERAL_ROOM_ID,
+    roomName: 'General',
+    text: 'Deploy the rocket boosters',
+  })
+
+  const forUser1 = store.searchMessages({ userId: 'user-1', query: 'rocket' })
+  expect(forUser1.map((hit) => hit.messageId)).toEqual([
+    'msg-private',
+    'msg-public',
+  ])
+
+  expect(store.searchMessages({ userId: 'user-1', query: 'r' })).toEqual([])
+  expect(store.searchMessages({ userId: 'user-1', query: '   ' })).toEqual([])
+  expect(
+    store.searchMessages({ userId: 'user-1', query: 'rocket " OR' }).length,
+  ).toBeGreaterThanOrEqual(0)
+
+  sqlite.close()
+})
+
+test('searchMessages stays in sync after edit and delete', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'msg-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Original alpha text',
+    createdAt: 1,
+  })
+  expect(
+    store.searchMessages({ userId: 'user-1', query: 'alpha' }).map((h) => h.messageId),
+  ).toEqual(['msg-1'])
+
+  store.updateMessageText({
+    id: 'msg-1',
+    roomId: GENERAL_ROOM_ID,
+    text: 'Updated beta text',
+    editedAt: 2,
+  })
+  expect(store.searchMessages({ userId: 'user-1', query: 'alpha' })).toEqual([])
+  expect(
+    store.searchMessages({ userId: 'user-1', query: 'beta' }).map((h) => h.messageId),
+  ).toEqual(['msg-1'])
+
+  store.deleteRoom(GENERAL_ROOM_ID)
+  expect(store.searchMessages({ userId: 'user-1', query: 'beta' })).toEqual([])
+  sqlite.close()
+})
+
+test('listRoomHistoryAround returns a window centered on the target', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  for (const [id, createdAt] of [
+    ['msg-1', 1],
+    ['msg-2', 2],
+    ['msg-3', 3],
+    ['msg-4', 4],
+    ['msg-5', 5],
+  ] as const)
+    store.createMessage({
+      id,
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'user', id: 'user-1', name: 'Ada' },
+      text: id,
+      createdAt,
+    })
+
+  const page = store.listRoomHistoryAround(GENERAL_ROOM_ID, {
+    messageId: 'msg-3',
+    limit: 3,
+  })
+  expect(page.messages.map((message) => message.id)).toEqual([
+    'msg-2',
+    'msg-3',
+    'msg-4',
+  ])
+  expect(page.nextCursor).toBeDefined()
+
+  const oldest = store.listRoomHistoryAround(GENERAL_ROOM_ID, {
+    messageId: 'msg-1',
+    limit: 3,
+  })
+  expect(oldest.messages.map((message) => message.id)).toEqual([
+    'msg-1',
+    'msg-2',
+    'msg-3',
+  ])
+  expect(oldest.nextCursor).toBeUndefined()
+
+  expect(() =>
+    store.listRoomHistoryAround(GENERAL_ROOM_ID, {
+      messageId: 'missing',
+      limit: 3,
+    }),
+  ).toThrow('Message not found')
   sqlite.close()
 })

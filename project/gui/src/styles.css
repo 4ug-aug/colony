@@ -317,6 +317,20 @@ pre code {
   }
 }
 
+@keyframes message-search-hit {
+  0% {
+    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.message-search-hit {
+  border-radius: 0.5rem;
+  animation: message-search-hit 1.6s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .entry-form,
   .entry-form--exiting,

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type AnimationEvent } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { Download, X } from 'lucide-react'
 import { Avatar, timestamp } from '#/components/avatar'
@@ -133,6 +133,8 @@ export function Timeline({
   mentionHandles,
   currentUserId,
   onEdit,
+  focusMessageId,
+  onFocusHandled,
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
@@ -140,6 +142,8 @@ export function Timeline({
   mentionHandles: string[]
   currentUserId?: string
   onEdit?: (message: RoomMessage) => void
+  focusMessageId?: string
+  onFocusHandled?: () => void
 }) {
   const items = useMemo(() => {
     const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
@@ -202,8 +206,25 @@ export function Timeline({
           item.message.author.id === currentUserId
         return (
           <article
-            className={`group flex gap-3 ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}`}
+            className={`group flex gap-3 ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}${
+              !isResult && focusMessageId === item.message.id
+                ? ' message-search-hit'
+                : ''
+            }`}
             key={item.id}
+            {...(!isResult
+              ? {
+                  'data-message-id': item.message.id,
+                  onAnimationEnd:
+                    focusMessageId === item.message.id
+                      ? (event: AnimationEvent<HTMLElement>) => {
+                          if (event.animationName !== 'message-search-hit')
+                            return
+                          onFocusHandled?.()
+                        }
+                      : undefined,
+                }
+              : {})}
           >
             {item.grouped ? (
               <div className="w-9 shrink-0" aria-hidden="true" />

@@ -57,6 +57,31 @@ export type RoomHistoryPage = {
   runs: RoomRun[]
   nextCursor?: string
 }
+export type MessageSearchHit = {
+  messageId: string
+  roomId: string
+  roomName: string
+  author: MessageAuthor
+  text: string
+  createdAt: number
+}
+
+export const MESSAGE_SEARCH_MIN_QUERY_LENGTH = 2
+export const MESSAGE_SEARCH_DEFAULT_LIMIT = 20
+export const MESSAGE_SEARCH_MAX_LIMIT = 50
+
+/** Build a safe FTS5 MATCH expression from user input (quoted tokens + prefix). */
+export function buildFtsMatchQuery(raw: string): string | undefined {
+  const trimmed = raw.trim()
+  if (trimmed.length < MESSAGE_SEARCH_MIN_QUERY_LENGTH) return undefined
+  const tokens = trimmed.split(/\s+/).flatMap((token) => {
+    const safe = token.replace(/["*^:]/g, ' ').trim()
+    if (!safe) return []
+    return [`"${safe.replace(/"/g, '""')}"*`]
+  })
+  if (!tokens.length) return undefined
+  return tokens.join(' AND ')
+}
 export type AttentionKind = 'mention' | 'run_terminal'
 export type RoomAttention = {
   id: string
@@ -116,6 +141,15 @@ export interface RoomStore {
     roomId: string,
     options: { limit: number; cursor?: string },
   ): RoomHistoryPage
+  listRoomHistoryAround(
+    roomId: string,
+    options: { messageId: string; limit: number },
+  ): RoomHistoryPage
+  searchMessages(input: {
+    userId: string
+    query: string
+    limit?: number
+  }): MessageSearchHit[]
   listRuns(roomId: string): RoomRun[]
   createMessage(
     message: RoomMessageInput,
@@ -323,6 +357,13 @@ const decodeMessageCursor = (value: string): MessageCursor => {
 }
 
 export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
+  const hasFts = Boolean(
+    sqlite
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'room_message_fts'",
+      )
+      .get(),
+  )
   const hasAttachments = Boolean(
     sqlite
       .prepare(
@@ -489,6 +530,121 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         : {}),
     }
   }
+  const historyPageFromRows = (
+    roomId: string,
+    pageRows: MessageRow[],
+    hasOlder: boolean,
+  ): RoomHistoryPage => {
+    const messages = hydrateMessages(roomId, pageRows)
+    const messageIds = pageRows.map(({ id }) => id)
+    const runWhere = messageIds.length
+      ? `WHERE room_id = ? AND (trigger_message_id IN (${messageIds.map(() => '?').join(', ')}) OR state IN ('preparing', 'running'))`
+      : "WHERE room_id = ? AND state IN ('preparing', 'running')"
+    const runs = selectRuns(runWhere, roomId, ...messageIds)
+    const oldest = pageRows[0]
+    return {
+      messages,
+      runs,
+      ...(hasOlder && oldest
+        ? {
+            nextCursor: encodeMessageCursor({
+              createdAt: oldest.created_at,
+              id: oldest.id,
+            }),
+          }
+        : {}),
+    }
+  }
+  const listRoomHistoryAround = (
+    roomId: string,
+    options: { messageId: string; limit: number },
+  ): RoomHistoryPage => {
+    const limit = Math.max(1, Math.min(100, Math.floor(options.limit)))
+    const target = sqlite
+      .prepare(`${messageSelect} WHERE m.room_id = ? AND m.id = ?`)
+      .get(roomId, options.messageId) as MessageRow | undefined
+    if (!target) throw new Error('Message not found')
+    const olderDesc = sqlite
+      .prepare(
+        `${messageSelect}
+           WHERE m.room_id = ? AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))
+           ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
+      )
+      .all(
+        roomId,
+        target.created_at,
+        target.created_at,
+        target.id,
+        limit,
+      ) as MessageRow[]
+    const newerAsc = sqlite
+      .prepare(
+        `${messageSelect}
+           WHERE m.room_id = ? AND (m.created_at > ? OR (m.created_at = ? AND m.id > ?))
+           ORDER BY m.created_at ASC, m.id ASC LIMIT ?`,
+      )
+      .all(
+        roomId,
+        target.created_at,
+        target.created_at,
+        target.id,
+        limit,
+      ) as MessageRow[]
+    let takeOlder = Math.min(Math.floor((limit - 1) / 2), olderDesc.length)
+    let takeNewer = Math.min(limit - 1 - takeOlder, newerAsc.length)
+    takeOlder = Math.min(limit - 1 - takeNewer, olderDesc.length)
+    const hasOlder = olderDesc.length > takeOlder
+    const older = olderDesc.slice(0, takeOlder).reverse()
+    const newer = newerAsc.slice(0, takeNewer)
+    return historyPageFromRows(roomId, [...older, target, ...newer], hasOlder)
+  }
+  const searchMessages = (input: {
+    userId: string
+    query: string
+    limit?: number
+  }): MessageSearchHit[] => {
+    if (!hasFts) return []
+    const match = buildFtsMatchQuery(input.query)
+    if (!match) return []
+    const limit = Math.max(
+      1,
+      Math.min(
+        MESSAGE_SEARCH_MAX_LIMIT,
+        Math.floor(input.limit ?? MESSAGE_SEARCH_DEFAULT_LIMIT),
+      ),
+    )
+    type SearchRow = MessageRow & { room_name: string }
+    let rows: SearchRow[]
+    try {
+      rows = sqlite
+        .prepare(
+          `SELECT m.id, m.room_id, r.name AS room_name, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${editedAtSelect}${messageProfile}
+           FROM room_message_fts
+           JOIN room_message m ON m.rowid = room_message_fts.rowid
+           JOIN room r ON r.id = m.room_id
+           LEFT JOIN room_member rm ON rm.room_id = r.id AND rm.user_id = ?
+           ${messageProfileJoin}
+           WHERE room_message_fts MATCH ?
+             AND (r.visibility = 'public' OR rm.user_id IS NOT NULL)
+           ORDER BY m.created_at DESC, m.id DESC
+           LIMIT ?`,
+        )
+        .all(input.userId, match, limit) as SearchRow[]
+    } catch {
+      return []
+    }
+    return rows.map((row) => {
+      const message = messageFrom(row)
+      return {
+        messageId: message.id,
+        roomId: message.roomId,
+        roomName: row.room_name,
+        author: message.author,
+        text: message.text,
+        createdAt: message.createdAt,
+      }
+    })
+  }
   return {
     listRooms: () =>
       (
@@ -643,6 +799,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     getMessage,
     latestMessageFromOther,
     listRoomHistoryPage,
+    listRoomHistoryAround,
+    searchMessages,
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
     createMessage: (message, attachments = []) => {
       const run = () => {
@@ -694,7 +852,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           'UPDATE room_message SET text = ?, edited_at = ? WHERE id = ? AND room_id = ?',
         )
         .run(text, editedAt, id, roomId) as { changes?: number }
-      if ((result.changes ?? 0) !== 1) return undefined
+      // FTS sync triggers can inflate sqlite changes beyond 1.
+      if ((result.changes ?? 0) < 1) return undefined
       return getMessage(roomId, id)
     },
     createAttention: (attention) =>

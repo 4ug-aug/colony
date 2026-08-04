@@ -5,6 +5,7 @@ import { AccountSettingsPage } from '#/features/account/account-settings'
 import { MembersPanel } from '#/features/members/members-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
+import { MessageSearchCommand } from '#/features/rooms/message-search-command'
 import { Timeline } from '#/features/rooms/room-timeline'
 import type { Author, RoomMessage } from '#/features/rooms/types'
 import { useRooms } from '#/features/rooms/use-rooms'
@@ -50,6 +51,9 @@ export function Dashboard({
     error,
     createError,
     select,
+    openMessage,
+    focusMessageId,
+    clearFocusMessage,
     create,
     remove,
     send,
@@ -66,6 +70,7 @@ export function Dashboard({
   } = useRooms(user.id)
   const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
   const [view, setView] = useState<DashboardView>('room')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [selectedRunId, setSelectedRunId] = useState<string>()
   const [editingMessage, setEditingMessage] = useState<RoomMessage>()
   const composer = useRef<MessageComposerHandle>(null)
@@ -138,6 +143,17 @@ export function Dashboard({
     setEditingMessage(undefined)
   }, [room?.id])
 
+  useLayoutEffect(() => {
+    if (!focusMessageId || loading) return
+    followRoomRef.current = false
+    atBottomRef.current = false
+    setAtBottom(false)
+    const el = scrollRef.current?.querySelector(
+      `[data-message-id="${CSS.escape(focusMessageId)}"]`,
+    )
+    el?.scrollIntoView({ block: 'center', behavior: 'instant' })
+  }, [focusMessageId, loading, messages])
+
   const selectedRun = runs.find(({ id }) => id === selectedRunId)
   const triggerMessage = selectedRun
     ? messages.find(({ id }) => id === selectedRun.triggerMessageId)
@@ -150,6 +166,14 @@ export function Dashboard({
       style={titleBarVars()}
     >
       <WindowToolbar />
+      <MessageSearchCommand
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onSelectHit={(hit) => {
+          setView('room')
+          openMessage(hit.roomId, hit.messageId)
+        }}
+      />
       <RoomSidebar
         rooms={rooms}
         selectedRoomId={room?.id}
@@ -290,6 +314,8 @@ export function Dashboard({
                         runs={runs}
                         openRun={setSelectedRunId}
                         currentUserId={user.id}
+                        focusMessageId={focusMessageId}
+                        onFocusHandled={clearFocusMessage}
                         onEdit={(message) => {
                           setEditingMessage(message)
                           setDraft(message.text)
