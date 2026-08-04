@@ -16,6 +16,16 @@ const unitValue = (value: string): string => {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`;
 };
 
+const unitPathValue = (value: string): string => {
+  if (/[\0\r\n]/.test(value))
+    throw new Error("Systemd values cannot contain newlines");
+  return value
+    .replaceAll("\\", "\\x5c")
+    .replaceAll(" ", "\\x20")
+    .replaceAll("\t", "\\x09")
+    .replaceAll("%", "%%");
+};
+
 export function renderSystemdUnit(options: SystemdUnitOptions): string {
   const command = [
     options.bun,
@@ -30,7 +40,7 @@ export function renderSystemdUnit(options: SystemdUnitOptions): string {
 Description=Sweat server
 
 [Service]
-WorkingDirectory=${unitValue(options.workingDirectory)}
+WorkingDirectory=${unitPathValue(options.workingDirectory)}
 ExecStart=${command}
 Environment=${unitValue(`SWEAT_DATABASE_PATH=${options.database}`)}
 Environment=${unitValue(`PATH=${options.path}`)}

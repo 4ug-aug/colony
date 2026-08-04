@@ -11,7 +11,7 @@ test("renders the Linux user unit with absolute runtime paths", () => {
   });
 
   expect(unit).toContain(
-    'WorkingDirectory="/home/sweat/Sweat Server/project/gui"',
+    "WorkingDirectory=/home/sweat/Sweat\\x20Server/project/gui",
   );
   expect(unit).toContain(
     'ExecStart="/home/sweat/.bun/bin/bun" "--env-file=/home/sweat/Sweat Server/.env.local" "run" "src/server/coordinator.ts"',
