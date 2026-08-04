@@ -80,8 +80,19 @@ that project.
 
 To let antboy search and write the Outline wiki, set both `OUTLINE_URL` (your
 instance URL, without `/mcp`) and `OUTLINE_API_KEY`. Only antboy requests this
-capability; the software engineer never receives it. The key's scopes must cover
-every granted tool, or runs fail with `Granted MCP tools are unavailable`.
+capability; the software engineer never receives it. Create the key under
+Settings → API Keys with scopes
+`documents.list documents.info documents.create documents.update collections.list`
+(or leave scopes blank for full access). Missing scopes cause runs to fail with
+`Granted MCP tools are unavailable`.
+
+A self-hosted Outline behind an internal CA needs `NODE_EXTRA_CA_CERTS` set to
+that CA bundle, or the coordinator fails with
+`UNABLE_TO_VERIFY_LEAF_SIGNATURE`. The coordinator reaches Outline directly, so
+this is the host's trust store; `SWEAT_AGENT_CA_CERT` covers only the agent
+containers, which never contact Outline. `NODE_EXTRA_CA_CERTS` is read at
+process start, so `make coordinator` picks it up from `.env.local` but a bare
+`bun --env-file=… src/server/coordinator.ts` would not — export it instead.
 
 Back up the SQLite database together with its sibling `attachments/`
 directory.

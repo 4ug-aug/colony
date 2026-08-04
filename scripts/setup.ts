@@ -8,6 +8,7 @@ import {
   isCancel,
   log,
   multiselect,
+  note,
   outro,
   password,
   select,
@@ -440,6 +441,15 @@ async function configureServer(path: string): Promise<void> {
     )
       .trim()
       .replace(/\/$/, "");
+    note(
+      [
+        "Settings → API Keys in your Outline instance.",
+        "Scopes (space-separated):",
+        "documents.list documents.info documents.create documents.update collections.list",
+        "Leave scopes blank for full access.",
+      ].join("\n"),
+      "Outline API key",
+    );
     const apiKey = await askSecret(
       "Outline API key",
       existing("OUTLINE_API_KEY"),
