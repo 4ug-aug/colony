@@ -7,8 +7,12 @@ import {
   HoverCardTrigger,
 } from '#/components/ui/hover-card'
 import { AvatarGroup, AvatarGroupCount } from '#/components/ui/avatar'
+import {
+  agentNameFrom,
+  useAgentDefinitions,
+} from '#/features/agents/use-agent-definitions'
 import { RunAvatar } from './run-avatar'
-import { terminal, agentName, runStatus } from './run-helpers'
+import { terminal, runStatus } from './run-helpers'
 import type { RoomRun } from '#/features/rooms/types'
 import type { Step } from './step-label'
 
@@ -23,8 +27,10 @@ export function ActiveAgents({
   cancel: (runId: string) => void
   openRun: (runId: string) => void
 }) {
+  const { data: agents = [] } = useAgentDefinitions()
   const activeRuns = runs.filter((run) => !terminal(run.state))
   if (!activeRuns.length) return null
+  const name = (agentId: string) => agentNameFrom(agents, agentId)
 
   return (
     <HoverCard>
@@ -51,7 +57,7 @@ export function ActiveAgents({
         </AvatarGroup>
         <BrailleLoader
           loader="wave-rows"
-          text={`${agentName(activeRuns[0].agentId)}${activeRuns.length > 1 ? ` +${activeRuns.length - 1}` : ''}`}
+          text={`${name(activeRuns[0].agentId)}${activeRuns.length > 1 ? ` +${activeRuns.length - 1}` : ''}`}
         />
       </HoverCardTrigger>
       <HoverCardContent
@@ -70,7 +76,7 @@ export function ActiveAgents({
               <RunAvatar run={run} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
-                  {agentName(run.agentId)}
+                  {name(run.agentId)}
                 </p>
                 <p
                   key={runStatus(run, latestStepByRun.get(run.id))}
@@ -92,7 +98,7 @@ export function ActiveAgents({
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                aria-label={`Cancel ${agentName(run.agentId)}`}
+                aria-label={`Cancel ${name(run.agentId)}`}
                 onClick={() => cancel(run.id)}
               >
                 <X />

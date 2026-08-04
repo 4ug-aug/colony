@@ -2,6 +2,8 @@ export type AgentDefinition = {
   id: string
   name: string
   description: string
+  kind?: 'cursor' | 'openai-agents'
+  icon: string
   capabilities: { id: string; name: string; tools: string[] }[]
 }
 export type Schedule = {

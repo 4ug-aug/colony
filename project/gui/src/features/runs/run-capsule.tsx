@@ -1,8 +1,8 @@
 import { Check, CircleX, X } from 'lucide-react'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { AvatarGroup } from '#/components/ui/avatar'
+import { useAgentName } from '#/features/agents/use-agent-definitions'
 import { RunAvatar } from './run-avatar'
-import { agentName } from './run-helpers'
 import { ProviderIcon } from '#/components/provider-icon'
 import { llmProviderName } from '#/lib/llm-provider'
 import type { RoomRun } from '#/features/rooms/types'
@@ -14,6 +14,7 @@ export function RunCapsule({
   run: RoomRun
   openRun: (runId: string) => void
 }) {
+  const name = useAgentName(run.agentId)
   const state =
     run.state === 'succeeded'
       ? 'completed'
@@ -26,7 +27,7 @@ export function RunCapsule({
     <button
       type="button"
       className="mt-2 inline-flex items-center gap-1.5 rounded-md border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
-      aria-label={`View ${agentName(run.agentId)} activity using ${llmProviderName(run.provider)}, ${state}`}
+      aria-label={`View ${name} activity using ${llmProviderName(run.provider)}, ${state}`}
       onClick={() => openRun(run.id)}
     >
       <AvatarGroup>

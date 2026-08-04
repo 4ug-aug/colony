@@ -45,6 +45,7 @@ export type RosterDefinitionSummary = {
   name: string;
   description: string;
   kind: AgentRuntimeKind;
+  icon: string;
   capabilities: { id: string; name: string; tools: string[] }[];
 };
 
@@ -54,6 +55,7 @@ export function rosterDefinitionSummaries(): RosterDefinitionSummary[] {
     name: person.name,
     description: person.description,
     kind: person.kind,
+    icon: person.icon,
     capabilities: person.role.requestedCapabilities.map((capability) => {
       const presentation = capabilityPresentation[capability.id];
       return {

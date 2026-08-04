@@ -62,6 +62,7 @@ export type WorkspacePerson = {
   name: string;
   description: string;
   kind: AgentRuntimeKind;
+  icon: string;
   includeRepository: boolean;
 };
 
@@ -72,14 +73,16 @@ export const WORKSPACE_PEOPLE: readonly WorkspacePerson[] = [
     name: "Software engineer",
     description: "Build, debug, and review code in a checked-out repository.",
     kind: "cursor",
+    icon: "bot",
     includeRepository: true,
   },
   {
     id: ANTBOY_ID,
-    name: "antboy",
+    name: "Antboy",
     description:
       "Collaborative teammate for room and task work without a GitHub checkout.",
     kind: "openai-agents",
+    icon: "bot-message-square",
     includeRepository: false,
   },
 ];

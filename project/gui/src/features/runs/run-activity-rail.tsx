@@ -18,7 +18,8 @@ import {
   pairSteps,
 } from './run-activity'
 import { RunActivitySplitHeader } from './run-activity-dither'
-import { agentName, terminal } from './run-helpers'
+import { terminal } from './run-helpers'
+import { useAgentName } from '#/features/agents/use-agent-definitions'
 import { ToolIcon } from './run-tool-icon'
 import type { Step } from './step-label'
 import { stepLabel } from './step-label'
@@ -83,6 +84,7 @@ function RunActivityContent({
   onCancel: () => void
   attribution?: string
 }) {
+  const agent = useAgentName(run.agentId)
   const scrollRef = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
   const followLive = useRef(!terminal(run.state))
@@ -110,7 +112,7 @@ function RunActivityContent({
   return (
     <>
       <RunActivitySplitHeader
-        agent={agentName(run.agentId)}
+        agent={agent}
         provider={run.provider}
         model={run.model}
         state={run.state}

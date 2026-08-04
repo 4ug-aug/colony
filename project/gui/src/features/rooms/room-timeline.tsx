@@ -6,6 +6,10 @@ import { Markdown } from '#/components/markdown'
 import { Button } from '#/components/ui/button'
 import { RunCapsule } from '#/features/runs/run-capsule'
 import { toast } from '#/components/ui/toast'
+import {
+  agentNameFrom,
+  useAgentDefinitions,
+} from '#/features/agents/use-agent-definitions'
 import { messagesAreGrouped } from './message-grouping'
 import type { RoomAttachment, RoomMessage, RoomRun } from './types'
 import {
@@ -145,6 +149,7 @@ export function Timeline({
   focusMessageId?: string
   onFocusHandled?: () => void
 }) {
+  const { data: agents = [] } = useAgentDefinitions()
   const items = useMemo(() => {
     const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
     const results = runs
@@ -163,7 +168,7 @@ export function Timeline({
       ...results,
     ].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
     const authorId = (item: (typeof sorted)[number]) =>
-      'result' in item ? 'software-engineer' : item.message.author.id
+      'result' in item ? item.result.agentId : item.message.author.id
     return sorted.map((item, index) => {
       const previous = sorted[index - 1]
       return {
@@ -191,7 +196,10 @@ export function Timeline({
         const isResult = 'result' in item
         const author =
           'result' in item
-            ? { id: 'software-engineer', name: 'Software engineer' }
+            ? {
+                id: item.result.agentId,
+                name: agentNameFrom(agents, item.result.agentId),
+              }
             : item.message.author
         const text =
           'result' in item

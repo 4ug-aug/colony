@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode, SubmitEvent } from 'react'
 import {
-  Bot,
-  BotMessageSquare,
   CalendarClock,
   ChevronRight,
   Hash,
@@ -73,6 +71,7 @@ import {
 import type { Author, Room } from '#/features/rooms/types'
 import type { RoomNotification } from '#/features/rooms/room-notifications'
 import { canDeleteRoom } from '#/features/rooms/permissions'
+import { agentIcon } from '#/features/agents/agent-icon'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { isTauriRuntime } from '#/lib/server-config'
@@ -87,11 +86,6 @@ const capabilityIcons: Record<
   'asana.tasks': { icon: '/icons/asana.svg' },
   'outline.documents': { icon: '/icons/outline.svg', invertOnDark: true },
   'workspace.room': {},
-}
-
-const agentIcons: Record<string, typeof Bot> = {
-  'software-engineer': Bot,
-  antboy: BotMessageSquare,
 }
 
 const panelClassName =
@@ -424,7 +418,7 @@ export function RoomSidebar({
         <CollapsibleGroup storageKey="agents" label="Agents">
           <SidebarMenu>
             {agents.map((agent) => {
-              const Icon = agentIcons[agent.id] ?? Bot
+              const Icon = agentIcon(agent.icon)
               return (
                 <SidebarMenuItem key={agent.id}>
                   <HoverCard>

@@ -1,8 +1,8 @@
-import { rosterMentionHandles } from '../../../agents/roster-people'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ReactNode } from 'react'
+import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 
 const mentionChip = (key: string, handle: string) => (
   <span
@@ -49,12 +49,16 @@ export function Markdown({
   components?: Components
   mentions?: string[]
 }) {
-  const handles = new Set([...rosterMentionHandles(), ...mentions])
+  const { data: agents = [] } = useAgentDefinitions()
+  const handles = new Set([
+    ...agents.map((agent) => agent.id),
+    ...mentions,
+  ])
   const escaped = [...handles]
     .map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
   const mentionPattern = new RegExp(
-    `(?<![A-Za-z0-9_.@-])(@(?:${escaped})(?![A-Za-z0-9_.-]))`,
+    `(?<![A-Za-z0-9_.@-])(@(?:${escaped || '$'})(?![A-Za-z0-9_.-]))`,
     'g',
   )
   const defaultComponents: Components = {
