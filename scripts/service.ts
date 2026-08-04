@@ -1,11 +1,14 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
+import { readEnvValue } from "./setup";
 
 export type SystemdUnitOptions = {
   bun: string;
   database: string;
   envFile: string;
+  /** Host TLS trust for Outline/MCP; must be set before Bun starts. */
+  nodeExtraCaCerts?: string;
   path: string;
   workingDirectory: string;
 };
@@ -36,6 +39,10 @@ export function renderSystemdUnit(options: SystemdUnitOptions): string {
     .map(unitValue)
     .join(" ");
 
+  const extraCa = options.nodeExtraCaCerts
+    ? `Environment=${unitValue(`NODE_EXTRA_CA_CERTS=${options.nodeExtraCaCerts}`)}\n`
+    : "";
+
   return `[Unit]
 Description=Sweat server
 
@@ -44,7 +51,7 @@ WorkingDirectory=${unitPathValue(options.workingDirectory)}
 ExecStart=${command}
 Environment=${unitValue(`SWEAT_DATABASE_PATH=${options.database}`)}
 Environment=${unitValue(`PATH=${options.path}`)}
-Restart=on-failure
+${extraCa}Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
 
@@ -93,8 +100,25 @@ const unitDirectory = join(
 );
 const unitPath = join(unitDirectory, "sweat.service");
 
+async function resolveNodeExtraCaCerts(document: string): Promise<
+  string | undefined
+> {
+  const configured =
+    process.env.NODE_EXTRA_CA_CERTS ??
+    readEnvValue(document, "NODE_EXTRA_CA_CERTS");
+  if (!configured) return undefined;
+  const caCertificate = isAbsolute(configured)
+    ? configured
+    : resolve(root, configured);
+  if (!(await stat(caCertificate)).isFile()) {
+    throw new Error(`NODE_EXTRA_CA_CERTS is not a file: ${caCertificate}`);
+  }
+  return caCertificate;
+}
+
 async function install(): Promise<void> {
-  await readFile(envFile);
+  const document = await readFile(envFile, "utf8");
+  const nodeExtraCaCerts = await resolveNodeExtraCaCerts(document);
   const systemctl = Bun.which("systemctl");
   const loginctl = Bun.which("loginctl");
   if (!systemctl || !loginctl)
@@ -111,6 +135,7 @@ async function install(): Promise<void> {
       bun: process.execPath,
       database,
       envFile,
+      ...(nodeExtraCaCerts ? { nodeExtraCaCerts } : {}),
       path,
       workingDirectory: join(root, "project/gui"),
     }),

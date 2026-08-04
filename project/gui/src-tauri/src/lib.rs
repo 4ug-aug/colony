@@ -11,7 +11,22 @@ fn should_open_externally(current: &Url, target: &Url) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
+  #[allow(unused_mut)]
+  let mut builder = tauri::Builder::default();
+
+  // Single-instance has to be the first plugin registered. On Windows and Linux
+  // a deep link launches a second process; the plugin's `deep-link` feature
+  // replays the URL onto the running instance, which then only needs focusing.
+  #[cfg(any(target_os = "windows", target_os = "linux"))]
+  {
+    builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+      if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_focus();
+      }
+    }));
+  }
+
+  builder
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_deep_link::init())
     .plugin(tauri_plugin_opener::init())

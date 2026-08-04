@@ -80,8 +80,16 @@ Choose **Install mac application** on macOS to download and open the latest
 universal DMG. Drag Sweat into Applications, then connect it to the server URL
 and enter the one-time setup token to create the first administrator.
 
-The current builds are not notarized. If macOS blocks the first launch,
-Control-click Sweat, choose **Open**, then confirm.
+Windows has no wizard step because it needs none. Open the
+[latest release](https://github.com/4ug-aug/sweat-v2/releases/latest) and run
+`Sweat_<version>_x64_en-US.msi` (or `Sweat_<version>_x64-setup.exe` if you
+prefer the NSIS installer). Both install Sweat and register the `sweat://`
+invite scheme; then connect to the server URL the same way. A Windows machine
+needs no clone, no `make`, and no container runtime — only the server host does.
+
+The current builds are not signed. If macOS blocks the first launch,
+Control-click Sweat, choose **Open**, then confirm. If Windows SmartScreen warns
+about an unrecognized publisher, choose **More info**, then **Run anyway**.
 
 ## Development
 
@@ -105,20 +113,20 @@ To enable scoped Asana tasks, set both `ASANA_API_TOKEN` and
 that project.
 
 To let antboy search and write the Outline wiki, set both `OUTLINE_URL` (your
-instance URL, without `/mcp`) and `OUTLINE_API_KEY`. Only antboy requests this
-capability; the software engineer never receives it. Create the key under
-Settings → API Keys with scopes
-`documents.list documents.info documents.create documents.update collections.list`
-(or leave scopes blank for full access). Missing scopes cause runs to fail with
-`Granted MCP tools are unavailable`.
+instance URL, without `/mcp`) and `OUTLINE_API_KEY`, and enable MCP in Outline
+under Settings → AI. Only antboy requests this capability; the software engineer
+never receives it. Create the key under Settings → API Keys with scopes
+`documents:read documents:write collections:read`; anything narrower fails the
+session warm-up with `Granted MCP tools are unavailable`.
 
-A self-hosted Outline behind an internal CA needs `NODE_EXTRA_CA_CERTS` set to
-that CA bundle, or the coordinator fails with
-`UNABLE_TO_VERIFY_LEAF_SIGNATURE`. The coordinator reaches Outline directly, so
-this is the host's trust store; `SWEAT_AGENT_CA_CERT` covers only the agent
-containers, which never contact Outline. `NODE_EXTRA_CA_CERTS` is read at
-process start, so `make coordinator` picks it up from `.env.local` but a bare
-`bun --env-file=… src/server/coordinator.ts` would not — export it instead.
+A self-hosted Outline behind an internal CA also needs `NODE_EXTRA_CA_CERTS` set
+to that CA bundle, or the coordinator fails with
+`UNABLE_TO_VERIFY_LEAF_SIGNATURE`. This is the host's trust store: the
+coordinator reaches Outline directly, while `SWEAT_AGENT_CA_CERT` covers only
+agent containers, which never contact Outline. Set it in `.env.local`.
+`make service-install` / `make service-upgrade` hoist it into the systemd unit
+`Environment=` so Bun sees it before TLS starts; a bare
+`bun --env-file=… src/server/coordinator.ts` still reads it too late.
 
 Back up the SQLite database together with its sibling `attachments/`
 directory.

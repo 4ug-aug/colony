@@ -28,3 +28,9 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-websocket = "2"
 tauri-plugin-store = "2"
+
+# Windows and Linux deliver deep links as argv to a *new* process. Without this
+# a `sweat://invite/...` click opens a second window instead of reaching the
+# running app; the `deep-link` feature forwards the URL to the first instance.
+[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

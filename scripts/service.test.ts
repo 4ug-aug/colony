@@ -20,10 +20,26 @@ test("renders the Linux user unit with absolute runtime paths", () => {
     'Environment="SWEAT_DATABASE_PATH=/home/sweat/Sweat Server/project/gui/sweat.sqlite"',
   );
   expect(unit).toContain('Environment="PATH=/home/sweat/.bun/bin:/usr/bin"');
+  expect(unit).not.toContain("NODE_EXTRA_CA_CERTS");
   expect(unit).toContain(
     "Restart=on-failure\nRestartSec=5s\nTimeoutStopSec=30s",
   );
   expect(unit).toContain("WantedBy=default.target");
+});
+
+test("hoists NODE_EXTRA_CA_CERTS into the unit environment", () => {
+  const unit = renderSystemdUnit({
+    bun: "/home/sweat/.bun/bin/bun",
+    database: "/srv/sweat.sqlite",
+    envFile: "/srv/.env.local",
+    nodeExtraCaCerts: "/srv/certs/company-ca.pem",
+    path: "/usr/bin",
+    workingDirectory: "/srv/sweat/project/gui",
+  });
+
+  expect(unit).toContain(
+    'Environment="NODE_EXTRA_CA_CERTS=/srv/certs/company-ca.pem"',
+  );
 });
 
 test("background installation is Linux-only", () => {

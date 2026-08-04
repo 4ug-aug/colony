@@ -18,6 +18,12 @@ const TRAFFIC_LIGHT_INSET = '5.5rem' // 88px
 // moves the native buttons and needs an app restart to take effect).
 const CONTROL_OFFSET_Y = '0.3rem' // 4px
 
+// `titleBarStyle: "Overlay"` and `trafficLightPosition` are macOS-only keys.
+// Windows and Linux keep a native title bar above the webview, so the two
+// allowances above would reserve space for traffic lights that aren't there.
+const hasOverlayTitleBar = (): boolean =>
+  isTauriRuntime() && navigator.userAgent.includes('Mac')
+
 // Spread onto the layout root so the sidebar and main panel reserve space for
 // the bar. Resolves to 0 outside Tauri, leaving the web layout unchanged.
 export function titleBarVars(): CSSProperties {
@@ -27,9 +33,11 @@ export function titleBarVars(): CSSProperties {
 }
 
 // Transparent full-width strip that captures window drags. It only needs to be
-// draggable — a background here would paint over the content below it.
+// draggable — a background here would paint over the content below it. Skipped
+// where the native title bar already handles dragging, so a drag on Windows
+// content doesn't move the window.
 export function WindowDragRegion() {
-  if (!isTauriRuntime()) return null
+  if (!hasOverlayTitleBar()) return null
 
   return (
     <div
@@ -56,8 +64,10 @@ export function WindowToolbar() {
       className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-center justify-between gap-1 pr-2 text-muted-foreground"
       style={{
         height: TITLE_BAR_HEIGHT,
-        paddingLeft: TRAFFIC_LIGHT_INSET,
-        transform: `translateY(${CONTROL_OFFSET_Y})`,
+        paddingLeft: hasOverlayTitleBar() ? TRAFFIC_LIGHT_INSET : '0.5rem',
+        transform: hasOverlayTitleBar()
+          ? `translateY(${CONTROL_OFFSET_Y})`
+          : undefined,
       }}
     >
       <div className="flex items-center gap-1">
