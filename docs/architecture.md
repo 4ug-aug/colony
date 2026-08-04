@@ -95,13 +95,18 @@ future Tauri shell. The client does not own room state or execution.
 - Have the server apply database migrations idempotently and ensure structural
   seed data such as `General` exists at startup. Clients never initialize or
   seed the server database.
+- Index room message text with SQLite FTS5 for universal search; the store port
+  stays search-by-query, and only the SQLite adapter owns the FTS virtual table
+  and sync triggers. See [message search](./message-search.md) and
+  [ADR 0010](./adr/0010-sqlite-fts5-message-search.md).
 
 ## Current support
 
 - Static Vite/React client using an explicit HTTP/WebSocket server boundary.
 - Tauri macOS packaging of the same React client, including first-launch server
   selection and authenticated native HTTP/WebSocket transports.
-- Server-owned Better Auth, SQLite persistence, and run control.
+- Server-owned Better Auth, SQLite persistence (including FTS5 message search),
+  and run control.
 - Closed workspace admission with one-time administrator setup, username
   login, single-use invitations, and member suspension.
 - Apple Container sandbox provider with automatic cleanup.
@@ -117,6 +122,8 @@ future Tauri shell. The client does not own room state or execution.
 - Durable room attachments copied as verified, disposable software-engineer
   run inputs; storage keys remain server-only, and a scoped `view_image` tool
   sends supported raster copies to vision-capable models.
+- Universal message search (Cmd/Ctrl+K) over accessible rooms via FTS5-backed
+  `GET /api/search/messages`, with jump-to via history `around` loading.
 
 ## MCP target design
 
