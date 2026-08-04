@@ -165,7 +165,7 @@ export function Dashboard({
       onOpenChange={setSidebarOpen}
       style={titleBarVars()}
     >
-      <WindowToolbar />
+      <WindowToolbar onOpenSearch={() => setSearchOpen(true)} />
       <MessageSearchCommand
         open={searchOpen}
         onOpenChange={setSearchOpen}

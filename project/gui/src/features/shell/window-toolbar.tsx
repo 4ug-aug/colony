@@ -1,9 +1,14 @@
-import type { CSSProperties } from 'react'
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { ModeToggle } from '#/components/mode-toggle'
 import { Button } from '#/components/ui/button'
+import { Kbd, KbdGroup } from '#/components/ui/kbd'
 import { SidebarTrigger } from '#/components/ui/sidebar'
 import { isTauriRuntime } from '#/lib/server-config'
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  SearchIcon,
+} from 'lucide-react'
+import type { CSSProperties } from 'react'
 
 // Single source of truth for the custom title-bar (bezel) height. The drag
 // region and toolbar below are this tall, and the layout reserves the same
@@ -23,6 +28,31 @@ const CONTROL_OFFSET_Y = '0.3rem' // 4px
 // allowances above would reserve space for traffic lights that aren't there.
 const hasOverlayTitleBar = (): boolean =>
   isTauriRuntime() && navigator.userAgent.includes('Mac')
+
+const isApplePlatform = (): boolean =>
+  /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
+
+function SearchShortcutButton({ onOpenSearch }: { onOpenSearch: () => void }) {
+  const modifier = isApplePlatform() ? '⌘' : 'Ctrl'
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="pointer-events-auto h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+      aria-label="Search messages"
+      title="Search messages"
+      onClick={onOpenSearch}
+    >
+      <SearchIcon className="size-3.5" />
+      <span className="hidden sm:inline">Search</span>
+      <KbdGroup className="pointer-events-none">
+        <Kbd>{modifier}</Kbd>
+        <Kbd>K</Kbd>
+      </KbdGroup>
+    </Button>
+  )
+}
 
 // Spread onto the layout root so the sidebar and main panel reserve space for
 // the bar. Resolves to 0 outside Tauri, leaving the web layout unchanged.
@@ -48,12 +78,21 @@ export function WindowDragRegion() {
   )
 }
 
-export function WindowToolbar() {
+export function WindowToolbar({
+  onOpenSearch,
+}: {
+  onOpenSearch?: () => void
+} = {}) {
   const tauri = isTauriRuntime()
+  const search =
+    onOpenSearch != null ? (
+      <SearchShortcutButton onOpenSearch={onOpenSearch} />
+    ) : null
 
   if (!tauri) {
     return (
-      <div className="pointer-events-auto fixed top-2 right-2 z-30">
+      <div className="pointer-events-auto fixed top-2 right-2 z-30 flex items-center gap-1">
+        {search}
         <ModeToggle />
       </div>
     )
@@ -96,7 +135,8 @@ export function WindowToolbar() {
           <ChevronRightIcon />
         </Button>
       </div>
-      <div className="pointer-events-auto pr-2">
+      <div className="pointer-events-auto flex items-center gap-1 pr-2">
+        {search}
         <ModeToggle />
       </div>
     </div>
