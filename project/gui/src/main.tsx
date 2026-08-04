@@ -1,3 +1,6 @@
+// Must stay the first import: it logs at import time, and every import below
+// evaluates before any statement in this file runs.
+import { initErrorReporting, logBoot, reportError } from '#/lib/diagnostics'
 import { Component, StrictMode, useCallback, useState } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -21,7 +24,6 @@ import { Toaster } from '#/components/ui/toast'
 import { WindowDragRegion } from '#/features/shell/window-toolbar'
 import { initInviteDeepLinks } from '#/lib/invite-deep-link'
 import { createAppQueryClient } from '#/lib/query-client'
-import { initErrorReporting, logBoot, reportError } from '#/lib/diagnostics'
 
 const rootEl = document.getElementById('root')!
 const root = createRoot(rootEl)

@@ -20,6 +20,11 @@ pub fn run() {
   #[cfg(any(target_os = "windows", target_os = "linux"))]
   {
     builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+      // A second launch exits inside this plugin, before `setup` runs, so it
+      // never writes a startup line of its own. This one is written by the
+      // *first* process instead: seeing it means an already-running instance
+      // swallowed the launch, which looks identical to "the app did nothing".
+      log::info!("second launch handed off to the running instance");
       if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_focus();
       }
@@ -71,7 +76,24 @@ pub fn run() {
         app.package_info().version,
         std::env::consts::OS
       );
+      // Windows ships whatever WebView2 the machine happens to have, and that
+      // version decides which JavaScript syntax the bundle may use. A blank
+      // window plus an old version here means the bundle out-ran the runtime.
+      match tauri::webview_version() {
+        Ok(version) => log::info!("webview runtime {version}"),
+        Err(error) => log::error!("no webview runtime: {error}"),
+      }
       Ok(())
+    })
+    .on_page_load(|_webview, payload| {
+      // Written from Rust, so it survives a frontend bundle that never runs a
+      // single statement. No `page load started` line at all means the webview
+      // never reached the bundled HTML — a packaging fault, not a JS one.
+      let event = match payload.event() {
+        tauri::webview::PageLoadEvent::Started => "started",
+        tauri::webview::PageLoadEvent::Finished => "finished",
+      };
+      log::info!("page load {event}: {}", payload.url());
     })
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

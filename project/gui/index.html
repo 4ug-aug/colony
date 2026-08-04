@@ -57,6 +57,16 @@
         },
         true,
       )
+      // Proves the document parsed and ran script, which no failure inside the
+      // bundle can fake. Missing means the webview never got this HTML.
+      try {
+        window.__TAURI_INTERNALS__.invoke('plugin:log|log', {
+          level: 3,
+          message: 'boot: html-parsed',
+        })
+      } catch (ignored) {
+        // Running in a browser, where the console is available anyway.
+      }
     </script>
   </head>
   <body>

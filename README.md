@@ -95,25 +95,30 @@ about an unrecognized publisher, choose **More info**, then **Run anyway**.
 
 Installed builds write a log you can ask a user to send back:
 
-| Platform | Path |
-| --- | --- |
-| Windows | `%LOCALAPPDATA%\com.sweat.desktop\logs\Sweat.log` |
-| macOS | `~/Library/Logs/com.sweat.desktop/Sweat.log` |
+| Platform | Path                                              |
+| -------- | ------------------------------------------------- |
+| Windows  | `%LOCALAPPDATA%\com.sweat.desktop\logs\Sweat.log` |
+| macOS    | `~/Library/Logs/com.sweat.desktop/Sweat.log`      |
 
-Startup logs an ordered `boot:` breadcrumb per phase, so the **last line decides
-the diagnosis**:
+Startup logs an ordered breadcrumb per phase, so the **last line decides the
+diagnosis**. A hang leaves no error behind — only the missing next breadcrumb.
 
-| Last line | Meaning |
-| --- | --- |
-| `starting on <os>` only | The frontend bundle never ran at all. Look for the `startup script failed` line below it — the inline trap in `index.html` records the file and line, and reports a missing asset separately from a parse error. |
-| `boot: module-loaded` | Startup never got past reading the stored server URL. |
-| `boot: render-called` | Possible UI thread blocked mid-paint. Only meaningful for a window the user can actually see, since `requestAnimationFrame` is throttled while a window is hidden. |
-| `boot: first-paint` | The app rendered; the problem is later (server reachability is the usual one). |
+| Last line                   | Meaning                                                                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `starting on <os>` only     | Died before the webview was even created. Nothing frontend-related is implicated.                                                                                        |
+| `webview runtime <version>` | The webview never navigated. Compare the version against `build.target` in `vite.config.ts`; a version below that floor cannot parse the bundle.                         |
+| `page load started`         | The webview navigated but `index.html` never ran script — the asset protocol did not serve the document.                                                                 |
+| `boot: html-parsed`         | The document ran but the bundle did not. Look for a `startup script failed` line: the inline trap in `index.html` reports a missing asset separately from a parse error. |
+| `boot: bundle-entered`      | A top-level `import` in the bundle hung or threw. This is the one failure no breadcrumb inside `main.tsx`'s body can report, since imports evaluate first.               |
+| `boot: module-loaded`       | Startup never got past reading the stored server URL.                                                                                                                    |
+| `boot: render-called`       | Possible UI thread blocked mid-paint. Only meaningful for a window the user can actually see, since `requestAnimationFrame` is throttled while a window is hidden.       |
+| `boot: first-paint`         | The app rendered; the problem is later (server reachability is the usual one).                                                                                           |
+| `second launch handed off…` | An already-running instance absorbed the launch. If that instance is hung, the app looks dead and no new lines appear — kill `Sweat.exe` in Task Manager first.          |
 
-A blank white window with only the `starting on` line means the bundle failed to
-parse or load. `build.target` in `vite.config.ts` pins a conservative syntax
-floor per platform for that reason — Windows ships whatever WebView2 version the
-machine happens to have.
+`webview runtime` and `page load` come from Rust, and `html-parsed` from an
+inline script, so all three survive a bundle that never executes. Breadcrumbs
+dispatch synchronously for the same reason — see the comment in
+[diagnostics.ts](./project/gui/src/lib/diagnostics.ts).
 
 Installers carry no web inspector. Run the **Debug Windows Build** workflow from
 the Actions tab to get an installer with right-click → **Inspect** enabled.
