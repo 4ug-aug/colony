@@ -141,10 +141,11 @@ initServerConfig()
       </StrictMode>,
     )
     logBoot('render-called')
-    // Runs only once the webview has actually had a chance to paint. If the log
-    // stops at `render-called`, the UI thread hung mid-paint (a blocked or
-    // spinning script, e.g. WebGL on a machine without working acceleration)
-    // rather than throwing anything an error handler could catch.
+    // Fires only once the webview actually paints, so a log stopping at
+    // `render-called` points at a UI thread blocked mid-paint rather than
+    // anything an error handler could catch. Weak evidence on its own though:
+    // rAF is also throttled while the window is hidden, so a missing
+    // `first-paint` is only meaningful for a window the user can see.
     requestAnimationFrame(() => logBoot('first-paint'))
   })
   .catch((err: unknown) => {

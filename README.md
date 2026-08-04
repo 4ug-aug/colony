@@ -101,10 +101,19 @@ Installed builds write a log you can ask a user to send back:
 | macOS | `~/Library/Logs/com.sweat.desktop/Sweat.log` |
 
 Startup logs an ordered `boot:` breadcrumb per phase, so the **last line decides
-the diagnosis**. A log that stops at `render-called` without reaching
-`first-paint` means the UI thread hung mid-paint — no error is thrown in that
-case, and the missing breadcrumb is the only evidence. Stopping at
-`module-loaded` means startup never got past reading the stored server URL.
+the diagnosis**:
+
+| Last line | Meaning |
+| --- | --- |
+| `starting on <os>` only | The frontend bundle never ran at all. Look for the `startup script failed` line below it — the inline trap in `index.html` records the file and line, and reports a missing asset separately from a parse error. |
+| `boot: module-loaded` | Startup never got past reading the stored server URL. |
+| `boot: render-called` | Possible UI thread blocked mid-paint. Only meaningful for a window the user can actually see, since `requestAnimationFrame` is throttled while a window is hidden. |
+| `boot: first-paint` | The app rendered; the problem is later (server reachability is the usual one). |
+
+A blank white window with only the `starting on` line means the bundle failed to
+parse or load. `build.target` in `vite.config.ts` pins a conservative syntax
+floor per platform for that reason — Windows ships whatever WebView2 version the
+machine happens to have.
 
 Installers carry no web inspector. Run the **Debug Windows Build** workflow from
 the Actions tab to get an installer with right-click → **Inspect** enabled.
