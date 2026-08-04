@@ -10,17 +10,6 @@ const config = defineConfig({
   server: { strictPort: true },
   resolve: { tsconfigPaths: true },
   plugins: [tailwindcss(), viteReact()],
-  build: {
-    // Vite's default target assumes a current browser. Windows ships whatever
-    // WebView2 the machine happens to have, and syntax it cannot parse kills
-    // the whole bundle before a single statement runs — so pin a conservative
-    // floor per platform rather than inheriting the default.
-    target:
-      process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
-    // Debug bundles are built to be read in the inspector.
-    minify: !process.env.TAURI_ENV_DEBUG,
-    sourcemap: !!process.env.TAURI_ENV_DEBUG,
-  },
 })
 
 export default config

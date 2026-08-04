@@ -1,8 +1,7 @@
-// Tauri serves the desktop app from a platform-specific origin, and the choice
-// is not ours to make: macOS and Linux get the custom `tauri://` scheme, while
-// Windows uses `http://tauri.localhost` (or `https://` when `useHttpsScheme` is
-// enabled). Anything that gates requests on Origin has to accept all three, or
-// the desktop app works on one platform and gets 403s on another.
+// Tauri picks the webview's origin per platform: macOS and Linux get the custom
+// `tauri://` scheme, Windows gets `http://tauri.localhost` (or `https://` with
+// `useHttpsScheme`). Anything gating on Origin has to accept all three, or the
+// app works on one platform and 403s on another.
 export const DESKTOP_ORIGINS = [
   'tauri://localhost',
   'http://tauri.localhost',

@@ -7,9 +7,8 @@ import { authSchema, db } from '#/lib/database'
 import { DESKTOP_ORIGINS } from '#/lib/desktop-origins'
 
 const appOrigin = process.env.SWEAT_GUI_ORIGIN ?? DESKTOP_ORIGINS[0]!
-// Every desktop origin is trusted, not just the configured one: a single
-// server serves macOS, Linux, and Windows clients, and each reports a
-// different origin for the same app.
+// All desktop origins are trusted, not just the configured one: one server
+// serves macOS, Linux, and Windows clients of the same app.
 const trustedOrigins = [
   ...new Set([
     appOrigin,

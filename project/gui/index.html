@@ -12,62 +12,6 @@
     <link rel="icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Sweat</title>
-    <script>
-      // Registered before the module bundle so it can report a failure *of*
-      // that bundle. The handlers in src/lib/diagnostics.ts cannot: a parse
-      // error or a 404 means none of their statements ever run, which shows up
-      // as a white window and a log containing only the Rust startup line.
-      // Deliberately ES5 — this has to survive a webview too old to parse the
-      // app itself. Capture phase, because resource load errors do not bubble.
-      window.addEventListener(
-        'error',
-        function (event) {
-          var target = event.target
-          var detail
-          if (target && target !== window && target.tagName) {
-            detail =
-              'failed to load ' +
-              (target.src || target.href || target.tagName) +
-              ' (asset missing from the bundle)'
-          } else {
-            detail =
-              (event.message || 'unknown error') +
-              ' at ' +
-              (event.filename || '?') +
-              ':' +
-              (event.lineno || 0)
-          }
-          var root = document.getElementById('root')
-          if (root && !root.firstChild) {
-            root.setAttribute(
-              'style',
-              'padding:1.5rem;font:14px system-ui;white-space:pre-wrap',
-            )
-            root.textContent = 'Sweat failed to start.\n\n' + detail
-          }
-          try {
-            window.__TAURI_INTERNALS__.invoke('plugin:log|log', {
-              level: 5,
-              message: 'startup script failed: ' + detail,
-            })
-          } catch (ignored) {
-            // Pre-webview-init or running in a browser; the on-screen text
-            // above is the fallback channel.
-          }
-        },
-        true,
-      )
-      // Proves the document parsed and ran script, which no failure inside the
-      // bundle can fake. Missing means the webview never got this HTML.
-      try {
-        window.__TAURI_INTERNALS__.invoke('plugin:log|log', {
-          level: 3,
-          message: 'boot: html-parsed',
-        })
-      } catch (ignored) {
-        // Running in a browser, where the console is available anyway.
-      }
-    </script>
   </head>
   <body>
     <div id="root"></div>

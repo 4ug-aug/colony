@@ -111,8 +111,7 @@ function connectRealtimeStream(
       .default
     // The Rust WebSocket client sends no Origin header, but the coordinator
     // gates every request on an allowed Origin before authenticating. Send the
-    // webview's own origin, which is platform-specific — see
-    // `#/lib/desktop-origins` for the values the server has to accept.
+    // webview's own origin, which is platform-specific (`#/lib/desktop-origins`).
     const headers: Record<string, string> = {
       Origin: window.location.origin,
     }

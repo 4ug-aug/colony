@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { setServerBase } from '#/lib/server-config'
-import { reportError } from '#/lib/diagnostics'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Input } from '#/components/ui/input'
@@ -24,16 +23,13 @@ export function ServerSelection({ onConnected }: { onConnected: () => void }) {
       await response.arrayBuffer()
       if (!response.ok && response.status !== 404) {
         // Accept any non-network-error (2xx or even known server error codes).
-        // The status matters: a 403 is a reachable server rejecting this app's
-        // Origin, which is a completely different fix from an unreachable host.
+        // Report the status: a reachable server rejecting the request is a
+        // completely different fix from an unreachable host.
         throw new Error(`server answered ${response.status}`)
       }
       await setServerBase(normalized)
       onConnected()
     } catch (err) {
-      // Installed builds have no console, so a bare message here leaves the
-      // user with nothing to report and us with nothing to diagnose.
-      reportError('server probe failed', err)
       setError(
         `Couldn't reach a Sweat server at that address — ${
           err instanceof Error ? err.message : String(err)

@@ -1,6 +1,3 @@
-// Must stay the first import: it logs at import time, and every import below
-// evaluates before any statement in this file runs.
-import { initErrorReporting, logBoot, reportError } from '#/lib/diagnostics'
 import { Component, StrictMode, useCallback, useState } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -40,8 +37,7 @@ class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    reportError('app render failed', error)
-    console.error('component stack', info.componentStack)
+    console.error('App render failed', error, info)
   }
 
   render() {
@@ -117,14 +113,9 @@ function EntryFlow({ needsServer }: { needsServer: boolean }) {
   )
 }
 
-initErrorReporting()
-logBoot('module-loaded')
-
 initServerConfig()
-  .then(() => logBoot('config-loaded'))
   .then(initInviteDeepLinks)
   .then(() => {
-    logBoot('deep-links-ready')
     const needsServer = isTauriRuntime() && !currentServerBase()
     if (!needsServer) initAuthClient()
     root.render(
@@ -142,16 +133,8 @@ initServerConfig()
         </QueryClientProvider>
       </StrictMode>,
     )
-    logBoot('render-called')
-    // Fires only once the webview actually paints, so a log stopping at
-    // `render-called` points at a UI thread blocked mid-paint rather than
-    // anything an error handler could catch. Weak evidence on its own though:
-    // rAF is also throttled while the window is hidden, so a missing
-    // `first-paint` is only meaningful for a window the user can see.
-    requestAnimationFrame(() => logBoot('first-paint'))
   })
   .catch((err: unknown) => {
-    reportError('startup failed', err)
     root.render(
       <StrictMode>
         <WindowDragRegion />

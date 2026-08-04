@@ -91,38 +91,13 @@ The current builds are not signed. If macOS blocks the first launch,
 Control-click Sweat, choose **Open**, then confirm. If Windows SmartScreen warns
 about an unrecognized publisher, choose **More info**, then **Run anyway**.
 
-### Diagnosing an installed build
-
-Installed builds write a log you can ask a user to send back:
+Installed builds carry no web inspector, so they write a log you can ask a user
+to send back. The first line names the version and platform.
 
 | Platform | Path                                              |
 | -------- | ------------------------------------------------- |
 | Windows  | `%LOCALAPPDATA%\com.sweat.desktop\logs\Sweat.log` |
 | macOS    | `~/Library/Logs/com.sweat.desktop/Sweat.log`      |
-
-Startup logs an ordered breadcrumb per phase, so the **last line decides the
-diagnosis**. A hang leaves no error behind — only the missing next breadcrumb.
-
-| Last line                   | Meaning                                                                                                                                                                                                                  |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `starting on <os>` only     | Died inside the setup hook. Nothing frontend-related is implicated.                                                                                                                                                      |
-| `webview runtime <version>` | The webview exists — Tauri builds config windows before the setup hook — but never began navigating. Suspect `on_navigation` in `lib.rs`: it runs on the UI thread, and a blocking runtime call there deadlocks Windows. |
-| `navigation to <url>`       | Navigation started and produced no page. Compare the runtime version above against `build.target` in `vite.config.ts`.                                                                                                   |
-| `page load started`         | The webview navigated but `index.html` never ran script — the asset protocol did not serve the document.                                                                                                                 |
-| `boot: html-parsed`         | The document ran but the bundle did not. Look for a `startup script failed` line: the inline trap in `index.html` reports a missing asset separately from a parse error.                                                 |
-| `boot: bundle-entered`      | A top-level `import` in the bundle hung or threw. This is the one failure no breadcrumb inside `main.tsx`'s body can report, since imports evaluate first.                                                               |
-| `boot: module-loaded`       | Startup never got past reading the stored server URL.                                                                                                                                                                    |
-| `boot: render-called`       | Possible UI thread blocked mid-paint. Only meaningful for a window the user can actually see, since `requestAnimationFrame` is throttled while a window is hidden.                                                       |
-| `boot: first-paint`         | The app rendered; the problem is later (server reachability is the usual one).                                                                                                                                           |
-| `second launch handed off…` | An already-running instance absorbed the launch. If that instance is hung, the app looks dead and no new lines appear — kill `Sweat.exe` in Task Manager first.                                                          |
-
-`webview runtime` and `page load` come from Rust, and `html-parsed` from an
-inline script, so all three survive a bundle that never executes. Breadcrumbs
-dispatch synchronously for the same reason — see the comment in
-[diagnostics.ts](./project/gui/src/lib/diagnostics.ts).
-
-Installers carry no web inspector. Run the **Debug Windows Build** workflow from
-the Actions tab to get an installer with right-click → **Inspect** enabled.
 
 ## Development
 

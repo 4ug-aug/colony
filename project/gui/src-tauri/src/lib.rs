@@ -1,11 +1,10 @@
 use tauri::{Manager, Url};
 use tauri_plugin_opener::OpenerExt;
 
-// Called from a synchronous webview callback on the UI thread, so it must not
-// touch blocking runtime getters like `webview.url()`. Those reenter the event
-// loop, and on Windows that wedges the very first navigation: the window paints
-// white, the title bar reads "not responding", and no page ever loads. Deriving
-// the app's own origin statically avoids the getter entirely.
+// The app's own origin is derived statically on purpose. This runs from a
+// synchronous webview callback on the UI thread, where a blocking runtime getter
+// like `webview.url()` reenters the event loop and deadlocks the very first
+// navigation on Windows: white window, "not responding", no page ever loads.
 fn should_open_externally(target: &Url) -> bool {
   match target.scheme() {
     // Sweat serves itself from `tauri://localhost` on macOS and Linux and from
@@ -31,11 +30,6 @@ pub fn run() {
   #[cfg(any(target_os = "windows", target_os = "linux"))]
   {
     builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-      // A second launch exits inside this plugin, before `setup` runs, so it
-      // never writes a startup line of its own. This one is written by the
-      // *first* process instead: seeing it means an already-running instance
-      // swallowed the launch, which looks identical to "the app did nothing".
-      log::info!("second launch handed off to the running instance");
       if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_focus();
       }
@@ -49,9 +43,6 @@ pub fn run() {
     .plugin(
       tauri::plugin::Builder::<_, ()>::new("external-links")
         .on_navigation(|webview, target| {
-          // First statement in the hook, so a hang inside it stays attributable
-          // to this hook rather than to the webview that never loaded.
-          log::info!("navigation to {target}");
           if !should_open_externally(target) {
             return true;
           }
@@ -69,9 +60,8 @@ pub fn run() {
     .plugin(tauri_plugin_websocket::init())
     .plugin(tauri_plugin_store::Builder::default().build())
     .setup(|app| {
-      // Installed builds have no web inspector, so the log file is the only
-      // channel for diagnosing a report like "blank window". Keep LogDir in
-      // release; it is the file a user can be asked to send back.
+      // Installed builds carry no web inspector, so LogDir stays on in release:
+      // that file is the only thing a user can be asked to send back.
       app.handle().plugin(
         tauri_plugin_log::Builder::default()
           .level(log::LevelFilter::Info)
@@ -88,24 +78,7 @@ pub fn run() {
         app.package_info().version,
         std::env::consts::OS
       );
-      // Windows ships whatever WebView2 the machine happens to have, and that
-      // version decides which JavaScript syntax the bundle may use. A blank
-      // window plus an old version here means the bundle out-ran the runtime.
-      match tauri::webview_version() {
-        Ok(version) => log::info!("webview runtime {version}"),
-        Err(error) => log::error!("no webview runtime: {error}"),
-      }
       Ok(())
-    })
-    .on_page_load(|_webview, payload| {
-      // Written from Rust, so it survives a frontend bundle that never runs a
-      // single statement. No `page load started` line at all means the webview
-      // never reached the bundled HTML — a packaging fault, not a JS one.
-      let event = match payload.event() {
-        tauri::webview::PageLoadEvent::Started => "started",
-        tauri::webview::PageLoadEvent::Finished => "finished",
-      };
-      log::info!("page load {event}: {}", payload.url());
     })
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -117,9 +90,9 @@ mod tests {
 
   #[test]
   fn only_safe_external_links_leave_the_webview() {
-    // The three origins Sweat serves itself from must stay in the webview; the
-    // Windows one is what the first navigation uses, so getting it wrong here
-    // bounces the whole app out to a browser on launch.
+    // Every origin Sweat serves itself from has to stay in the webview. The
+    // Windows one is what the first navigation uses, so missing it bounces the
+    // whole app out to a browser on launch.
     assert!(!should_open_externally(
       &Url::parse("tauri://localhost/rooms/2").unwrap()
     ));
