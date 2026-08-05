@@ -16,8 +16,9 @@ import type {
 } from './types'
 import type { Step } from '#/features/runs/step-label'
 import { toast } from '#/components/ui/toast'
-import { compareMessageMarkers, roomNotification } from './room-notifications'
+import { compareMessageMarkers, hasAnyRoomNotification, roomNotification } from './room-notifications'
 import type { RoomNotification } from './room-notifications'
+import { setAppDockBadge } from '#/lib/dock-badge'
 
 function upsert<T extends { id: string }>(items: T[], item: T) {
   const index = items.findIndex(({ id }) => id === item.id)
@@ -126,6 +127,7 @@ export function useRooms(userId: string) {
   const drafts = useRef<Record<string, string>>({})
   const seenRoomMessagesRef = useRef(readSeenRoomMessages())
   const [seenVersion, setSeenVersion] = useState(0)
+  const lastDockBadgeRef = useRef<boolean | null>(null)
 
   messagesRef.current = messages
 
@@ -518,6 +520,12 @@ export function useRooms(userId: string) {
       ),
     [rooms, seenVersion],
   )
+
+  const dockBadgeVisible = hasAnyRoomNotification(notificationByRoom)
+  if (lastDockBadgeRef.current !== dockBadgeVisible) {
+    lastDockBadgeRef.current = dockBadgeVisible
+    void setAppDockBadge(dockBadgeVisible)
+  }
 
   const loadOlder = useCallback(async () => {
     const roomId = selectedRoomId

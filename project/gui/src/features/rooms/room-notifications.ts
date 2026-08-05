@@ -26,3 +26,9 @@ export function roomNotification(
     return 'unread'
   return undefined
 }
+
+export function hasAnyRoomNotification(
+  notificationByRoom: Partial<Record<string, RoomNotification>>,
+): boolean {
+  return Object.values(notificationByRoom).some(Boolean)
+}
