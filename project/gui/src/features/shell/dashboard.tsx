@@ -2,6 +2,7 @@ import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
 import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import { AccountSettingsPage } from '#/features/account/account-settings'
+import { IssuesPage } from '#/features/issues/issues-page'
 import { MembersPanel } from '#/features/members/members-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
@@ -17,6 +18,7 @@ import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import {
   ArrowDown,
   CalendarClock,
+  CircleDot,
   Hash,
   Lock,
   Settings,
@@ -199,6 +201,7 @@ export function Dashboard({
           if (user.role === 'admin') setView('workspace')
         }}
         onOpenSchedules={() => setView('schedules')}
+        onOpenIssues={() => setView('issues')}
         user={user}
       />
       <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
@@ -209,6 +212,8 @@ export function Dashboard({
             <Settings className="size-4 text-muted-foreground" />
           ) : view === 'schedules' ? (
             <CalendarClock className="size-4 text-muted-foreground" />
+          ) : view === 'issues' ? (
+            <CircleDot className="size-4 text-muted-foreground" />
           ) : room?.visibility === 'private' ? (
             <Lock className="size-4 text-muted-foreground" />
           ) : (
@@ -221,7 +226,9 @@ export function Dashboard({
                 ? 'Workspace'
                 : view === 'schedules'
                   ? 'Schedules'
-                  : (room?.name ?? 'Rooms')}
+                  : view === 'issues'
+                    ? 'Issues'
+                    : (room?.name ?? 'Rooms')}
           </p>
           {view === 'room' && room?.visibility === 'private' && (
             <MembersPanel
@@ -252,6 +259,7 @@ export function Dashboard({
           </div>
         )}
         {view === 'schedules' && <SchedulesPage />}
+        {view === 'issues' && <IssuesPage />}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
             <div className="relative flex min-w-0 flex-1 flex-col">

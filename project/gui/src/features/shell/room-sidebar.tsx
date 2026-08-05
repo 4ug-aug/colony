@@ -3,6 +3,7 @@ import type { ReactNode, SubmitEvent } from 'react'
 import {
   CalendarClock,
   ChevronRight,
+  CircleDot,
   Hash,
   Lock,
   LogOut,
@@ -92,7 +93,12 @@ const capabilityIcons: Record<
 const panelClassName =
   "h-(--collapsible-panel-height) overflow-hidden transition-[height,opacity] duration-200 ease-out motion-reduce:transition-none data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 [&[hidden]:not([hidden='until-found'])]:hidden"
 
-export type DashboardView = 'room' | 'account' | 'workspace' | 'schedules'
+export type DashboardView =
+  | 'room'
+  | 'account'
+  | 'workspace'
+  | 'schedules'
+  | 'issues'
 
 /**
  * A sidebar section that remembers whether it is expanded. Sections stay
@@ -356,6 +362,7 @@ export function RoomSidebar({
   onOpenAccount,
   onOpenWorkspace,
   onOpenSchedules,
+  onOpenIssues,
   user,
 }: {
   rooms: Room[]
@@ -370,6 +377,7 @@ export function RoomSidebar({
   onOpenAccount: () => void
   onOpenWorkspace: () => void
   onOpenSchedules: () => void
+  onOpenIssues: () => void
   user: Author
 }) {
   const { data: agents = [] } = useAgentDefinitions()
@@ -416,6 +424,22 @@ export function RoomSidebar({
     ),
     <Sidebar key="sidebar" variant="inset" collapsible="icon">
       <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={view === 'issues'}
+                  onClick={onOpenIssues}
+                  tooltip="Issues"
+                >
+                  <CircleDot />
+                  <span>Issues</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
         <CollapsibleGroup storageKey="agents" label="Agents">
           <SidebarMenu>
             {agents.map((agent) => {
