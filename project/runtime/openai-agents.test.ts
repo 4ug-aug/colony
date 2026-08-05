@@ -314,6 +314,70 @@ test("the runtime completes an SDK tool loop against an OpenAI-compatible API", 
   expect(calls).toBe(2);
 });
 
+test("an unknown tool call returns an error to the model instead of crashing", async () => {
+  const steps: Step[] = [];
+  const client = new OpenAI({
+    apiKey: "test-key",
+    baseURL: "https://models.example/v1",
+  });
+  class MissingToolModel extends OpenAIResponsesModel {
+    turns = 0;
+
+    override async *getStreamedResponse(
+      _request: ModelRequest,
+    ): AsyncIterable<ResponseStreamEvent> {
+      this.turns += 1;
+      const output =
+        this.turns === 1
+          ? [{
+              type: "function_call" as const,
+              callId: "call-missing",
+              name: "outline.list_documents",
+              arguments: '{"query":"handbook"}',
+              status: "completed" as const,
+            }]
+          : [{
+              type: "message" as const,
+              role: "assistant" as const,
+              status: "completed" as const,
+              content: [{
+                type: "output_text" as const,
+                text: "answered without the missing tool",
+              }],
+            }];
+      yield {
+        type: "response_done",
+        response: {
+          id: `response-${this.turns}`,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          output,
+        },
+      };
+    }
+  }
+
+  const result = await runAgent(
+    {
+      task: "Search the wiki.",
+      instructions: "Use tools when needed.",
+      agentId: "antboy",
+      model: {
+        baseUrl: "https://models.example/v1",
+        apiKey: "test-key",
+        model: "test-model",
+      },
+    },
+    {
+      model: new MissingToolModel(client, "test-model"),
+      onStep: (step) => steps.push(step),
+    },
+  );
+
+  expect(result).toBe("answered without the missing tool");
+  expect(steps.some((step) => step.kind === "tool_call" && step.tool === "outline.list_documents")).toBe(true);
+  expect(steps.some((step) => step.kind === "tool_result" && step.tool === "outline.list_documents")).toBe(true);
+});
+
 test("view_image sends a staged image to the model", async () => {
   const root = await mkdtemp(join(tmpdir(), "sweat-view-image-"));
   const outsideRoot = await mkdtemp(join(tmpdir(), "sweat-view-image-outside-"));

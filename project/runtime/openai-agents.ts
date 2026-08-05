@@ -478,6 +478,9 @@ export async function runAgent(
         dependencies.modelProvider ??
         createModelProvider(request.model),
       tracingDisabled: true,
+      // Hallucinated/ungranted tool names (often from role text) should guide
+      // the model, not kill the run.
+      toolNotFoundBehavior: "return_error_to_model",
     }).run(agent, request.task, { maxTurns: 50, stream: true });
 
     let lastMessageText: string | undefined;
