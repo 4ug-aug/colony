@@ -73,8 +73,9 @@ On first launch the app asks for the Sweat server URL (for local development,
 `http://localhost:3001` with a coordinator running) and remembers it. Unlike the
 browser client, the desktop app runs its HTTP through Tauri's native cookie jar
 and authenticates the realtime WebSocket with a short-lived ticket, so the
-server does not need HTTPS. See
-[ADR 0006](../../docs/adr/0006-tauri-packaging.md).
+server does not need HTTPS. When any room has a sidebar attention or unread
+marker, the macOS dock shows a presence badge (`1`); it clears when none
+remain. See [ADR 0006](../../docs/adr/0006-tauri-packaging.md).
 
 Useful checks:
 

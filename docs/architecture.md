@@ -140,14 +140,15 @@ the session when a run ends.
 ## Deliberately not built yet
 
 - Room renaming and room deletion.
-- Native notifications, tray status, and deep links.
+- Native OS notifications and tray status.
 - Gateway HTTP/MCP transport and local encrypted connection storage.
 - Run scheduler, capability-grant policy, and resource-level authorization.
 - Sub-agent scheduling and shared artifact handoff.
 
 ## Current delivered slice
 
-Tauri packaging and first-launch server selection now follow the delivered
-Account admission slice. The current multiplayer slice adds durable,
+Tauri packaging, first-launch server selection, `sweat://` invite deep links,
+and a presence-only dock badge (mirroring room sidebar markers) now follow the
+delivered Account admission slice. The current multiplayer slice adds durable,
 account-directed room attention for teammate mentions and terminal run
 handoffs.

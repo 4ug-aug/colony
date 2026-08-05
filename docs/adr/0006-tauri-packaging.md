@@ -10,9 +10,10 @@ alternative. The desktop app wraps the **same** React client and calls the
 **same** self-hosted coordinator API over HTTP and WebSocket. Tauri is a
 packaging and native-affordance layer; it does not contain a second
 orchestration implementation. This first slice delivers packaging plus
-first-launch server selection and targets macOS. Native notifications and tray
-status are deferred. Invitation links use the registered `sweat://` desktop
-scheme to carry the single-use token and server URL into the app.
+first-launch server selection and targets macOS. Invitation links use the
+registered `sweat://` desktop scheme to carry the single-use token and server
+URL into the app. The dock badge mirrors existing room attention/unread
+presence (below). Native OS notifications and tray status remain deferred.
 
 ## Server selection
 
@@ -52,6 +53,20 @@ otherwise, and the coordinator gates every request on an allowed origin before
 authenticating). The browser client is untouched: it authenticates with cookies
 and `credentials: 'include'` and streams over a native same-site WebSocket.
 
+## Dock badge presence
+
+When any room already has a sidebar attention or unread marker, the desktop
+app shows a presence-only badge on the macOS dock icon (`setBadgeCount(1)`).
+The badge clears when no room has a marker. It reuses the client's existing
+`notificationByRoom` derivation (mention counts plus the local seen marker);
+it does not invent a separate unread-message count or display a summed number.
+
+The Tauri capability `core:window:allow-set-badge-count` must be granted in
+`src-tauri/capabilities/default.json`. The client helper
+`src/lib/dock-badge.ts` no-ops outside the Tauri runtime and swallows badge
+errors so the dock never breaks chat. macOS may still hide the badge if the
+user turns off Badge App Icon for Sweat in System Settings → Notifications.
+
 ## Boundaries preserved
 
 The static client/server split, server-owned runs, and the
@@ -66,3 +81,7 @@ into the desktop shell.
   Rust-backed fetch that bypasses the webview cookie policy.
 - [Tauri WebSocket plugin](https://v2.tauri.app/plugin/websocket/) opens the
   room stream from Rust with custom headers.
+- [Tauri Window API](https://v2.tauri.app/reference/javascript/api/namespacewindow/)
+  documents `setBadgeCount` / `setBadgeLabel` for dock and taskbar badging.
+- [Tauri core window permissions](https://v2.tauri.app/reference/acl/core-permissions/)
+  list `core:window:allow-set-badge-count`.
