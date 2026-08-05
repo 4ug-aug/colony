@@ -15,9 +15,30 @@ function upsertIssue(issues: Issue[], issue: Issue): Issue[] {
   return issues.map((current) => (current.id === issue.id ? issue : current))
 }
 
+/** Recompute parent childProgress from the live list (server field goes stale on upsert). */
+export function withDerivedChildProgress(issues: Issue[]): Issue[] {
+  const totals = new Map<string, { done: number; total: number }>()
+  for (const issue of issues) {
+    if (!issue.parentId) continue
+    const current = totals.get(issue.parentId) ?? { done: 0, total: 0 }
+    current.total += 1
+    if (issue.status === 'done') current.done += 1
+    totals.set(issue.parentId, current)
+  }
+  return issues.map((issue) => {
+    const progress = totals.get(issue.id)
+    if (!progress) {
+      if (!issue.childProgress) return issue
+      const { childProgress: _removed, ...rest } = issue
+      return rest
+    }
+    return { ...issue, childProgress: progress }
+  })
+}
+
 export function upsertIssueInCache(queryClient: QueryClient, issue: Issue) {
   queryClient.setQueryData(issuesQueryKey, (current: Issue[] | undefined) =>
-    upsertIssue(current ?? [], issue),
+    withDerivedChildProgress(upsertIssue(current ?? [], issue)),
   )
 }
 
@@ -25,7 +46,7 @@ async function fetchIssues(): Promise<Issue[]> {
   const response = await apiFetch('/api/issues')
   if (!response.ok) throw new Error('Unable to load issues')
   const data = (await response.json()) as { issues: Issue[] }
-  return data.issues
+  return withDerivedChildProgress(data.issues)
 }
 
 export function useIssues() {
@@ -39,6 +60,11 @@ export type CreateIssueInput = {
   title: string
   description?: string
   status?: IssueStatus
+  priority?: IssuePriority
+  tags?: string[]
+  timeSpent?: number[]
+  parentId?: string
+  owner?: Issue['owner']
 }
 
 export type UpdateIssueInput = {
@@ -59,7 +85,12 @@ export function useCreateIssue() {
           ...(input.description !== undefined
             ? { description: input.description }
             : {}),
-          ...(input.status ? { status: input.status } : {}),
+          ...(input.status !== undefined ? { status: input.status } : {}),
+          ...(input.priority !== undefined ? { priority: input.priority } : {}),
+          ...(input.tags ? { tags: input.tags } : {}),
+          ...(input.timeSpent ? { timeSpent: input.timeSpent } : {}),
+          ...(input.parentId ? { parentId: input.parentId } : {}),
+          ...(input.owner ? { owner: input.owner } : {}),
         }),
       })
       const data = (await response.json()) as { issue?: Issue; error?: string }

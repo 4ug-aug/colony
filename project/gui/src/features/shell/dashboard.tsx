@@ -21,12 +21,14 @@ import {
   CircleDot,
   Hash,
   Lock,
+  Plus,
   Settings,
   UserRound,
   Wifi,
   WifiOff,
 } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
+import type { IssueStatus } from '#/features/issues/types'
 import type { DashboardView } from './room-sidebar'
 import { RoomSidebar } from './room-sidebar'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
@@ -72,6 +74,10 @@ export function Dashboard({
   } = useRooms(user.id)
   const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
   const [view, setView] = useState<DashboardView>('room')
+  const [issueCreate, setIssueCreate] = useState<{
+    open: boolean
+    status?: IssueStatus
+  }>({ open: false })
   const [searchOpen, setSearchOpen] = useState(false)
   const [selectedRunId, setSelectedRunId] = useState<string>()
   const [editingMessage, setEditingMessage] = useState<RoomMessage>()
@@ -237,6 +243,17 @@ export function Dashboard({
               membersChangedAt={membersChangedAt}
             />
           )}
+          {view === 'issues' && (
+            <Button
+              type="button"
+              size="sm"
+              className="ml-auto"
+              onClick={() => setIssueCreate({ open: true })}
+            >
+              <Plus data-icon="inline-start" />
+              New issue
+            </Button>
+          )}
           {view === 'room' && (
             <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               {connection === 'connected' ? (
@@ -259,7 +276,17 @@ export function Dashboard({
           </div>
         )}
         {view === 'schedules' && <SchedulesPage />}
-        {view === 'issues' && <IssuesPage />}
+        {view === 'issues' && (
+          <IssuesPage
+            createOpen={issueCreate.open}
+            createStatus={issueCreate.status}
+            onCreateOpenChange={(open, status) =>
+              setIssueCreate(
+                open ? { open: true, status } : { open: false },
+              )
+            }
+          />
+        )}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
             <div className="relative flex min-w-0 flex-1 flex-col">

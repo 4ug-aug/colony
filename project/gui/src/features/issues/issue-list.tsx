@@ -7,17 +7,19 @@ import {
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { cn } from '#/lib/utils'
 import { ChevronDown, Plus } from 'lucide-react'
-import { IssueRow, IssueStatusIcon } from './issue-row'
+import { IssueRow } from './issue-row'
+import { IssueStatusIcon } from './issue-icons'
+import { nestIssuesByParent, type IssueTreeNode } from './issue-tree'
 import type { Issue, IssueStatus } from './types'
 import { ISSUE_STATUS_LABEL, ISSUE_STATUSES } from './types'
 
 function StatusGroup({
   status,
-  issues,
+  rows,
   onCreateInStatus,
 }: {
   status: IssueStatus
-  issues: Issue[]
+  rows: IssueTreeNode[]
   onCreateInStatus?: (status: IssueStatus) => void
 }) {
   const [open, setOpen] = useStoredBoolean(`issues.group.${status}`, true)
@@ -41,7 +43,7 @@ function StatusGroup({
           />
           <IssueStatusIcon status={status} />
           <span>{ISSUE_STATUS_LABEL[status]}</span>
-          <span className="text-muted-foreground">{issues.length}</span>
+          <span className="text-muted-foreground">{rows.length}</span>
         </CollapsibleTrigger>
         {onCreateInStatus && (
           <Button
@@ -58,10 +60,12 @@ function StatusGroup({
       </div>
       <CollapsibleContent>
         <div className="overflow-hidden rounded-b-md border border-t-0 border-border/50 bg-background">
-          {issues.length === 0 ? (
+          {rows.length === 0 ? (
             <p className="px-3 py-2 text-xs text-muted-foreground">No issues</p>
           ) : (
-            issues.map((issue) => <IssueRow key={issue.id} issue={issue} />)
+            rows.map(({ issue, depth }) => (
+              <IssueRow key={issue.id} issue={issue} depth={depth} />
+            ))
           )}
         </div>
       </CollapsibleContent>
@@ -78,14 +82,17 @@ export function IssueList({
 }) {
   return (
     <div>
-      {ISSUE_STATUSES.map((status) => (
-        <StatusGroup
-          key={status}
-          status={status}
-          issues={issues.filter((issue) => issue.status === status)}
-          onCreateInStatus={onCreateInStatus}
-        />
-      ))}
+      {ISSUE_STATUSES.map((status) => {
+        const inStatus = issues.filter((issue) => issue.status === status)
+        return (
+          <StatusGroup
+            key={status}
+            status={status}
+            rows={nestIssuesByParent(inStatus)}
+            onCreateInStatus={onCreateInStatus}
+          />
+        )
+      })}
     </div>
   )
 }
