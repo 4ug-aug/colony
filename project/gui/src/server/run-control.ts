@@ -37,6 +37,11 @@ export type RunStartContext<Output> =
       agentDefinitionId?: string
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
+  | {
+      issueId: string
+      agentDefinitionId?: string
+      onCreate: (run: RunSummary) => NonNullable<Output>
+    }
 
 export interface RunControl {
   subscribe(listener: (run: RunSummary) => void): () => void
@@ -117,7 +122,9 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
         grantContext:
           'roomId' in context
             ? { roomId: context.roomId, agentDefinitionId }
-            : { scheduleId: context.scheduleId, agentDefinitionId },
+            : 'scheduleId' in context
+              ? { scheduleId: context.scheduleId, agentDefinitionId }
+              : { issueId: context.issueId, agentDefinitionId },
         ...('roomId' in context && context.attachments
           ? { attachments: context.attachments }
           : {}),

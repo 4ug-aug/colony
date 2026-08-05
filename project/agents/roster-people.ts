@@ -10,6 +10,16 @@ export const capabilityPresentation: Record<
   string,
   { name: string; tools: Record<string, string> }
 > = {
+  "workspace.issues": {
+    name: "Sweat Issues",
+    tools: {
+      "workspace.list_issues": "List issues",
+      "workspace.get_issue": "Get issues",
+      "workspace.create_issue": "Create issues",
+      "workspace.update_issue": "Update issues",
+      "workspace.assign_issue": "Assign issues",
+    },
+  },
   "linear.issues": {
     name: "Linear issues",
     tools: {

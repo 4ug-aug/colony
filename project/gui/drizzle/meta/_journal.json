@@ -113,6 +113,13 @@
       "when": 1785085393271,
       "tag": "0015_room_message_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785085393272,
+      "tag": "0016_issues",
+      "breakpoints": true
     }
   ]
 }

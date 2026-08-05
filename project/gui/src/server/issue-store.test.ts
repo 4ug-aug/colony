@@ -1,0 +1,135 @@
+import { expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import {
+  buildIssueRunTask,
+  createSqliteIssueStore,
+  formatIssueId,
+  parseIssueRef,
+  resolveIssue,
+} from './issue-store'
+
+const migration = readFileSync(
+  fileURLToPath(new URL('../../drizzle/0016_issues.sql', import.meta.url)),
+  'utf8',
+)
+
+const applyMigration = (sqlite: Database) => {
+  for (const statement of migration.split('--> statement-breakpoint')) {
+    const sql = statement.trim()
+    if (sql) sqlite.exec(sql)
+  }
+}
+
+test('issue store allocates SWE numbers and tracks child progress', () => {
+  const sqlite = new Database(':memory:')
+  applyMigration(sqlite)
+  const store = createSqliteIssueStore(sqlite)
+
+  const parent = store.createIssue({
+    id: 'parent',
+    title: 'Ship dock badge',
+    description: 'Parent feature',
+    createdAt: 1,
+  })
+  expect(parent).toMatchObject({ number: 1, status: 'backlog', priority: 'none' })
+  expect(formatIssueId(parent.number)).toBe('SWE-1')
+
+  const childA = store.createIssue({
+    id: 'child-a',
+    title: 'UI badge',
+    parentId: parent.id,
+    createdAt: 2,
+  })
+  const childB = store.createIssue({
+    id: 'child-b',
+    title: 'Wire notifications',
+    parentId: parent.id,
+    status: 'done',
+    createdAt: 3,
+  })
+  expect(childA.number).toBe(2)
+  expect(childB.number).toBe(3)
+
+  const listedParent = store.getIssue(parent.id)
+  expect(listedParent?.childProgress).toEqual({ done: 1, total: 2 })
+
+  store.assignIssue(childA.id, { kind: 'agent', id: 'software-engineer' }, 4)
+  expect(store.getIssue(childA.id)?.owner).toEqual({
+    kind: 'agent',
+    id: 'software-engineer',
+  })
+
+  store.updateIssue(childA.id, { status: 'in_progress', tags: ['gui'] }, 5)
+  expect(store.getIssue(childA.id)).toMatchObject({
+    status: 'in_progress',
+    tags: ['gui'],
+  })
+
+  expect(resolveIssue(store, 'SWE-2')?.id).toBe(childA.id)
+  expect(parseIssueRef('swe-2')).toEqual({ kind: 'number', number: 2 })
+
+  const task = buildIssueRunTask(store.getIssue(childA.id)!, parent)
+  expect(task).toContain('SWE-2')
+  expect(task).toContain('<<<issue')
+  expect(task).toContain('untrusted user/agent-authored data')
+  expect(task).toContain('SWE-1')
+  expect(task).toContain('Parent feature')
+
+  expect(
+    store.createRun({
+      id: 'run-1',
+      issueId: childA.id,
+      task,
+      agentId: 'software-engineer',
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      state: 'preparing',
+      createdAt: 6,
+      stdout: '',
+      stderr: '',
+    })?.id,
+  ).toBe('run-1')
+  expect(
+    store.createRun({
+      id: 'run-2',
+      issueId: childA.id,
+      task,
+      agentId: 'software-engineer',
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      state: 'preparing',
+      createdAt: 7,
+      stdout: '',
+      stderr: '',
+    }),
+  ).toBeUndefined()
+  expect(store.listRuns(childA.id)).toHaveLength(1)
+  sqlite.close()
+})
+
+test('issue store rejects parent cycles and oversized descriptions', () => {
+  const sqlite = new Database(':memory:')
+  applyMigration(sqlite)
+  const store = createSqliteIssueStore(sqlite)
+  const a = store.createIssue({ id: 'a', title: 'A', createdAt: 1 })
+  const b = store.createIssue({
+    id: 'b',
+    title: 'B',
+    parentId: a.id,
+    createdAt: 2,
+  })
+  expect(() =>
+    store.updateIssue(a.id, { parentId: b.id }, 3),
+  ).toThrow('Issue parent cycle')
+  expect(() =>
+    store.createIssue({
+      id: 'huge',
+      title: 'Huge',
+      description: 'x'.repeat(10_001),
+      createdAt: 4,
+    }),
+  ).toThrow('Invalid Issue description')
+  sqlite.close()
+})

@@ -12,6 +12,10 @@ import {
   createWorkspaceMcpUpstream,
   type WorkspaceRoomPort,
 } from "../mcp/workspace";
+import {
+  createWorkspaceIssuesMcpUpstream,
+  type WorkspaceIssuesPort,
+} from "../mcp/workspace-issues";
 import { STEP_TEXT_LIMIT } from "../runtime/step";
 import { rosterParticipant } from "./roster-meta";
 
@@ -37,6 +41,18 @@ export function createWorkspaceSoftwareEngineerAdapter(options: {
           ),
         });
       },
+    },
+  };
+}
+
+export function createWorkspaceIssuesAdapter(options: {
+  port: WorkspaceIssuesPort;
+}): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "workspace.issues",
+      createUpstream: () =>
+        createWorkspaceIssuesMcpUpstream({ port: options.port }),
     },
   };
 }

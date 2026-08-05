@@ -4,12 +4,13 @@ import { softwareEngineerRole } from "./software-engineer";
 test("the software engineer requests scoped issue and pull request tools", () => {
   expect(softwareEngineerRole.id).toBe("software-engineer");
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({
-    id: "linear.issues",
+    id: "workspace.issues",
     tools: [
-      "linear.get_issue",
-      "linear.list_issues",
-      "linear.save_comment",
-      "linear.save_issue",
+      "workspace.list_issues",
+      "workspace.get_issue",
+      "workspace.create_issue",
+      "workspace.update_issue",
+      "workspace.assign_issue",
     ],
   });
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({

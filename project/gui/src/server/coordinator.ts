@@ -48,6 +48,22 @@ import {
   type ScheduleStore,
 } from './schedule-store'
 import {
+  createSqliteIssueStore,
+  resolveIssue,
+  type Issue,
+  type IssueOwner,
+  type IssuePriority,
+  type IssueRun,
+  type IssueStatus,
+  type IssueStore,
+} from './issue-store'
+import {
+  createIssueRunner,
+  IssueActiveRunError,
+  IssueAgentRequiredError,
+  type IssueRunner,
+} from './issue-runner'
+import {
   createScheduleRunner,
   ScheduleActiveRunError,
   type ScheduleRunner,
@@ -131,6 +147,10 @@ export type WorkspaceServerMessage =
   | { type: 'schedule_run.created'; run: ScheduleRun }
   | { type: 'schedule_run.changed'; run: ScheduleRun }
   | { type: 'schedule_run.step'; runId: string; step: ScheduleRunStep }
+  | { type: 'issue.created'; issue: Issue }
+  | { type: 'issue.changed'; issue: Issue }
+  | { type: 'issue_run.created'; run: IssueRun }
+  | { type: 'issue_run.changed'; run: IssueRun }
 export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
 
 export type AgentDefinitionSummary = {
@@ -285,6 +305,11 @@ export function createCoordinator(options: {
   admission?: AdmissionOptions
   agentReady?: (agentDefinitionId?: string) => boolean
   scheduleStore?: ScheduleStore
+  issueStore?: IssueStore
+  issueNotify?: {
+    onCreated: (issue: Issue) => void
+    onChanged: (issue: Issue) => void
+  }
   agentDefinitions?: () => AgentDefinitionSummary[]
 }) {
   const attachmentsDirectory =
@@ -324,6 +349,12 @@ export function createCoordinator(options: {
   const broadcastWorkspace = (message: WorkspaceServerMessage): void => {
     for (const socket of sockets)
       if (socket.data.scope === 'workspace') send(socket, message)
+  }
+  if (options.issueNotify) {
+    options.issueNotify.onCreated = (issue) =>
+      broadcastWorkspace({ type: 'issue.created', issue })
+    options.issueNotify.onChanged = (issue) =>
+      broadcastWorkspace({ type: 'issue.changed', issue })
   }
   const broadcastRoom = (roomId: string, message: RoomServerMessage): void => {
     for (const socket of sockets)
@@ -369,6 +400,19 @@ export function createCoordinator(options: {
           runId: step.runId,
           step,
         }),
+    })
+  }
+  let issueRunner: IssueRunner | undefined
+  if (options.issueStore) {
+    issueRunner = createIssueRunner({
+      store: options.issueStore,
+      control: options.control,
+      onIssueChange: (issue) =>
+        broadcastWorkspace({ type: 'issue.changed', issue }),
+      onRunCreated: (run) =>
+        broadcastWorkspace({ type: 'issue_run.created', run }),
+      onRunChange: (run) =>
+        broadcastWorkspace({ type: 'issue_run.changed', run }),
     })
   }
   const broadcastAttention = (
@@ -527,6 +571,7 @@ export function createCoordinator(options: {
   })
   scheduleRunner?.failStaleRuns()
   scheduleRunner?.tick()
+  issueRunner?.failStaleRuns()
   const scheduleInterval = scheduleRunner
     ? setInterval(() => scheduleRunner!.tick(), 15_000)
     : undefined
@@ -837,6 +882,336 @@ export function createCoordinator(options: {
               steps: options.scheduleStore.listSteps(scheduleRunSteps[1]!),
             }),
           )
+        }
+      }
+      if (options.issueStore) {
+        const issueBody = async (): Promise<
+          Record<string, unknown> | undefined
+        > => {
+          try {
+            const body = await request.json()
+            return body && typeof body === 'object'
+              ? (body as Record<string, unknown>)
+              : undefined
+          } catch {
+            return undefined
+          }
+        }
+        const statuses: IssueStatus[] = [
+          'backlog',
+          'todo',
+          'in_progress',
+          'in_review',
+          'done',
+        ]
+        const priorities: IssuePriority[] = [
+          'none',
+          'low',
+          'medium',
+          'high',
+          'urgent',
+        ]
+        const parseOwner = (value: unknown): IssueOwner | undefined | false => {
+          if (value === null) return undefined
+          if (!value || typeof value !== 'object') return false
+          const owner = value as Record<string, unknown>
+          if (
+            (owner.kind === 'account' || owner.kind === 'agent') &&
+            typeof owner.id === 'string' &&
+            owner.id
+          )
+            return { kind: owner.kind, id: owner.id }
+          return false
+        }
+        const knownAgent = (id: unknown): id is string =>
+          typeof id === 'string' &&
+          agentDefinitions().some((agent) => agent.id === id)
+        const knownAccount = (id: string): boolean =>
+          options.store.listWorkspaceUsers().some((user) => user.id === id)
+        const decodeRef = (raw: string): string | undefined => {
+          try {
+            return decodeURIComponent(raw)
+          } catch {
+            return undefined
+          }
+        }
+        const requireOwner = (
+          owner: IssueOwner | undefined,
+        ): Response | undefined => {
+          if (owner?.kind === 'agent' && !knownAgent(owner.id))
+            return cors(json({ error: 'Unknown agent definition' }, 400))
+          if (owner?.kind === 'account' && !knownAccount(owner.id))
+            return cors(json({ error: 'Unknown account' }, 400))
+          return undefined
+        }
+        if (url.pathname === '/api/issues' && request.method === 'GET') {
+          const status = url.searchParams.get('status')
+          if (status && !statuses.includes(status as IssueStatus))
+            return cors(json({ error: 'Invalid status' }, 400))
+          return cors(
+            json({
+              issues: options.issueStore.listIssues(
+                status ? { status: status as IssueStatus } : undefined,
+              ),
+            }),
+          )
+        }
+        if (url.pathname === '/api/issues' && request.method === 'POST') {
+          const body = await issueBody()
+          if (!body) return cors(json({ error: 'Invalid Issue' }, 400))
+          try {
+            const title =
+              typeof body.title === 'string' ? body.title.trim() : ''
+            if (!title) return cors(json({ error: 'Invalid Issue title' }, 400))
+            const description =
+              typeof body.description === 'string' ? body.description : ''
+            const status =
+              body.status === undefined
+                ? undefined
+                : statuses.includes(body.status as IssueStatus)
+                  ? (body.status as IssueStatus)
+                  : undefined
+            if (body.status !== undefined && status === undefined)
+              return cors(json({ error: 'Invalid status' }, 400))
+            const priority =
+              body.priority === undefined
+                ? undefined
+                : priorities.includes(body.priority as IssuePriority)
+                  ? (body.priority as IssuePriority)
+                  : undefined
+            if (body.priority !== undefined && priority === undefined)
+              return cors(json({ error: 'Invalid priority' }, 400))
+            if (body.tags !== undefined) {
+              if (
+                !Array.isArray(body.tags) ||
+                body.tags.some((tag) => typeof tag !== 'string')
+              )
+                return cors(json({ error: 'Invalid tags' }, 400))
+            }
+            if (body.timeSpent !== undefined) {
+              if (
+                !Array.isArray(body.timeSpent) ||
+                body.timeSpent.some(
+                  (minutes) =>
+                    typeof minutes !== 'number' || !Number.isFinite(minutes),
+                )
+              )
+                return cors(json({ error: 'Invalid time spent' }, 400))
+            }
+            const tags = body.tags as string[] | undefined
+            const timeSpent = body.timeSpent as number[] | undefined
+            const parentId =
+              body.parentId === undefined
+                ? undefined
+                : typeof body.parentId === 'string'
+                  ? body.parentId
+                  : undefined
+            if (body.parentId !== undefined && parentId === undefined)
+              return cors(json({ error: 'Invalid parent Issue' }, 400))
+            const owner =
+              body.owner === undefined ? undefined : parseOwner(body.owner)
+            if (owner === false)
+              return cors(json({ error: 'Invalid owner' }, 400))
+            const ownerError = requireOwner(owner)
+            if (ownerError) return ownerError
+            const issue = options.issueStore.createIssue({
+              id: crypto.randomUUID(),
+              title,
+              description,
+              ...(status ? { status } : {}),
+              ...(priority ? { priority } : {}),
+              ...(tags ? { tags } : {}),
+              ...(timeSpent ? { timeSpent } : {}),
+              ...(parentId ? { parentId } : {}),
+              ...(owner ? { owner } : {}),
+              createdAt: Date.now(),
+            })
+            broadcastWorkspace({ type: 'issue.created', issue })
+            return cors(json({ issue }, 201))
+          } catch (error) {
+            return cors(
+              json(
+                {
+                  error:
+                    error instanceof Error ? error.message : 'Invalid Issue',
+                },
+                400,
+              ),
+            )
+          }
+        }
+        const issueRoute = url.pathname.match(/^\/api\/issues\/([^/]+)$/)
+        if (issueRoute && request.method === 'GET') {
+          const ref = decodeRef(issueRoute[1]!)
+          if (!ref) return cors(json({ error: 'Invalid Issue ref' }, 400))
+          const issue = resolveIssue(options.issueStore, ref)
+          return issue
+            ? cors(json({ issue }))
+            : cors(json({ error: 'Issue not found' }, 404))
+        }
+        if (issueRoute && request.method === 'PATCH') {
+          const ref = decodeRef(issueRoute[1]!)
+          if (!ref) return cors(json({ error: 'Invalid Issue ref' }, 400))
+          const issue = resolveIssue(options.issueStore, ref)
+          if (!issue) return cors(json({ error: 'Issue not found' }, 404))
+          const body = await issueBody()
+          if (!body) return cors(json({ error: 'Invalid Issue' }, 400))
+          try {
+            const patch: Parameters<IssueStore['updateIssue']>[1] = {}
+            if (body.title !== undefined) {
+              if (typeof body.title !== 'string')
+                return cors(json({ error: 'Invalid Issue title' }, 400))
+              patch.title = body.title
+            }
+            if (body.description !== undefined) {
+              if (typeof body.description !== 'string')
+                return cors(json({ error: 'Invalid description' }, 400))
+              patch.description = body.description
+            }
+            if (body.status !== undefined) {
+              if (!statuses.includes(body.status as IssueStatus))
+                return cors(json({ error: 'Invalid status' }, 400))
+              patch.status = body.status as IssueStatus
+            }
+            if (body.priority !== undefined) {
+              if (!priorities.includes(body.priority as IssuePriority))
+                return cors(json({ error: 'Invalid priority' }, 400))
+              patch.priority = body.priority as IssuePriority
+            }
+            if (body.tags !== undefined) {
+              if (
+                !Array.isArray(body.tags) ||
+                body.tags.some((tag) => typeof tag !== 'string')
+              )
+                return cors(json({ error: 'Invalid tags' }, 400))
+              patch.tags = body.tags as string[]
+            }
+            if (body.timeSpent !== undefined) {
+              if (
+                !Array.isArray(body.timeSpent) ||
+                body.timeSpent.some(
+                  (minutes) =>
+                    typeof minutes !== 'number' || !Number.isFinite(minutes),
+                )
+              )
+                return cors(json({ error: 'Invalid time spent' }, 400))
+              patch.timeSpent = body.timeSpent as number[]
+            }
+            if (body.parentId !== undefined) {
+              if (body.parentId !== null && typeof body.parentId !== 'string')
+                return cors(json({ error: 'Invalid parent Issue' }, 400))
+              patch.parentId = body.parentId
+            }
+            const updated = options.issueStore.updateIssue(
+              issue.id,
+              patch,
+              Date.now(),
+            )
+            broadcastWorkspace({ type: 'issue.changed', issue: updated })
+            return cors(json({ issue: updated }))
+          } catch (error) {
+            return cors(
+              json(
+                {
+                  error:
+                    error instanceof Error ? error.message : 'Invalid Issue',
+                },
+                400,
+              ),
+            )
+          }
+        }
+        const issueAssign = url.pathname.match(
+          /^\/api\/issues\/([^/]+)\/assign$/,
+        )
+        if (issueAssign && request.method === 'POST') {
+          const ref = decodeRef(issueAssign[1]!)
+          if (!ref) return cors(json({ error: 'Invalid Issue ref' }, 400))
+          const issue = resolveIssue(options.issueStore, ref)
+          if (!issue) return cors(json({ error: 'Issue not found' }, 404))
+          const body = await issueBody()
+          if (!body) return cors(json({ error: 'Invalid owner' }, 400))
+          const owner =
+            body.owner === undefined ? false : parseOwner(body.owner)
+          if (owner === false)
+            return cors(json({ error: 'Invalid owner' }, 400))
+          const ownerError = requireOwner(owner)
+          if (ownerError) return ownerError
+          const updated = options.issueStore.assignIssue(
+            issue.id,
+            owner,
+            Date.now(),
+          )
+          broadcastWorkspace({ type: 'issue.changed', issue: updated })
+          return cors(json({ issue: updated }))
+        }
+        const issueRuns = url.pathname.match(/^\/api\/issues\/([^/]+)\/runs$/)
+        if (issueRuns && request.method === 'GET') {
+          const ref = decodeRef(issueRuns[1]!)
+          if (!ref) return cors(json({ error: 'Invalid Issue ref' }, 400))
+          const issue = resolveIssue(options.issueStore, ref)
+          if (!issue) return cors(json({ error: 'Issue not found' }, 404))
+          return cors(json({ runs: options.issueStore.listRuns(issue.id) }))
+        }
+        if (issueRuns && request.method === 'POST') {
+          const ref = decodeRef(issueRuns[1]!)
+          if (!ref) return cors(json({ error: 'Invalid Issue ref' }, 400))
+          const issue = resolveIssue(options.issueStore, ref)
+          if (!issue) return cors(json({ error: 'Issue not found' }, 404))
+          if (!issueRunner)
+            return cors(json({ error: 'Issue runs unavailable' }, 503))
+          const body = (await issueBody()) ?? {}
+          const agentDefinitionId =
+            body.agentDefinitionId === undefined
+              ? undefined
+              : typeof body.agentDefinitionId === 'string'
+                ? body.agentDefinitionId
+                : undefined
+          if (
+            body.agentDefinitionId !== undefined &&
+            (agentDefinitionId === undefined || !knownAgent(agentDefinitionId))
+          )
+            return cors(json({ error: 'Unknown agent definition' }, 400))
+          try {
+            const result = issueRunner.startRun(issue.id, {
+              ...(agentDefinitionId ? { agentDefinitionId } : {}),
+            })
+            return cors(json(result, 202))
+          } catch (error) {
+            if (error instanceof IssueActiveRunError)
+              return cors(json({ error: error.message }, 409))
+            if (error instanceof IssueAgentRequiredError)
+              return cors(json({ error: error.message }, 400))
+            return cors(
+              json(
+                {
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : 'Unable to start Issue run',
+                },
+                400,
+              ),
+            )
+          }
+        }
+        const issueRunRoute = url.pathname.match(
+          /^\/api\/issue-runs\/([^/]+)$/,
+        )
+        if (issueRunRoute && request.method === 'GET') {
+          const run = options.issueStore.getRun(issueRunRoute[1]!)
+          return run
+            ? cors(json({ run }))
+            : cors(json({ error: 'Run not found' }, 404))
+        }
+        const issueRunCancel = url.pathname.match(
+          /^\/api\/issue-runs\/([^/]+)\/cancel$/,
+        )
+        if (issueRunCancel && request.method === 'POST') {
+          const run = options.issueStore.getRun(issueRunCancel[1]!)
+          if (!run) return cors(json({ error: 'Run not found' }, 404))
+          const changed = await issueRunner?.cancel(run.id)
+          return cors(json({ run: changed ?? run }))
         }
       }
       if (url.pathname === '/api/rooms' && request.method === 'GET')
@@ -1266,6 +1641,7 @@ export function createCoordinator(options: {
         unsubscribeSteps()
         if (scheduleInterval) clearInterval(scheduleInterval)
         scheduleRunner?.stop()
+        issueRunner?.stop()
         await Promise.all([server.stop(true), options.control.stop()])
       })()),
   }
@@ -1293,6 +1669,7 @@ if (import.meta.main) {
       createGitHubSoftwareEngineerAdapter,
       createLinearSoftwareEngineerAdapter,
       createOutlineAdapter,
+      createWorkspaceIssuesAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
     { readAsanaConfiguration },
@@ -1324,6 +1701,11 @@ if (import.meta.main) {
   const authContext = await auth.$context
   const store = createSqliteRoomStore(sqlite)
   const scheduleStore = createSqliteScheduleStore(sqlite)
+  const issueStore = createSqliteIssueStore(sqlite)
+  const issueNotify = {
+    onCreated: (_issue: Issue) => {},
+    onChanged: (_issue: Issue) => {},
+  }
   const messages = createRoomMessageHub(store)
   const attachmentsDirectory = attachmentDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
@@ -1368,6 +1750,93 @@ if (import.meta.main) {
                 .map(({ attachments: _, ...message }) => message),
             postMessage: (input) => {
               messages.postMessage(input)
+            },
+          },
+        }),
+        createWorkspaceIssuesAdapter({
+          port: {
+            listIssues: (filter) => issueStore.listIssues(filter),
+            getIssue: (ref) => resolveIssue(issueStore, ref),
+            createIssue: (input) => {
+              if (input.owner?.kind === 'agent') {
+                const known = rosterDefinitionSummaries().some(
+                  (agent) => agent.id === input.owner!.id,
+                )
+                if (!known) throw new Error('Unknown agent definition')
+              }
+              if (input.owner?.kind === 'account') {
+                const known = store
+                  .listWorkspaceUsers()
+                  .some((user) => user.id === input.owner!.id)
+                if (!known) throw new Error('Unknown account')
+              }
+              const issue = issueStore.createIssue({
+                id: crypto.randomUUID(),
+                title: input.title,
+                ...(input.description !== undefined
+                  ? { description: input.description }
+                  : {}),
+                ...(input.status ? { status: input.status } : {}),
+                ...(input.priority ? { priority: input.priority } : {}),
+                ...(input.tags ? { tags: input.tags } : {}),
+                ...(input.parentId ? { parentId: input.parentId } : {}),
+                ...(input.owner ? { owner: input.owner } : {}),
+                createdAt: Date.now(),
+              })
+              issueNotify.onCreated(issue)
+              return issue
+            },
+            updateIssue: (ref, patch) => {
+              const issue = resolveIssue(issueStore, ref)
+              if (!issue) throw new Error(`Issue not found: ${ref}`)
+              const updated = issueStore.updateIssue(
+                issue.id,
+                {
+                  ...(patch.title !== undefined ? { title: patch.title } : {}),
+                  ...(patch.description !== undefined
+                    ? { description: patch.description }
+                    : {}),
+                  ...(patch.status !== undefined
+                    ? { status: patch.status }
+                    : {}),
+                  ...(patch.priority !== undefined
+                    ? { priority: patch.priority }
+                    : {}),
+                  ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
+                  ...(patch.timeSpent !== undefined
+                    ? { timeSpent: patch.timeSpent }
+                    : {}),
+                  ...(patch.parentId !== undefined
+                    ? { parentId: patch.parentId }
+                    : {}),
+                },
+                Date.now(),
+              )
+              issueNotify.onChanged(updated)
+              return updated
+            },
+            assignIssue: (ref, owner) => {
+              const issue = resolveIssue(issueStore, ref)
+              if (!issue) throw new Error(`Issue not found: ${ref}`)
+              if (owner?.kind === 'agent') {
+                const known = rosterDefinitionSummaries().some(
+                  (agent) => agent.id === owner.id,
+                )
+                if (!known) throw new Error('Unknown agent definition')
+              }
+              if (owner?.kind === 'account') {
+                const known = store
+                  .listWorkspaceUsers()
+                  .some((user) => user.id === owner.id)
+                if (!known) throw new Error('Unknown account')
+              }
+              const updated = issueStore.assignIssue(
+                issue.id,
+                owner ?? undefined,
+                Date.now(),
+              )
+              issueNotify.onChanged(updated)
+              return updated
             },
           },
         }),
@@ -1417,6 +1886,8 @@ if (import.meta.main) {
     attachmentDirectory: attachmentsDirectory,
     port: Number(process.env.SWEAT_COORDINATOR_PORT ?? 3001),
     scheduleStore,
+    issueStore,
+    issueNotify,
     admission: {
       store: admissionStore,
       llm,
