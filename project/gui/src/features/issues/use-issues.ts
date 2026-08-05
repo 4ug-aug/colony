@@ -5,7 +5,12 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { apiFetch } from '#/lib/api-transport'
-import type { Issue, IssuePriority, IssueStatus } from './types'
+import type {
+  Issue,
+  IssueOwner,
+  IssuePriority,
+  IssueStatus,
+} from './types'
 
 export const issuesQueryKey = ['issues'] as const
 
@@ -56,6 +61,35 @@ export function useIssues() {
   })
 }
 
+async function fetchIssue(ref: string): Promise<Issue> {
+  const response = await apiFetch(`/api/issues/${encodeURIComponent(ref)}`)
+  const data = (await response.json()) as { issue?: Issue; error?: string }
+  if (!response.ok) throw new Error(data.error ?? 'Unable to load issue')
+  if (!data.issue) throw new Error('Unable to load issue')
+  return data.issue
+}
+
+/** Prefer list cache; fetch single issue only when missing. */
+export function useIssue(id: string | undefined) {
+  const list = useIssues()
+  const cached = id
+    ? list.data?.find((issue) => issue.id === id)
+    : undefined
+
+  const detail = useQuery({
+    queryKey: ['issue', id] as const,
+    queryFn: () => fetchIssue(id!),
+    enabled: Boolean(id) && !cached && !list.isPending,
+  })
+
+  return {
+    issue: cached ?? detail.data,
+    isPending: Boolean(id) && !cached && (list.isPending || detail.isPending),
+    isError: !cached && detail.isError,
+    error: detail.error,
+  }
+}
+
 export type CreateIssueInput = {
   title: string
   description?: string
@@ -69,8 +103,13 @@ export type CreateIssueInput = {
 
 export type UpdateIssueInput = {
   id: string
+  title?: string
+  description?: string
   status?: IssueStatus
   priority?: IssuePriority
+  tags?: string[]
+  timeSpent?: number[]
+  parentId?: string | null
 }
 
 export function useCreateIssue() {
@@ -119,6 +158,30 @@ export function useUpdateIssue() {
       if (!response.ok)
         throw new Error(data.error ?? 'Unable to update issue')
       if (!data.issue) throw new Error('Unable to update issue')
+      return data.issue
+    },
+    onSuccess: (issue) => {
+      upsertIssueInCache(queryClient, issue)
+    },
+  })
+}
+
+export function useAssignIssue() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: {
+      id: string
+      owner: IssueOwner | null
+    }): Promise<Issue> => {
+      const response = await apiFetch(`/api/issues/${input.id}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner: input.owner }),
+      })
+      const data = (await response.json()) as { issue?: Issue; error?: string }
+      if (!response.ok)
+        throw new Error(data.error ?? 'Unable to assign issue')
+      if (!data.issue) throw new Error('Unable to assign issue')
       return data.issue
     },
     onSuccess: (issue) => {

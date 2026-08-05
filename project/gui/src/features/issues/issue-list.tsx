@@ -16,10 +16,12 @@ import { ISSUE_STATUS_LABEL, ISSUE_STATUSES } from './types'
 function StatusGroup({
   status,
   rows,
+  onOpenIssue,
   onCreateInStatus,
 }: {
   status: IssueStatus
   rows: IssueTreeNode[]
+  onOpenIssue?: (issueId: string) => void
   onCreateInStatus?: (status: IssueStatus) => void
 }) {
   const [open, setOpen] = useStoredBoolean(`issues.group.${status}`, true)
@@ -64,7 +66,12 @@ function StatusGroup({
             <p className="px-3 py-2 text-xs text-muted-foreground">No issues</p>
           ) : (
             rows.map(({ issue, depth }) => (
-              <IssueRow key={issue.id} issue={issue} depth={depth} />
+              <IssueRow
+                key={issue.id}
+                issue={issue}
+                depth={depth}
+                onOpen={onOpenIssue}
+              />
             ))
           )}
         </div>
@@ -75,9 +82,11 @@ function StatusGroup({
 
 export function IssueList({
   issues,
+  onOpenIssue,
   onCreateInStatus,
 }: {
   issues: Issue[]
+  onOpenIssue?: (issueId: string) => void
   onCreateInStatus?: (status: IssueStatus) => void
 }) {
   return (
@@ -89,6 +98,7 @@ export function IssueList({
             key={status}
             status={status}
             rows={nestIssuesByParent(inStatus)}
+            onOpenIssue={onOpenIssue}
             onCreateInStatus={onCreateInStatus}
           />
         )

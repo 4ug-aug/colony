@@ -29,6 +29,28 @@ export type Issue = {
   childProgress?: IssueChildProgress
 }
 
+export type IssueRunState =
+  | 'preparing'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+
+export type IssueRun = {
+  id: string
+  issueId: string
+  task: string
+  agentId: string
+  provider: 'openai' | 'custom' | 'cursor'
+  model: string
+  state: IssueRunState
+  createdAt: number
+  startedAt?: number
+  completedAt?: number
+  exitCode?: number
+  error?: string
+}
+
 export const ISSUE_STATUSES: readonly IssueStatus[] = [
   'backlog',
   'todo',

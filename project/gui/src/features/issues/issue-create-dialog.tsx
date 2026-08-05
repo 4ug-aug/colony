@@ -187,9 +187,11 @@ function ParentIssuePicker({
 
 function IssueCreateForm({
   defaultStatus,
+  defaultParentId,
   onOpenChange,
 }: {
   defaultStatus?: IssueStatus
+  defaultParentId?: string
   onOpenChange: (open: boolean) => void
 }) {
   const createIssue = useCreateIssue()
@@ -203,7 +205,7 @@ function IssueCreateForm({
   const [priority, setPriority] = useState<IssuePriority>('none')
   const [tags, setTags] = useState('')
   const [timeSpentMinutes, setTimeSpentMinutes] = useState('')
-  const [parentId, setParentId] = useState<string>('none')
+  const [parentId, setParentId] = useState<string>(defaultParentId ?? 'none')
   const [owner, setOwner] = useState('none')
 
   const selectedOwner = parseOwnerValue(owner)
@@ -476,18 +478,21 @@ export function IssueCreateDialog({
   open,
   onOpenChange,
   defaultStatus,
+  defaultParentId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultStatus?: IssueStatus
+  defaultParentId?: string
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg" showCloseButton>
         {open && (
           <IssueCreateForm
-            key={defaultStatus ?? 'backlog'}
+            key={`${defaultStatus ?? 'backlog'}:${defaultParentId ?? 'none'}`}
             defaultStatus={defaultStatus}
+            defaultParentId={defaultParentId}
             onOpenChange={onOpenChange}
           />
         )}
