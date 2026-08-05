@@ -92,7 +92,65 @@ the room original remains outside the sandbox.
 _Avoid_: Artifact, workspace file
 
 **Task**: The plain-text assignment supplied by a run to an agent runtime.
-_Avoid_: Prompt
+_Avoid_: Prompt, Issue
+
+**Issue**: A workspace-owned unit of work — not scoped to a Room — that people
+and agents can create, update, and be assigned to. An Issue may have a parent
+Issue; a parent groups child Issues toward one outcome (for example a feature
+described by a PRD). An Issue may name a single **owner** and may link to one
+or more **runs** that execute work toward it; ownership alone does not start a
+run. When a run is started from an Issue, an Agent-definition owner is the
+runtime used; an Account owner keeps ownership and the starter chooses which
+agent runs. It is not a run and not the plain-text task a run supplies to an
+agent runtime.
+_Avoid_: Task, ticket, work item, Objective (as a separate type), Epic, Project,
+room Issue
+
+**Issue id**: The human-visible identifier for an Issue, shaped like `SWE-123`
+(fixed `SWE` prefix plus a monotonic workspace number). It is what people and
+agents cite in prompts and UI, distinct from any internal storage key.
+_Avoid_: UUID-as-display-id, ticket number, per-workspace prefix
+
+**Issue owner**: The single Account or Agent definition responsible for an
+Issue. Child Issues have their own owners; starting runs or spawning child
+Issues does not transfer the parent's owner. Agent-to-agent hand-off is
+assigning (or creating) Issues to other agent definitions, not a separate
+delegation type.
+_Avoid_: Assignee, owners (plural), worker, run participant
+
+**Issue time spent**: An ordered list of minute durations logged against an
+Issue. Total spent is the sum of those numbers; v1 entries carry no actor or
+timestamp.
+_Avoid_: Estimate, timesheet, time entry (as a full audit record)
+
+**Issue status**: Where an Issue sits in the workspace workflow. V1 statuses
+are Backlog, Todo, In progress, In review, and Done, in that order. Starting
+a run linked to an Issue moves it to In progress, including when it was In
+review; run completion does not change status. Done is not moved by run start.
+_Avoid_: State, column, phase
+
+**Issue-linked run**: A run started from an Issue to execute work toward it.
+V1 builds that run's Task from a fixed platform delegation prompt that includes
+the Issue id, title, and description, plus parent Issue context when the Issue
+has a parent. The prompt is not user-editable yet.
+_Avoid_: Issue task (ambiguous with Task), assignment run
+
+**Issue priority**: How urgently an Issue should be handled relative to others.
+V1 levels match Linear: No priority, Low, Medium, High, Urgent.
+_Avoid_: Severity, rank
+
+**Issue tag**: A free-form label on an Issue. An Issue may have many tags.
+_Avoid_: Label (as a separate type), category, Objective
+
+**Issue tools**: First-party agent tools for reading and writing Sweat Issues.
+They are granted as a workspace capability (`workspace.issues`) over the same
+MCP session path as other capabilities (for example `workspace.room`), not as
+Linear/Asana tools and not as a cross-provider tracker abstraction. A grant
+covers the whole workspace's Issues, not a single Issue. V1 tools are
+list/get/create/update plus assign (set the Issue owner to an Account or Agent
+definition). They replace Linear as the software-engineer work-item path;
+Asana remains an optional external capability when configured.
+_Avoid_: linear.issues, task tools (ambiguous), generic task-management API
 
 **System instructions**: The role-owned instructions supplied by an agent
 definition.

@@ -290,7 +290,13 @@ export function createAsanaMcpUpstream(options: {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            data: { ...input, projects: [options.projectGid] },
+            data: {
+              name: input.name,
+              ...(input.description === undefined
+                ? {}
+                : { notes: input.description }),
+              projects: [options.projectGid],
+            },
           }),
         });
       }
@@ -311,15 +317,25 @@ export function createAsanaMcpUpstream(options: {
         const input = taskInput(args);
         await ensureTaskInProject(input.taskGid);
         return request(
-          `${taskPath(input.taskGid)}?opt_fields=gid,name,completed,permalink_url`,
+          `${taskPath(input.taskGid)}?opt_fields=gid,name,notes,completed,permalink_url`,
         );
       }
       if (name === "asana.get_task_comments") {
         const input = taskInput(args);
         await ensureTaskInProject(input.taskGid);
-        return request(
-          `${taskPath(input.taskGid)}/stories?opt_fields=gid,text,created_by.name`,
+        const response = await request(
+          `${taskPath(input.taskGid)}/stories?opt_fields=gid,text,created_by.name,resource_subtype,created_at`,
         );
+        const stories = Array.isArray(response.data) ? response.data : [];
+        return {
+          data: stories.filter(
+            (story) =>
+              story &&
+              typeof story === "object" &&
+              (story as { resource_subtype?: unknown }).resource_subtype ===
+                "comment_added",
+          ),
+        };
       }
       if (name === "asana.set_task_completion") {
         const input = completionInput(args);

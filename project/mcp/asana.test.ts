@@ -63,7 +63,7 @@ test("Asana uses the configured project and bounded task pagination", async () =
       ],
       [
         "GET",
-        "https://app.asana.com/api/1.0/tasks/task-1?opt_fields=gid,name,completed,permalink_url",
+        "https://app.asana.com/api/1.0/tasks/task-1?opt_fields=gid,name,notes,completed,permalink_url",
       ],
       [
         "GET",
@@ -71,7 +71,7 @@ test("Asana uses the configured project and bounded task pagination", async () =
       ],
       [
         "GET",
-        "https://app.asana.com/api/1.0/tasks/task-1/stories?opt_fields=gid,text,created_by.name",
+        "https://app.asana.com/api/1.0/tasks/task-1/stories?opt_fields=gid,text,created_by.name,resource_subtype,created_at",
       ],
       [
         "GET",
@@ -148,9 +148,77 @@ test("Asana creates tasks only in the configured project", async () => {
   expect(JSON.parse(requests[0].init?.body as string)).toEqual({
     data: {
       name: "Ship it",
-      description: "Ready to release",
+      notes: "Ready to release",
       projects: [projectGid],
     },
+  });
+});
+
+test("Asana get_task returns notes and get_task_comments keeps only comments", async () => {
+  const upstream = createAsanaMcpUpstream({
+    apiToken: token,
+    projectGid,
+    fetch: async (url) => {
+      if (String(url).includes("memberships.project.gid")) {
+        return Response.json({
+          data: { memberships: [{ project: { gid: projectGid } }] },
+        });
+      }
+      if (String(url).includes("/stories")) {
+        return Response.json({
+          data: [
+            {
+              gid: "story-1",
+              text: "Looks good",
+              resource_subtype: "comment_added",
+              created_by: { name: "Ada" },
+              created_at: "2026-01-01T00:00:00.000Z",
+            },
+            {
+              gid: "story-2",
+              text: "marked this task complete",
+              resource_subtype: "marked_complete",
+              created_by: { name: "Ada" },
+              created_at: "2026-01-02T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+      return Response.json({
+        data: {
+          gid: "task-1",
+          name: "Ship it",
+          notes: "Ready to release",
+          completed: false,
+          permalink_url: "https://app.asana.com/0/1/task-1",
+        },
+      });
+    },
+  });
+
+  await expect(
+    upstream.callTool("asana.get_task", { taskGid: "task-1" }),
+  ).resolves.toEqual({
+    data: {
+      gid: "task-1",
+      name: "Ship it",
+      notes: "Ready to release",
+      completed: false,
+      permalink_url: "https://app.asana.com/0/1/task-1",
+    },
+  });
+  await expect(
+    upstream.callTool("asana.get_task_comments", { taskGid: "task-1" }),
+  ).resolves.toEqual({
+    data: [
+      {
+        gid: "story-1",
+        text: "Looks good",
+        resource_subtype: "comment_added",
+        created_by: { name: "Ada" },
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ],
   });
 });
 
