@@ -28,8 +28,8 @@ image, and runs migrations. After signing in, an administrator configures the
 model provider in Workspace Settings. The root environment file is the only one
 used by the development commands.
 `make dev` migrates the database, pulls the agent image, and starts the client
-on `http://localhost:3000` and API on `http://localhost:3001`. Set
-`VITE_SWEAT_API_URL` there when the client should use a different server.
+on `http://localhost:3010` and API on `http://localhost:3011`. Set
+`VITE_SWEAT_API_URL` / `SWEAT_COORDINATOR_PORT` when those should differ.
 
 On an empty database, the coordinator prints a one-time setup token after it
 starts. Paste it into the browser setup form to create the administrator. Use
@@ -70,7 +70,7 @@ bun run tauri:build   # produce a macOS .app / .dmg
 ```
 
 On first launch the app asks for the Sweat server URL (for local development,
-`http://localhost:3001` with a coordinator running) and remembers it. Unlike the
+`http://localhost:3011` with a coordinator running) and remembers it. Unlike the
 browser client, the desktop app runs its HTTP through Tauri's native cookie jar
 and authenticates the realtime WebSocket with a short-lived ticket, so the
 server does not need HTTPS. When any room has a sidebar attention or unread
