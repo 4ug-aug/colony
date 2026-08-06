@@ -1,6 +1,6 @@
 import { useMemo, useState, type AnimationEvent } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
-import { Download, X } from 'lucide-react'
+import { Check, Copy, Download, X } from 'lucide-react'
 import { Avatar, timestamp } from '#/components/avatar'
 import { Markdown } from '#/components/markdown'
 import { Button } from '#/components/ui/button'
@@ -17,6 +17,70 @@ import {
   useEnsureAttachmentObjectUrl,
 } from './use-attachment-blob'
 import { formatBytes } from './format'
+
+const agentMessageClampChars = 520
+
+function AgentMessageBody({
+  text,
+  mentions,
+}: {
+  text: string
+  mentions: string[]
+}) {
+  const [copied, setCopied] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const long = text.length > agentMessageClampChars
+  const copyMarkdown = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+      toast.add({ title: 'Copied as markdown', type: 'success' })
+    } catch {
+      toast.add({ title: 'Copy failed', type: 'error' })
+    }
+  }
+  return (
+    <div className="agent-message-frame group/agent relative">
+      <div className="agent-message-inner">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="absolute top-2 right-2 opacity-0 transition-opacity group-hover/agent:opacity-100 focus-visible:opacity-100"
+          aria-label="Copy as markdown"
+          onClick={() => void copyMarkdown()}
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+        <div className="relative">
+          <div
+            className={long && !expanded ? 'max-h-48 overflow-hidden' : undefined}
+          >
+            <Markdown mentions={mentions}>{text}</Markdown>
+          </div>
+          {long && !expanded && (
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent dark:from-card"
+              aria-hidden
+            />
+          )}
+        </div>
+        {long && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="mt-1 -ml-2"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const previewTypes = new Set([
   'image/png',
@@ -278,7 +342,11 @@ export function Timeline({
               <div
                 className={`${item.grouped ? '' : 'mt-0.5'} text-sm leading-6`}
               >
-                <Markdown mentions={mentionHandles}>{text}</Markdown>
+                {isAgent ? (
+                  <AgentMessageBody text={text} mentions={mentionHandles} />
+                ) : (
+                  <Markdown mentions={mentionHandles}>{text}</Markdown>
+                )}
               </div>
               {!isResult && item.message.attachments.length > 0 && (
                 <div className="mt-2 flex flex-wrap items-start gap-2">
