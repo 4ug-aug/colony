@@ -20,11 +20,17 @@ import { SignIn } from '#/features/auth/sign-in'
 import { Toaster } from '#/components/ui/toast'
 import { WindowDragRegion } from '#/features/shell/window-toolbar'
 import { initInviteDeepLinks } from '#/lib/invite-deep-link'
+import { attachIssueWorkspaceSync } from '#/features/issues/issue-workspace-sync'
 import { createAppQueryClient } from '#/lib/query-client'
 
 const rootEl = document.getElementById('root')!
 const root = createRoot(rootEl)
 const queryClient = createAppQueryClient()
+
+function connectConfiguredServer() {
+  initAuthClient()
+  attachIssueWorkspaceSync(queryClient)
+}
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -77,7 +83,7 @@ function EntryFlow({ needsServer }: { needsServer: boolean }) {
     setSelectingServer(true)
   }, [])
   const onConnected = useCallback(() => {
-    initAuthClient()
+    connectConfiguredServer()
     setAuthReady(true)
     setSelectingServer(false)
   }, [])
@@ -117,7 +123,7 @@ initServerConfig()
   .then(initInviteDeepLinks)
   .then(() => {
     const needsServer = isTauriRuntime() && !currentServerBase()
-    if (!needsServer) initAuthClient()
+    if (!needsServer) connectConfiguredServer()
     root.render(
       <StrictMode>
         <QueryClientProvider client={queryClient}>

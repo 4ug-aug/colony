@@ -22,8 +22,11 @@ function setIssueActiveRun(
   })
 }
 
+let detachIssueWorkspaceSync: (() => void) | undefined
+
 export function attachIssueWorkspaceSync(queryClient: QueryClient) {
-  connectWorkspaceStream({
+  detachIssueWorkspaceSync?.()
+  const handle = connectWorkspaceStream({
     onMessage(data) {
       const event = JSON.parse(data) as {
         type: string
@@ -49,4 +52,5 @@ export function attachIssueWorkspaceSync(queryClient: QueryClient) {
       }
     },
   })
+  detachIssueWorkspaceSync = () => handle.close()
 }
