@@ -5,6 +5,7 @@ export type AgentDefinition = {
   kind?: 'cursor' | 'openai-agents'
   icon: string
   capabilities: { id: string; name: string; tools: string[] }[]
+  skills: { id: string; name: string; description: string }[]
 }
 export type Schedule = {
   id: string

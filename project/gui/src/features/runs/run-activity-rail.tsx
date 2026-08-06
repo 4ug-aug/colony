@@ -19,7 +19,7 @@ import {
 } from './run-activity'
 import { RunActivitySplitHeader } from './run-activity-dither'
 import { terminal } from './run-helpers'
-import { useAgentName } from '#/features/agents/use-agent-definitions'
+import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { ToolIcon } from './run-tool-icon'
 import type { Step } from './step-label'
 import { stepLabel } from './step-label'
@@ -84,7 +84,10 @@ export function RunActivityContent({
   onCancel: () => void
   attribution?: string
 }) {
-  const agent = useAgentName(run.agentId)
+  const { data: agents = [] } = useAgentDefinitions()
+  const agentDefinition = agents.find((entry) => entry.id === run.agentId)
+  const agent = agentDefinition?.name ?? run.agentId
+  const skills = agentDefinition?.skills ?? []
   const scrollRef = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
   const followLive = useRef(!terminal(run.state))
@@ -117,6 +120,7 @@ export function RunActivityContent({
         model={run.model}
         state={run.state}
         status={status}
+        skills={skills}
         onClose={onClose}
         onCancel={onCancel}
       />

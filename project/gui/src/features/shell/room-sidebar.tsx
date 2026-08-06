@@ -72,6 +72,7 @@ import {
   Hash,
   Lock,
   LogOut,
+  ScrollText,
   Settings,
   Trash2,
 } from 'lucide-react'
@@ -449,7 +450,7 @@ export function RoomSidebar({
                   <HoverCard>
                     <HoverCardTrigger
                       delay={150}
-                      closeDelay={100}
+                      closeDelay={200}
                       render={
                         <SidebarMenuButton
                           aria-label={`${agent.name}. View capabilities.`}
@@ -502,6 +503,60 @@ export function RoomSidebar({
                             </div>
                           )
                         })}
+                        {(agent.skills ?? []).length > 0 && (
+                          <div className="flex flex-col gap-1.5 border-t pt-3">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              Skills
+                            </p>
+                            <ul className="flex flex-col gap-1">
+                              {(agent.skills ?? []).map((skill) => (
+                                <li key={skill.id}>
+                                  <HoverCard>
+                                    <HoverCardTrigger
+                                      delay={100}
+                                      closeDelay={100}
+                                      render={
+                                        <button
+                                          type="button"
+                                          className="group/skill flex w-full items-start gap-2 rounded-md border border-transparent bg-muted/40 px-2 py-1.5 text-left outline-none transition-colors hover:border-border hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                                        />
+                                      }
+                                    >
+                                      <ScrollText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                                      <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-xs font-medium">
+                                          {skill.name.replace(/-/g, ' ')}
+                                        </span>
+                                        <span className="mt-0.5 line-clamp-1 text-[11px] leading-snug text-muted-foreground">
+                                          {skill.description}
+                                        </span>
+                                      </span>
+                                      <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/skill:opacity-100 group-data-[popup-open]/skill:opacity-100" />
+                                    </HoverCardTrigger>
+                                    <HoverCardContent
+                                      side="right"
+                                      align="start"
+                                      sideOffset={8}
+                                      className="w-72"
+                                    >
+                                      <div className="flex items-start gap-2">
+                                        <ScrollText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                                        <div className="min-w-0">
+                                          <p className="text-sm font-semibold">
+                                            {skill.name.replace(/-/g, ' ')}
+                                          </p>
+                                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                            {skill.description}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </HoverCardContent>
+                                  </HoverCard>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     </HoverCardContent>
                   </HoverCard>

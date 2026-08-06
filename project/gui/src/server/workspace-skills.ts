@@ -158,6 +158,9 @@ export type WorkspaceSkillStore = {
   listAttachedPackages(
     agentDefinitionId: string,
   ): Promise<{ skill: WorkspaceSkill; files: SkillPackageFile[] }[]>
+  readPackage(
+    id: string,
+  ): Promise<{ skill: WorkspaceSkill; files: { path: string; content: string }[] } | undefined>
 }
 
 export function createWorkspaceSkillStore(options: {
@@ -343,6 +346,25 @@ export function createWorkspaceSkillStore(options: {
         })
       }
       return packages
+    },
+
+    async readPackage(id) {
+      const skill = this.get(id)
+      if (!skill) return undefined
+      const path = this.packagePath(skill)
+      try {
+        await stat(path)
+      } catch {
+        return undefined
+      }
+      const files = await readSkillPackageFiles(path)
+      return {
+        skill,
+        files: files.map((file) => ({
+          path: file.path,
+          content: new TextDecoder().decode(file.bytes),
+        })),
+      }
     },
   }
 }

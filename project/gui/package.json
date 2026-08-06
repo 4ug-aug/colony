@@ -17,7 +17,7 @@
     "db:generate": "bunx drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "bun run src/server/migrate.ts",
     "seed:admin": "bun run src/server/seed-admin.ts",
-    "coordinator": "bun run src/server/coordinator.ts",
+    "coordinator": "bun --watch run src/server/coordinator.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

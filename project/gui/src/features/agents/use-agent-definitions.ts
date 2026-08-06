@@ -20,9 +20,12 @@ export function useAgentDefinitions() {
         undefined,
         'Unable to load agent definitions',
       )
-      return data.agents
+      return data.agents.map((agent) => ({
+        ...agent,
+        skills: agent.skills ?? [],
+      }))
     },
-    staleTime: 60_000,
+    staleTime: 5_000,
   })
 }
 

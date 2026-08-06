@@ -47,9 +47,15 @@ export type RosterDefinitionSummary = {
   kind: AgentRuntimeKind;
   icon: string;
   capabilities: { id: string; name: string; tools: string[] }[];
+  skills: { id: string; name: string; description: string }[];
 };
 
-export function rosterDefinitionSummaries(): RosterDefinitionSummary[] {
+export function rosterDefinitionSummaries(
+  skillsByAgent: ReadonlyMap<
+    string,
+    readonly { id: string; name: string; description: string }[]
+  > = new Map(),
+): RosterDefinitionSummary[] {
   return WORKSPACE_ROSTER.map((person) => ({
     id: person.id,
     name: person.name,
@@ -64,5 +70,6 @@ export function rosterDefinitionSummaries(): RosterDefinitionSummary[] {
         tools: capability.tools.map((tool) => presentation?.tools[tool] ?? tool),
       };
     }),
+    skills: [...(skillsByAgent.get(person.id) ?? [])],
   }));
 }

@@ -1,9 +1,5 @@
-import { useEffect, useState } from 'react'
-import { apiFetch } from '#/lib/api-transport'
+import { Markdown } from '#/components/markdown'
 import { ProviderIcon } from '#/components/provider-icon'
-import { Button } from '#/components/ui/button'
-import { BrailleLoader } from '#/components/ui/braille-loader'
-import { Checkbox } from '#/components/ui/checkbox'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +11,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '#/components/ui/alert-dialog'
+import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Button } from '#/components/ui/button'
+import { Checkbox } from '#/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import {
   Select,
@@ -24,14 +30,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
+import { apiFetch } from '#/lib/api-transport'
 import {
   defaultLlmBaseUrl,
   llmProviderName,
   type LlmProvider,
 } from '#/lib/llm-provider'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Check
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 type Member = {
   id: string
@@ -70,12 +80,24 @@ type SkillAgent = {
   id: string
   name: string
 }
+type SkillPackageDetail = {
+  skill: WorkspaceSkill
+  files: { path: string; content: string }[]
+}
+
+function skillMarkdownBody(content: string): string {
+  if (!content.startsWith('---')) return content
+  const end = content.indexOf('\n---', 3)
+  if (end === -1) return content
+  return content.slice(end + 4).replace(/^\r?\n/, '')
+}
 
 export function WorkspaceSettingsPage({
   currentUserId,
 }: {
   currentUserId: string
 }) {
+  const queryClient = useQueryClient()
   const [members, setMembers] = useState<Member[]>([])
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [days, setDays] = useState<1 | 3 | 7>(3)
@@ -102,6 +124,9 @@ export function WorkspaceSettingsPage({
   const [skillAgents, setSkillAgents] = useState<SkillAgent[]>([])
   const [skillFile, setSkillFile] = useState<File | null>(null)
   const [pendingSkillId, setPendingSkillId] = useState<string>()
+  const [viewingSkillId, setViewingSkillId] = useState<string>()
+  const [skillDetail, setSkillDetail] = useState<SkillPackageDetail>()
+  const [skillDetailLoading, setSkillDetailLoading] = useState(false)
 
   const load = async () => {
     setError(undefined)
@@ -171,6 +196,9 @@ export function WorkspaceSettingsPage({
       )
       .finally(() => setLoading(false))
   }, [])
+
+  const refreshAgentDefinitions = () =>
+    void queryClient.refetchQueries({ queryKey: agentDefinitionsQueryKey })
 
   const mutate = async (action: () => Promise<void>) => {
     setBusy(true)
@@ -294,6 +322,7 @@ export function WorkspaceSettingsPage({
         throw new Error(result.error ?? 'Could not import skill package')
       setSkillFile(null)
       await load()
+      refreshAgentDefinitions()
     })
 
   const deleteSkill = async (skill: WorkspaceSkill) => {
@@ -315,6 +344,7 @@ export function WorkspaceSettingsPage({
         { method: 'DELETE' },
       )
       if (!response.ok) throw new Error('Could not delete skill')
+      refreshAgentDefinitions()
     } catch (reason) {
       setSkills(previousSkills)
       setSkillAttachments(previousAttachments)
@@ -323,6 +353,34 @@ export function WorkspaceSettingsPage({
       )
     } finally {
       setPendingSkillId(undefined)
+    }
+  }
+
+  const openSkillDetail = async (skillId: string) => {
+    setViewingSkillId(skillId)
+    setSkillDetail(undefined)
+    setSkillDetailLoading(true)
+    setError(undefined)
+    try {
+      const response = await apiFetch(
+        `/api/workspace/settings/skills/${encodeURIComponent(skillId)}`,
+      )
+      const result = (await response.json()) as SkillPackageDetail & {
+        error?: string
+      }
+      if (!response.ok)
+        throw new Error(result.error ?? 'Could not load skill')
+      setSkillDetail({
+        skill: result.skill,
+        files: result.files,
+      })
+    } catch (reason) {
+      setViewingSkillId(undefined)
+      setError(
+        reason instanceof Error ? reason.message : 'Could not load skill',
+      )
+    } finally {
+      setSkillDetailLoading(false)
     }
   }
 
@@ -361,6 +419,7 @@ export function WorkspaceSettingsPage({
         ...attachments,
         [agentDefinitionId]: result.skillIds ?? skillIds,
       }))
+      refreshAgentDefinitions()
     } catch (reason) {
       setSkillAttachments(previous)
       setError(
@@ -547,78 +606,99 @@ export function WorkspaceSettingsPage({
           Skills are staged into each runtime&apos;s expected layout at run
           start.
         </p>
-        <div className="mt-4 grid max-w-xl gap-3">
-          <Input
-            aria-label="Skill markdown or package zip"
-            disabled={busy || loading}
-            onChange={(event) =>
-              setSkillFile(event.target.files?.[0] ?? null)
-            }
-            type="file"
-            accept=".md,.zip,text/markdown,application/zip"
-          />
-          <div className="flex items-center gap-3">
-            <Button
-              disabled={busy || loading || !skillFile}
-              onClick={() => void importSkill()}
-            >
-              Import skill
-            </Button>
+        <div className="mt-4 grid gap-3">
+          <div className="grid max-w-xl gap-3">
+            <Input
+              aria-label="Skill markdown or package zip"
+              disabled={busy || loading}
+              onChange={(event) =>
+                setSkillFile(event.target.files?.[0] ?? null)
+              }
+              type="file"
+              accept=".md,.zip,text/markdown,application/zip"
+            />
+            <div className="flex items-center gap-3">
+              <Button
+                disabled={busy || loading || !skillFile}
+                onClick={() => void importSkill()}
+              >
+                Import skill
+              </Button>
+            </div>
           </div>
           {skills.length === 0 ? (
             <p className="text-sm text-muted-foreground">No skills imported yet.</p>
           ) : (
-            <ul className="space-y-3">
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {skills.map((skill) => {
                 const skillBusy = pendingSkillId === skill.id
                 return (
-                <li key={skill.id} className="rounded-md border p-3">
+                <li
+                  key={skill.id}
+                  className="flex h-full flex-col rounded-md border p-3"
+                >
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 rounded-sm text-left outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => void openSkillDetail(skill.id)}
+                    >
                       <p className="font-medium">{skill.name}</p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">
                         {skill.description}
                       </p>
-                    </div>
-                    <AlertDialog>
-                      <AlertDialogTrigger
-                        render={
-                          <Button
-                            type="button"
-                            variant="outline"
-                            disabled={busy || loading || skillBusy}
-                          />
-                        }
+                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy || loading || skillBusy}
+                        onClick={() => void openSkillDetail(skill.id)}
                       >
-                        Delete
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Delete {skill.name}?
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This removes the skill from the workspace catalog
-                            and detaches it from every agent definition.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            disabled={skillBusy}
-                            onClick={() => void deleteSkill(skill)}
-                          >
-                            {skillBusy ? (
-                              <BrailleLoader text="Deleting" />
-                            ) : (
-                              'Delete'
-                            )}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                        View
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={busy || loading || skillBusy}
+                            />
+                          }
+                        >
+                          Delete
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Delete {skill.name}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This removes the skill from the workspace catalog
+                              and detaches it from every agent definition.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              disabled={skillBusy}
+                              onClick={() => void deleteSkill(skill)}
+                            >
+                              {skillBusy ? (
+                                <BrailleLoader text="Deleting" />
+                              ) : (
+                                'Delete'
+                              )}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </div>
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-auto space-y-2 border-t pt-3">
                     {skillBusy && (
                       <p className="text-sm text-muted-foreground" role="status">
                         <BrailleLoader text="Updating attachments" />
@@ -655,6 +735,58 @@ export function WorkspaceSettingsPage({
             </ul>
           )}
         </div>
+        <Dialog
+          open={viewingSkillId !== undefined}
+          onOpenChange={(open) => {
+            if (!open) {
+              setViewingSkillId(undefined)
+              setSkillDetail(undefined)
+            }
+          }}
+        >
+          <DialogContent
+            className="flex max-h-[min(85vh,44rem)] flex-col gap-3 sm:max-w-2xl"
+            showCloseButton
+          >
+            <DialogHeader>
+              <DialogTitle>
+                {skillDetail?.skill.name ??
+                  skills.find((skill) => skill.id === viewingSkillId)?.name ??
+                  'Skill'}
+              </DialogTitle>
+              <DialogDescription>
+                {skillDetail?.skill.description ??
+                  skills.find((skill) => skill.id === viewingSkillId)
+                    ?.description ??
+                  'Full skill package contents.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              {skillDetailLoading && (
+                <p className="text-sm text-muted-foreground" role="status">
+                  <BrailleLoader text="Loading skill" />
+                </p>
+              )}
+              {!skillDetailLoading &&
+                skillDetail?.files.map((file) => (
+                  <section key={file.path} className="mb-6 last:mb-0">
+                    {file.path !== 'SKILL.md' && (
+                      <h3 className="mb-2 font-mono text-xs font-medium text-muted-foreground">
+                        {file.path}
+                      </h3>
+                    )}
+                    <div className="text-sm leading-6">
+                      <Markdown>
+                        {file.path === 'SKILL.md'
+                          ? skillMarkdownBody(file.content)
+                          : file.content}
+                      </Markdown>
+                    </div>
+                  </section>
+                ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       </section>
 
       <section className="border-b pb-4">

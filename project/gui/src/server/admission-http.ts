@@ -353,11 +353,20 @@ export function createAdmissionHttpHandler(
     const skillItem = url.pathname.match(
       /^\/api\/workspace\/settings\/skills\/([^/]+)$/,
     )
-    if (skillItem && options.skills && request.method === 'DELETE') {
+    if (skillItem && options.skills) {
       const user = await administrator(request)
       if (user instanceof Response) return user
-      await options.skills.delete(decodeURIComponent(skillItem[1]!))
-      return json({ ok: true })
+      const skillId = decodeURIComponent(skillItem[1]!)
+      if (request.method === 'GET') {
+        const detail = await options.skills.readPackage(skillId)
+        return detail
+          ? json(detail)
+          : json({ error: 'Skill not found' }, 404)
+      }
+      if (request.method === 'DELETE') {
+        await options.skills.delete(skillId)
+        return json({ ok: true })
+      }
     }
 
     const skillAttachments = url.pathname.match(

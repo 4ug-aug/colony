@@ -56,6 +56,7 @@ export function RunActivitySplitHeader({
   model,
   state,
   status,
+  skills = [],
   onClose,
   onCancel,
 }: {
@@ -64,6 +65,7 @@ export function RunActivitySplitHeader({
   model: string
   state: RunState
   status: string
+  skills?: readonly { name: string; description: string }[]
   onClose?: () => void
   onCancel: () => void
 }) {
@@ -82,6 +84,11 @@ export function RunActivitySplitHeader({
               {model || 'Unknown model'} · {llmProviderName(provider)} ·{' '}
               {status}
             </p>
+            {skills.length > 0 && (
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                Skills · {skills.map((skill) => skill.name).join(' · ')}
+              </p>
+            )}
           </div>
           {!terminal(state) && (
             <Button type="button" variant="ghost" size="xs" onClick={onCancel}>

@@ -156,6 +156,7 @@ export type AgentDefinitionSummary = {
   kind?: 'cursor' | 'openai-agents'
   icon: string
   capabilities: { id: string; name: string; tools: string[] }[]
+  skills: { id: string; name: string; description: string }[]
 }
 
 const roomHistoryPageSize = 50
@@ -898,6 +899,31 @@ if (import.meta.main) {
     scheduleStore,
     issueStore,
     issueNotify,
+    agentDefinitions: () => {
+      const attachments = skills.listAttachments()
+      const byAgent = new Map<
+        string,
+        { id: string; name: string; description: string }[]
+      >()
+      for (const [agentId, skillIds] of Object.entries(attachments)) {
+        byAgent.set(
+          agentId,
+          skillIds.flatMap((skillId) => {
+            const skill = skills.get(skillId)
+            return skill
+              ? [
+                  {
+                    id: skill.id,
+                    name: skill.name,
+                    description: skill.description,
+                  },
+                ]
+              : []
+          }),
+        )
+      }
+      return rosterDefinitionSummaries(byAgent)
+    },
     admission: {
       store: admissionStore,
       llm,
