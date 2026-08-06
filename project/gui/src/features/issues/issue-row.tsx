@@ -12,6 +12,7 @@ import {
   PriorityPicker,
   StatusPicker,
 } from './issue-property-editors'
+import { LabelDot } from './issue-labels'
 import type { Issue } from './types'
 import { useIssues } from './use-issues'
 
@@ -110,7 +111,7 @@ export function IssueRow({
             key={tag}
             className="inline-flex h-7 max-w-32 items-center gap-1.5 truncate rounded-full border border-border/70 px-2 text-xs text-muted-foreground"
           >
-            <span className="size-1.5 shrink-0 rounded-full bg-sky-400" />
+            <LabelDot tag={tag} className="size-1.5" />
             {tag}
           </span>
         ))}
