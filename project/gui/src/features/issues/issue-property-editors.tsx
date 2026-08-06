@@ -286,11 +286,13 @@ export function OwnerPicker({
       return
     }
     try {
-      await assignIssue.mutateAsync({ id: issue.id, owner })
+      const { run } = await assignIssue.mutateAsync({ id: issue.id, owner })
       setOpen(false)
       toast.add({
         type: 'success',
-        title: `Assignee updated on ${formatIssueId(issue.number)}`,
+        title: run
+          ? `Assigned and started run on ${formatIssueId(issue.number)}`
+          : `Assignee updated on ${formatIssueId(issue.number)}`,
       })
     } catch (reason) {
       toast.add({

@@ -98,11 +98,11 @@ _Avoid_: Prompt, Issue
 and agents can create, update, and be assigned to. An Issue may have a parent
 Issue; a parent groups child Issues toward one outcome (for example a feature
 described by a PRD). An Issue may name a single **owner** and may link to one
-or more **runs** that execute work toward it; ownership alone does not start a
-run. When a run is started from an Issue, an Agent-definition owner is the
-runtime used; an Account owner keeps ownership and the starter chooses which
-agent runs. It is not a run and not the plain-text task a run supplies to an
-agent runtime.
+or more **runs** that execute work toward it. Assigning an Agent definition as
+owner starts an Issue-linked run on that Issue (unless the Issue is under
+parent cover); assigning an Account sets ownership only and the starter later
+chooses which agent runs. It is not a run and not the plain-text task a run
+supplies to an agent runtime.
 _Avoid_: Task, ticket, work item, Objective (as a separate type), Epic, Project,
 room Issue
 
@@ -112,10 +112,12 @@ agents cite in prompts and UI, distinct from any internal storage key.
 _Avoid_: UUID-as-display-id, ticket number, per-workspace prefix
 
 **Issue owner**: The single Account or Agent definition responsible for an
-Issue. Child Issues have their own owners; starting runs or spawning child
-Issues does not transfer the parent's owner. Agent-to-agent hand-off is
-assigning (or creating) Issues to other agent definitions, not a separate
-delegation type.
+Issue. Child Issues keep their own owners; assigning a parent does not cascade
+ownership. When a child's parent is owned by an Agent definition (**parent
+cover**), Start run on the child is blocked and assigning an agent to the child
+does not auto-start a run — the parent's Issue-linked run carries child context
+instead. Agent-to-agent hand-off is assigning (or creating) Issues to other
+agent definitions, not a separate delegation type.
 _Avoid_: Assignee, owners (plural), worker, run participant
 
 **Issue time spent**: An ordered list of minute durations logged against an
@@ -130,10 +132,20 @@ review; run completion does not change status. Done is not moved by run start.
 _Avoid_: State, column, phase
 
 **Issue-linked run**: A run started from an Issue to execute work toward it.
-V1 builds that run's Task from a fixed platform delegation prompt that includes
-the Issue id, title, and description, plus parent Issue context when the Issue
-has a parent. The prompt is not user-editable yet.
+Assigning an Agent definition as owner starts one when the Issue is not under
+parent cover and no run is already active; otherwise Start run remains
+explicit. V1 builds that run's Task from a fixed platform delegation prompt
+that includes the Issue id, title, and description, plus parent context when
+nested and direct child summaries when the Issue has children. The prompt is
+not user-editable yet. When the run succeeds, the platform copies its final
+output onto the Issue Deliverable.
 _Avoid_: Issue task (ambiguous with Task), assignment run
+
+**Issue Deliverable**: The durable text on an Issue that holds the latest
+successful Issue-linked run's final output. Each successful run overwrites it;
+failed or cancelled runs leave it unchanged. It is distinct from the Issue
+description and from per-run retained output history.
+_Avoid_: Agent response, result message, run stdout (as the Issue-facing field)
 
 **Issue priority**: How urgently an Issue should be handled relative to others.
 V1 levels match Linear: No priority, Low, Medium, High, Urgent.

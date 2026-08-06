@@ -61,6 +61,7 @@ import {
   createIssueRunner,
   IssueActiveRunError,
   IssueAgentRequiredError,
+  IssueParentCoveredError,
   type IssueRunner,
 } from './issue-runner'
 import {
@@ -309,6 +310,13 @@ export function createCoordinator(options: {
   issueNotify?: {
     onCreated: (issue: Issue) => void
     onChanged: (issue: Issue) => void
+    assignOwner: (
+      issueId: string,
+      owner: IssueOwner | undefined,
+    ) => { issue: Issue; run?: IssueRun }
+    maybeStartForOwner: (
+      issueId: string,
+    ) => { issue: Issue; run?: IssueRun }
   }
   agentDefinitions?: () => AgentDefinitionSummary[]
 }) {
@@ -414,6 +422,12 @@ export function createCoordinator(options: {
       onRunChange: (run) =>
         broadcastWorkspace({ type: 'issue_run.changed', run }),
     })
+    if (options.issueNotify) {
+      options.issueNotify.assignOwner = (issueId, owner) =>
+        issueRunner!.assignOwner(issueId, owner)
+      options.issueNotify.maybeStartForOwner = (issueId) =>
+        issueRunner!.maybeStartForOwner(issueId)
+    }
   }
   const broadcastAttention = (
     userId: string,
@@ -1027,6 +1041,26 @@ export function createCoordinator(options: {
               createdAt: Date.now(),
             })
             broadcastWorkspace({ type: 'issue.created', issue })
+            if (owner?.kind === 'agent' && issueRunner) {
+              try {
+                const started = issueRunner.maybeStartForOwner(issue.id)
+                return cors(
+                  json(
+                    {
+                      issue: started.issue,
+                      ...(started.run ? { run: started.run } : {}),
+                    },
+                    201,
+                  ),
+                )
+              } catch (error) {
+                if (error instanceof IssueActiveRunError)
+                  return cors(json({ issue, error: error.message }, 201))
+                if (error instanceof IssueParentCoveredError)
+                  return cors(json({ issue }, 201))
+                throw error
+              }
+            }
             return cors(json({ issue }, 201))
           } catch (error) {
             return cors(
@@ -1137,13 +1171,33 @@ export function createCoordinator(options: {
             return cors(json({ error: 'Invalid owner' }, 400))
           const ownerError = requireOwner(owner)
           if (ownerError) return ownerError
-          const updated = options.issueStore.assignIssue(
-            issue.id,
-            owner,
-            Date.now(),
-          )
-          broadcastWorkspace({ type: 'issue.changed', issue: updated })
-          return cors(json({ issue: updated }))
+          if (!issueRunner)
+            return cors(json({ error: 'Issue runs unavailable' }, 503))
+          try {
+            const result = issueRunner.assignOwner(issue.id, owner)
+            return cors(
+              json({
+                issue: result.issue,
+                ...(result.run ? { run: result.run } : {}),
+              }),
+            )
+          } catch (error) {
+            if (error instanceof IssueActiveRunError)
+              return cors(json({ error: error.message }, 409))
+            if (error instanceof IssueParentCoveredError)
+              return cors(json({ error: error.message }, 409))
+            return cors(
+              json(
+                {
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : 'Unable to assign Issue',
+                },
+                400,
+              ),
+            )
+          }
         }
         const issueRuns = url.pathname.match(/^\/api\/issues\/([^/]+)\/runs$/)
         if (issueRuns && request.method === 'GET') {
@@ -1179,6 +1233,8 @@ export function createCoordinator(options: {
             return cors(json(result, 202))
           } catch (error) {
             if (error instanceof IssueActiveRunError)
+              return cors(json({ error: error.message }, 409))
+            if (error instanceof IssueParentCoveredError)
               return cors(json({ error: error.message }, 409))
             if (error instanceof IssueAgentRequiredError)
               return cors(json({ error: error.message }, 400))
@@ -1705,6 +1761,15 @@ if (import.meta.main) {
   const issueNotify = {
     onCreated: (_issue: Issue) => {},
     onChanged: (_issue: Issue) => {},
+    assignOwner: (issueId: string, owner: IssueOwner | undefined) => {
+      const issue = issueStore.assignIssue(issueId, owner, Date.now())
+      return { issue }
+    },
+    maybeStartForOwner: (issueId: string) => {
+      const issue = issueStore.getIssue(issueId)
+      if (!issue) throw new Error('Issue not found')
+      return { issue }
+    },
   }
   const messages = createRoomMessageHub(store)
   const attachmentsDirectory = attachmentDirectory(
@@ -1784,6 +1849,8 @@ if (import.meta.main) {
                 createdAt: Date.now(),
               })
               issueNotify.onCreated(issue)
+              if (input.owner?.kind === 'agent')
+                return issueNotify.maybeStartForOwner(issue.id).issue
               return issue
             },
             updateIssue: (ref, patch) => {
@@ -1830,13 +1897,8 @@ if (import.meta.main) {
                   .some((user) => user.id === owner.id)
                 if (!known) throw new Error('Unknown account')
               }
-              const updated = issueStore.assignIssue(
-                issue.id,
-                owner ?? undefined,
-                Date.now(),
-              )
-              issueNotify.onChanged(updated)
-              return updated
+              return issueNotify.assignOwner(issue.id, owner ?? undefined)
+                .issue
             },
           },
         }),

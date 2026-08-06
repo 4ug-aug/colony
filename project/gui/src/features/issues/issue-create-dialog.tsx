@@ -230,7 +230,7 @@ function IssueCreateForm({
     const parsedTags = parseTags(tags)
     const parsedOwner = parseOwnerValue(owner)
     try {
-      const created = await createIssue.mutateAsync({
+      const { issue: created } = await createIssue.mutateAsync({
         title: trimmed,
         ...(description.trim() ? { description: description.trim() } : {}),
         status,

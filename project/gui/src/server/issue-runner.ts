@@ -1,7 +1,9 @@
 import type { RunControl, RunSummary } from './run-control'
 import {
   buildIssueRunTask,
+  isParentCovered,
   type Issue,
+  type IssueOwner,
   type IssueRun,
   type IssueStore,
 } from './issue-store'
@@ -20,11 +22,27 @@ export class IssueActiveRunError extends Error {
   }
 }
 
+export class IssueParentCoveredError extends Error {
+  constructor() {
+    super(
+      'Start run is blocked while the parent Issue is owned by an agent',
+    )
+    this.name = 'IssueParentCoveredError'
+  }
+}
+
 export type IssueRunner = {
   startRun(
     issueId: string,
     options?: { agentDefinitionId?: string },
   ): { issue: Issue; run: IssueRun }
+  /** Assign owner; auto-start when assigning an agent and not parent-covered / idle. */
+  assignOwner(
+    issueId: string,
+    owner: IssueOwner | undefined,
+  ): { issue: Issue; run?: IssueRun }
+  /** After create with an agent owner — start a run when not parent-covered. */
+  maybeStartForOwner(issueId: string): { issue: Issue; run?: IssueRun }
   cancel(runId: string): Promise<IssueRun | undefined>
   failStaleRuns(): IssueRun[]
   stop(): void
@@ -42,48 +60,85 @@ export function createIssueRunner(options: {
   const project = (summary: RunSummary): void => {
     const existing = options.store.getRun(summary.id)
     if (!existing) return
+    const wasSucceeded = existing.state === 'succeeded'
     const changed = { ...existing, ...summary }
     options.store.updateRun(changed)
     options.onRunChange?.(changed)
+    if (!wasSucceeded && changed.state === 'succeeded') {
+      const updated = options.store.setDeliverable(
+        changed.issueId,
+        changed.stdout,
+        now(),
+      )
+      options.onIssueChange?.(updated)
+    }
   }
   const unsubscribe = options.control.subscribe(project)
 
+  const startRun = (
+    issueId: string,
+    startOptions: { agentDefinitionId?: string } = {},
+  ): { issue: Issue; run: IssueRun } => {
+    const issue = options.store.getIssue(issueId)
+    if (!issue) throw new Error('Issue not found')
+    if (isParentCovered(options.store, issue))
+      throw new IssueParentCoveredError()
+    const agentDefinitionId =
+      issue.owner?.kind === 'agent'
+        ? issue.owner.id
+        : startOptions.agentDefinitionId
+    if (!agentDefinitionId) throw new IssueAgentRequiredError()
+    const parent = issue.parentId
+      ? options.store.getIssue(issue.parentId)
+      : undefined
+    const children = options.store.listChildIssues(issue.id)
+    const task = buildIssueRunTask(issue, parent, children)
+    return options.control.start(task, {
+      issueId: issue.id,
+      agentDefinitionId,
+      onCreate: (summary) => {
+        const created = options.store.createRun({
+          ...summary,
+          issueId: issue.id,
+        })
+        if (!created) throw new IssueActiveRunError()
+        options.onRunCreated?.(created)
+        if (issue.status !== 'done' && issue.status !== 'in_progress') {
+          const updated = options.store.updateIssue(
+            issue.id,
+            { status: 'in_progress' },
+            now(),
+          )
+          options.onIssueChange?.(updated)
+          return { issue: updated, run: created }
+        }
+        return { issue, run: created }
+      },
+    })
+  }
+
+  const maybeStartForOwner = (
+    issueId: string,
+  ): { issue: Issue; run?: IssueRun } => {
+    const issue = options.store.getIssue(issueId)
+    if (!issue) throw new Error('Issue not found')
+    if (issue.owner?.kind !== 'agent') return { issue }
+    if (isParentCovered(options.store, issue)) return { issue }
+    if (options.store.hasActiveRun(issue.id)) return { issue }
+    return startRun(issueId)
+  }
+
   return {
-    startRun: (issueId, startOptions = {}) => {
-      const issue = options.store.getIssue(issueId)
-      if (!issue) throw new Error('Issue not found')
-      const agentDefinitionId =
-        issue.owner?.kind === 'agent'
-          ? issue.owner.id
-          : startOptions.agentDefinitionId
-      if (!agentDefinitionId) throw new IssueAgentRequiredError()
-      const parent = issue.parentId
-        ? options.store.getIssue(issue.parentId)
-        : undefined
-      const task = buildIssueRunTask(issue, parent)
-      return options.control.start(task, {
-        issueId: issue.id,
-        agentDefinitionId,
-        onCreate: (summary) => {
-          const created = options.store.createRun({
-            ...summary,
-            issueId: issue.id,
-          })
-          if (!created) throw new IssueActiveRunError()
-          options.onRunCreated?.(created)
-          if (issue.status !== 'done' && issue.status !== 'in_progress') {
-            const updated = options.store.updateIssue(
-              issue.id,
-              { status: 'in_progress' },
-              now(),
-            )
-            options.onIssueChange?.(updated)
-            return { issue: updated, run: created }
-          }
-          return { issue, run: created }
-        },
-      })
+    startRun,
+    assignOwner: (issueId, owner) => {
+      const issue = options.store.assignIssue(issueId, owner, now())
+      options.onIssueChange?.(issue)
+      if (owner?.kind !== 'agent') return { issue }
+      if (isParentCovered(options.store, issue)) return { issue }
+      if (options.store.hasActiveRun(issue.id)) return { issue }
+      return startRun(issueId)
     },
+    maybeStartForOwner,
     cancel: async (runId) => {
       const run = await options.control.cancel(runId)
       return run ? options.store.getRun(run.id) : undefined

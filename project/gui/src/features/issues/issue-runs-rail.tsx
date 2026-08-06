@@ -29,6 +29,7 @@ import {
   useIssueRuns,
   useStartIssueRun,
 } from './use-issue-runs'
+import { useIssues } from './use-issues'
 
 const runBadgeVariant = (state: string) =>
   state === 'failed' ? 'destructive' : 'success'
@@ -99,6 +100,7 @@ function IssueRunRow({
 
 export function IssueRunsRail({ issue }: { issue: Issue }) {
   const { data: runs = [], isPending } = useIssueRuns(issue.id)
+  const { data: issues = [] } = useIssues()
   const startRun = useStartIssueRun()
   const cancelRun = useCancelIssueRun()
   const { data: agents = [] } = useAgentDefinitions()
@@ -106,8 +108,17 @@ export function IssueRunsRail({ issue }: { issue: Issue }) {
     agents[0]?.id ?? '',
   )
 
+  const parent = issue.parentId
+    ? issues.find((candidate) => candidate.id === issue.parentId)
+    : undefined
+  const parentCovered = parent?.owner?.kind === 'agent'
+  const hasActiveRun = runs.some((run) => !terminal(run.state))
   const needsAgentPicker = issue.owner?.kind !== 'agent'
   const selectedAgentId = agentDefinitionId || agents[0]?.id || ''
+  const canStart =
+    !parentCovered &&
+    !hasActiveRun &&
+    !(needsAgentPicker && !selectedAgentId)
 
   const start = async () => {
     try {
@@ -155,7 +166,7 @@ export function IssueRunsRail({ issue }: { issue: Issue }) {
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-xs font-medium text-muted-foreground">Runs</h3>
         <div className="flex items-center gap-1.5">
-          {needsAgentPicker && agents.length > 0 && (
+          {needsAgentPicker && !parentCovered && agents.length > 0 && (
             <Select
               value={selectedAgentId}
               onValueChange={(value) => setAgentDefinitionId(value ?? '')}
@@ -183,8 +194,13 @@ export function IssueRunsRail({ issue }: { issue: Issue }) {
             size="sm"
             variant="outline"
             className="h-7"
-            disabled={
-              startRun.isPending || (needsAgentPicker && !selectedAgentId)
+            disabled={startRun.isPending || !canStart}
+            title={
+              parentCovered
+                ? 'Blocked while the parent Issue is owned by an agent'
+                : hasActiveRun
+                  ? 'A run is already active'
+                  : undefined
             }
             onClick={() => void start()}
           >
@@ -193,6 +209,11 @@ export function IssueRunsRail({ issue }: { issue: Issue }) {
           </Button>
         </div>
       </div>
+      {parentCovered ? (
+        <p className="text-xs text-muted-foreground">
+          Covered by parent agent work — Start run is blocked.
+        </p>
+      ) : null}
       {isPending ? (
         <p className="text-xs text-muted-foreground">Loading runs…</p>
       ) : runs.length === 0 ? (

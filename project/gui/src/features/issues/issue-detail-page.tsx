@@ -9,6 +9,12 @@ import {
   BreadcrumbSeparator,
 } from '#/components/ui/breadcrumb'
 import { Button } from '#/components/ui/button'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '#/components/ui/tabs'
 import { toast } from '#/components/ui/toast'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { Plus } from 'lucide-react'
@@ -24,6 +30,7 @@ import {
   TimeSpentEditor,
 } from './issue-property-editors'
 import { IssueRunsRail } from './issue-runs-rail'
+import { ParentCoverAlert } from './parent-cover-alert'
 import type { Issue } from './types'
 import { useIssue, useIssues, useUpdateIssue } from './use-issues'
 
@@ -293,6 +300,7 @@ export function IssueDetailPage({
   }
 
   const issueRef = formatIssueId(issue.number)
+  const parentCovered = parent?.owner?.kind === 'agent'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -316,7 +324,7 @@ export function IssueDetailPage({
                     render={
                       <button
                         type="button"
-                        className="max-w-40truncate"
+                        className="max-w-40 truncate"
                         onClick={() => onOpenIssue(parent.id)}
                       />
                     }
@@ -345,10 +353,38 @@ export function IssueDetailPage({
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6 lg:px-10">
           <div className="mx-auto max-w-3xl">
-            <EditableTitle issue={issue} />
-            <div className="mt-4">
-              <EditableDescription issue={issue} />
+            {parentCovered && parent ? (
+              <ParentCoverAlert
+                parent={parent}
+                onOpenParent={() => onOpenIssue(parent.id)}
+              />
+            ) : null}
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <EditableTitle issue={issue} />
+              </div>
             </div>
+            <Tabs defaultValue="description" className="mt-4">
+              <div className="flex items-center justify-between gap-3">
+                <TabsList variant="line">
+                  <TabsTrigger value="description">Description</TabsTrigger>
+                  <TabsTrigger value="deliverable">Deliverable</TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="description" className="mt-3">
+                <EditableDescription issue={issue} />
+              </TabsContent>
+              <TabsContent value="deliverable" className="mt-3">
+                {issue.deliverable?.trim() ? (
+                  <Markdown>{issue.deliverable}</Markdown>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No deliverable yet. It appears here when an Issue-linked run
+                    succeeds.
+                  </p>
+                )}
+              </TabsContent>
+            </Tabs>
             <SubIssuesSection
               issue={issue}
               onOpen={onOpenIssue}

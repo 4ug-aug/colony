@@ -1,6 +1,6 @@
 # Issue-linked runs
 
-Status: accepted
+Status: superseded by ADR-0014
 
 Starting work on an Issue creates an **Issue-linked run**. Ownership and
 running stay separate: the Issue keeps its single owner; the run executes.

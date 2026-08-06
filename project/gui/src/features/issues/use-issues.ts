@@ -9,10 +9,29 @@ import type {
   Issue,
   IssueOwner,
   IssuePriority,
+  IssueRun,
   IssueStatus,
 } from './types'
 
 export const issuesQueryKey = ['issues'] as const
+
+function upsertIssueRun(
+  queryClient: QueryClient,
+  run: IssueRun,
+) {
+  queryClient.setQueryData(
+    ['issue-runs', run.issueId],
+    (current: IssueRun[] | undefined) => {
+      const runs = current ?? []
+      const index = runs.findIndex(({ id }) => id === run.id)
+      if (index < 0)
+        return [run, ...runs].sort((a, b) => b.createdAt - a.createdAt)
+      return runs
+        .map((existing) => (existing.id === run.id ? run : existing))
+        .sort((a, b) => b.createdAt - a.createdAt)
+    },
+  )
+}
 
 function upsertIssue(issues: Issue[], issue: Issue): Issue[] {
   const index = issues.findIndex(({ id }) => id === issue.id)
@@ -115,7 +134,9 @@ export type UpdateIssueInput = {
 export function useCreateIssue() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (input: CreateIssueInput): Promise<Issue> => {
+    mutationFn: async (
+      input: CreateIssueInput,
+    ): Promise<{ issue: Issue; run?: IssueRun }> => {
       const response = await apiFetch('/api/issues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,14 +153,19 @@ export function useCreateIssue() {
           ...(input.owner ? { owner: input.owner } : {}),
         }),
       })
-      const data = (await response.json()) as { issue?: Issue; error?: string }
+      const data = (await response.json()) as {
+        issue?: Issue
+        run?: IssueRun
+        error?: string
+      }
       if (!response.ok)
         throw new Error(data.error ?? 'Unable to create issue')
       if (!data.issue) throw new Error('Unable to create issue')
-      return data.issue
+      return { issue: data.issue, ...(data.run ? { run: data.run } : {}) }
     },
-    onSuccess: (issue) => {
+    onSuccess: ({ issue, run }) => {
       upsertIssueInCache(queryClient, issue)
+      if (run) upsertIssueRun(queryClient, run)
     },
   })
 }
@@ -172,20 +198,25 @@ export function useAssignIssue() {
     mutationFn: async (input: {
       id: string
       owner: IssueOwner | null
-    }): Promise<Issue> => {
+    }): Promise<{ issue: Issue; run?: IssueRun }> => {
       const response = await apiFetch(`/api/issues/${input.id}/assign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ owner: input.owner }),
       })
-      const data = (await response.json()) as { issue?: Issue; error?: string }
+      const data = (await response.json()) as {
+        issue?: Issue
+        run?: IssueRun
+        error?: string
+      }
       if (!response.ok)
         throw new Error(data.error ?? 'Unable to assign issue')
       if (!data.issue) throw new Error('Unable to assign issue')
-      return data.issue
+      return { issue: data.issue, ...(data.run ? { run: data.run } : {}) }
     },
-    onSuccess: (issue) => {
+    onSuccess: ({ issue, run }) => {
       upsertIssueInCache(queryClient, issue)
+      if (run) upsertIssueRun(queryClient, run)
     },
   })
 }

@@ -10,10 +10,18 @@ import {
   resolveIssue,
 } from './issue-store'
 
-const migration = readFileSync(
-  fileURLToPath(new URL('../../drizzle/0016_issues.sql', import.meta.url)),
-  'utf8',
-)
+const migration = [
+  readFileSync(
+    fileURLToPath(new URL('../../drizzle/0016_issues.sql', import.meta.url)),
+    'utf8',
+  ),
+  readFileSync(
+    fileURLToPath(
+      new URL('../../drizzle/0017_issue_deliverable.sql', import.meta.url),
+    ),
+    'utf8',
+  ),
+].join('\n--> statement-breakpoint\n')
 
 const applyMigration = (sqlite: Database) => {
   for (const statement of migration.split('--> statement-breakpoint')) {
@@ -77,6 +85,18 @@ test('issue store allocates SWE numbers and tracks child progress', () => {
   expect(task).toContain('SWE-1')
   expect(task).toContain('Parent feature')
 
+  const parentTask = buildIssueRunTask(
+    store.getIssue(parent.id)!,
+    undefined,
+    store.listChildIssues(parent.id),
+  )
+  expect(parentTask).toContain('<<<children')
+  expect(parentTask).toContain('SWE-2')
+  expect(parentTask).toContain('SWE-3')
+
+  store.setDeliverable(parent.id, 'Shipped the badge.', 8)
+  expect(store.getIssue(parent.id)?.deliverable).toBe('Shipped the badge.')
+  expect(store.hasActiveRun(childA.id)).toBe(false)
   expect(
     store.createRun({
       id: 'run-1',

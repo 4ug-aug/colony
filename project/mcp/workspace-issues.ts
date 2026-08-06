@@ -21,6 +21,7 @@ export type WorkspaceIssue = {
   number: number;
   title: string;
   description: string;
+  deliverable: string;
   status: WorkspaceIssueStatus;
   priority: WorkspaceIssuePriority;
   tags: string[];

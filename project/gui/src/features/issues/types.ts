@@ -18,6 +18,7 @@ export type Issue = {
   number: number
   title: string
   description: string
+  deliverable: string
   status: IssueStatus
   priority: IssuePriority
   tags: string[]
@@ -27,6 +28,7 @@ export type Issue = {
   createdAt: number
   updatedAt: number
   childProgress?: IssueChildProgress
+  hasActiveRun?: boolean
 }
 
 export type IssueRunState =
