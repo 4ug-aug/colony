@@ -364,17 +364,15 @@ export function IssueDetailPage({
                 <EditableTitle issue={issue} />
               </div>
             </div>
-            <Tabs defaultValue="description" className="mt-4">
-              <div className="flex items-center justify-between gap-3">
-                <TabsList variant="line">
-                  <TabsTrigger value="description">Description</TabsTrigger>
-                  <TabsTrigger value="deliverable">Deliverable</TabsTrigger>
-                </TabsList>
-              </div>
-              <TabsContent value="description" className="mt-3">
+            <Tabs defaultValue="description" className="mt-4 flex-col gap-3">
+              <TabsList>
+                <TabsTrigger value="description">Description</TabsTrigger>
+                <TabsTrigger value="deliverable">Deliverable</TabsTrigger>
+              </TabsList>
+              <TabsContent value="description">
                 <EditableDescription issue={issue} />
               </TabsContent>
-              <TabsContent value="deliverable" className="mt-3">
+              <TabsContent value="deliverable">
                 {issue.deliverable?.trim() ? (
                   <Markdown>{issue.deliverable}</Markdown>
                 ) : (

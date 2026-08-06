@@ -125,6 +125,11 @@ Issue. Total spent is the sum of those numbers; v1 entries carry no actor or
 timestamp.
 _Avoid_: Estimate, timesheet, time entry (as a full audit record)
 
+**Issue timing**: A client-side clock against one Issue. Stopping appends the
+elapsed minutes to that Issue's time spent. Only one Issue may be timed at a
+time.
+_Avoid_: Timesheet, server-persisted timer, estimate
+
 **Issue status**: Where an Issue sits in the workspace workflow. V1 statuses
 are Backlog, Todo, In progress, In review, and Done, in that order. Starting
 a run linked to an Issue moves it to In progress, including when it was In

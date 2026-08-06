@@ -9,7 +9,7 @@ const LABEL_DOT_COLORS = [
   'bg-blue-400',
   'bg-orange-500',
   'bg-yellow-500',
-  'bg-emerald-500',
+  'bg-green-500',
   'bg-cyan-400',
   'bg-zinc-400',
 ] as const

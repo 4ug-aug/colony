@@ -1,9 +1,9 @@
+import { useTheme } from '#/components/theme-provider'
 import {
   Alert,
   AlertDescription,
   AlertTitle,
 } from '#/components/ui/alert'
-import { useTheme } from '#/components/theme-provider'
 import {
   agentNameFrom,
   useAgentDefinitions,
@@ -14,7 +14,7 @@ import { formatIssueId } from './format'
 import type { Issue } from './types'
 import { useIssueRuns } from './use-issue-runs'
 
-function CoverDither({ active }: { active: boolean }) {
+function CoverDitherTile({ active }: { active: boolean }) {
   const { theme } = useTheme()
   const dark =
     theme === 'dark' ||
@@ -26,7 +26,7 @@ function CoverDither({ active }: { active: boolean }) {
 
   return (
     <div
-      className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit] opacity-40"
+      className="relative w-16 shrink-0 self-stretch overflow-hidden sm:w-20"
       aria-hidden="true"
     >
       <Dithering
@@ -62,27 +62,29 @@ export function ParentCoverAlert({
       : 'an agent'
 
   return (
-    <Alert className="relative mb-4 overflow-hidden border-border/70">
-      <CoverDither active={active} />
-      <div className="relative">
-        <AlertTitle>
-          {active
-            ? `Being worked on by ${agentLabel}`
-            : `Covered by ${agentLabel} on the parent Issue`}
-        </AlertTitle>
-        <AlertDescription>
-          Parent{' '}
-          <button
-            type="button"
-            className="font-medium text-foreground underline-offset-2 hover:underline"
-            onClick={onOpenParent}
-          >
-            {formatIssueId(parent.number)}
-          </button>{' '}
-          {active
-            ? 'has an active Issue-linked run that includes this sub-issue as context. Start run is blocked here.'
-            : 'is owned by an agent. Sub-issue Start run stays blocked; Cursor subagents handle fan-out inside the parent run.'}
-        </AlertDescription>
+    <Alert className="mb-4 grid-cols-1 overflow-hidden border-border/70 p-0">
+      <div className="flex min-h-14 overflow-hidden rounded-[inherit]">
+        <CoverDitherTile active={active} />
+        <div className="min-w-0 flex-1 bg-card px-3 py-2">
+          <AlertTitle>
+            {active
+              ? `Being worked on by ${agentLabel}`
+              : `Covered by ${agentLabel} on the parent Issue`}
+          </AlertTitle>
+          <AlertDescription>
+            Parent{' '}
+            <button
+              type="button"
+              className="font-medium text-foreground underline-offset-2 hover:underline"
+              onClick={onOpenParent}
+            >
+              {formatIssueId(parent.number)}
+            </button>{' '}
+            {active
+              ? 'has an active Issue-linked run that includes this sub-issue as context. Start run is blocked here.'
+              : 'is owned by an agent. Sub-issue Start run stays blocked; Sub-agents handle fan-out inside the parent run.'}
+          </AlertDescription>
+        </div>
       </div>
     </Alert>
   )

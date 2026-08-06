@@ -4,17 +4,23 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '#/components/ui/popover'
-import { Circle, CornerDownRight } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '#/components/ui/tooltip'
+import { Circle, CornerDownRight, Timer } from 'lucide-react'
 import { useState } from 'react'
 import { formatIssueCreatedAt, formatIssueId } from './format'
 import { IssueStatusIcon } from './issue-icons'
+import { LabelDot } from './issue-labels'
 import {
   OwnerPicker,
   PriorityPicker,
   StatusPicker,
 } from './issue-property-editors'
-import { LabelDot } from './issue-labels'
 import type { Issue } from './types'
+import { useIssueTiming } from './use-issue-timing'
 import { useIssues } from './use-issues'
 
 function ChildProgressChip({
@@ -84,6 +90,54 @@ function ChildProgressChip({
   )
 }
 
+function StartTimingButton({ issueId }: { issueId: string }) {
+  const { session, isPending, switchTiming } = useIssueTiming()
+  const isActive = session?.issueId === issueId
+  const label = isActive ? 'Timing this issue' : 'Start timing'
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          isActive ? (
+            <span
+              className="inline-flex size-7 shrink-0 items-center justify-center text-green-700 dark:text-green-400"
+              aria-label={label}
+            />
+          ) : (
+            <button
+              type="button"
+              className="inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50"
+              aria-label={label}
+              disabled={isPending}
+              onClick={(event) => {
+                event.stopPropagation()
+                void switchTiming(issueId)
+              }}
+            />
+          )
+        }
+      >
+        <Timer className={isActive ? 'size-3.5 animate-pulse' : 'size-3.5'} />
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function IssueTimeSpent({ timeSpent }: { timeSpent: number[] }) {
+  const total = timeSpent.reduce((sum, minutes) => sum + minutes, 0)
+  return (
+    <span
+      className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+      aria-label="Time spent"
+      title="Time spent"
+    >
+      {total > 0 ? `${total}m` : '—'}
+    </span>
+  )
+}
+
 export function IssueRow({
   issue,
   depth = 0,
@@ -142,6 +196,10 @@ export function IssueRow({
       <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
         {formatIssueCreatedAt(issue.createdAt)}
       </span>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <IssueTimeSpent timeSpent={issue.timeSpent} />
+        <StartTimingButton issueId={issue.id} />
+      </div>
     </div>
   )
 }

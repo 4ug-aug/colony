@@ -2,6 +2,7 @@ import { ModeToggle } from '#/components/mode-toggle'
 import { Button } from '#/components/ui/button'
 import { Kbd, KbdGroup } from '#/components/ui/kbd'
 import { SidebarTrigger } from '#/components/ui/sidebar'
+import { ActiveIssueTiming } from '#/features/issues/active-issue-timing'
 import { isTauriRuntime } from '#/lib/server-config'
 import {
   ChevronLeftIcon,
@@ -79,19 +80,23 @@ export function WindowDragRegion() {
 }
 
 export function WindowToolbar({
+  accountId,
   onOpenSearch,
 }: {
+  accountId: string
   onOpenSearch?: () => void
-} = {}) {
+}) {
   const tauri = isTauriRuntime()
   const search =
     onOpenSearch != null ? (
       <SearchShortcutButton onOpenSearch={onOpenSearch} />
     ) : null
+  const timing = <ActiveIssueTiming accountId={accountId} />
 
   if (!tauri) {
     return (
       <div className="pointer-events-auto fixed top-2 right-2 z-30 flex items-center gap-1">
+        {timing}
         {search}
         <ModeToggle />
       </div>
@@ -136,6 +141,7 @@ export function WindowToolbar({
         </Button>
       </div>
       <div className="pointer-events-auto flex items-center gap-1 pr-2">
+        {timing}
         {search}
         <ModeToggle />
       </div>

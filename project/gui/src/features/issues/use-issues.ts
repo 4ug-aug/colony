@@ -73,10 +73,11 @@ async function fetchIssues(): Promise<Issue[]> {
   return withDerivedChildProgress(data.issues)
 }
 
-export function useIssues() {
+export function useIssues(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: issuesQueryKey,
     queryFn: fetchIssues,
+    enabled: options?.enabled ?? true,
   })
 }
 
