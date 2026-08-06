@@ -65,12 +65,20 @@ export function createIssueRunner(options: {
     options.store.updateRun(changed)
     options.onRunChange?.(changed)
     if (!wasSucceeded && changed.state === 'succeeded') {
-      const updated = options.store.setDeliverable(
-        changed.issueId,
-        changed.stdout,
-        now(),
-      )
-      options.onIssueChange?.(updated)
+      try {
+        const updated = options.store.setDeliverable(
+          changed.issueId,
+          changed.stdout,
+          now(),
+        )
+        options.onIssueChange?.(updated)
+      } catch (error) {
+        console.error(
+          'Failed to set Issue deliverable from succeeded run',
+          changed.id,
+          error,
+        )
+      }
     }
   }
   const unsubscribe = options.control.subscribe(project)

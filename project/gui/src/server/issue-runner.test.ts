@@ -79,6 +79,19 @@ function fakeStore(
       issues.set(id, updated)
       return updated
     },
+    deleteIssue: (id) => {
+      if (!issues.has(id)) return false
+      for (const child of issues.values()) {
+        if (child.parentId === id) {
+          const { parentId: _removed, ...rest } = child
+          issues.set(child.id, rest)
+        }
+      }
+      for (const [runId, run] of runs) {
+        if (run.issueId === id) runs.delete(runId)
+      }
+      return issues.delete(id)
+    },
     createRun: (run) => {
       if (
         [...runs.values()].some(

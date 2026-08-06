@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '#/components/ui/select'
 import { toast } from '#/components/ui/toast'
+import { Markdown } from '#/components/markdown'
 import {
   agentNameFrom,
   useAgentDefinitions,
@@ -91,6 +92,16 @@ function IssueRunRow({
             <p className="whitespace-pre-wrap break-words text-destructive">
               {run.error}
             </p>
+          ) : null}
+          {run.state === 'succeeded' ? (
+            <div className="text-sm text-foreground">
+              <Markdown>{run.stdout.trim() || 'Completed.'}</Markdown>
+            </div>
+          ) : null}
+          {run.stderr.trim() ? (
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-2 py-1.5 font-mono text-[0.7rem] leading-4 text-muted-foreground">
+              {run.stderr}
+            </pre>
           ) : null}
         </div>
       </CollapsibleContent>

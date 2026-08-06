@@ -21,6 +21,7 @@ import { Plus } from 'lucide-react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { useState } from 'react'
 import { formatIssueId } from './format'
+import { IssueDeleteButton } from './issue-delete-menu'
 import { IssueStatusIcon } from './issue-icons'
 import {
   OwnerPicker,
@@ -304,8 +305,8 @@ export function IssueDetailPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
-        <Breadcrumb className="min-w-0">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2">
+        <Breadcrumb className="min-w-0 flex-1">
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink
@@ -349,6 +350,7 @@ export function IssueDetailPage({
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
+        <IssueDeleteButton issue={issue} onDeleted={onBack} />
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6 lg:px-10">

@@ -12,6 +12,7 @@ import {
 import { Circle, CornerDownRight, Timer } from 'lucide-react'
 import { useState } from 'react'
 import { formatIssueCreatedAt, formatIssueId } from './format'
+import { IssueDeleteContextMenu } from './issue-delete-menu'
 import { IssueStatusIcon } from './issue-icons'
 import { LabelDot } from './issue-labels'
 import {
@@ -148,18 +149,27 @@ export function IssueRow({
   onOpen?: (issueId: string) => void
 }) {
   return (
-    <div
-      className="group flex h-9 items-center gap-2 border-b border-border/40 px-3 text-sm last:border-b-0 hover:bg-muted/40"
-      style={depth > 0 ? { paddingLeft: 12 + depth * 16 } : undefined}
-      onClick={
-        onOpen
-          ? (event) => {
-              const target = event.target as HTMLElement
-              if (target.closest('button, a, input, textarea, [role="combobox"]'))
-                return
-              onOpen(issue.id)
-            }
-          : undefined
+    <IssueDeleteContextMenu
+      issue={issue}
+      render={
+        <div
+          className="group flex h-9 items-center gap-2 border-b border-border/40 px-3 text-sm last:border-b-0 hover:bg-muted/40"
+          style={depth > 0 ? { paddingLeft: 12 + depth * 16 } : undefined}
+          onClick={
+            onOpen
+              ? (event) => {
+                  const target = event.target as HTMLElement
+                  if (
+                    target.closest(
+                      'button, a, input, textarea, [role="combobox"]',
+                    )
+                  )
+                    return
+                  onOpen(issue.id)
+                }
+              : undefined
+          }
+        />
       }
     >
       {depth > 0 ? (
@@ -200,6 +210,6 @@ export function IssueRow({
         <IssueTimeSpent timeSpent={issue.timeSpent} />
         <StartTimingButton issueId={issue.id} />
       </div>
-    </div>
+    </IssueDeleteContextMenu>
   )
 }

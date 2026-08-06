@@ -150,6 +150,7 @@ export type WorkspaceServerMessage =
   | { type: 'schedule_run.step'; runId: string; step: ScheduleRunStep }
   | { type: 'issue.created'; issue: Issue }
   | { type: 'issue.changed'; issue: Issue }
+  | { type: 'issue.deleted'; issueId: string }
   | { type: 'issue_run.created'; run: IssueRun }
   | { type: 'issue_run.changed'; run: IssueRun }
 export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
@@ -1154,6 +1155,22 @@ export function createCoordinator(options: {
               ),
             )
           }
+        }
+        if (issueRoute && request.method === 'DELETE') {
+          const ref = decodeRef(issueRoute[1]!)
+          if (!ref) return cors(json({ error: 'Invalid Issue ref' }, 400))
+          const issue = resolveIssue(options.issueStore, ref)
+          if (!issue) return cors(json({ error: 'Issue not found' }, 404))
+          const children = options.issueStore.listChildIssues(issue.id)
+          if (!options.issueStore.deleteIssue(issue.id))
+            return cors(json({ error: 'Issue not found' }, 404))
+          broadcastWorkspace({ type: 'issue.deleted', issueId: issue.id })
+          for (const child of children) {
+            const updated = options.issueStore.getIssue(child.id)
+            if (updated)
+              broadcastWorkspace({ type: 'issue.changed', issue: updated })
+          }
+          return cors(json({ ok: true }))
         }
         const issueAssign = url.pathname.match(
           /^\/api\/issues\/([^/]+)\/assign$/,

@@ -66,6 +66,23 @@ export function upsertIssueInCache(queryClient: QueryClient, issue: Issue) {
   )
 }
 
+export function removeIssueFromCache(queryClient: QueryClient, issueId: string) {
+  queryClient.setQueryData(issuesQueryKey, (current: Issue[] | undefined) => {
+    if (!current) return current
+    return withDerivedChildProgress(
+      current
+        .filter((issue) => issue.id !== issueId)
+        .map((issue) => {
+          if (issue.parentId !== issueId) return issue
+          const { parentId: _removed, ...rest } = issue
+          return rest
+        }),
+    )
+  })
+  queryClient.removeQueries({ queryKey: ['issue', issueId] })
+  queryClient.removeQueries({ queryKey: ['issue-runs', issueId] })
+}
+
 async function fetchIssues(): Promise<Issue[]> {
   const response = await apiFetch('/api/issues')
   if (!response.ok) throw new Error('Unable to load issues')
@@ -218,6 +235,23 @@ export function useAssignIssue() {
     onSuccess: ({ issue, run }) => {
       upsertIssueInCache(queryClient, issue)
       if (run) upsertIssueRun(queryClient, run)
+    },
+  })
+}
+
+export function useDeleteIssue() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      const response = await apiFetch(`/api/issues/${id}`, {
+        method: 'DELETE',
+      })
+      const data = (await response.json()) as { error?: string }
+      if (!response.ok)
+        throw new Error(data.error ?? 'Unable to delete issue')
+    },
+    onSuccess: (_data, id) => {
+      removeIssueFromCache(queryClient, id)
     },
   })
 }

@@ -3,7 +3,11 @@ import { connectWorkspaceStream } from '#/lib/api-transport'
 import { terminal } from '#/features/runs/run-helpers'
 import type { Issue, IssueRun } from './types'
 import { upsertIssueRunInCache } from './use-issue-runs'
-import { issuesQueryKey, upsertIssueInCache } from './use-issues'
+import {
+  issuesQueryKey,
+  removeIssueFromCache,
+  upsertIssueInCache,
+} from './use-issues'
 
 function setIssueActiveRun(
   queryClient: QueryClient,
@@ -31,6 +35,7 @@ export function attachIssueWorkspaceSync(queryClient: QueryClient) {
       const event = JSON.parse(data) as {
         type: string
         issue?: Issue
+        issueId?: string
         run?: IssueRun
       }
       if (
@@ -38,6 +43,8 @@ export function attachIssueWorkspaceSync(queryClient: QueryClient) {
         event.issue
       )
         upsertIssueInCache(queryClient, event.issue)
+      if (event.type === 'issue.deleted' && event.issueId)
+        removeIssueFromCache(queryClient, event.issueId)
       if (
         (event.type === 'issue_run.created' ||
           event.type === 'issue_run.changed') &&

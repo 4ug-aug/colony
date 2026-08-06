@@ -87,6 +87,7 @@ export interface IssueStore {
   updateIssue(id: string, patch: IssueUpdate, now: number): Issue
   assignIssue(id: string, owner: IssueOwner | undefined, now: number): Issue
   setDeliverable(id: string, deliverable: string, now: number): Issue
+  deleteIssue(id: string): boolean
   createRun(run: NewIssueRun): IssueRun | undefined
   updateRun(run: IssueRun): void
   getRun(id: string): IssueRun | undefined
@@ -495,6 +496,17 @@ export function createSqliteIssueStore(sqlite: Sqlite): IssueStore {
       if (!updated) throw new Error('Issue deliverable was not updated')
       return updated
     },
+    deleteIssue: (id) =>
+      transaction(sqlite, () => {
+        sqlite.prepare('DELETE FROM issue_run WHERE issue_id = ?').run(id)
+        return (
+          ((
+            sqlite.prepare('DELETE FROM issue WHERE id = ?').run(id) as {
+              changes?: number
+            }
+          ).changes ?? 0) > 0
+        )
+      }),
     createRun: (run) => {
       try {
         sqlite

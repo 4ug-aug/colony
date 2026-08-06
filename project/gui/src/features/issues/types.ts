@@ -51,6 +51,8 @@ export type IssueRun = {
   completedAt?: number
   exitCode?: number
   error?: string
+  stdout: string
+  stderr: string
 }
 
 export const ISSUE_STATUSES: readonly IssueStatus[] = [

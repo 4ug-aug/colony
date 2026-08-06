@@ -24,6 +24,7 @@ const migration = [
 ].join('\n--> statement-breakpoint\n')
 
 const applyMigration = (sqlite: Database) => {
+  sqlite.exec('PRAGMA foreign_keys = ON')
   for (const statement of migration.split('--> statement-breakpoint')) {
     const sql = statement.trim()
     if (sql) sqlite.exec(sql)
@@ -126,6 +127,43 @@ test('issue store allocates SWE numbers and tracks child progress', () => {
     }),
   ).toBeUndefined()
   expect(store.listRuns(childA.id)).toHaveLength(1)
+  sqlite.close()
+})
+
+test('deleteIssue removes the issue, cascades runs, and orphans children', () => {
+  const sqlite = new Database(':memory:')
+  applyMigration(sqlite)
+  const store = createSqliteIssueStore(sqlite)
+  const parent = store.createIssue({
+    id: 'parent',
+    title: 'Parent',
+    createdAt: 1,
+  })
+  const child = store.createIssue({
+    id: 'child',
+    title: 'Child',
+    parentId: parent.id,
+    createdAt: 2,
+  })
+  store.createRun({
+    id: 'run-1',
+    issueId: parent.id,
+    task: 'task',
+    agentId: 'software-engineer',
+    provider: 'openai',
+    model: 'gpt-4.1-mini',
+    state: 'succeeded',
+    createdAt: 3,
+    stdout: '',
+    stderr: '',
+  })
+
+  expect(store.deleteIssue(parent.id)).toBe(true)
+  expect(store.getIssue(parent.id)).toBeUndefined()
+  expect(store.listRuns(parent.id)).toHaveLength(0)
+  expect(store.getIssue(child.id)?.id).toBe(child.id)
+  expect(store.getIssue(child.id)?.parentId).toBeUndefined()
+  expect(store.deleteIssue(parent.id)).toBe(false)
   sqlite.close()
 })
 
