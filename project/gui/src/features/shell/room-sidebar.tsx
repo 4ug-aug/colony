@@ -1,19 +1,3 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ReactNode, SubmitEvent } from 'react'
-import {
-  CalendarClock,
-  ChevronRight,
-  CircleDot,
-  Hash,
-  Lock,
-  LogOut,
-  Settings,
-  Trash2,
-} from 'lucide-react'
-import { authClient } from '#/lib/auth-client'
-import { Button } from '#/components/ui/button'
-import { BrailleLoader } from '#/components/ui/braille-loader'
-import { Input } from '#/components/ui/input'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,12 +8,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '#/components/ui/alert-dialog'
-import {
-  Avatar,
-  AvatarBadge,
-  AvatarFallback,
-  AvatarImage,
-} from '@/components/ui/avatar'
+import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Button } from '#/components/ui/button'
 import {
   Collapsible,
   CollapsibleContent,
@@ -42,7 +22,12 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '#/components/ui/context-menu'
-import { toast } from '#/components/ui/toast'
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '#/components/ui/hover-card'
+import { Input } from '#/components/ui/input'
 import {
   Popover,
   PopoverContent,
@@ -50,11 +35,6 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '#/components/ui/popover'
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '#/components/ui/hover-card'
 import {
   Sidebar,
   SidebarContent,
@@ -69,14 +49,34 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '#/components/ui/sidebar'
-import type { Author, Room } from '#/features/rooms/types'
-import type { RoomNotification } from '#/features/rooms/room-notifications'
-import { canDeleteRoom } from '#/features/rooms/permissions'
+import { toast } from '#/components/ui/toast'
 import { agentIcon } from '#/features/agents/agent-icon'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import { canDeleteRoom } from '#/features/rooms/permissions'
+import type { RoomNotification } from '#/features/rooms/room-notifications'
+import type { Author, Room } from '#/features/rooms/types'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
+import { authClient } from '#/lib/auth-client'
 import { isTauriRuntime } from '#/lib/server-config'
 import { cn } from '#/lib/utils'
+import {
+  Avatar,
+  AvatarBadge,
+  AvatarFallback,
+  AvatarImage,
+} from '@/components/ui/avatar'
+import {
+  CalendarClock,
+  ChevronRight,
+  Cuboid,
+  Hash,
+  Lock,
+  LogOut,
+  Settings,
+  Trash2,
+} from 'lucide-react'
+import type { ReactNode, SubmitEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const capabilityIcons: Record<
   string,
@@ -433,7 +433,7 @@ export function RoomSidebar({
                   onClick={onOpenIssues}
                   tooltip="Issues"
                 >
-                  <CircleDot />
+                  <Cuboid />
                   <span>Issues</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>

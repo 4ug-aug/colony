@@ -1,5 +1,15 @@
 import { AgentAnt } from '#/components/avatar'
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
+import { Button } from '#/components/ui/button'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from '#/components/ui/command'
 import {
   Popover,
   PopoverContent,
@@ -10,9 +20,9 @@ import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
-import { Check, CircleDashed, UserRound, X } from 'lucide-react'
+import { Check, CircleDashed, Plus, UserRound } from 'lucide-react'
 import { useState } from 'react'
-import type { FormEvent, KeyboardEvent } from 'react'
+import type { KeyboardEvent } from 'react'
 import { cn } from '#/lib/utils'
 import { formatIssueId } from './format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
@@ -23,7 +33,7 @@ import {
   ISSUE_STATUS_LABEL,
   ISSUE_STATUSES,
 } from './types'
-import { useAssignIssue, useUpdateIssue } from './use-issues'
+import { useAssignIssue, useIssues, useUpdateIssue } from './use-issues'
 import { useWorkspaceMembers } from './use-workspace-members'
 
 const iconTriggerClass =
@@ -255,7 +265,13 @@ export function StatusPicker({
   )
 }
 
-export function OwnerPicker({ issue }: { issue: Issue }) {
+export function OwnerPicker({
+  issue,
+  variant = 'rail',
+}: {
+  issue: Issue
+  variant?: 'list' | 'rail'
+}) {
   const [open, setOpen] = useState(false)
   const assignIssue = useAssignIssue()
   const { data: agents = [] } = useAgentDefinitions()
@@ -291,15 +307,22 @@ export function OwnerPicker({ issue }: { issue: Issue }) {
         render={
           <button
             type="button"
-            className={cn(railTriggerClass, 'w-full justify-start')}
+            className={
+              variant === 'list'
+                ? 'inline-flex h-7 w-28 shrink-0 items-center rounded-sm px-1 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/40'
+                : cn(railTriggerClass, 'w-full justify-start')
+            }
             aria-label="Assignee"
             onClick={(event) => event.stopPropagation()}
           />
         }
       >
-        <OwnerDisplay owner={issue.owner} className="text-sm" />
+        <OwnerDisplay
+          owner={issue.owner}
+          className={variant === 'list' ? 'w-full text-xs' : 'text-sm'}
+        />
       </PopoverTrigger>
-      <PopoverContent align="start" side="bottom" className="w-56 p-1">
+      <PopoverContent align="end" side="bottom" className="w-56 p-1">
         <button
           type="button"
           className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
@@ -307,7 +330,9 @@ export function OwnerPicker({ issue }: { issue: Issue }) {
           disabled={assignIssue.isPending}
         >
           <OwnerDisplay className="text-sm" />
-          {!issue.owner && <Check className="ml-auto size-3.5 text-muted-foreground" />}
+          {!issue.owner && (
+            <Check className="ml-auto size-3.5 text-muted-foreground" />
+          )}
         </button>
         {members.map((member) => {
           const value = ownerValue({ kind: 'account', id: member.id })
@@ -355,79 +380,210 @@ export function OwnerPicker({ issue }: { issue: Issue }) {
   )
 }
 
-export function TagsEditor({ issue }: { issue: Issue }) {
-  const [draft, setDraft] = useState('')
-  const updateIssue = useUpdateIssue()
+const LABEL_DOT_COLORS = [
+  'bg-teal-500',
+  'bg-red-500',
+  'bg-sky-500',
+  'bg-violet-500',
+  'bg-amber-600',
+  'bg-blue-400',
+  'bg-orange-500',
+  'bg-yellow-500',
+  'bg-emerald-500',
+  'bg-cyan-400',
+  'bg-zinc-400',
+] as const
 
-  const addTag = async (event?: FormEvent) => {
-    event?.preventDefault()
-    const tag = draft.trim()
-    if (!tag) return
-    if (issue.tags.includes(tag)) {
-      setDraft('')
-      return
-    }
+function labelDotClass(tag: string): string {
+  let hash = 0
+  for (let index = 0; index < tag.length; index++)
+    hash = (hash * 31 + tag.charCodeAt(index)) | 0
+  return LABEL_DOT_COLORS[Math.abs(hash) % LABEL_DOT_COLORS.length]!
+}
+
+function LabelDot({ tag }: { tag: string }) {
+  return (
+    <span
+      className={cn('size-2.5 shrink-0 rounded-full', labelDotClass(tag))}
+      aria-hidden
+    />
+  )
+}
+
+function LabelCheck({ checked }: { checked: boolean }) {
+  return (
+    <span
+      className={cn(
+        'flex size-4 shrink-0 items-center justify-center rounded-sm border',
+        checked
+          ? 'border-sky-500 bg-sky-500 text-white'
+          : 'border-muted-foreground/50 bg-transparent',
+      )}
+      aria-hidden
+    >
+      {checked ? <Check className="size-3" strokeWidth={3} /> : null}
+    </span>
+  )
+}
+
+export function TagsEditor({ issue }: { issue: Issue }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const updateIssue = useUpdateIssue()
+  const { data: issues = [] } = useIssues()
+
+  const knownTags = [
+    ...new Set(issues.flatMap((candidate) => candidate.tags)),
+  ].sort((a, b) => a.localeCompare(b))
+
+  const selected = new Set(issue.tags)
+  const selectedTags = issue.tags
+  const availableTags = knownTags.filter((tag) => !selected.has(tag))
+  const trimmed = query.trim()
+  const canCreate =
+    trimmed.length > 0 &&
+    !knownTags.some((tag) => tag.toLowerCase() === trimmed.toLowerCase())
+
+  const setTags = async (tags: string[]) => {
     try {
-      await updateIssue.mutateAsync({
-        id: issue.id,
-        tags: [...issue.tags, tag],
-      })
-      setDraft('')
+      await updateIssue.mutateAsync({ id: issue.id, tags })
     } catch (reason) {
       toast.add({
         type: 'error',
-        title: 'Could not add label',
+        title: 'Could not update labels',
         description:
           reason instanceof Error ? reason.message : 'Please try again.',
       })
     }
   }
 
-  const removeTag = async (tag: string) => {
-    try {
-      await updateIssue.mutateAsync({
-        id: issue.id,
-        tags: issue.tags.filter((current) => current !== tag),
-      })
-    } catch (reason) {
-      toast.add({
-        type: 'error',
-        title: 'Could not remove label',
-        description:
-          reason instanceof Error ? reason.message : 'Please try again.',
-      })
-    }
+  const toggle = (tag: string) => {
+    void setTags(
+      selected.has(tag)
+        ? issue.tags.filter((current) => current !== tag)
+        : [...issue.tags, tag],
+    )
+  }
+
+  const create = () => {
+    if (!canCreate) return
+    void setTags([...issue.tags, trimmed])
+    setQuery('')
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {issue.tags.map((tag) => (
-        <span
-          key={tag}
-          className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 px-2 py-0.5 text-xs text-muted-foreground"
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium text-muted-foreground">Labels</h3>
+        <Popover
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next)
+            if (!next) setQuery('')
+          }}
         >
-          <span className="size-1.5 shrink-0 rounded-full bg-sky-400" />
-          <span className="truncate">{tag}</span>
-          <button
-            type="button"
-            className="rounded-full p-0.5 hover:bg-muted hover:text-foreground"
-            aria-label={`Remove ${tag}`}
-            onClick={() => void removeTag(tag)}
-            disabled={updateIssue.isPending}
+          <PopoverTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="size-7 text-muted-foreground"
+                aria-label="Change or add labels"
+              />
+            }
           >
-            <X className="size-3" />
-          </button>
-        </span>
-      ))}
-      <form onSubmit={(event) => void addTag(event)} className="inline-flex">
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Add label"
-          className="h-7 w-24 rounded-sm border-0 bg-transparent px-1.5 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
-          disabled={updateIssue.isPending}
-        />
-      </form>
+            <Plus className="size-3.5" />
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-0">
+            <Command shouldFilter>
+              <CommandInput
+                placeholder="Change or add labels…"
+                value={query}
+                onValueChange={setQuery}
+              />
+              <CommandList>
+                <CommandEmpty>
+                  {canCreate ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      onClick={create}
+                      disabled={updateIssue.isPending}
+                    >
+                      Create “{trimmed}”
+                    </button>
+                  ) : (
+                    'No labels found.'
+                  )}
+                </CommandEmpty>
+                {selectedTags.length > 0 && (
+                  <CommandGroup>
+                    {selectedTags.map((tag) => (
+                      <CommandItem
+                        key={`selected:${tag}`}
+                        value={tag}
+                        onSelect={() => toggle(tag)}
+                        disabled={updateIssue.isPending}
+                      >
+                        <LabelCheck checked />
+                        <LabelDot tag={tag} />
+                        <span className="min-w-0 flex-1 truncate">{tag}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+                {selectedTags.length > 0 &&
+                  (availableTags.length > 0 || canCreate) && (
+                    <CommandSeparator />
+                  )}
+                {(availableTags.length > 0 || canCreate) && (
+                  <CommandGroup>
+                    {availableTags.map((tag) => (
+                      <CommandItem
+                        key={tag}
+                        value={tag}
+                        onSelect={() => toggle(tag)}
+                        disabled={updateIssue.isPending}
+                      >
+                        <LabelCheck checked={false} />
+                        <LabelDot tag={tag} />
+                        <span className="min-w-0 flex-1 truncate">{tag}</span>
+                      </CommandItem>
+                    ))}
+                    {canCreate && (
+                      <CommandItem
+                        value={`create-${trimmed}`}
+                        onSelect={create}
+                        disabled={updateIssue.isPending}
+                      >
+                        <LabelCheck checked={false} />
+                        <LabelDot tag={trimmed} />
+                        <span className="min-w-0 flex-1 truncate">
+                          Create “{trimmed}”
+                        </span>
+                      </CommandItem>
+                    )}
+                  </CommandGroup>
+                )}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {selectedTags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {selectedTags.map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-border/70 px-2 text-xs text-muted-foreground"
+            >
+              <LabelDot tag={tag} />
+              <span className="truncate">{tag}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

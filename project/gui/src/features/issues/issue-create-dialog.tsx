@@ -1,9 +1,4 @@
-import { useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
-import { ChevronDown, CircleDashed, UserRound } from 'lucide-react'
 import { AgentAnt, Avatar } from '#/components/avatar'
-import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
-import type { Author } from '#/features/rooms/types'
 import { Button } from '#/components/ui/button'
 import {
   Command,
@@ -37,7 +32,12 @@ import {
 } from '#/components/ui/select'
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
+import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import type { Author } from '#/features/rooms/types'
 import { cn } from '#/lib/utils'
+import { ChevronDown, CircleDashed, UserRound } from 'lucide-react'
+import type { FormEvent, ReactNode } from 'react'
+import { useState } from 'react'
 import { formatIssueId } from './format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
 import type { Issue, IssueOwner, IssuePriority, IssueStatus } from './types'

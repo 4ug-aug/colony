@@ -3,6 +3,7 @@ import { Button } from '#/components/ui/button'
 import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import { AccountSettingsPage } from '#/features/account/account-settings'
 import { IssuesPage } from '#/features/issues/issues-page'
+import type { IssueStatus } from '#/features/issues/types'
 import { MembersPanel } from '#/features/members/members-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
@@ -18,17 +19,16 @@ import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import {
   ArrowDown,
   CalendarClock,
-  CircleDot,
+  Cuboid,
   Hash,
   Lock,
   Plus,
   Settings,
   UserRound,
   Wifi,
-  WifiOff,
+  WifiOff
 } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { IssueStatus } from '#/features/issues/types'
 import type { DashboardView } from './room-sidebar'
 import { RoomSidebar } from './room-sidebar'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
@@ -219,7 +219,7 @@ export function Dashboard({
           ) : view === 'schedules' ? (
             <CalendarClock className="size-4 text-muted-foreground" />
           ) : view === 'issues' ? (
-            <CircleDot className="size-4 text-muted-foreground" />
+            <Cuboid className="size-4 text-muted-foreground" />
           ) : room?.visibility === 'private' ? (
             <Lock className="size-4 text-muted-foreground" />
           ) : (
@@ -280,7 +280,7 @@ export function Dashboard({
           <IssuesPage
             createOpen={issueCreate.open}
             createStatus={issueCreate.status}
-            onCreateOpenChange={(open, status) =>
+            onCreateOpenChange={(open: boolean, status?: IssueStatus) =>
               setIssueCreate(
                 open ? { open: true, status } : { open: false },
               )

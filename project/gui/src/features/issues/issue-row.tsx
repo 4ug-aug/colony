@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { formatIssueCreatedAt, formatIssueId } from './format'
 import { IssueStatusIcon } from './issue-icons'
 import {
-  OwnerDisplay,
+  OwnerPicker,
   PriorityPicker,
   StatusPicker,
 } from './issue-property-editors'
@@ -79,18 +79,15 @@ export function IssueRow({
 }) {
   return (
     <div
-      role={onOpen ? 'button' : undefined}
-      tabIndex={onOpen ? 0 : undefined}
       className="group flex h-9 items-center gap-2 border-b border-border/40 px-3 text-sm last:border-b-0 hover:bg-muted/40"
       style={depth > 0 ? { paddingLeft: 12 + depth * 16 } : undefined}
-      onClick={onOpen ? () => onOpen(issue.id) : undefined}
-      onKeyDown={
+      onClick={
         onOpen
           ? (event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                onOpen(issue.id)
-              }
+              const target = event.target as HTMLElement
+              if (target.closest('button, a, input, textarea, [role="combobox"]'))
+                return
+              onOpen(issue.id)
             }
           : undefined
       }
@@ -111,7 +108,7 @@ export function IssueRow({
         {issue.tags.map((tag) => (
           <span
             key={tag}
-            className="inline-flex max-w-28 items-center gap-1 truncate rounded-full border border-border/70 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+            className="inline-flex h-7 max-w-32 items-center gap-1.5 truncate rounded-full border border-border/70 px-2 text-xs text-muted-foreground"
           >
             <span className="size-1.5 shrink-0 rounded-full bg-sky-400" />
             {tag}
@@ -119,7 +116,7 @@ export function IssueRow({
         ))}
         <ChildProgressChip issue={issue} />
       </div>
-      <OwnerDisplay owner={issue.owner} className="w-28 shrink-0 text-xs" />
+      <OwnerPicker issue={issue} variant="list" />
       <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
         {formatIssueCreatedAt(issue.createdAt)}
       </span>

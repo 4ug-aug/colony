@@ -8,11 +8,12 @@ import {
   BreadcrumbSeparator,
 } from '#/components/ui/breadcrumb'
 import { Button } from '#/components/ui/button'
+import { Markdown } from '#/components/markdown'
 import { toast } from '#/components/ui/toast'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { Plus } from 'lucide-react'
-import { useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
+import { useState } from 'react'
 import { formatIssueId } from './format'
 import { IssueStatusIcon } from './issue-icons'
 import {
@@ -158,17 +159,24 @@ function EditableDescription({ issue }: { issue: Issue }) {
   }
 
   return (
-    <button
-      type="button"
-      className="w-full rounded-sm text-left text-sm leading-relaxed outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40"
+    <div
+      role="button"
+      tabIndex={0}
+      className="w-full cursor-text rounded-sm text-left text-sm leading-relaxed outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40"
       onClick={begin}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          begin()
+        }
+      }}
     >
       {issue.description.trim() ? (
-        <span className="whitespace-pre-wrap">{issue.description}</span>
+        <Markdown>{issue.description}</Markdown>
       ) : (
         <span className="text-muted-foreground">Add description…</span>
       )}
-    </button>
+    </div>
   )
 }
 
@@ -269,7 +277,7 @@ export function IssueDetailPage({
             <BreadcrumbItem>
               <BreadcrumbLink
                 render={
-                  <button type="button" className="cursor-pointer" onClick={onBack} />
+                  <button type="button" onClick={onBack} />
                 }
               >
                 Issues
@@ -294,7 +302,7 @@ export function IssueDetailPage({
             <BreadcrumbItem>
               <BreadcrumbLink
                 render={
-                  <button type="button" className="cursor-pointer" onClick={onBack} />
+                  <button type="button" onClick={onBack} />
                 }
               >
                 Issues
@@ -308,7 +316,7 @@ export function IssueDetailPage({
                     render={
                       <button
                         type="button"
-                        className="max-w-40 cursor-pointer truncate"
+                        className="max-w-40truncate"
                         onClick={() => onOpenIssue(parent.id)}
                       />
                     }
@@ -316,7 +324,7 @@ export function IssueDetailPage({
                     <span className="tabular-nums">
                       {formatIssueId(parent.number)}
                     </span>
-                    <span className="text-muted-foreground"> · </span>
+                    <span className="text-muted-foreground"> </span>
                     {parent.title}
                   </BreadcrumbLink>
                 </BreadcrumbItem>
@@ -364,9 +372,6 @@ export function IssueDetailPage({
             </RailRow>
           </section>
           <section className="mb-5">
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">
-              Labels
-            </h3>
             <TagsEditor issue={issue} />
           </section>
           <section className="mb-5">
