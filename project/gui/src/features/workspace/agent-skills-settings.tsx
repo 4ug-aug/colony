@@ -1,0 +1,460 @@
+import { Markdown } from '#/components/markdown'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
+import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Button } from '#/components/ui/button'
+import { Checkbox } from '#/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
+import { Input } from '#/components/ui/input'
+import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
+import { apiFetch, apiJson } from '#/lib/api-transport'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+
+type WorkspaceSkill = {
+  id: string
+  name: string
+  description: string
+}
+
+type SkillAgent = {
+  id: string
+  name: string
+}
+
+type SkillsCatalog = {
+  skills: WorkspaceSkill[]
+  attachments: Record<string, string[]>
+  agents: SkillAgent[]
+}
+
+type SkillPackageDetail = {
+  skill: WorkspaceSkill
+  files: { path: string; content: string }[]
+}
+
+export const workspaceSkillsQueryKey = [
+  'workspace-settings',
+  'skills',
+] as const
+
+function skillMarkdownBody(content: string): string {
+  if (!content.startsWith('---')) return content
+  const end = content.indexOf('\n---', 3)
+  if (end === -1) return content
+  return content.slice(end + 4).replace(/^\r?\n/, '')
+}
+
+function useWorkspaceSkills() {
+  return useQuery({
+    queryKey: workspaceSkillsQueryKey,
+    queryFn: () =>
+      apiJson<SkillsCatalog>(
+        '/api/workspace/settings/skills',
+        undefined,
+        'Could not load skills',
+      ),
+  })
+}
+
+export function AgentSkillsSettings() {
+  const queryClient = useQueryClient()
+  const { data, isPending, error, isFetching } = useWorkspaceSkills()
+  const [skillFile, setSkillFile] = useState<File | null>(null)
+  const [pendingSkillId, setPendingSkillId] = useState<string>()
+  const [viewingSkillId, setViewingSkillId] = useState<string>()
+  const [actionError, setActionError] = useState<string>()
+
+  const skillDetail = useQuery({
+    queryKey: [...workspaceSkillsQueryKey, 'detail', viewingSkillId] as const,
+    queryFn: () =>
+      apiJson<SkillPackageDetail>(
+        `/api/workspace/settings/skills/${encodeURIComponent(viewingSkillId!)}`,
+        undefined,
+        'Could not load skill',
+      ),
+    enabled: viewingSkillId !== undefined,
+  })
+
+  const refreshAgentDefinitions = () =>
+    void queryClient.refetchQueries({ queryKey: agentDefinitionsQueryKey })
+
+  const refreshSkills = () =>
+    queryClient.invalidateQueries({ queryKey: workspaceSkillsQueryKey })
+
+  const importSkill = useMutation({
+    mutationFn: async () => {
+      if (!skillFile) throw new Error('Choose a SKILL.md or skill package zip')
+      const body = new FormData()
+      body.set('package', skillFile)
+      const response = await apiFetch('/api/workspace/settings/skills', {
+        method: 'POST',
+        body,
+      })
+      const result = (await response.json()) as { error?: string }
+      if (!response.ok)
+        throw new Error(result.error ?? 'Could not import skill package')
+    },
+    onSuccess: () => {
+      setSkillFile(null)
+      setActionError(undefined)
+      void refreshSkills()
+      refreshAgentDefinitions()
+    },
+    onError: (reason) => {
+      setActionError(
+        reason instanceof Error
+          ? reason.message
+          : 'Could not import skill package',
+      )
+    },
+  })
+
+  const deleteSkill = useMutation({
+    mutationFn: async (skill: WorkspaceSkill) => {
+      setPendingSkillId(skill.id)
+      const response = await apiFetch(
+        `/api/workspace/settings/skills/${encodeURIComponent(skill.id)}`,
+        { method: 'DELETE' },
+      )
+      if (!response.ok) throw new Error('Could not delete skill')
+      return skill.id
+    },
+    onMutate: async (skill) => {
+      await queryClient.cancelQueries({ queryKey: workspaceSkillsQueryKey })
+      const previous = queryClient.getQueryData<SkillsCatalog>(
+        workspaceSkillsQueryKey,
+      )
+      if (previous) {
+        const attachments: Record<string, string[]> = {}
+        for (const [agentId, skillIds] of Object.entries(previous.attachments)) {
+          attachments[agentId] = skillIds.filter((id) => id !== skill.id)
+        }
+        queryClient.setQueryData<SkillsCatalog>(workspaceSkillsQueryKey, {
+          ...previous,
+          skills: previous.skills.filter((entry) => entry.id !== skill.id),
+          attachments,
+        })
+      }
+      return { previous }
+    },
+    onError: (reason, _skill, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(workspaceSkillsQueryKey, context.previous)
+      }
+      setActionError(
+        reason instanceof Error ? reason.message : 'Could not delete skill',
+      )
+    },
+    onSuccess: () => {
+      setActionError(undefined)
+      refreshAgentDefinitions()
+    },
+    onSettled: () => {
+      setPendingSkillId(undefined)
+      void refreshSkills()
+    },
+  })
+
+  const toggleAttachment = useMutation({
+    mutationFn: async (input: {
+      agentDefinitionId: string
+      skillId: string
+      skillIds: string[]
+    }) => {
+      setPendingSkillId(input.skillId)
+      const response = await apiFetch(
+        `/api/workspace/settings/skills/attachments/${encodeURIComponent(input.agentDefinitionId)}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ skillIds: input.skillIds }),
+        },
+      )
+      const result = (await response.json()) as {
+        skillIds?: string[]
+        error?: string
+      }
+      if (!response.ok)
+        throw new Error(result.error ?? 'Could not update skill attachments')
+      return {
+        agentDefinitionId: input.agentDefinitionId,
+        skillIds: result.skillIds ?? input.skillIds,
+      }
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: workspaceSkillsQueryKey })
+      const previous = queryClient.getQueryData<SkillsCatalog>(
+        workspaceSkillsQueryKey,
+      )
+      if (previous) {
+        queryClient.setQueryData<SkillsCatalog>(workspaceSkillsQueryKey, {
+          ...previous,
+          attachments: {
+            ...previous.attachments,
+            [input.agentDefinitionId]: input.skillIds,
+          },
+        })
+      }
+      return { previous }
+    },
+    onError: (reason, _input, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(workspaceSkillsQueryKey, context.previous)
+      }
+      setActionError(
+        reason instanceof Error
+          ? reason.message
+          : 'Could not update skill attachments',
+      )
+    },
+    onSuccess: (result) => {
+      setActionError(undefined)
+      queryClient.setQueryData<SkillsCatalog>(workspaceSkillsQueryKey, (current) =>
+        current
+          ? {
+              ...current,
+              attachments: {
+                ...current.attachments,
+                [result.agentDefinitionId]: result.skillIds,
+              },
+            }
+          : current,
+      )
+      refreshAgentDefinitions()
+    },
+    onSettled: () => {
+      setPendingSkillId(undefined)
+    },
+  })
+
+  const skills = data?.skills ?? []
+  const attachments = data?.attachments ?? {}
+  const agents = data?.agents ?? []
+  const busy = importSkill.isPending || isFetching
+  const detailError =
+    skillDetail.error instanceof Error ? skillDetail.error.message : undefined
+
+  return (
+    <section className="border-b pb-4">
+      <h2 className="font-semibold">Agent skills</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Import a <code className="text-xs">SKILL.md</code> file or a zip of a
+        markdown Agent Skills package, then attach it to agent definitions.
+        Skills are staged into each runtime&apos;s expected layout at run start.
+      </p>
+      {(error || actionError || detailError) && (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          {actionError ??
+            detailError ??
+            (error instanceof Error ? error.message : 'Could not load skills')}
+        </p>
+      )}      <div className="mt-4 grid gap-3">
+        <div className="grid max-w-xl gap-3">
+          <Input
+            aria-label="Skill markdown or package zip"
+            disabled={busy}
+            onChange={(event) =>
+              setSkillFile(event.target.files?.[0] ?? null)
+            }
+            type="file"
+            accept=".md,.zip,text/markdown,application/zip"
+          />
+          <div className="flex items-center gap-3">
+            <Button
+              disabled={busy || !skillFile}
+              onClick={() => importSkill.mutate()}
+            >
+              {importSkill.isPending ? (
+                <BrailleLoader text="Importing" />
+              ) : (
+                'Import skill'
+              )}
+            </Button>
+          </div>
+        </div>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            <BrailleLoader text="Loading skills" />
+          </p>
+        ) : skills.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No skills imported yet.
+          </p>
+        ) : (
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {skills.map((skill) => {
+              const skillBusy = pendingSkillId === skill.id
+              return (
+                <li
+                  key={skill.id}
+                  className="flex h-full flex-col rounded-md border p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 rounded-sm text-left outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => setViewingSkillId(skill.id)}
+                    >
+                      <p className="font-medium">{skill.name}</p>
+                      <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">
+                        {skill.description}
+                      </p>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy || skillBusy}
+                        onClick={() => setViewingSkillId(skill.id)}
+                      >
+                        View
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={busy || skillBusy}
+                            />
+                          }
+                        >
+                          Delete
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Delete {skill.name}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This removes the skill from the workspace catalog
+                              and detaches it from every agent definition.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              disabled={skillBusy}
+                              onClick={() => deleteSkill.mutate(skill)}
+                            >
+                              {skillBusy ? (
+                                <BrailleLoader text="Deleting" />
+                              ) : (
+                                'Delete'
+                              )}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                  <div className="mt-auto space-y-2 border-t pt-3">
+                    {skillBusy && (
+                      <p className="text-sm text-muted-foreground" role="status">
+                        <BrailleLoader text="Updating attachments" />
+                      </p>
+                    )}
+                    {agents.map((agent) => {
+                      const attached = (
+                        attachments[agent.id] ?? []
+                      ).includes(skill.id)
+                      return (
+                        <label
+                          key={`${agent.id}-${skill.id}`}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <Checkbox
+                            checked={attached}
+                            disabled={busy || skillBusy}
+                            onCheckedChange={() => {
+                              const current = attachments[agent.id] ?? []
+                              const skillIds = attached
+                                ? current.filter((id) => id !== skill.id)
+                                : [...current, skill.id]
+                              toggleAttachment.mutate({
+                                agentDefinitionId: agent.id,
+                                skillId: skill.id,
+                                skillIds,
+                              })
+                            }}
+                          />                          Attach to {agent.name}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+      <Dialog
+        open={viewingSkillId !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setViewingSkillId(undefined)
+        }}
+      >
+        <DialogContent
+          className="flex max-h-[min(85vh,44rem)] flex-col gap-3 sm:max-w-2xl"
+          showCloseButton
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {skillDetail.data?.skill.name ??
+                skills.find((skill) => skill.id === viewingSkillId)?.name ??
+                'Skill'}
+            </DialogTitle>
+            <DialogDescription>
+              {skillDetail.data?.skill.description ??
+                skills.find((skill) => skill.id === viewingSkillId)
+                  ?.description ??
+                'Full skill package contents.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            {skillDetail.isPending && (
+              <p className="text-sm text-muted-foreground" role="status">
+                <BrailleLoader text="Loading skill" />
+              </p>
+            )}
+            {!skillDetail.isPending &&
+              skillDetail.data?.files.map((file) => (
+                <section key={file.path} className="mb-6 last:mb-0">
+                  {file.path !== 'SKILL.md' && (
+                    <h3 className="mb-2 font-mono text-xs font-medium text-muted-foreground">
+                      {file.path}
+                    </h3>
+                  )}
+                  <div className="text-sm leading-6">
+                    <Markdown>
+                      {file.path === 'SKILL.md'
+                        ? skillMarkdownBody(file.content)
+                        : file.content}
+                    </Markdown>
+                  </div>
+                </section>
+              ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </section>
+  )
+}
