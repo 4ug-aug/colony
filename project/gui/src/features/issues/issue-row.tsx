@@ -16,7 +16,13 @@ import { LabelDot } from './issue-labels'
 import type { Issue } from './types'
 import { useIssues } from './use-issues'
 
-function ChildProgressChip({ issue }: { issue: Issue }) {
+function ChildProgressChip({
+  issue,
+  onOpen,
+}: {
+  issue: Issue
+  onOpen?: (issueId: string) => void
+}) {
   const [open, setOpen] = useState(false)
   const { data: issues = [] } = useIssues()
   const progress = issue.childProgress
@@ -52,15 +58,23 @@ function ChildProgressChip({ issue }: { issue: Issue }) {
         </div>
         <ul className="max-h-64 space-y-0.5 overflow-y-auto">
           {children.map((child) => (
-            <li
-              key={child.id}
-              className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
-            >
-              <IssueStatusIcon status={child.status} />
-              <span className="w-12 shrink-0 tabular-nums text-muted-foreground">
-                {formatIssueId(child.number)}
-              </span>
-              <span className="min-w-0 flex-1 truncate">{child.title}</span>
+            <li key={child.id}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onOpen?.(child.id)
+                  setOpen(false)
+                }}
+              >
+                <IssueStatusIcon status={child.status} />
+                <span className="w-12 shrink-0 tabular-nums text-muted-foreground">
+                  {formatIssueId(child.number)}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{child.title}</span>
+              </button>
             </li>
           ))}
         </ul>
@@ -115,7 +129,7 @@ export function IssueRow({
             {tag}
           </span>
         ))}
-        <ChildProgressChip issue={issue} />
+        <ChildProgressChip issue={issue} onOpen={onOpen} />
       </div>
       <OwnerPicker issue={issue} variant="list" />
       <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">

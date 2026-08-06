@@ -1,3 +1,4 @@
+import { Markdown } from '#/components/markdown'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import {
   Breadcrumb,
@@ -8,7 +9,6 @@ import {
   BreadcrumbSeparator,
 } from '#/components/ui/breadcrumb'
 import { Button } from '#/components/ui/button'
-import { Markdown } from '#/components/markdown'
 import { toast } from '#/components/ui/toast'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { Plus } from 'lucide-react'
