@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiFetch, connectWorkspaceStream } from '#/lib/api-transport'
+import { apiJson, connectWorkspaceStream } from '#/lib/api-transport'
 import type { AgentDefinition, Schedule, ScheduleRun } from './types'
 
 function upsert<T extends { id: string }>(items: T[], item: T): T[] {
@@ -17,28 +17,30 @@ export function useSchedules() {
   const [error, setError] = useState<string>()
 
   const load = useCallback(async () => {
-    const [scheduleResponse, agentResponse] = await Promise.all([
-      apiFetch('/api/schedules?archived=true'),
-      apiFetch('/api/agent-definitions'),
+    const [scheduleData, agentData] = await Promise.all([
+      apiJson<{ schedules: Schedule[] }>(
+        '/api/schedules?archived=true',
+        undefined,
+        'Unable to load schedules',
+      ),
+      apiJson<{ agents: AgentDefinition[] }>(
+        '/api/agent-definitions',
+        undefined,
+        'Unable to load schedules',
+      ),
     ])
-    if (!scheduleResponse.ok || !agentResponse.ok)
-      throw new Error('Unable to load schedules')
-    const scheduleData = (await scheduleResponse.json()) as {
-      schedules: Schedule[]
-    }
-    const agentData = (await agentResponse.json()) as {
-      agents: AgentDefinition[]
-    }
     setSchedules(scheduleData.schedules)
     setAgents(agentData.agents)
     await Promise.all(
       scheduleData.schedules.map(async (schedule) => {
-        const response = await apiFetch(
-          `/api/schedules/${schedule.id}/runs?limit=10`,
-        )
-        if (!response.ok) return
-        const data = (await response.json()) as { runs: ScheduleRun[] }
-        setRuns((current) => ({ ...current, [schedule.id]: data.runs }))
+        try {
+          const data = await apiJson<{ runs: ScheduleRun[] }>(
+            `/api/schedules/${schedule.id}/runs?limit=10`,
+          )
+          setRuns((current) => ({ ...current, [schedule.id]: data.runs }))
+        } catch {
+          // Best-effort per-schedule run history.
+        }
       }),
     )
   }, [])
@@ -90,13 +92,10 @@ export function useSchedules() {
   }, [load])
 
   const mutate = useCallback(async (path: string, init: RequestInit) => {
-    const response = await apiFetch(path, init)
-    const data = (await response.json()) as {
+    const data = await apiJson<{
       schedule?: Schedule
       run?: ScheduleRun
-      error?: string
-    }
-    if (!response.ok) throw new Error(data.error ?? 'Schedule request failed')
+    }>(path, init, 'Schedule request failed')
     if (data.schedule)
       setSchedules((current) => upsert(current, data.schedule!))
     if (data.run)

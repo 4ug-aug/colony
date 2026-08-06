@@ -23,6 +23,7 @@ import type { ReactNode } from 'react'
 import { Button } from '#/components/ui/button'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import type { MentionableAccount } from './types'
+import { formatBytes } from './format'
 
 type MentionItem = {
   id: string
@@ -547,9 +548,3 @@ export const MessageComposer = forwardRef<
     </div>
   )
 })
-
-function formatBytes(bytes: number) {
-  return bytes < 1024 * 1024
-    ? `${Math.max(1, Math.ceil(bytes / 1024))} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}

@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { apiFetch } from '#/lib/api-transport'
+import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import type {
   Issue,
   IssueOwner,
@@ -84,9 +84,11 @@ export function removeIssueFromCache(queryClient: QueryClient, issueId: string) 
 }
 
 async function fetchIssues(): Promise<Issue[]> {
-  const response = await apiFetch('/api/issues')
-  if (!response.ok) throw new Error('Unable to load issues')
-  const data = (await response.json()) as { issues: Issue[] }
+  const data = await apiJson<{ issues: Issue[] }>(
+    '/api/issues',
+    undefined,
+    'Unable to load issues',
+  )
   return withDerivedChildProgress(data.issues)
 }
 
@@ -99,9 +101,11 @@ export function useIssues(options?: { enabled?: boolean }) {
 }
 
 async function fetchIssue(ref: string): Promise<Issue> {
-  const response = await apiFetch(`/api/issues/${encodeURIComponent(ref)}`)
-  const data = (await response.json()) as { issue?: Issue; error?: string }
-  if (!response.ok) throw new Error(data.error ?? 'Unable to load issue')
+  const data = await apiJson<{ issue?: Issue }>(
+    `/api/issues/${encodeURIComponent(ref)}`,
+    undefined,
+    'Unable to load issue',
+  )
   if (!data.issue) throw new Error('Unable to load issue')
   return data.issue
 }
@@ -155,10 +159,13 @@ export function useCreateIssue() {
     mutationFn: async (
       input: CreateIssueInput,
     ): Promise<{ issue: Issue; run?: IssueRun }> => {
-      const response = await apiFetch('/api/issues', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await apiJsonBody<{
+        issue?: Issue
+        run?: IssueRun
+      }>(
+        '/api/issues',
+        'POST',
+        {
           title: input.title,
           ...(input.description !== undefined
             ? { description: input.description }
@@ -169,15 +176,9 @@ export function useCreateIssue() {
           ...(input.timeSpent ? { timeSpent: input.timeSpent } : {}),
           ...(input.parentId ? { parentId: input.parentId } : {}),
           ...(input.owner ? { owner: input.owner } : {}),
-        }),
-      })
-      const data = (await response.json()) as {
-        issue?: Issue
-        run?: IssueRun
-        error?: string
-      }
-      if (!response.ok)
-        throw new Error(data.error ?? 'Unable to create issue')
+        },
+        'Unable to create issue',
+      )
       if (!data.issue) throw new Error('Unable to create issue')
       return { issue: data.issue, ...(data.run ? { run: data.run } : {}) }
     },
@@ -193,14 +194,12 @@ export function useUpdateIssue() {
   return useMutation({
     mutationFn: async (input: UpdateIssueInput): Promise<Issue> => {
       const { id, ...patch } = input
-      const response = await apiFetch(`/api/issues/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      })
-      const data = (await response.json()) as { issue?: Issue; error?: string }
-      if (!response.ok)
-        throw new Error(data.error ?? 'Unable to update issue')
+      const data = await apiJsonBody<{ issue?: Issue }>(
+        `/api/issues/${id}`,
+        'PATCH',
+        patch,
+        'Unable to update issue',
+      )
       if (!data.issue) throw new Error('Unable to update issue')
       return data.issue
     },
@@ -217,18 +216,15 @@ export function useAssignIssue() {
       id: string
       owner: IssueOwner | null
     }): Promise<{ issue: Issue; run?: IssueRun }> => {
-      const response = await apiFetch(`/api/issues/${input.id}/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ owner: input.owner }),
-      })
-      const data = (await response.json()) as {
+      const data = await apiJsonBody<{
         issue?: Issue
         run?: IssueRun
-        error?: string
-      }
-      if (!response.ok)
-        throw new Error(data.error ?? 'Unable to assign issue')
+      }>(
+        `/api/issues/${input.id}/assign`,
+        'POST',
+        { owner: input.owner },
+        'Unable to assign issue',
+      )
       if (!data.issue) throw new Error('Unable to assign issue')
       return { issue: data.issue, ...(data.run ? { run: data.run } : {}) }
     },
@@ -243,12 +239,7 @@ export function useDeleteIssue() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (id: string): Promise<void> => {
-      const response = await apiFetch(`/api/issues/${id}`, {
-        method: 'DELETE',
-      })
-      const data = (await response.json()) as { error?: string }
-      if (!response.ok)
-        throw new Error(data.error ?? 'Unable to delete issue')
+      await apiJsonBody(`/api/issues/${id}`, 'DELETE', undefined, 'Unable to delete issue')
     },
     onSuccess: (_data, id) => {
       removeIssueFromCache(queryClient, id)

@@ -538,20 +538,38 @@ const open = (url: string) =>
     socket.onerror = () => reject(new Error('socket failed'))
   })
 
-test('two clients receive durable room messages and agent runs', async () => {
-  const store = new MemoryRoomStore()
-  const control = new FakeRunControl()
-  const messages = createRoomMessageHub(store)
+type CoordinatorOptions = Parameters<typeof createCoordinator>[0]
+
+async function makeCoordinator(
+  overrides: Partial<CoordinatorOptions> = {},
+) {
+  const store = overrides.store ?? new MemoryRoomStore()
+  const control = overrides.control ?? new FakeRunControl()
+  const messages = overrides.messages ?? createRoomMessageHub(store)
   const coordinator = createCoordinator({
-    control,
-    store,
-    messages,
     authenticator: authorized,
     authHandler: async () => new Response('ok'),
     origin: 'http://gui.test',
     port: await port(),
+    ...overrides,
+    control,
+    store,
+    messages,
   })
-  const base = `http://localhost:${coordinator.port}`
+  return {
+    coordinator,
+    store,
+    control,
+    messages,
+    base: `http://localhost:${coordinator.port}`,
+  }
+}
+
+test('two clients receive durable room messages and agent runs', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const messages = createRoomMessageHub(store)
+  const { coordinator, base } = await makeCoordinator({ store, control, messages })
   try {
     expect(
       (
@@ -721,16 +739,7 @@ test('room history is paginated over HTTP and in the realtime snapshot', async (
       text: String(index),
       createdAt: index,
     })
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store })
   try {
     const firstResponse = await fetch(`${base}/api/rooms/general/messages`, {
       headers: { origin: 'http://gui.test' },
@@ -1202,16 +1211,7 @@ test('failed and cancelled runs notify their requester', async () => {
   const store = new MemoryRoomStore()
   store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
   const control = new FakeRunControl()
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control })
   const start = async (task: string) => {
     const response = await fetch(`${base}/api/rooms/general/messages`, {
       method: 'POST',
@@ -1243,16 +1243,7 @@ test('failed and cancelled runs notify their requester', async () => {
 test('rooms are created once and streams stay isolated', async () => {
   const control = new FakeRunControl()
   const store = new MemoryRoomStore()
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control })
   try {
     const general = await open(
       `${base.replace('http', 'ws')}/api/rooms/general/stream`,
@@ -1474,16 +1465,7 @@ test('hub post by non-HTTP caller broadcasts message.created to subscribed socke
   store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages,
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control, messages })
   try {
     const socket = await open(
       `${base.replace('http', 'ws')}/api/rooms/general/stream`,
@@ -1527,16 +1509,7 @@ test('agent-authored hub post does NOT create a run', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages,
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control, messages })
   try {
     const socket = await open(
       `${base.replace('http', 'ws')}/api/rooms/general/stream`,
@@ -1568,16 +1541,7 @@ test('step events are persisted and broadcast as run.step to room sockets', asyn
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages,
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control, messages })
   try {
     // Start a run
     const response = await fetch(`${base}/api/rooms/general/messages`, {
@@ -1668,16 +1632,7 @@ test('room.snapshot includes latestSteps for active runs', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages,
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control, messages })
   try {
     // Start a run and emit a step
     const response = await fetch(`${base}/api/rooms/general/messages`, {
@@ -1721,16 +1676,7 @@ test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched ru
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages,
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control, messages })
   try {
     // Start a run in general
     const response = await fetch(`${base}/api/rooms/general/messages`, {
@@ -1811,16 +1757,7 @@ test('non-member gets 404 on all private room endpoints', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages,
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control, messages, authenticator: swappable })
   try {
     // user-1 creates a private room (becomes creator/member)
     const created = await fetch(`${base}/api/rooms`, {
@@ -1899,16 +1836,7 @@ test('member of private room can access its endpoints', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const coordinator = createCoordinator({
-    control,
-    store,
-    messages,
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, control, messages, authenticator: swappable })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-1 creates the private room
@@ -1957,16 +1885,7 @@ test('GET /api/rooms omits private rooms the user is not in but includes public 
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
   const store = new MemoryRoomStore()
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
   try {
     // user-1 creates a public room and a private room
     await fetch(`${base}/api/rooms`, {
@@ -2017,16 +1936,7 @@ test('POST /api/rooms with private visibility does not emit room.created globall
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
   const store = new MemoryRoomStore()
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-2's workspace stream receives room discovery changes.
@@ -2082,16 +1992,7 @@ test('POST /api/rooms with private visibility does not emit room.created globall
 
 test('POST /api/rooms with invalid visibility returns 400', async () => {
   const store = new MemoryRoomStore()
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store })
   try {
     const resp = await fetch(`${base}/api/rooms`, {
       method: 'POST',
@@ -2115,16 +2016,7 @@ test('GET /api/workspace/members returns seeded workspace users', async () => {
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store })
   try {
     const resp = await fetch(`${base}/api/workspace/members`, {
       headers: { origin: 'http://gui.test' },
@@ -2149,16 +2041,7 @@ test('GET /api/rooms/:id/members returns members for an accessible room', async 
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
@@ -2202,16 +2085,7 @@ test('non-member POST /api/rooms/:id/members returns 404', async () => {
     { id: 'user-1', name: 'Alice' },
     { id: 'user-3', name: 'Carol' },
   ]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
@@ -2245,16 +2119,7 @@ test('POST /api/rooms/:id/members on a public room returns 400', async () => {
     { id: 'user-1', name: 'Ada' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store })
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
@@ -2285,16 +2150,7 @@ test('POST /api/rooms/:id/members on a public room returns 400', async () => {
 test('POST /api/rooms/:id/members with unknown userId returns 400', async () => {
   const store = new MemoryRoomStore()
   store.workspaceUsers = [{ id: 'user-1', name: 'Ada' }]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: authorized,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store })
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
@@ -2332,16 +2188,7 @@ test('member adds a workspace user; added user socket gets room.created; room so
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-1 creates the private room and opens a stream inside it
@@ -2413,16 +2260,7 @@ test('owner removes another member; removed user gets room.removed; room socket 
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-1 creates private room
@@ -2499,16 +2337,7 @@ test('non-owner removing another member returns 403', async () => {
     { id: 'user-2', name: 'Bob' },
     { id: 'user-3', name: 'Carol' },
   ]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
   try {
     // user-1 owns the room; user-2 and user-3 are members
     currentUser = 'user-1'
@@ -2548,16 +2377,7 @@ test('member removing themselves (leave) is allowed and gets room.removed', asyn
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const coordinator = createCoordinator({
-    control: new FakeRunControl(),
-    store,
-    messages: createRoomMessageHub(store),
-    authenticator: swappable,
-    authHandler: async () => new Response('ok'),
-    origin: 'http://gui.test',
-    port: await port(),
-  })
-  const base = `http://localhost:${coordinator.port}`
+  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-1 creates the room; add user-2 as member

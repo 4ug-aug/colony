@@ -34,6 +34,38 @@ export async function apiFetch(
   return window.fetch(url, { credentials: 'include', ...init })
 }
 
+export async function apiJson<T>(
+  path: string,
+  init?: RequestInit,
+  fallback = 'Request failed',
+): Promise<T> {
+  const response = await apiFetch(path, init)
+  const data = (await response.json()) as T & { error?: string }
+  if (!response.ok) throw new Error(data.error ?? fallback)
+  return data
+}
+
+export async function apiJsonBody<T>(
+  path: string,
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  body?: unknown,
+  fallback = 'Request failed',
+): Promise<T> {
+  return apiJson<T>(
+    path,
+    {
+      method,
+      ...(body !== undefined
+        ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }
+        : {}),
+    },
+    fallback,
+  )
+}
+
 // Shaped for Better Auth's customFetchImpl: accepts string | URL | Request, and
 // routes its calls through the same transport so sign-in populates the cookie jar.
 export async function betterAuthFetch(

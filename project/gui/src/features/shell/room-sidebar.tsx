@@ -64,7 +64,7 @@ import {
   AvatarBadge,
   AvatarFallback,
   AvatarImage,
-} from '@/components/ui/avatar'
+} from '#/components/ui/avatar'
 import {
   CalendarClock,
   ChevronRight,

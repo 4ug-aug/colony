@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Author } from '#/features/rooms/types'
-import { apiFetch } from '#/lib/api-transport'
+import { apiJson } from '#/lib/api-transport'
 
 export type WorkspaceMember = Pick<
   Author,
@@ -13,9 +13,11 @@ export function useWorkspaceMembers(enabled = true) {
   return useQuery({
     queryKey: workspaceMembersQueryKey,
     queryFn: async (): Promise<WorkspaceMember[]> => {
-      const response = await apiFetch('/api/workspace/members')
-      if (!response.ok) throw new Error('Unable to load workspace members')
-      const data = (await response.json()) as { users: WorkspaceMember[] }
+      const data = await apiJson<{ users: WorkspaceMember[] }>(
+        '/api/workspace/members',
+        undefined,
+        'Unable to load workspace members',
+      )
       return data.users
     },
     enabled,

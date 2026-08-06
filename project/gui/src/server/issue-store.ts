@@ -1,62 +1,37 @@
 import type { RunState } from '../../../runs'
+import {
+  formatIssueId,
+  ISSUE_DESCRIPTION_MAX,
+  ISSUE_TITLE_MAX,
+  parseIssueRef,
+  type Issue,
+  type IssueChildProgress,
+  type IssueOwner,
+  type IssuePriority,
+  type IssueRun,
+  type IssueStatus,
+} from './issue-model'
+
+export {
+  formatIssueId,
+  ISSUE_DESCRIPTION_MAX,
+  ISSUE_PRIORITIES,
+  ISSUE_STATUSES,
+  ISSUE_TITLE_MAX,
+  parseIssueRef,
+  type Issue,
+  type IssueChildProgress,
+  type IssueOwner,
+  type IssuePriority,
+  type IssueRun,
+  type IssueStatus,
+} from './issue-model'
 
 type Sqlite = { prepare(sql: string): Statement }
 type Statement = {
   all(...values: unknown[]): unknown[]
   get(...values: unknown[]): unknown
   run(...values: unknown[]): unknown
-}
-
-export const ISSUE_TITLE_MAX = 500
-export const ISSUE_DESCRIPTION_MAX = 10_000
-
-export type IssueStatus =
-  | 'backlog'
-  | 'todo'
-  | 'in_progress'
-  | 'in_review'
-  | 'done'
-export type IssuePriority = 'none' | 'low' | 'medium' | 'high' | 'urgent'
-export type IssueOwner =
-  | { kind: 'account'; id: string }
-  | { kind: 'agent'; id: string }
-
-export type IssueChildProgress = { done: number; total: number }
-
-export type Issue = {
-  id: string
-  number: number
-  title: string
-  description: string
-  deliverable: string
-  status: IssueStatus
-  priority: IssuePriority
-  tags: string[]
-  timeSpent: number[]
-  parentId?: string
-  owner?: IssueOwner
-  createdAt: number
-  updatedAt: number
-  childProgress?: IssueChildProgress
-  /** True when this Issue has a preparing/running Issue-linked run. */
-  hasActiveRun?: boolean
-}
-
-export type IssueRun = {
-  id: string
-  issueId: string
-  task: string
-  agentId: string
-  provider: 'openai' | 'custom' | 'cursor'
-  model: string
-  state: RunState
-  createdAt: number
-  startedAt?: number
-  completedAt?: number
-  exitCode?: number
-  error?: string
-  stdout: string
-  stderr: string
 }
 
 export type NewIssue = {
@@ -140,20 +115,6 @@ const transaction = <T>(sqlite: Sqlite, work: () => T): T => {
     sqlite.prepare('ROLLBACK').run()
     throw error
   }
-}
-
-export function formatIssueId(number: number): string {
-  return `SWE-${number}`
-}
-
-export function parseIssueRef(
-  raw: string,
-): { kind: 'number'; number: number } | { kind: 'id'; id: string } | undefined {
-  const trimmed = raw.trim()
-  if (!trimmed) return undefined
-  const match = /^SWE-(\d+)$/i.exec(trimmed)
-  if (match) return { kind: 'number', number: Number(match[1]) }
-  return { kind: 'id', id: trimmed }
 }
 
 const fence = (label: string, body: string): string =>

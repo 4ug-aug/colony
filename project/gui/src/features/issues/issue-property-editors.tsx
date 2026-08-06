@@ -21,8 +21,7 @@ import {
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
 import { Check, CircleDashed, Plus, UserRound } from 'lucide-react'
-import { useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import { cn } from '#/lib/utils'
 import { formatIssueId } from './format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
@@ -129,68 +128,17 @@ export function PriorityPicker({
   issue: Issue
   variant?: 'icon' | 'rail'
 }) {
-  const [open, setOpen] = useState(false)
-  const updateIssue = useUpdateIssue()
-
-  const select = async (priority: IssuePriority) => {
-    if (priority === issue.priority) {
-      setOpen(false)
-      return
-    }
-    const previous = ISSUE_PRIORITY_LABEL[issue.priority]
-    try {
-      await updateIssue.mutateAsync({ id: issue.id, priority })
-      setOpen(false)
-      toast.add({
-        type: 'success',
-        title: `Priority updated on ${formatIssueId(issue.number)}`,
-        description: `${previous} → ${ISSUE_PRIORITY_LABEL[priority]}`,
-      })
-    } catch (reason) {
-      toast.add({
-        type: 'error',
-        title: 'Could not update priority',
-        description:
-          reason instanceof Error ? reason.message : 'Please try again.',
-      })
-    }
-  }
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <button
-            type="button"
-            className={variant === 'rail' ? railTriggerClass : iconTriggerClass}
-            aria-label={`Priority: ${ISSUE_PRIORITY_LABEL[issue.priority]}`}
-            onClick={(event) => event.stopPropagation()}
-          />
-        }
-      >
-        <IssuePriorityIcon priority={issue.priority} />
-        {variant === 'rail' && (
-          <span className="truncate">{ISSUE_PRIORITY_LABEL[issue.priority]}</span>
-        )}
-      </PopoverTrigger>
-      <PopoverContent align="start" side="bottom" className="w-44 p-1">
-        {ISSUE_PRIORITIES.map((priority) => (
-          <button
-            key={priority}
-            type="button"
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
-            onClick={() => void select(priority)}
-            disabled={updateIssue.isPending}
-          >
-            <IssuePriorityIcon priority={priority} />
-            <span className="flex-1">{ISSUE_PRIORITY_LABEL[priority]}</span>
-            {priority === issue.priority && (
-              <Check className="size-3.5 text-muted-foreground" />
-            )}
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
+    <PropertyPicker
+      issue={issue}
+      variant={variant}
+      current={issue.priority}
+      options={ISSUE_PRIORITIES}
+      labelOf={(priority) => ISSUE_PRIORITY_LABEL[priority]}
+      ariaName="Priority"
+      iconOf={(priority) => <IssuePriorityIcon priority={priority} />}
+      onSelect={(priority) => ({ id: issue.id, priority })}
+    />
   )
 }
 
@@ -201,27 +149,60 @@ export function StatusPicker({
   issue: Issue
   variant?: 'icon' | 'rail'
 }) {
+  return (
+    <PropertyPicker
+      issue={issue}
+      variant={variant}
+      current={issue.status}
+      options={ISSUE_STATUSES}
+      labelOf={(status) => ISSUE_STATUS_LABEL[status]}
+      ariaName="Status"
+      iconOf={(status) => <IssueStatusIcon status={status} />}
+      onSelect={(status) => ({ id: issue.id, status })}
+    />
+  )
+}
+
+function PropertyPicker<T extends string>({
+  issue,
+  variant,
+  current,
+  options,
+  labelOf,
+  ariaName,
+  iconOf,
+  onSelect,
+}: {
+  issue: Issue
+  variant: 'icon' | 'rail'
+  current: T
+  options: readonly T[]
+  labelOf: (value: T) => string
+  ariaName: string
+  iconOf: (value: T) => ReactNode
+  onSelect: (value: T) => { id: string; status?: IssueStatus; priority?: IssuePriority }
+}) {
   const [open, setOpen] = useState(false)
   const updateIssue = useUpdateIssue()
 
-  const select = async (status: IssueStatus) => {
-    if (status === issue.status) {
+  const select = async (value: T) => {
+    if (value === current) {
       setOpen(false)
       return
     }
-    const previous = ISSUE_STATUS_LABEL[issue.status]
+    const previous = labelOf(current)
     try {
-      await updateIssue.mutateAsync({ id: issue.id, status })
+      await updateIssue.mutateAsync(onSelect(value))
       setOpen(false)
       toast.add({
         type: 'success',
-        title: `Status updated on ${formatIssueId(issue.number)}`,
-        description: `${previous} → ${ISSUE_STATUS_LABEL[status]}`,
+        title: `${ariaName} updated on ${formatIssueId(issue.number)}`,
+        description: `${previous} → ${labelOf(value)}`,
       })
     } catch (reason) {
       toast.add({
         type: 'error',
-        title: 'Could not update status',
+        title: `Could not update ${ariaName.toLowerCase()}`,
         description:
           reason instanceof Error ? reason.message : 'Please try again.',
       })
@@ -235,28 +216,28 @@ export function StatusPicker({
           <button
             type="button"
             className={variant === 'rail' ? railTriggerClass : iconTriggerClass}
-            aria-label={`Status: ${ISSUE_STATUS_LABEL[issue.status]}`}
+            aria-label={`${ariaName}: ${labelOf(current)}`}
             onClick={(event) => event.stopPropagation()}
           />
         }
       >
-        <IssueStatusIcon status={issue.status} />
+        {iconOf(current)}
         {variant === 'rail' && (
-          <span className="truncate">{ISSUE_STATUS_LABEL[issue.status]}</span>
+          <span className="truncate">{labelOf(current)}</span>
         )}
       </PopoverTrigger>
       <PopoverContent align="start" side="bottom" className="w-44 p-1">
-        {ISSUE_STATUSES.map((status) => (
+        {options.map((value) => (
           <button
-            key={status}
+            key={value}
             type="button"
             className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
-            onClick={() => void select(status)}
+            onClick={() => void select(value)}
             disabled={updateIssue.isPending}
           >
-            <IssueStatusIcon status={status} />
-            <span className="flex-1">{ISSUE_STATUS_LABEL[status]}</span>
-            {status === issue.status && (
+            {iconOf(value)}
+            <span className="flex-1">{labelOf(value)}</span>
+            {value === current && (
               <Check className="size-3.5 text-muted-foreground" />
             )}
           </button>

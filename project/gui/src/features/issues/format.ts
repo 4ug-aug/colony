@@ -1,6 +1,4 @@
-export function formatIssueId(number: number): string {
-  return `SWE-${number}`
-}
+export { formatIssueId } from '#/server/issue-model'
 
 export function formatIssueCreatedAt(createdAt: number): string {
   return new Intl.DateTimeFormat(undefined, {

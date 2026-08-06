@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { apiFetch } from '#/lib/api-transport'
+import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import type { Issue, IssueRun } from './types'
 import { upsertIssueInCache } from './use-issues'
 
@@ -28,11 +28,11 @@ export function upsertIssueRunInCache(queryClient: QueryClient, run: IssueRun) {
 }
 
 async function fetchIssueRuns(issueId: string): Promise<IssueRun[]> {
-  const response = await apiFetch(
+  const data = await apiJson<{ runs?: IssueRun[] }>(
     `/api/issues/${encodeURIComponent(issueId)}/runs`,
+    undefined,
+    'Unable to load runs',
   )
-  const data = (await response.json()) as { runs?: IssueRun[]; error?: string }
-  if (!response.ok) throw new Error(data.error ?? 'Unable to load runs')
   return (data.runs ?? []).slice().sort((a, b) => b.createdAt - a.createdAt)
 }
 
@@ -51,25 +51,17 @@ export function useStartIssueRun() {
       issueId: string
       agentDefinitionId?: string
     }): Promise<{ issue: Issue; run: IssueRun }> => {
-      const response = await apiFetch(
-        `/api/issues/${encodeURIComponent(input.issueId)}/runs`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(
-            input.agentDefinitionId
-              ? { agentDefinitionId: input.agentDefinitionId }
-              : {},
-          ),
-        },
-      )
-      const data = (await response.json()) as {
+      const data = await apiJsonBody<{
         issue?: Issue
         run?: IssueRun
-        error?: string
-      }
-      if (!response.ok)
-        throw new Error(data.error ?? 'Unable to start run')
+      }>(
+        `/api/issues/${encodeURIComponent(input.issueId)}/runs`,
+        'POST',
+        input.agentDefinitionId
+          ? { agentDefinitionId: input.agentDefinitionId }
+          : {},
+        'Unable to start run',
+      )
       if (!data.issue || !data.run) throw new Error('Unable to start run')
       return { issue: data.issue, run: data.run }
     },
@@ -84,16 +76,12 @@ export function useCancelIssueRun() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (runId: string): Promise<IssueRun> => {
-      const response = await apiFetch(
+      const data = await apiJsonBody<{ run?: IssueRun }>(
         `/api/issue-runs/${encodeURIComponent(runId)}/cancel`,
-        { method: 'POST' },
+        'POST',
+        undefined,
+        'Unable to cancel run',
       )
-      const data = (await response.json()) as {
-        run?: IssueRun
-        error?: string
-      }
-      if (!response.ok)
-        throw new Error(data.error ?? 'Unable to cancel run')
       if (!data.run) throw new Error('Unable to cancel run')
       return data.run
     },

@@ -16,6 +16,7 @@ import {
   useAttachmentBlob,
   useEnsureAttachmentObjectUrl,
 } from './use-attachment-blob'
+import { formatBytes } from './format'
 
 const previewTypes = new Set([
   'image/png',
@@ -122,12 +123,6 @@ function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
       </span>
     </button>
   )
-}
-
-function formatBytes(bytes: number) {
-  return bytes < 1024 * 1024
-    ? `${Math.max(1, Math.ceil(bytes / 1024))} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 export function Timeline({

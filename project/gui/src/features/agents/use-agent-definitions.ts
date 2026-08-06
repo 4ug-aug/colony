@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { apiFetch } from '#/lib/api-transport'
+import { apiJson } from '#/lib/api-transport'
 import type { AgentDefinition } from '#/features/schedules/types'
 
 export const agentDefinitionsQueryKey = ['agent-definitions'] as const
@@ -15,9 +15,11 @@ export function useAgentDefinitions() {
   return useQuery({
     queryKey: agentDefinitionsQueryKey,
     queryFn: async (): Promise<AgentDefinition[]> => {
-      const response = await apiFetch('/api/agent-definitions')
-      if (!response.ok) throw new Error('Unable to load agent definitions')
-      const data = (await response.json()) as { agents: AgentDefinition[] }
+      const data = await apiJson<{ agents: AgentDefinition[] }>(
+        '/api/agent-definitions',
+        undefined,
+        'Unable to load agent definitions',
+      )
       return data.agents
     },
     staleTime: 60_000,
