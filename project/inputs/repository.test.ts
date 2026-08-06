@@ -246,6 +246,76 @@ test("the repository is prepared before attachments and staged copies remain out
   await rm(outside, { force: true, recursive: true });
 });
 
+test("attached skills stage into the runtime layout and stay outside git", async () => {
+  const calls: Array<{ directory: string }> = [];
+  const provisioner = createRepositoryWorkspaceProvisioner({
+    sources: [
+      {
+        provider: "github",
+        async checkout(_input, directory) {
+          calls.push({ directory });
+          await Bun.write(join(directory, "README.md"), "# product\n");
+          return { revision: "abc123" };
+        },
+      },
+    ],
+    skillSource: {
+      layoutForAgent: () => "cursor",
+      listForAgent: async () => [
+        {
+          name: "summarize",
+          files: [
+            {
+              path: "SKILL.md",
+              bytes: new TextEncoder().encode(`---
+name: summarize
+description: Summarize.
+---
+
+Body
+`),
+            },
+          ],
+        },
+      ],
+    },
+    createDirectory: async () => mkdtemp(join(tmpdir(), "sweat-run-")),
+    removeDirectory: async (directory) =>
+      rm(directory, { force: true, recursive: true }),
+  });
+
+  const prepared = await provisioner.prepare(
+    [
+      {
+        type: "repository",
+        provider: "github",
+        repository: "acme/product",
+        revision: "main",
+      },
+    ],
+    { runId: "run-skills", agentDefinitionId: "software-engineer" },
+  );
+  const workspace = prepared.workspace!;
+  expect(
+    await Bun.file(
+      join(workspace.path, ".cursor/skills/summarize/SKILL.md"),
+    ).text(),
+  ).toContain("name: summarize");
+  expect((await git(workspace.path, ["status", "--porcelain"])).stdout).toBe(
+    "",
+  );
+  expect(
+    (
+      await git(workspace.path, [
+        "check-ignore",
+        "-q",
+        ".cursor/skills/summarize/SKILL.md",
+      ])
+    ).exitCode,
+  ).toBe(0);
+  await workspace.dispose();
+});
+
 test("unavailable attachments fail without leaking a temporary workspace", async () => {
   const input = attachment("attachment-1", "notes.txt", "expected\n");
   const expected = `Attachment unavailable: ${input.id}`;

@@ -315,7 +315,7 @@ test("runCursorAgent passes only inline MCP gateway session", async () => {
     { createAgent },
   );
 
-  expect(createOptions?.local.settingSources).toEqual([]);
+  expect(createOptions?.local.settingSources).toEqual(["project"]);
   expect(createOptions?.mcpServers).toEqual({
     sweat: {
       type: "http",

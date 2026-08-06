@@ -48,6 +48,7 @@ test("the OpenAI runtime passes the definition and task to its container command
       SWEAT_MODEL_BASE_URL: "https://models.example/v1",
       SWEAT_MODEL_API_KEY: "secret",
       SWEAT_MODEL_NAME: "test",
+      SWEAT_SKILLS_ROOT: "/work/.agents/skills",
     },
     workdir: "/work",
   });

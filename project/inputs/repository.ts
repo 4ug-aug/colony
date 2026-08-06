@@ -3,6 +3,12 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { InputProvisioner, RunInput } from "../runs";
+import {
+  skillGitExcludeLines,
+  stageSkillPackages,
+  type SkillRuntimeLayout,
+  type StagedSkillPackage,
+} from "./skills";
 
 export interface RepositoryInput extends RunInput {
   type: "repository";
@@ -43,9 +49,17 @@ export interface RepositoryCheckoutSource {
 
 export type WorkspaceInput = RepositoryInput | AttachmentInput;
 
+export type SkillSource = {
+  listForAgent(
+    agentDefinitionId: string,
+  ): Promise<readonly StagedSkillPackage[]>;
+  layoutForAgent(agentDefinitionId: string): SkillRuntimeLayout | undefined;
+};
+
 type WorkspaceProvisionerOptions = {
   sources: readonly RepositoryCheckoutSource[];
   attachmentSource?: AttachmentSource;
+  skillSource?: SkillSource;
   createDirectory?: () => Promise<string>;
   removeDirectory?: (directory: string) => Promise<void>;
 };
@@ -135,7 +149,10 @@ async function initializeGitWorkspace(
 }
 
 async function addWorkspaceExcludes(directory: string): Promise<void> {
-  await appendFile(join(directory, ".git", "info", "exclude"), "/.sweat/\n");
+  await appendFile(
+    join(directory, ".git", "info", "exclude"),
+    skillGitExcludeLines(),
+  );
 }
 
 async function stageAttachment(
@@ -210,7 +227,22 @@ export function createRepositoryWorkspaceProvisioner(
       }
       if (repositories.length > 1)
         throw new Error("A run currently supports one repository workspace");
-      if (!repositories.length && !attachments.length) return {};
+
+      const skillPackages =
+        context.agentDefinitionId && options.skillSource
+          ? await options.skillSource.listForAgent(context.agentDefinitionId)
+          : [];
+      const skillLayout =
+        context.agentDefinitionId && options.skillSource
+          ? options.skillSource.layoutForAgent(context.agentDefinitionId)
+          : undefined;
+      if (
+        !repositories.length &&
+        !attachments.length &&
+        !skillPackages.length
+      ) {
+        return {};
+      }
 
       const repository = repositories[0];
       const source = repository && sources.get(repository.provider);
@@ -231,6 +263,9 @@ export function createRepositoryWorkspaceProvisioner(
           : undefined;
         for (const attachment of attachments) {
           await stageAttachment(path, attachment, options.attachmentSource);
+        }
+        if (skillPackages.length && skillLayout) {
+          await stageSkillPackages(path, skillLayout, skillPackages);
         }
         return {
           workspace: {

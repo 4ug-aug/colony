@@ -20,6 +20,7 @@ import OpenAI from "openai";
 import type { Step } from "./step";
 import { STEP_TEXT_LIMIT } from "./step";
 import type { CapabilitySessionBinding } from "../mcp/session";
+import { openaiSkillInstructions } from "./openai-skills";
 
 export interface OpenAICompatibleModel {
   provider?: "openai" | "custom";
@@ -36,6 +37,8 @@ export interface AgentRuntimeRequest {
   agentId: string;
   model: OpenAICompatibleModel;
   capabilitySession?: CapabilitySessionBinding;
+  /** Staged Agent Skills root inside the sandbox (e.g. /work/.agents/skills). */
+  skillsRoot?: string;
 }
 
 export function normalizeModelBaseUrl(baseUrl: string): string {
@@ -427,9 +430,15 @@ export async function runAgent(
         }),
       ], { strict: true })
     : undefined;
+  const skillInstructions = request.skillsRoot
+    ? await openaiSkillInstructions(request.skillsRoot)
+    : undefined;
+  const instructions = skillInstructions
+    ? `${request.instructions}\n\n${skillInstructions}`
+    : request.instructions;
   const agent = new Agent({
     name: request.agentId,
-    instructions: request.instructions,
+    instructions,
     model: dependencies.model ?? request.model.model,
     mcpServers: mcpServers?.active,
     tools: [

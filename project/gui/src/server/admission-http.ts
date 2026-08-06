@@ -7,6 +7,15 @@ import type {
   CursorRuntimeConfigInput,
   PublicCursorRuntimeConfig,
 } from './cursor-runtime-config'
+import type { WorkspaceSkillStore } from './workspace-skills'
+import {
+  extractZipToDirectory,
+  normalizeExtractedPackage,
+} from './workspace-skills'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { WORKSPACE_PEOPLE } from '../../../agents/roster-people'
 
 type AccountInput = {
   email: string
@@ -42,6 +51,7 @@ export type AdmissionOptions = {
     save(input: CursorRuntimeConfigInput): Promise<PublicCursorRuntimeConfig>
     listModels(): Promise<CursorModelSummary[]>
   }
+  skills?: WorkspaceSkillStore
 }
 
 export function invitationUrl(
@@ -283,6 +293,104 @@ export function createAdmissionHttpHandler(
       } catch (error) {
         console.error('Cursor model list failed:', error)
         return json({ error: 'Unable to list Cursor models' }, 400)
+      }
+    }
+
+    if (url.pathname === '/api/workspace/settings/skills' && options.skills) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      if (request.method === 'GET') {
+        return json({
+          skills: options.skills.list(),
+          attachments: options.skills.listAttachments(),
+          agents: WORKSPACE_PEOPLE.map((person) => ({
+            id: person.id,
+            name: person.name,
+          })),
+        })
+      }
+      if (request.method === 'POST') {
+        const form = await request.formData().catch(() => undefined)
+        const file = form?.get('package')
+        if (!(file instanceof File)) {
+          return json(
+            { error: 'Skill package zip or SKILL.md file is required' },
+            400,
+          )
+        }
+        const temporary = await mkdtemp(join(tmpdir(), 'sweat-skill-'))
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer())
+          const filename = file.name.toLowerCase()
+          const isMarkdown =
+            filename.endsWith('.md') ||
+            file.type === 'text/markdown' ||
+            file.type === 'text/x-markdown'
+          const files = isMarkdown
+            ? [{ path: 'SKILL.md', bytes }]
+            : await (async () => {
+                await extractZipToDirectory(bytes, temporary)
+                return normalizeExtractedPackage(temporary)
+              })()
+          const skill = await options.skills.importFiles(files)
+          return json({ skill })
+        } catch (error) {
+          return json(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Unable to import skill package',
+            },
+            400,
+          )
+        } finally {
+          await rm(temporary, { force: true, recursive: true })
+        }
+      }
+    }
+
+    const skillItem = url.pathname.match(
+      /^\/api\/workspace\/settings\/skills\/([^/]+)$/,
+    )
+    if (skillItem && options.skills && request.method === 'DELETE') {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      await options.skills.delete(decodeURIComponent(skillItem[1]!))
+      return json({ ok: true })
+    }
+
+    const skillAttachments = url.pathname.match(
+      /^\/api\/workspace\/settings\/skills\/attachments\/([^/]+)$/,
+    )
+    if (skillAttachments && options.skills && request.method === 'PUT') {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      const agentDefinitionId = decodeURIComponent(skillAttachments[1]!)
+      if (!WORKSPACE_PEOPLE.some((person) => person.id === agentDefinitionId)) {
+        return json({ error: 'Unknown agent definition' }, 400)
+      }
+      const body = await readBody(request)
+      const skillIds = Array.isArray(body?.skillIds)
+        ? body.skillIds.filter((id): id is string => typeof id === 'string')
+        : undefined
+      if (!skillIds) return json({ error: 'skillIds array is required' }, 400)
+      try {
+        options.skills.setAttachments(agentDefinitionId, skillIds)
+        return json({
+          agentDefinitionId,
+          skillIds: options.skills.listAttachedSkillIds(agentDefinitionId),
+        })
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to update skill attachments',
+          },
+          400,
+        )
       }
     }
 

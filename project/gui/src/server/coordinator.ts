@@ -27,6 +27,10 @@ import {
   createRoomAttachmentSource,
 } from './attachments'
 import {
+  createWorkspaceSkillStore,
+  skillDirectory,
+} from './workspace-skills'
+import {
   createSqliteScheduleStore,
   type Schedule,
   type ScheduleRun,
@@ -533,7 +537,7 @@ export function createCoordinator(options: {
               'access-control-allow-headers':
                 'content-type, x-sweat-setup-token',
               'access-control-allow-methods':
-                'GET, POST, PATCH, DELETE, OPTIONS',
+                'GET, POST, PUT, PATCH, DELETE, OPTIONS',
             },
           }),
         )
@@ -666,6 +670,13 @@ if (import.meta.main) {
   const admissionStore = createAdmissionStore(sqlite)
   const llm = createWorkspaceLlmConfig(sqlite)
   const cursorRuntime = createWorkspaceCursorRuntimeConfig(sqlite)
+  const skillsDirectory = skillDirectory(
+    process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
+  )
+  const skills = createWorkspaceSkillStore({
+    sqlite,
+    directory: skillsDirectory,
+  })
   const authContext = await auth.$context
   const store = createSqliteRoomStore(sqlite)
   const scheduleStore = createSqliteScheduleStore(sqlite)
@@ -718,6 +729,19 @@ if (import.meta.main) {
         store,
         directory: attachmentsDirectory,
       }),
+      skillSource: {
+        async listForAgent(agentDefinitionId) {
+          const packages = await skills.listAttachedPackages(agentDefinitionId)
+          return packages.map(({ skill, files }) => ({
+            name: skill.name,
+            files,
+          }))
+        },
+        layoutForAgent(agentDefinitionId) {
+          const person = rosterPerson(agentDefinitionId)
+          return person?.kind
+        },
+      },
       adapters: [
         createWorkspaceSoftwareEngineerAdapter({
           port: {
@@ -878,6 +902,7 @@ if (import.meta.main) {
       store: admissionStore,
       llm,
       cursorRuntime,
+      skills,
       listUsers: () => authContext.internalAdapter.listUsers(100),
       banUser: (request, userId) =>
         auth.api.banUser({ body: { userId }, headers: request.headers }),

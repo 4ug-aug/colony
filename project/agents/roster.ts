@@ -16,6 +16,7 @@ import {
   type AttachmentSource,
   type RepositoryCheckoutSource,
   type RepositoryInput,
+  type SkillSource,
   type WorkspaceInput,
 } from "../inputs/repository";
 import { createRoutingAgentRuntime } from "../providers/routing-agent-runtime";
@@ -109,6 +110,7 @@ export function createWorkspaceAgentsExecutor(options: {
   };
   sandboxProvider: SandboxProvider;
   attachmentSource?: AttachmentSource;
+  skillSource?: SkillSource;
 }): WorkspaceAgentExecutor {
   const adapters = options.adapters ?? [];
   const repositories = adapters.flatMap((adapter) =>
@@ -257,6 +259,7 @@ export function createWorkspaceAgentsExecutor(options: {
     inputs: createRepositoryWorkspaceProvisioner({
       sources: repositories.map((repository) => repository.source),
       attachmentSource: options.attachmentSource,
+      skillSource: options.skillSource,
     }),
   });
 

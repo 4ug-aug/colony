@@ -163,8 +163,8 @@ export async function runCursorAgent(
     model: { id: request.model },
     local: {
       cwd: request.cwd ?? "/work",
-      // Empty sources: only inline MCP; never load user/project Cursor MCP config.
-      settingSources: [],
+      // Project settings load workspace-staged and repo `.cursor` skills/rules.
+      settingSources: ["project"],
     },
     ...(mcpServers ? { mcpServers } : {}),
   });

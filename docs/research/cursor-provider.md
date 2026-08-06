@@ -36,7 +36,7 @@ Sources: [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript),
 | Disposable sandbox + prepared `/work` | `Agent.create({ local: { cwd } })` runs against the supplied directory. | Pass the existing `/work`; do not let Cursor clone a repository. |
 | `AgentProvider.run()` | `agent.send()` returns a run that streams assistant text, tool lifecycle, status, and final result. | Implement one `cursor-sdk-runtime` adapter beside [`openai-agents-runtime`](../../project/providers/openai-agents-runtime.ts#L12-L77). |
 | Sweat steps | Cursor's stable event envelope has `type`, `call_id`, `name`, and status; tool argument/result payloads are explicitly unstable. | Map assistant text to `message`; map tool start/completion to `tool_call`/`tool_result`; stringify and bound unknown payloads; never retain `thinking`. |
-| Scoped MCP | The SDK accepts inline MCP definitions. With no `settingSources`, local mode loads only inline servers. | Pass only Sweat's existing short-lived gateway session; do not load user/project Cursor MCP configuration. |
+| Scoped MCP | The SDK accepts inline MCP definitions. Sweat enables `settingSources: ["project"]` so workspace-staged and repo `.cursor` skills load; inline MCP remains the Sweat gateway session. | Pass Sweat's short-lived gateway session inline; project settings intentionally load skills/rules from `/work`. |
 | Cancellation | Cursor local runs expose `run.cancel()`, while the existing executor disposes the sandbox on cancellation. | Keep sandbox disposal as the hard stop for the first slice; add explicit SDK cancellation only if tests show it is needed for prompt termination. |
 
 Cursor's [stream contract](https://cursor.com/docs/sdk/typescript#stream-events)

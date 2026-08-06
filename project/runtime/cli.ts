@@ -40,6 +40,7 @@ try {
             revoke: () => {},
           }
         : undefined,
+      skillsRoot: Bun.env.SWEAT_SKILLS_ROOT,
     },
     {
       onStep: (step) => process.stdout.write(serializeStep(step) + "\n"),

@@ -173,6 +173,20 @@ _Avoid_: linear.issues, task tools (ambiguous), generic task-management API
 definition.
 _Avoid_: Task prompt
 
+**Skill**: A workspace-owned markdown instruction pack in the Agent Skills
+shape — name, description, and procedural guidance — that an agent definition
+may have attached. It is not a capability, not a tool, and not the role's
+system instructions.
+_Avoid_: Capability, tool, plugin, system instructions, prompt template
+
+**Skill package**: The imported unit in the workspace skill catalog: a
+`SKILL.md` file plus optional markdown reference files.
+_Avoid_: Plugin, zip blob (as the domain concept)
+
+**Skill attachment**: Durable workspace configuration that links one catalog
+Skill to one agent definition. Attachments are not chosen when a run starts.
+_Avoid_: Run input, per-invocation skill, capability grant
+
 **Model endpoint**: The OpenAI-compatible provider URL selected by the
 workspace and resolved into one run's model configuration when that run's
 agent runtime kind is `openai-agents`. It may be a hosted service or a model

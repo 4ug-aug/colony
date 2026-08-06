@@ -3,6 +3,18 @@ import { apiFetch } from '#/lib/api-transport'
 import { ProviderIcon } from '#/components/provider-icon'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Checkbox } from '#/components/ui/checkbox'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { Input } from '#/components/ui/input'
 import {
   Select,
@@ -49,6 +61,15 @@ type CursorModel = {
   id: string
   displayName: string
 }
+type WorkspaceSkill = {
+  id: string
+  name: string
+  description: string
+}
+type SkillAgent = {
+  id: string
+  name: string
+}
 
 export function WorkspaceSettingsPage({
   currentUserId,
@@ -74,21 +95,35 @@ export function WorkspaceSettingsPage({
   const [cursorModel, setCursorModel] = useState('')
   const [cursorApiKey, setCursorApiKey] = useState('')
   const [cursorModels, setCursorModels] = useState<CursorModel[]>([])
+  const [skills, setSkills] = useState<WorkspaceSkill[]>([])
+  const [skillAttachments, setSkillAttachments] = useState<
+    Record<string, string[]>
+  >({})
+  const [skillAgents, setSkillAgents] = useState<SkillAgent[]>([])
+  const [skillFile, setSkillFile] = useState<File | null>(null)
+  const [pendingSkillId, setPendingSkillId] = useState<string>()
 
   const load = async () => {
     setError(undefined)
-    const [memberResponse, invitationResponse, llmResponse, cursorResponse] =
-      await Promise.all([
-        apiFetch('/api/workspace/settings/members'),
-        apiFetch('/api/workspace/invitations'),
-        apiFetch('/api/workspace/settings/llm'),
-        apiFetch('/api/workspace/settings/cursor-runtime'),
-      ])
+    const [
+      memberResponse,
+      invitationResponse,
+      llmResponse,
+      cursorResponse,
+      skillsResponse,
+    ] = await Promise.all([
+      apiFetch('/api/workspace/settings/members'),
+      apiFetch('/api/workspace/invitations'),
+      apiFetch('/api/workspace/settings/llm'),
+      apiFetch('/api/workspace/settings/cursor-runtime'),
+      apiFetch('/api/workspace/settings/skills'),
+    ])
     if (
       !memberResponse.ok ||
       !invitationResponse.ok ||
       !llmResponse.ok ||
-      !cursorResponse.ok
+      !cursorResponse.ok ||
+      !skillsResponse.ok
     )
       throw new Error('Could not load workspace settings')
     setMembers(((await memberResponse.json()) as { users: Member[] }).users)
@@ -117,6 +152,14 @@ export function WorkspaceSettingsPage({
     } else {
       setCursorModels([])
     }
+    const skillBody = (await skillsResponse.json()) as {
+      skills: WorkspaceSkill[]
+      attachments: Record<string, string[]>
+      agents: SkillAgent[]
+    }
+    setSkills(skillBody.skills)
+    setSkillAttachments(skillBody.attachments)
+    setSkillAgents(skillBody.agents)
   }
 
   useEffect(() => {
@@ -236,6 +279,99 @@ export function WorkspaceSettingsPage({
         setCursorModels(body.models)
       }
     })
+
+  const importSkill = () =>
+    mutate(async () => {
+      if (!skillFile) throw new Error('Choose a SKILL.md or skill package zip')
+      const body = new FormData()
+      body.set('package', skillFile)
+      const response = await apiFetch('/api/workspace/settings/skills', {
+        method: 'POST',
+        body,
+      })
+      const result = (await response.json()) as { error?: string }
+      if (!response.ok)
+        throw new Error(result.error ?? 'Could not import skill package')
+      setSkillFile(null)
+      await load()
+    })
+
+  const deleteSkill = async (skill: WorkspaceSkill) => {
+    setError(undefined)
+    setPendingSkillId(skill.id)
+    const previousSkills = skills
+    const previousAttachments = skillAttachments
+    setSkills((current) => current.filter((entry) => entry.id !== skill.id))
+    setSkillAttachments((attachments) => {
+      const next: Record<string, string[]> = {}
+      for (const [agentId, skillIds] of Object.entries(attachments)) {
+        next[agentId] = skillIds.filter((id) => id !== skill.id)
+      }
+      return next
+    })
+    try {
+      const response = await apiFetch(
+        `/api/workspace/settings/skills/${encodeURIComponent(skill.id)}`,
+        { method: 'DELETE' },
+      )
+      if (!response.ok) throw new Error('Could not delete skill')
+    } catch (reason) {
+      setSkills(previousSkills)
+      setSkillAttachments(previousAttachments)
+      setError(
+        reason instanceof Error ? reason.message : 'Could not delete skill',
+      )
+    } finally {
+      setPendingSkillId(undefined)
+    }
+  }
+
+  const toggleSkillAttachment = async (
+    agentDefinitionId: string,
+    skillId: string,
+    attached: boolean,
+  ) => {
+    setError(undefined)
+    setPendingSkillId(skillId)
+    const previous = skillAttachments
+    const current = skillAttachments[agentDefinitionId] ?? []
+    const skillIds = attached
+      ? current.filter((id) => id !== skillId)
+      : [...current, skillId]
+    setSkillAttachments({
+      ...skillAttachments,
+      [agentDefinitionId]: skillIds,
+    })
+    try {
+      const response = await apiFetch(
+        `/api/workspace/settings/skills/attachments/${encodeURIComponent(agentDefinitionId)}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ skillIds }),
+        },
+      )
+      const result = (await response.json()) as {
+        skillIds?: string[]
+        error?: string
+      }
+      if (!response.ok)
+        throw new Error(result.error ?? 'Could not update skill attachments')
+      setSkillAttachments((attachments) => ({
+        ...attachments,
+        [agentDefinitionId]: result.skillIds ?? skillIds,
+      }))
+    } catch (reason) {
+      setSkillAttachments(previous)
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Could not update skill attachments',
+      )
+    } finally {
+      setPendingSkillId(undefined)
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-full space-y-6 p-4 sm:p-8">
@@ -400,6 +536,124 @@ export function WorkspaceSettingsPage({
               )}
             </span>
           </div>
+        </div>
+      </section>
+
+      <section className="border-b pb-4">
+        <h2 className="font-semibold">Agent skills</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Import a <code className="text-xs">SKILL.md</code> file or a zip of a
+          markdown Agent Skills package, then attach it to agent definitions.
+          Skills are staged into each runtime&apos;s expected layout at run
+          start.
+        </p>
+        <div className="mt-4 grid max-w-xl gap-3">
+          <Input
+            aria-label="Skill markdown or package zip"
+            disabled={busy || loading}
+            onChange={(event) =>
+              setSkillFile(event.target.files?.[0] ?? null)
+            }
+            type="file"
+            accept=".md,.zip,text/markdown,application/zip"
+          />
+          <div className="flex items-center gap-3">
+            <Button
+              disabled={busy || loading || !skillFile}
+              onClick={() => void importSkill()}
+            >
+              Import skill
+            </Button>
+          </div>
+          {skills.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No skills imported yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {skills.map((skill) => {
+                const skillBusy = pendingSkillId === skill.id
+                return (
+                <li key={skill.id} className="rounded-md border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{skill.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {skill.description}
+                      </p>
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={busy || loading || skillBusy}
+                          />
+                        }
+                      >
+                        Delete
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Delete {skill.name}?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This removes the skill from the workspace catalog
+                            and detaches it from every agent definition.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            disabled={skillBusy}
+                            onClick={() => void deleteSkill(skill)}
+                          >
+                            {skillBusy ? (
+                              <BrailleLoader text="Deleting" />
+                            ) : (
+                              'Delete'
+                            )}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {skillBusy && (
+                      <p className="text-sm text-muted-foreground" role="status">
+                        <BrailleLoader text="Updating attachments" />
+                      </p>
+                    )}
+                    {skillAgents.map((agent) => {
+                      const attached = (
+                        skillAttachments[agent.id] ?? []
+                      ).includes(skill.id)
+                      return (
+                        <label
+                          key={`${agent.id}-${skill.id}`}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <Checkbox
+                            checked={attached}
+                            disabled={busy || loading || skillBusy}
+                            onCheckedChange={() =>
+                              void toggleSkillAttachment(
+                                agent.id,
+                                skill.id,
+                                attached,
+                              )
+                            }
+                          />
+                          Attach to {agent.name}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </li>
+                )
+              })}
+            </ul>
+          )}
         </div>
       </section>
 

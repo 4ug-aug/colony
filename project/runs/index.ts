@@ -154,7 +154,10 @@ export interface PreparedWorkspace {
 }
 
 export interface InputProvisioner<Input extends RunInput> {
-  prepare(inputs: readonly Input[], context: { runId: string }): Promise<PreparedInputs>;
+  prepare(
+    inputs: readonly Input[],
+    context: { runId: string; agentDefinitionId?: string },
+  ): Promise<PreparedInputs>;
 }
 
 const terminal = (state: RunState): boolean =>
@@ -229,7 +232,12 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     try {
-      workspace = (await dependencies.inputs?.prepare(record.inputs, { runId: record.id }))?.workspace;
+      workspace = (
+        await dependencies.inputs?.prepare(record.inputs, {
+          runId: record.id,
+          agentDefinitionId: record.definition.id,
+        })
+      )?.workspace;
       if (cancellation.has(record.id)) return;
       const spec: SandboxSpec = {
         image: record.definition.runtime.image,
