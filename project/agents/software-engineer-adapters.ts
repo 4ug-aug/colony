@@ -14,6 +14,7 @@ import {
 } from "../mcp/workspace";
 import {
   createWorkspaceIssuesMcpUpstream,
+  type AssignableOwner,
   type WorkspaceIssuesPort,
 } from "../mcp/workspace-issues";
 import { STEP_TEXT_LIMIT } from "../runtime/step";
@@ -47,12 +48,18 @@ export function createWorkspaceSoftwareEngineerAdapter(options: {
 
 export function createWorkspaceIssuesAdapter(options: {
   port: WorkspaceIssuesPort;
+  listAssignableOwners?: () => AssignableOwner[];
 }): WorkspaceAgentAdapter {
   return {
     capability: {
       id: "workspace.issues",
       createUpstream: () =>
-        createWorkspaceIssuesMcpUpstream({ port: options.port }),
+        createWorkspaceIssuesMcpUpstream({
+          port: options.port,
+          ...(options.listAssignableOwners
+            ? { listAssignableOwners: options.listAssignableOwners }
+            : {}),
+        }),
     },
   };
 }

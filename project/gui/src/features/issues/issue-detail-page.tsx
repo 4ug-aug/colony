@@ -16,6 +16,7 @@ import {
   TabsTrigger,
 } from '#/components/ui/tabs'
 import { toast } from '#/components/ui/toast'
+import { terminal } from '#/features/runs/run-helpers'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { Plus } from 'lucide-react'
 import type { KeyboardEvent, ReactNode } from 'react'
@@ -23,6 +24,7 @@ import { useState } from 'react'
 import { formatIssueId } from './format'
 import { IssueDeleteButton } from './issue-delete-menu'
 import { IssueStatusIcon } from './issue-icons'
+import { IssueLiveWork } from './issue-live-work'
 import {
   OwnerPicker,
   PriorityPicker,
@@ -32,7 +34,8 @@ import {
 } from './issue-property-editors'
 import { IssueRunsRail } from './issue-runs-rail'
 import { ParentCoverAlert } from './parent-cover-alert'
-import type { Issue } from './types'
+import type { Issue, IssueRun } from './types'
+import { useIssueRuns } from './use-issue-runs'
 import { useIssue, useIssues, useUpdateIssue } from './use-issues'
 
 function RailRow({
@@ -237,6 +240,17 @@ function SubIssuesSection({
   )
 }
 
+function pickLiveWorkRun(
+  runs: IssueRun[],
+  selectedRunId: string | undefined,
+): IssueRun | undefined {
+  return (
+    runs.find((run) => run.id === selectedRunId) ??
+    runs.find((run) => !terminal(run.state)) ??
+    runs[0]
+  )
+}
+
 export function IssueDetailPage({
   issueId,
   onBack,
@@ -250,9 +264,13 @@ export function IssueDetailPage({
 }) {
   const { issue, isPending, isError, error } = useIssue(issueId)
   const { data: issues = [] } = useIssues()
+  const { data: runs = [] } = useIssueRuns(issue?.id)
+  const [tab, setTab] = useState('description')
+  const [selectedRunId, setSelectedRunId] = useState<string>()
   const parent = issue?.parentId
     ? issues.find((candidate) => candidate.id === issue.parentId)
     : undefined
+  const liveWorkRun = pickLiveWorkRun(runs, selectedRunId)
 
   useWindowKeydown((event) => {
     if (event.key !== 'Escape') return
@@ -302,6 +320,11 @@ export function IssueDetailPage({
 
   const issueRef = formatIssueId(issue.number)
   const parentCovered = parent?.owner?.kind === 'agent'
+
+  const selectRun = (run: IssueRun) => {
+    setSelectedRunId(run.id)
+    setTab('live-work')
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -366,10 +389,15 @@ export function IssueDetailPage({
                 <EditableTitle issue={issue} />
               </div>
             </div>
-            <Tabs defaultValue="description" className="mt-4 flex-col gap-3">
+            <Tabs
+              value={tab}
+              onValueChange={setTab}
+              className="mt-4 flex-col gap-3"
+            >
               <TabsList>
                 <TabsTrigger value="description">Description</TabsTrigger>
                 <TabsTrigger value="deliverable">Deliverable</TabsTrigger>
+                <TabsTrigger value="live-work">Live work</TabsTrigger>
               </TabsList>
               <TabsContent value="description">
                 <EditableDescription issue={issue} />
@@ -381,6 +409,16 @@ export function IssueDetailPage({
                   <p className="text-sm text-muted-foreground">
                     No deliverable yet. It appears here when an Issue-linked run
                     succeeds.
+                  </p>
+                )}
+              </TabsContent>
+              <TabsContent value="live-work">
+                {liveWorkRun ? (
+                  <IssueLiveWork run={liveWorkRun} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No runs yet. Start a run from the sidebar to watch live
+                    agent work here.
                   </p>
                 )}
               </TabsContent>
@@ -434,7 +472,7 @@ export function IssueDetailPage({
               </button>
             </section>
           )}
-          <IssueRunsRail issue={issue} />
+          <IssueRunsRail issue={issue} onSelectRun={selectRun} />
         </aside>
       </div>
     </div>

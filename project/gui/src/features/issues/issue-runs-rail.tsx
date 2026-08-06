@@ -14,7 +14,6 @@ import {
   SelectValue,
 } from '#/components/ui/select'
 import { toast } from '#/components/ui/toast'
-import { Markdown } from '#/components/markdown'
 import {
   agentNameFrom,
   useAgentDefinitions,
@@ -40,16 +39,24 @@ function IssueRunRow({
   agentName,
   onCancel,
   cancelling,
+  onSelect,
 }: {
   run: IssueRun
   agentName: string
   onCancel: () => void
   cancelling: boolean
+  onSelect?: (run: IssueRun) => void
 }) {
   const [open, setOpen] = useState(false)
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) onSelect?.(run)
+      }}
+    >
       <div className="flex items-center gap-2 px-3 py-2 hover:bg-muted/40">
         <CollapsibleTrigger
           render={
@@ -93,11 +100,6 @@ function IssueRunRow({
               {run.error}
             </p>
           ) : null}
-          {run.state === 'succeeded' ? (
-            <div className="text-sm text-foreground">
-              <Markdown>{run.stdout.trim() || 'Completed.'}</Markdown>
-            </div>
-          ) : null}
           {run.stderr.trim() ? (
             <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-2 py-1.5 font-mono text-[0.7rem] leading-4 text-muted-foreground">
               {run.stderr}
@@ -109,7 +111,13 @@ function IssueRunRow({
   )
 }
 
-export function IssueRunsRail({ issue }: { issue: Issue }) {
+export function IssueRunsRail({
+  issue,
+  onSelectRun,
+}: {
+  issue: Issue
+  onSelectRun?: (run: IssueRun) => void
+}) {
   const { data: runs = [], isPending } = useIssueRuns(issue.id)
   const { data: issues = [] } = useIssues()
   const startRun = useStartIssueRun()
@@ -144,6 +152,7 @@ export function IssueRunsRail({ issue }: { issue: Issue }) {
         title: `Started run on ${formatIssueId(issue.number)}`,
         description: agentNameFrom(agents, result.run.agentId),
       })
+      onSelectRun?.(result.run)
     } catch (reason) {
       toast.add({
         type: 'error',
@@ -238,6 +247,7 @@ export function IssueRunsRail({ issue }: { issue: Issue }) {
               agentName={agentNameFrom(agents, run.agentId)}
               cancelling={cancelRun.isPending}
               onCancel={() => void cancel(run)}
+              onSelect={onSelectRun}
             />
           ))}
         </div>

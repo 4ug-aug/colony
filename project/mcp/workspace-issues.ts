@@ -16,6 +16,8 @@ export type WorkspaceIssueOwner =
   | { kind: "account"; id: string }
   | { kind: "agent"; id: string };
 
+export type AssignableOwner = WorkspaceIssueOwner & { name: string };
+
 export type WorkspaceIssue = {
   id: string;
   number: number;
@@ -103,6 +105,89 @@ const asOwner = (value: unknown): WorkspaceIssueOwner | null | undefined => {
   return undefined;
 };
 
+const OWNER_SHAPE =
+  '{ "kind": "agent" | "account", "id": "<id>" } or null. Example: { "kind": "agent", "id": "software-engineer" }';
+
+const normalizeOwnerKey = (value: string): string =>
+  value.trim().toLowerCase().replace(/[\s_-]+/g, "");
+
+const ownerHint = (value: unknown): string | undefined => {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (!value || typeof value !== "object") return undefined;
+  const owner = value as Record<string, unknown>;
+  for (const key of ["id", "name", "username", "label"] as const) {
+    const candidate = owner[key];
+    if (typeof candidate === "string" && candidate.trim())
+      return candidate.trim();
+  }
+  return undefined;
+};
+
+const formatOwnerExample = (owner: AssignableOwner): string =>
+  `{ "kind": "${owner.kind}", "id": "${owner.id}" }`;
+
+const matchAssignableOwners = (
+  hint: string | undefined,
+  candidates: AssignableOwner[],
+): AssignableOwner[] => {
+  if (!hint) return [];
+  const needle = normalizeOwnerKey(hint);
+  if (!needle) return [];
+  const exact = candidates.filter(
+    (owner) =>
+      normalizeOwnerKey(owner.id) === needle ||
+      normalizeOwnerKey(owner.name) === needle,
+  );
+  if (exact.length) return exact;
+  return candidates.filter(
+    (owner) =>
+      normalizeOwnerKey(owner.id).includes(needle) ||
+      normalizeOwnerKey(owner.name).includes(needle) ||
+      needle.includes(normalizeOwnerKey(owner.id)) ||
+      needle.includes(normalizeOwnerKey(owner.name)),
+  );
+};
+
+const formatKnownOwners = (candidates: AssignableOwner[]): string => {
+  if (!candidates.length) return "";
+  return ` Known owners: ${candidates
+    .map(
+      (owner) =>
+        `${owner.kind} ${owner.id} (${owner.name}) → ${formatOwnerExample(owner)}`,
+    )
+    .join("; ")}.`;
+};
+
+export function invalidOwnerMessage(
+  received: unknown,
+  candidates: AssignableOwner[] = [],
+): string {
+  const hint = ownerHint(received);
+  const matches = matchAssignableOwners(hint, candidates);
+  const receivedText = JSON.stringify(received);
+  const suggestion = matches.length
+    ? ` Did you mean: ${matches.map(formatOwnerExample).join(" or ")}?`
+    : "";
+  return `Invalid owner. Expected ${OWNER_SHAPE}. Received: ${receivedText}.${suggestion}${formatKnownOwners(candidates)}`;
+}
+
+export function unknownOwnerMessage(
+  owner: WorkspaceIssueOwner,
+  candidates: AssignableOwner[],
+): string {
+  const matches = matchAssignableOwners(owner.id, candidates).filter(
+    (candidate) =>
+      !(candidate.kind === owner.kind && candidate.id === owner.id),
+  );
+  const knownOfKind = candidates.filter(
+    (candidate) => candidate.kind === owner.kind,
+  );
+  const suggestion = matches.length
+    ? ` Did you mean: ${matches.map(formatOwnerExample).join(" or ")}?`
+    : "";
+  return `Unknown ${owner.kind} "${owner.id}".${suggestion}${formatKnownOwners(knownOfKind.length ? knownOfKind : candidates)}`;
+}
+
 const asStringArray = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value)) return undefined;
   if (value.some((item) => typeof item !== "string")) return undefined;
@@ -118,9 +203,31 @@ const asNumberArray = (value: unknown): number[] | undefined => {
   return value as number[];
 };
 
+const ownerSchemaDescription =
+  'Owner as { "kind": "agent" | "account", "id": "<id>" }, or null to clear. Use agent definition ids (e.g. "software-engineer"), not display names.';
+
 export function createWorkspaceIssuesMcpUpstream(options: {
   port: WorkspaceIssuesPort;
+  listAssignableOwners?: () => AssignableOwner[];
 }): McpUpstream {
+  const assignableOwners = () => options.listAssignableOwners?.() ?? [];
+  const requireOwner = (value: unknown): WorkspaceIssueOwner | null => {
+    const owner = asOwner(value);
+    if (owner === undefined)
+      throw new Error(invalidOwnerMessage(value, assignableOwners()));
+    if (owner === null) return null;
+    const known = assignableOwners();
+    if (
+      known.length &&
+      !known.some(
+        (candidate) =>
+          candidate.kind === owner.kind && candidate.id === owner.id,
+      )
+    )
+      throw new Error(unknownOwnerMessage(owner, known));
+    return owner;
+  };
+
   return {
     async listTools() {
       return [
@@ -156,7 +263,10 @@ export function createWorkspaceIssuesMcpUpstream(options: {
               priority: { type: "string" },
               tags: { type: "array", items: { type: "string" } },
               parentId: { type: "string" },
-              owner: { type: "object" },
+              owner: {
+                type: "object",
+                description: ownerSchemaDescription,
+              },
             },
             required: ["title"],
           },
@@ -183,12 +293,15 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         {
           name: "workspace.assign_issue",
           description:
-            "Set the Issue owner to an account or agent definition, or clear it with owner null.",
+            'Set the Issue owner to an account or agent definition ({ "kind": "agent"|"account", "id": "<id>" }), or clear it with owner null. Do not pass display names; use ids such as "software-engineer".',
           inputSchema: {
             type: "object",
             properties: {
               ref: { type: "string" },
-              owner: { type: ["object", "null"] },
+              owner: {
+                type: ["object", "null"],
+                description: ownerSchemaDescription,
+              },
             },
             required: ["ref", "owner"],
           },
@@ -224,9 +337,8 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         const tags = asStringArray(args.tags);
         if (args.tags !== undefined && tags === undefined)
           throw new Error("Invalid tags");
-        const owner = asOwner(args.owner);
-        if (args.owner !== undefined && owner === undefined)
-          throw new Error("Invalid owner");
+        const owner =
+          args.owner === undefined ? undefined : requireOwner(args.owner);
         return textResult(
           options.port.createIssue({
             title,
@@ -286,8 +398,7 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         const ref = asString(args.ref)?.trim();
         if (!ref) throw new Error("A ref is required");
         if (!("owner" in args)) throw new Error("owner is required");
-        const owner = asOwner(args.owner);
-        if (owner === undefined) throw new Error("Invalid owner");
+        const owner = requireOwner(args.owner);
         return textResult(options.port.assignIssue(ref, owner));
       }
       throw new Error(`Unknown workspace issues tool: ${name}`);

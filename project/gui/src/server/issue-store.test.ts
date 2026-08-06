@@ -21,6 +21,12 @@ const migration = [
     ),
     'utf8',
   ),
+  readFileSync(
+    fileURLToPath(
+      new URL('../../drizzle/0018_issue_run_steps.sql', import.meta.url),
+    ),
+    'utf8',
+  ),
 ].join('\n--> statement-breakpoint\n')
 
 const applyMigration = (sqlite: Database) => {
@@ -127,6 +133,31 @@ test('issue store allocates SWE numbers and tracks child progress', () => {
     }),
   ).toBeUndefined()
   expect(store.listRuns(childA.id)).toHaveLength(1)
+  store.appendStep({
+    id: 'step-1',
+    runId: 'run-1',
+    idx: 0,
+    kind: 'message',
+    text: 'Looking at the badge',
+    createdAt: 8,
+    at: 8,
+  })
+  store.appendStep({
+    id: 'step-2',
+    runId: 'run-1',
+    idx: 1,
+    kind: 'tool_call',
+    tool: 'shell',
+    callId: 'call-1',
+    text: '{"command":"ls"}',
+    createdAt: 9,
+    at: 9,
+  })
+  expect(store.listSteps('run-1').map((step) => step.id)).toEqual([
+    'step-1',
+    'step-2',
+  ])
+  expect(store.listSteps('missing')).toEqual([])
   sqlite.close()
 })
 

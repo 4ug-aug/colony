@@ -1,4 +1,4 @@
-import type { RunState } from '../../../runs'
+import type { RunState, Step } from '../../../runs'
 import {
   formatIssueId,
   ISSUE_DESCRIPTION_MAX,
@@ -11,6 +11,13 @@ import {
   type IssueRun,
   type IssueStatus,
 } from './issue-model'
+
+export type IssueRunStep = Step & {
+  id: string
+  runId: string
+  idx: number
+  createdAt: number
+}
 
 export {
   formatIssueId,
@@ -67,6 +74,8 @@ export interface IssueStore {
   updateRun(run: IssueRun): void
   getRun(id: string): IssueRun | undefined
   listRuns(issueId: string): IssueRun[]
+  appendStep(step: IssueRunStep): void
+  listSteps(runId: string): IssueRunStep[]
   hasActiveRun(issueId: string): boolean
   failStaleRuns(now: number): IssueRun[]
 }
@@ -103,6 +112,17 @@ type IssueRunRow = {
   error: string | null
   stdout: string
   stderr: string
+}
+
+type IssueRunStepRow = {
+  id: string
+  run_id: string
+  idx: number
+  kind: 'message' | 'tool_call' | 'tool_result'
+  tool: string | null
+  call_id: string | null
+  text: string
+  created_at: number
 }
 
 const transaction = <T>(sqlite: Sqlite, work: () => T): T => {
@@ -523,6 +543,40 @@ export function createSqliteIssueStore(sqlite: Sqlite): IssueStore {
     },
     getRun: (id) => selectRuns(sqlite, 'WHERE id = ?', id)[0],
     listRuns: (issueId) => selectRuns(sqlite, 'WHERE issue_id = ?', issueId),
+    appendStep: (step) => {
+      sqlite
+        .prepare(
+          'INSERT INTO issue_run_step (id, run_id, idx, kind, tool, call_id, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          step.id,
+          step.runId,
+          step.idx,
+          step.kind,
+          step.tool ?? null,
+          step.callId ?? null,
+          step.text,
+          step.createdAt,
+        )
+    },
+    listSteps: (runId) =>
+      (
+        sqlite
+          .prepare(
+            'SELECT * FROM issue_run_step WHERE run_id = ? ORDER BY idx',
+          )
+          .all(runId) as IssueRunStepRow[]
+      ).map((row) => ({
+        id: row.id,
+        runId: row.run_id,
+        idx: row.idx,
+        kind: row.kind,
+        ...(row.tool === null ? {} : { tool: row.tool }),
+        ...(row.call_id === null ? {} : { callId: row.call_id }),
+        text: row.text,
+        createdAt: row.created_at,
+        at: row.created_at,
+      })),
     hasActiveRun: (issueId) => {
       const row = sqlite
         .prepare(

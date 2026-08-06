@@ -84,15 +84,24 @@ export function IssueList({
   issues,
   onOpenIssue,
   onCreateInStatus,
+  visibleStatuses,
+  hideEmptyGroups = false,
 }: {
   issues: Issue[]
   onOpenIssue?: (issueId: string) => void
   onCreateInStatus?: (status: IssueStatus) => void
+  /** Status groups to render; defaults to all statuses. */
+  visibleStatuses?: readonly IssueStatus[]
+  /** When true, skip status groups with no matching issues. */
+  hideEmptyGroups?: boolean
 }) {
+  const statuses = visibleStatuses ?? ISSUE_STATUSES
+
   return (
     <div>
-      {ISSUE_STATUSES.map((status) => {
+      {statuses.map((status) => {
         const inStatus = issues.filter((issue) => issue.status === status)
+        if (hideEmptyGroups && inStatus.length === 0) return null
         return (
           <StatusGroup
             key={status}

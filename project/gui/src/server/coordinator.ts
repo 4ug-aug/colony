@@ -39,6 +39,7 @@ import {
   type Issue,
   type IssueOwner,
   type IssueRun,
+  type IssueRunStep,
   type IssueStore,
 } from './issue-store'
 import { createIssueRunner, type IssueRunner } from './issue-runner'
@@ -141,6 +142,7 @@ export type WorkspaceServerMessage =
   | { type: 'issue.deleted'; issueId: string }
   | { type: 'issue_run.created'; run: IssueRun }
   | { type: 'issue_run.changed'; run: IssueRun }
+  | { type: 'issue_run.step'; runId: string; step: IssueRunStep }
 export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
 
 export type AgentDefinitionSummary = {
@@ -303,6 +305,12 @@ export function createCoordinator(options: {
         broadcastWorkspace({ type: 'issue_run.created', run }),
       onRunChange: (run) =>
         broadcastWorkspace({ type: 'issue_run.changed', run }),
+      onStep: (step) =>
+        broadcastWorkspace({
+          type: 'issue_run.step',
+          runId: step.runId,
+          step,
+        }),
     })
     if (options.issueNotify) {
       options.issueNotify.assignOwner = (issueId, owner) =>
@@ -805,6 +813,18 @@ if (import.meta.main) {
                 .issue
             },
           },
+          listAssignableOwners: () => [
+            ...rosterDefinitionSummaries().map((agent) => ({
+              kind: 'agent' as const,
+              id: agent.id,
+              name: agent.name,
+            })),
+            ...store.listWorkspaceUsers().map((user) => ({
+              kind: 'account' as const,
+              id: user.id,
+              name: user.displayName || user.name,
+            })),
+          ],
         }),
         ...(linearAccessToken
           ? [

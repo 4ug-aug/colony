@@ -124,7 +124,7 @@ function ParentIssuePicker({
   const selected =
     value === 'none' ? undefined : issues.find((issue) => issue.id === value)
   const label = selected
-    ? `${formatIssueId(selected.number)} · ${selected.title}`
+    ? `${formatIssueId(selected.number)}  ${selected.title}`
     : 'No parent'
 
   return (
@@ -171,7 +171,7 @@ function ParentIssuePicker({
                   >
                     <span className="min-w-0 flex-1 truncate">
                       <span className="text-muted-foreground">{idLabel}</span>
-                      {' · '}
+                      {'  '}
                       {issue.title}
                     </span>
                   </CommandItem>
@@ -246,8 +246,8 @@ function IssueCreateForm({
         type: 'success',
         title: `Created ${formatIssueId(created.number)}`,
         description: parent
-          ? `${created.title} · under ${formatIssueId(parent.number)}`
-          : `${created.title} · ${ISSUE_STATUS_LABEL[created.status]}`,
+          ? `${created.title}  under ${formatIssueId(parent.number)}`
+          : `${created.title}  ${ISSUE_STATUS_LABEL[created.status]}`,
       })
     } catch (reason) {
       toast.add({

@@ -131,6 +131,8 @@ function fakeStore(
       }
       return stale.map((run) => runs.get(run.id)!)
     },
+    appendStep: () => undefined,
+    listSteps: () => [],
   }
 }
 

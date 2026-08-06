@@ -5,6 +5,7 @@ import {
   type Issue,
   type IssueOwner,
   type IssueRun,
+  type IssueRunStep,
   type IssueStore,
 } from './issue-store'
 
@@ -55,6 +56,7 @@ export function createIssueRunner(options: {
   onIssueChange?: (issue: Issue) => void
   onRunCreated?: (run: IssueRun) => void
   onRunChange?: (run: IssueRun) => void
+  onStep?: (step: IssueRunStep) => void
 }): IssueRunner {
   const now = options.now ?? Date.now
   const project = (summary: RunSummary): void => {
@@ -82,6 +84,23 @@ export function createIssueRunner(options: {
     }
   }
   const unsubscribe = options.control.subscribe(project)
+  const unsubscribeSteps = options.control.subscribeSteps((runId, step) => {
+    const run = options.store.getRun(runId)
+    if (!run) return
+    const stored: IssueRunStep = {
+      id: crypto.randomUUID(),
+      runId,
+      idx: options.store.listSteps(runId).length,
+      kind: step.kind,
+      ...(step.tool === undefined ? {} : { tool: step.tool }),
+      ...(step.callId === undefined ? {} : { callId: step.callId }),
+      text: step.text,
+      createdAt: step.at,
+      at: step.at,
+    }
+    options.store.appendStep(stored)
+    options.onStep?.(stored)
+  })
 
   const startRun = (
     issueId: string,
@@ -158,6 +177,7 @@ export function createIssueRunner(options: {
     },
     stop: () => {
       unsubscribe()
+      unsubscribeSteps()
     },
   }
 }

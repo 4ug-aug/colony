@@ -25,7 +25,7 @@ import type { Step } from './step-label'
 import { stepLabel } from './step-label'
 
 type Person = { name: string; image?: string }
-type ActivityRun = {
+export type ActivityRun = {
   id: string
   roomId: string
   agentId: string
@@ -63,7 +63,7 @@ function PersonAvatar({ person }: { person: Person }) {
   )
 }
 
-function RunActivityContent({
+export function RunActivityContent({
   run,
   triggerMessage,
   steps,
@@ -80,7 +80,7 @@ function RunActivityContent({
   loading: boolean
   error?: string
   onRetry: () => void
-  onClose: () => void
+  onClose?: () => void
   onCancel: () => void
   attribution?: string
 }) {
@@ -277,6 +277,7 @@ export function RunActivityRail({
   onClose,
   onCancel,
   stepsPath,
+  variant = 'rail',
 }: {
   run: ActivityRun
   triggerMessage?: TriggerMessage
@@ -284,6 +285,7 @@ export function RunActivityRail({
   onClose: () => void
   onCancel: () => void
   stepsPath?: string
+  variant?: 'rail' | 'inline'
 }) {
   const inline = useInlineRail()
   const [persistedSteps, setPersistedSteps] = useState<Step[]>([])
@@ -320,7 +322,7 @@ export function RunActivityRail({
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [reload, run.id, run.roomId])
+  }, [reload, run.id, run.roomId, stepsPath])
 
   const content = (
     <RunActivityContent
@@ -330,11 +332,18 @@ export function RunActivityRail({
       loading={loading}
       error={error}
       onRetry={() => setReload((value) => value + 1)}
-      onClose={onClose}
+      onClose={variant === 'inline' ? undefined : onClose}
       onCancel={onCancel}
       attribution={run.attribution}
     />
   )
+
+  if (variant === 'inline')
+    return (
+      <div className="flex min-h-0 flex-1 flex-col" aria-label="Run activity">
+        {content}
+      </div>
+    )
 
   if (inline)
     return (

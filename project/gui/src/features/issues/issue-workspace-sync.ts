@@ -2,7 +2,11 @@ import type { QueryClient } from '@tanstack/react-query'
 import { connectWorkspaceStream } from '#/lib/api-transport'
 import { terminal } from '#/features/runs/run-helpers'
 import type { Issue, IssueRun } from './types'
-import { upsertIssueRunInCache } from './use-issue-runs'
+import type { IssueRunStep } from '#/server/issue-store'
+import {
+  appendIssueRunStepInCache,
+  upsertIssueRunInCache,
+} from './use-issue-runs'
 import {
   issuesQueryKey,
   removeIssueFromCache,
@@ -37,6 +41,8 @@ export function attachIssueWorkspaceSync(queryClient: QueryClient) {
         issue?: Issue
         issueId?: string
         run?: IssueRun
+        runId?: string
+        step?: IssueRunStep
       }
       if (
         (event.type === 'issue.created' || event.type === 'issue.changed') &&
@@ -57,6 +63,8 @@ export function attachIssueWorkspaceSync(queryClient: QueryClient) {
           !terminal(event.run.state),
         )
       }
+      if (event.type === 'issue_run.step' && event.runId && event.step)
+        appendIssueRunStepInCache(queryClient, event.runId, event.step)
     },
   })
   detachIssueWorkspaceSync = () => handle.close()

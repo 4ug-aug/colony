@@ -64,7 +64,7 @@ export function RunActivitySplitHeader({
   model: string
   state: RunState
   status: string
-  onClose: () => void
+  onClose?: () => void
   onCancel: () => void
 }) {
   return (
@@ -88,15 +88,17 @@ export function RunActivitySplitHeader({
               Cancel
             </Button>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Close run activity"
-            onClick={onClose}
-          >
-            <X />
-          </Button>
+          {onClose ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Close run activity"
+              onClick={onClose}
+            >
+              <X />
+            </Button>
+          ) : null}
         </div>
       </div>
     </header>

@@ -299,6 +299,15 @@ export function createIssuesHttp(deps: {
       },
     },
     {
+      method: 'GET',
+      path: '/api/issue-runs/:runId/steps',
+      handle: (_request, _url, params) => {
+        const run = deps.issueStore.getRun(params.runId!)
+        if (!run) return json({ error: 'Run not found' }, 404)
+        return json({ steps: deps.issueStore.listSteps(run.id) })
+      },
+    },
+    {
       method: 'POST',
       path: '/api/issue-runs/:runId/cancel',
       handle: async (_request, _url, params) => {

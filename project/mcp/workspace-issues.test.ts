@@ -106,3 +106,69 @@ test("create, assign, and get Issues through MCP tools", async () => {
   });
   expect(port.issues).toHaveLength(1);
 });
+
+test("assign_issue explains owner shape and suggests close matches", async () => {
+  const upstream = createWorkspaceIssuesMcpUpstream({
+    port: makePort([
+      {
+        id: "id-31",
+        number: 31,
+        title: "Example",
+        description: "",
+        deliverable: "",
+        status: "todo",
+        priority: "none",
+        tags: [],
+        timeSpent: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]),
+    listAssignableOwners: () => [
+      { kind: "agent", id: "software-engineer", name: "Software engineer" },
+      { kind: "agent", id: "antboy", name: "Antboy" },
+      { kind: "account", id: "user-1", name: "August" },
+    ],
+  });
+
+  await expect(
+    upstream.callTool("workspace.assign_issue", {
+      ref: "31",
+      owner: { name: "software engineer" },
+    }),
+  ).rejects.toThrow(
+    /Expected \{ "kind": "agent" \| "account", "id": "<id>" \} or null[\s\S]*Did you mean: \{ "kind": "agent", "id": "software-engineer" \}[\s\S]*Known owners:/,
+  );
+});
+
+test("assign_issue rejects unknown agent ids with suggestions", async () => {
+  const upstream = createWorkspaceIssuesMcpUpstream({
+    port: makePort([
+      {
+        id: "id-1",
+        number: 1,
+        title: "Example",
+        description: "",
+        deliverable: "",
+        status: "todo",
+        priority: "none",
+        tags: [],
+        timeSpent: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]),
+    listAssignableOwners: () => [
+      { kind: "agent", id: "software-engineer", name: "Software engineer" },
+    ],
+  });
+
+  await expect(
+    upstream.callTool("workspace.assign_issue", {
+      ref: "SWE-1",
+      owner: { kind: "agent", id: "software_engineer" },
+    }),
+  ).rejects.toThrow(
+    /Unknown agent "software_engineer"[\s\S]*Did you mean: \{ "kind": "agent", "id": "software-engineer" \}/,
+  );
+});

@@ -1,11 +1,20 @@
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
+import { authClient } from '#/lib/auth-client'
 import { useState } from 'react'
 import { IssueCreateDialog } from './issue-create-dialog'
 import { IssueDetailPage } from './issue-detail-page'
+import { IssueFiltersBar } from './issue-filters-bar'
+import {
+  filterIssues,
+  issueFiltersActive,
+  type IssueListFilters,
+} from './issue-filters'
 import { IssueList } from './issue-list'
 import type { IssueStatus } from './types'
+import { ISSUE_STATUSES } from './types'
 import { useIssues } from './use-issues'
+import { useStoredIssueFilters } from './use-stored-issue-filters'
 
 export function IssuesPage({
   createOpen,
@@ -16,9 +25,26 @@ export function IssuesPage({
   createStatus?: IssueStatus
   onCreateOpenChange: (open: boolean, status?: IssueStatus) => void
 }) {
+  const { data: session } = authClient.useSession()
+  const accountId = session?.user?.id
   const { data: issues = [], isPending, isError, error } = useIssues()
   const [selectedIssueId, setSelectedIssueId] = useState<string>()
   const [createParentId, setCreateParentId] = useState<string>()
+  const [filters, setFilters] = useStoredIssueFilters()
+
+  const filtersWithAccount: IssueListFilters = {
+    ...filters,
+    accountId,
+  }
+  const visible = filterIssues(issues, filtersWithAccount)
+  const filtersActive = issueFiltersActive(filtersWithAccount)
+  const knownTags = [
+    ...new Set(issues.flatMap((issue) => issue.tags)),
+  ].sort((a, b) => a.localeCompare(b))
+  const visibleStatuses =
+    filters.statuses.length > 0
+      ? ISSUE_STATUSES.filter((status) => filters.statuses.includes(status))
+      : ISSUE_STATUSES
 
   useWindowKeydown((event) => {
     if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'n')
@@ -70,11 +96,26 @@ export function IssuesPage({
             {error instanceof Error ? error.message : 'Unable to load issues'}
           </p>
         ) : (
-          <IssueList
-            issues={issues}
-            onOpenIssue={setSelectedIssueId}
-            onCreateInStatus={(status) => openCreate(status)}
-          />
+          <>
+            <IssueFiltersBar
+              filters={filtersWithAccount}
+              knownTags={knownTags}
+              onChange={setFilters}
+            />
+            {visible.length === 0 && filtersActive ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No issues match these filters.
+              </p>
+            ) : (
+              <IssueList
+                issues={visible}
+                visibleStatuses={visibleStatuses}
+                hideEmptyGroups={filtersActive}
+                onOpenIssue={setSelectedIssueId}
+                onCreateInStatus={(status) => openCreate(status)}
+              />
+            )}
+          </>
         )}
       </div>
       <IssueCreateDialog

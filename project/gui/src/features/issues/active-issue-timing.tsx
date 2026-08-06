@@ -70,7 +70,7 @@ export function ActiveIssueTiming({ accountId }: { accountId: string }) {
               {activeIssue?.title ?? label}
             </p>
             <p className="text-xs tabular-nums text-muted-foreground">
-              {label} · {formatElapsedClock(session.startedAt, now)}
+              {label}  {formatElapsedClock(session.startedAt, now)}
             </p>
           </div>
           <Button
