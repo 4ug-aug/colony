@@ -1,3 +1,4 @@
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import {
   Popover,
   PopoverContent,
@@ -119,6 +120,12 @@ export function IssueRow({
       </span>
       <StatusPicker issue={issue} />
       <span className="min-w-0 flex-1 truncate font-medium">{issue.title}</span>
+      {issue.hasActiveRun ? (
+        <BrailleLoader
+          text="Running"
+          className="shrink-0 text-xs text-muted-foreground"
+        />
+      ) : null}
       <div className="flex min-w-0 items-center gap-1.5">
         {issue.tags.map((tag) => (
           <span
