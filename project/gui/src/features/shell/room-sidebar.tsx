@@ -89,6 +89,7 @@ const capabilityIcons: Record<
   'github.pull-requests': { icon: '/icons/github.svg', invertOnDark: true },
   'asana.tasks': { icon: '/icons/asana.svg' },
   'outline.documents': { icon: '/icons/outline.svg', invertOnDark: true },
+  'grafana.observability': { icon: '/icons/grafana.svg' },
   'workspace.room': {},
 }
 

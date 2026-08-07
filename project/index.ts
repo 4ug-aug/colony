@@ -9,6 +9,7 @@ export * from "./inputs/repository";
 export * from "./mcp/gateway";
 export * from "./mcp/github";
 export * from "./mcp/http";
+export * from "./mcp/grafana";
 export * from "./mcp/linear";
 export * from "./mcp/session";
 export * from "./providers/apple-container-sandbox";

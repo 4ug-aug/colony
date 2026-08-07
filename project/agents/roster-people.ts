@@ -51,6 +51,28 @@ export const capabilityPresentation: Record<
       "outline.update_document": "Update documents",
     },
   },
+  "grafana.observability": {
+    name: "Grafana",
+    tools: {
+      "grafana.search_dashboards": "Search dashboards",
+      "grafana.get_dashboard_summary": "Summarize dashboards",
+      "grafana.get_dashboard_property": "Read dashboard properties",
+      "grafana.get_dashboard_panel_queries": "Read panel queries",
+      "grafana.list_datasources": "List datasources",
+      "grafana.get_datasource": "Get datasources",
+      "grafana.query_prometheus": "Query Prometheus",
+      "grafana.list_prometheus_metric_metadata": "List metric metadata",
+      "grafana.list_prometheus_metric_names": "List metric names",
+      "grafana.list_prometheus_label_names": "List Prometheus labels",
+      "grafana.list_prometheus_label_values": "List Prometheus label values",
+      "grafana.query_loki_logs": "Query Loki logs",
+      "grafana.list_loki_label_names": "List Loki labels",
+      "grafana.list_loki_label_values": "List Loki label values",
+      "grafana.query_loki_stats": "Query Loki stats",
+      "grafana.list_alert_groups": "List alert groups",
+      "grafana.get_alert_group": "Get alert groups",
+    },
+  },
   "github.pull-requests": {
     name: "GitHub pull requests",
     tools: {

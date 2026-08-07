@@ -454,6 +454,85 @@ test("outline documents are granted to antboy and withheld from software-enginee
   expect(engineer.capabilityGrant).toBeUndefined();
 });
 
+test("grafana observability is granted to antboy and withheld from software-engineer", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const grafanaTools = [
+    "grafana.search_dashboards",
+    "grafana.get_dashboard_summary",
+    "grafana.get_dashboard_property",
+    "grafana.get_dashboard_panel_queries",
+    "grafana.list_datasources",
+    "grafana.get_datasource",
+    "grafana.query_prometheus",
+    "grafana.list_prometheus_metric_metadata",
+    "grafana.list_prometheus_metric_names",
+    "grafana.list_prometheus_label_names",
+    "grafana.list_prometheus_label_values",
+    "grafana.query_loki_logs",
+    "grafana.list_loki_label_names",
+    "grafana.list_loki_label_values",
+    "grafana.query_loki_stats",
+    "grafana.list_alert_groups",
+    "grafana.get_alert_group",
+  ];
+  const grafanaAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "grafana.observability",
+      createUpstream: () => ({
+        listTools: async () => grafanaTools.map((name) => ({ name })),
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  let runs = 0;
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    adapters: [grafanaAdapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => `run-grafana-${(runs += 1)}`,
+    }),
+  });
+  const finish = async (id: string) => {
+    while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+      await Bun.sleep(0);
+    }
+    return executor.getRun(id)!;
+  };
+
+  const antboy = await finish(
+    executor.startRun({
+      task: "check dashboards",
+      agentDefinitionId: ANTBOY_ID,
+    }),
+  );
+  expect(antboy.state).toBe("succeeded");
+  expect(antboy.capabilityGrant?.tools).toEqual(grafanaTools);
+
+  const engineer = await finish(
+    executor.startRun({
+      task: "check dashboards",
+      agentDefinitionId: SOFTWARE_ENGINEER_ID,
+    }),
+  );
+  expect(engineer.state).toBe("succeeded");
+  expect(engineer.capabilityGrant).toBeUndefined();
+});
+
 test("client-safe roster presentation never reaches role instructions", async () => {
   // run-helpers.ts and markdown.tsx import roster-people from the GUI bundle.
   // Anything it reaches transitively ships to the browser, so role modules

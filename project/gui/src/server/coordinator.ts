@@ -660,12 +660,14 @@ if (import.meta.main) {
     {
       createAsanaSoftwareEngineerAdapter,
       createGitHubSoftwareEngineerAdapter,
+      createGrafanaAdapter,
       createLinearSoftwareEngineerAdapter,
       createOutlineAdapter,
       createWorkspaceIssuesAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
     { readAsanaConfiguration },
+    { readGrafanaConfiguration },
     { readOutlineConfiguration },
     { createGitHubCliClient },
     { createMcpGatewayHttpServer },
@@ -681,6 +683,7 @@ if (import.meta.main) {
     import('../../../agents/roster'),
     import('../../../agents/software-engineer-adapters'),
     import('../../../mcp/asana'),
+    import('../../../mcp/grafana'),
     import('../../../mcp/outline'),
     import('../../../mcp/github'),
     import('../../../mcp/http'),
@@ -722,6 +725,7 @@ if (import.meta.main) {
   )
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
   const asana = readAsanaConfiguration()
+  const grafana = readGrafanaConfiguration()
   const outline = readOutlineConfiguration()
   const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
@@ -888,6 +892,7 @@ if (import.meta.main) {
             ]
           : []),
         ...(outline ? [createOutlineAdapter(outline)] : []),
+        ...(grafana ? [createGrafanaAdapter(grafana)] : []),
         ...(github && githubRepository
           ? [
               createGitHubSoftwareEngineerAdapter({

@@ -127,6 +127,11 @@ never receives it. Create the key under Settings → API Keys with scopes
 `documents:read documents:write collections:read`; anything narrower fails the
 session warm-up with `Granted MCP tools are unavailable`.
 
+To give antboy read-only Grafana observability tools, set both
+`GRAFANA_MCP_URL` (streamable HTTP MCP endpoint) and `GRAFANA_MCP_API_KEY`.
+Sweat only consumes that remote MCP; it does not host or supervise the server.
+Only antboy requests this capability.
+
 A self-hosted Outline behind an internal CA also needs `NODE_EXTRA_CA_CERTS` set
 to that CA bundle, or the coordinator fails with
 `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. This is the host's trust store: the

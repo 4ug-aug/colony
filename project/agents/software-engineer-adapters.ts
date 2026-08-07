@@ -5,6 +5,10 @@ import { createAsanaMcpUpstream } from "../mcp/asana";
 import { createGitHubMcpUpstream } from "../mcp/github";
 import { createLinearMcpUpstream } from "../mcp/linear";
 import {
+  createGrafanaMcpUpstream,
+  type GrafanaConfiguration,
+} from "../mcp/grafana";
+import {
   createOutlineMcpUpstream,
   type OutlineConfiguration,
 } from "../mcp/outline";
@@ -95,6 +99,18 @@ export function createOutlineAdapter(
     capability: {
       id: "outline.documents",
       createUpstream: () => createOutlineMcpUpstream(options),
+    },
+  };
+}
+
+/** Remote Grafana MCP. Requested by antboy only. */
+export function createGrafanaAdapter(
+  options: GrafanaConfiguration,
+): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "grafana.observability",
+      createUpstream: () => createGrafanaMcpUpstream(options),
     },
   };
 }
