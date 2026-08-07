@@ -139,10 +139,18 @@ const outlineKind: ConnectionKind = {
   capabilityId: 'outline.documents',
   tools: outlineTools,
   secretLabel: 'API key',
-  fields: [{ key: 'url', label: 'Instance URL', kind: 'url' }],
+  fields: [
+    {
+      key: 'url',
+      label: 'Instance URL (without /mcp)',
+      kind: 'url',
+    },
+  ],
   parseAndValidate({ fields, apiKey, hasExistingSecret }) {
     return {
-      fields: { url: validUrl(fields.url, 'Outline URL') },
+      fields: {
+        url: validUrl(fields.url, 'Outline URL').replace(/\/mcp$/i, ''),
+      },
       apiKey: requireSecret(apiKey, hasExistingSecret, 'Outline API key'),
     }
   },

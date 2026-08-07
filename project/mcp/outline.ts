@@ -3,13 +3,22 @@ import { createRemoteMcpUpstream } from "./remote";
 
 export type OutlineConfiguration = { url: string; apiKey: string };
 
+/** Accept instance root or a pasted `…/mcp` endpoint; always talk to `<instance>/mcp`. */
+export function outlineMcpUrl(instanceOrMcpUrl: string): string {
+  const base = instanceOrMcpUrl
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/mcp$/i, "");
+  return `${base}/mcp`;
+}
+
 /** Outline serves MCP at `<instance>/mcp`; cloud instances are https://<subdomain>.getoutline.com. */
 export function createOutlineMcpUpstream(
   options: OutlineConfiguration,
 ): McpUpstream {
   return createRemoteMcpUpstream({
     name: "outline",
-    url: `${options.url.replace(/\/$/, "")}/mcp`,
+    url: outlineMcpUrl(options.url),
     accessToken: options.apiKey,
   });
 }
