@@ -60,16 +60,15 @@ checkout and the Bun executable used during installation; rerun
 `make service-install` after moving either one. `make server` remains the
 foreground diagnostic command.
 
-To upgrade a running source-checkout server, update the checkout explicitly,
-then refresh its dependencies, agent image, unit paths, and process:
+To upgrade a running source-checkout server, pull the latest checkout, refresh
+dependencies, rebuild the agent image, regenerate the unit, and restart:
 
 ```bash
-git pull --ff-only
 make service-upgrade
 ```
 
-`make service-upgrade` does not modify Git history.
-
+That runs `git pull --ff-only` first so the service is not restarted on a
+stale checkout.
 The agent image is published to GitHub Container Registry for each release and
 must be publicly readable. To build the image from a local checkout instead,
 set `SWEAT_AGENT_IMAGE=sweat-agent:latest` before running `make agent`.

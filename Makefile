@@ -15,7 +15,7 @@ help:
 	@echo "  make dev-seeded            Start the full stack with reusable local accounts"
 	@echo "  make server                Start the complete backend for a separate client"
 	@echo "  make service-install       Run the server in the background on Linux"
-	@echo "  make service-upgrade       Refresh and restart the Linux background server"
+	@echo "  make service-upgrade       Pull, refresh deps, and restart the Linux background server"
 	@echo "  make service-uninstall     Remove the Linux background server"
 	@echo "  make gui                   Start only the browser client"
 	@echo "  make test                  Run tests"
@@ -59,6 +59,7 @@ service-install: env
 	@ENV_FILE="$(ENV_FILE)" bun scripts/service.ts install
 
 service-upgrade: env
+	@git pull --ff-only
 	@bun install --frozen-lockfile
 	@bun install --cwd project --frozen-lockfile
 	@bun install --cwd project/gui --frozen-lockfile
@@ -124,15 +125,15 @@ gui: env
 coordinator: env
 	@cd $(GUI) && bun $(BUN_ENV) run coordinator
 
-build:
-	@cd $(GUI) && bun run build
+build: env
+	@cd $(GUI) && bun $(BUN_ENV) run build
 
 test:
 	@cd $(GUI) && bun test
 
-check: test
+check: env test
 	@cd $(GUI) && bun run typecheck
-	@cd $(GUI) && bun run build
+	@cd $(GUI) && bun $(BUN_ENV) run build
 
 reset:
 	@case "$(SWEAT_DATABASE_PATH)" in "$(CURDIR)/$(GUI)/"*) ;; *) echo "Refusing to reset a database outside $(GUI)"; exit 1;; esac; \

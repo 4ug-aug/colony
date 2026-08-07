@@ -112,12 +112,12 @@ Both can work, but they add another process manager without removing the platfor
 
 1. make service-install prepares the image and installs an enabled systemd user unit with absolute checkout, Bun, environment, database, and PATH values.
 2. loginctl lingering starts the user's manager at boot; the unit restarts the coordinator after failures and sends logs to the journal.
-3. After an explicit git pull, make service-upgrade installs locked dependencies, prepares the agent image, regenerates the unit, and restarts the coordinator.
+3. make service-upgrade runs `git pull --ff-only`, installs locked dependencies, prepares the agent image, regenerates the unit, and restarts the coordinator.
 4. make service-uninstall removes only the unit. It deliberately leaves lingering unchanged because other user processes may rely on it.
 5. SIGTERM and SIGINT stop new server work and cancel active runs so their sandboxes are disposed before exit.
 6. make server remains the foreground command. systemctl and journalctl remain the operational interface rather than being wrapped by shallow Make targets.
 
-Deferred work includes macOS, standalone release installation, a system-wide Linux account, readiness probing, and automatic checkout updates.
+Deferred work includes macOS, standalone release installation, a system-wide Linux account, and readiness probing.
 
 ## Conclusion
 
