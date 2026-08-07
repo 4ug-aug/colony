@@ -13,5 +13,6 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY roles /app/roles
 COPY runtime /app/runtime
+COPY skills /app/skills
 
 WORKDIR /work
