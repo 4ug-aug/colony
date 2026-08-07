@@ -195,6 +195,23 @@ _Avoid_: Plugin, zip blob (as the domain concept)
 Skill to one agent definition. Attachments are not chosen when a run starts.
 _Avoid_: Run input, per-invocation skill, capability grant
 
+**Connection**: A workspace-owned external provider setup (credentials and
+non-secret fields) for one registered Connection kind. It is not a capability
+grant, not a first-party workspace tool, and not GitHub or other core
+role-requested capabilities.
+_Avoid_: Integration, tenant connection (as a synonym in product UI), OAuth
+connection (unless that is the kind's auth), core capability
+
+**Connection kind**: A code-registered provider shape — identity, display,
+config fields, capability id, and adapter — from which Connection cards and
+persistence are derived. Adding a kind is a code change, not admin-defined MCP.
+_Avoid_: Plugin, user-defined integration, custom MCP catalog entry
+
+**Connection link**: Durable workspace configuration that links one Configured
+Connection to one agent definition. Links are not chosen when a run starts.
+Clearing a Connection's credentials also clears its links.
+_Avoid_: Connection attachment, capability grant, Skill attachment
+
 **Model endpoint**: The OpenAI-compatible provider URL selected by the
 workspace and resolved into one run's model configuration when that run's
 agent runtime kind is `openai-agents`. It may be a hosted service or a model
@@ -364,15 +381,18 @@ MCP gateway.
 Keep these separate:
 
 ```text
-Connection       -> tenant-owned integration setup (for example, Linear OAuth)
+Connection       -> workspace-owned external provider setup for a Connection kind
+Connection link  -> durable link from a Configured Connection to an agent definition
 Capability grant -> run-scoped allowed actions and resource scope
 MCP session      -> short-lived technical access created from the grant
 ```
 
-An agent definition requests a capability (for example `linear.issues`), but
-does not receive authority merely by requesting it. When a run is created, the
-platform resolves tenant policy, task context, and role permissions into a
-narrow, expiring grant such as reading and commenting on one Linear issue.
+Core capabilities (for example `workspace.room`, `workspace.issues`,
+`github.pull-requests`) are requested on the agent role. Connection
+capabilities (for example `asana.tasks`) are eligible only when that Connection
+is Configured and linked to the agent definition. When a run is created, the
+platform resolves role requests, Connection links, and task context into a
+narrow, expiring grant.
 
 At container spawn, the orchestrator creates an MCP session from that grant and
 provides the generic runtime with the gateway endpoint and a short-lived run
@@ -385,8 +405,8 @@ tools). Add a cross-provider task-management abstraction only when multiple
 providers create a demonstrated shared need.
 
 A run binds its granted MCP session to the generic runtime. The runtime
-connects to the gateway and exposes only the tools in that session; roles
-request capabilities but never receive a provider endpoint or credential.
+connects to the gateway and exposes only the tools in that session; agents
+never receive a provider endpoint or credential.
 
 An agent that can execute arbitrary shell code effectively has its run's
 granted capabilities. Mitigate this with narrow grants, short expirations,

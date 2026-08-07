@@ -8,6 +8,11 @@ import type {
   PublicCursorRuntimeConfig,
 } from './cursor-runtime-config'
 import type { WorkspaceSkillStore } from './workspace-skills'
+import type {
+  ConnectionSaveInput,
+  PublicConnection,
+  WorkspaceConnectionStore,
+} from './workspace-connections'
 import {
   extractZipToDirectory,
   normalizeExtractedPackage,
@@ -52,6 +57,7 @@ export type AdmissionOptions = {
     listModels(): Promise<CursorModelSummary[]>
   }
   skills?: WorkspaceSkillStore
+  connections?: WorkspaceConnectionStore
 }
 
 export function invitationUrl(
@@ -347,6 +353,121 @@ export function createAdmissionHttpHandler(
         } finally {
           await rm(temporary, { force: true, recursive: true })
         }
+      }
+    }
+
+    if (
+      url.pathname === '/api/workspace/settings/connections' &&
+      options.connections
+    ) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      if (request.method === 'GET') {
+        return json({
+          connections: options.connections.list(),
+          agents: WORKSPACE_PEOPLE.map((person) => ({
+            id: person.id,
+            name: person.name,
+          })),
+        })
+      }
+      if (request.method === 'PUT') {
+        const body = await readBody(request)
+        const kind = typeof body?.kind === 'string' ? body.kind : ''
+        const fields =
+          body?.fields &&
+          typeof body.fields === 'object' &&
+          !Array.isArray(body.fields)
+            ? (body.fields as Record<string, unknown>)
+            : {}
+        try {
+          const saved: PublicConnection = options.connections.save({
+            kind,
+            fields,
+            ...(typeof body?.apiKey === 'string'
+              ? { apiKey: body.apiKey }
+              : {}),
+          } satisfies ConnectionSaveInput)
+          return json({ connection: saved })
+        } catch (error) {
+          return json(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Unable to save connection',
+            },
+            400,
+          )
+        }
+      }
+    }
+
+    const connectionClear = url.pathname.match(
+      /^\/api\/workspace\/settings\/connections\/([^/]+)\/clear$/,
+    )
+    if (
+      connectionClear &&
+      options.connections &&
+      request.method === 'POST'
+    ) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      const kind = decodeURIComponent(connectionClear[1]!)
+      try {
+        return json({ connection: options.connections.clear(kind) })
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to clear connection',
+          },
+          400,
+        )
+      }
+    }
+
+    const connectionLinks = url.pathname.match(
+      /^\/api\/workspace\/settings\/connections\/([^/]+)\/links$/,
+    )
+    if (
+      connectionLinks &&
+      options.connections &&
+      request.method === 'PUT'
+    ) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      const kind = decodeURIComponent(connectionLinks[1]!)
+      const body = await readBody(request)
+      const agentDefinitionIds = Array.isArray(body?.agentDefinitionIds)
+        ? body.agentDefinitionIds.filter(
+            (id): id is string => typeof id === 'string',
+          )
+        : undefined
+      if (!agentDefinitionIds)
+        return json({ error: 'agentDefinitionIds array is required' }, 400)
+      for (const agentDefinitionId of agentDefinitionIds) {
+        if (!WORKSPACE_PEOPLE.some((person) => person.id === agentDefinitionId))
+          return json({ error: 'Unknown agent definition' }, 400)
+      }
+      try {
+        const linkedAgentIds = options.connections.setLinks(
+          kind,
+          agentDefinitionIds,
+        )
+        return json({ kind, linkedAgentIds })
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to update connection links',
+          },
+          400,
+        )
       }
     }
 

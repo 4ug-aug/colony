@@ -386,7 +386,7 @@ test("antboy runs in a room while a GitHub adapter is configured", async () => {
   );
 });
 
-test("outline documents are granted to antboy and withheld from software-engineer", async () => {
+test("connection adapters are granted only when linked for that agent", async () => {
   const runner: CommandRunner = {
     async run(args, options): Promise<CommandResult> {
       const stdout =
@@ -407,6 +407,7 @@ test("outline documents are granted to antboy and withheld from software-enginee
   const outlineAdapter: WorkspaceAgentAdapter = {
     capability: {
       id: "outline.documents",
+      tools: outlineTools,
       createUpstream: () => ({
         listTools: async () => outlineTools.map((name) => ({ name })),
         callTool: async () => ({}),
@@ -417,7 +418,8 @@ test("outline documents are granted to antboy and withheld from software-enginee
   const executor = createWorkspaceAgentsExecutor({
     cursor: cursorConfig,
     model: modelConfig,
-    adapters: [outlineAdapter],
+    connectionAdapters: (agentDefinitionId) =>
+      agentDefinitionId === ANTBOY_ID ? [outlineAdapter] : [],
     createCapabilityEndpoint: () => ({
       url: "http://capabilities.example/mcp",
       close: async () => {},
@@ -454,7 +456,7 @@ test("outline documents are granted to antboy and withheld from software-enginee
   expect(engineer.capabilityGrant).toBeUndefined();
 });
 
-test("grafana observability is granted to antboy and withheld from software-engineer", async () => {
+test("unlinked connection adapters are omitted; linked agents receive tools", async () => {
   const runner: CommandRunner = {
     async run(args, options): Promise<CommandResult> {
       const stdout =
@@ -487,6 +489,7 @@ test("grafana observability is granted to antboy and withheld from software-engi
   const grafanaAdapter: WorkspaceAgentAdapter = {
     capability: {
       id: "grafana.observability",
+      tools: grafanaTools,
       createUpstream: () => ({
         listTools: async () => grafanaTools.map((name) => ({ name })),
         callTool: async () => ({}),
@@ -494,10 +497,10 @@ test("grafana observability is granted to antboy and withheld from software-engi
     },
   };
   let runs = 0;
-  const executor = createWorkspaceAgentsExecutor({
+  const unlinked = createWorkspaceAgentsExecutor({
     cursor: cursorConfig,
     model: modelConfig,
-    adapters: [grafanaAdapter],
+    connectionAdapters: () => [],
     createCapabilityEndpoint: () => ({
       url: "http://capabilities.example/mcp",
       close: async () => {},
@@ -507,30 +510,49 @@ test("grafana observability is granted to antboy and withheld from software-engi
       createId: () => `run-grafana-${(runs += 1)}`,
     }),
   });
-  const finish = async (id: string) => {
+  const finish = async (
+    executor: ReturnType<typeof createWorkspaceAgentsExecutor>,
+    id: string,
+  ) => {
     while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
       await Bun.sleep(0);
     }
     return executor.getRun(id)!;
   };
 
-  const antboy = await finish(
-    executor.startRun({
+  const omitted = await finish(
+    unlinked,
+    unlinked.startRun({
       task: "check dashboards",
       agentDefinitionId: ANTBOY_ID,
     }),
   );
-  expect(antboy.state).toBe("succeeded");
-  expect(antboy.capabilityGrant?.tools).toEqual(grafanaTools);
+  expect(omitted.state).toBe("succeeded");
+  expect(omitted.capabilityGrant).toBeUndefined();
 
-  const engineer = await finish(
-    executor.startRun({
+  const linked = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    connectionAdapters: (agentDefinitionId) =>
+      agentDefinitionId === ANTBOY_ID ? [grafanaAdapter] : [],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => `run-grafana-linked-${(runs += 1)}`,
+    }),
+  });
+  const granted = await finish(
+    linked,
+    linked.startRun({
       task: "check dashboards",
-      agentDefinitionId: SOFTWARE_ENGINEER_ID,
+      agentDefinitionId: ANTBOY_ID,
     }),
   );
-  expect(engineer.state).toBe("succeeded");
-  expect(engineer.capabilityGrant).toBeUndefined();
+  expect(granted.state).toBe("succeeded");
+  expect(granted.capabilityGrant?.tools).toEqual(grafanaTools);
 });
 
 test("client-safe roster presentation never reaches role instructions", async () => {

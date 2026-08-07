@@ -55,21 +55,40 @@ export function rosterDefinitionSummaries(
     string,
     readonly { id: string; name: string; description: string }[]
   > = new Map(),
+  connectionCapabilitiesByAgent: ReadonlyMap<
+    string,
+    readonly { id: string; name: string; tools: string[] }[]
+  > = new Map(),
 ): RosterDefinitionSummary[] {
-  return WORKSPACE_ROSTER.map((person) => ({
-    id: person.id,
-    name: person.name,
-    description: person.description,
-    kind: person.kind,
-    icon: person.icon,
-    capabilities: person.role.requestedCapabilities.map((capability) => {
-      const presentation = capabilityPresentation[capability.id];
-      return {
-        id: capability.id,
-        name: presentation?.name ?? capability.id,
-        tools: capability.tools.map((tool) => presentation?.tools[tool] ?? tool),
-      };
-    }),
-    skills: [...(skillsByAgent.get(person.id) ?? [])],
-  }));
+  return WORKSPACE_ROSTER.map((person) => {
+    const roleCapabilities = person.role.requestedCapabilities.map(
+      (capability) => {
+        const presentation = capabilityPresentation[capability.id];
+        return {
+          id: capability.id,
+          name: presentation?.name ?? capability.id,
+          tools: capability.tools.map(
+            (tool) => presentation?.tools[tool] ?? tool,
+          ),
+        };
+      },
+    );
+    const linked = connectionCapabilitiesByAgent.get(person.id) ?? [];
+    const seen = new Set(roleCapabilities.map((capability) => capability.id));
+    const capabilities = [...roleCapabilities];
+    for (const capability of linked) {
+      if (seen.has(capability.id)) continue;
+      seen.add(capability.id);
+      capabilities.push(capability);
+    }
+    return {
+      id: person.id,
+      name: person.name,
+      description: person.description,
+      kind: person.kind,
+      icon: person.icon,
+      capabilities,
+      skills: [...(skillsByAgent.get(person.id) ?? [])],
+    };
+  });
 }

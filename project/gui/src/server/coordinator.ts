@@ -30,6 +30,9 @@ import {
   createWorkspaceSkillStore,
   skillDirectory,
 } from './workspace-skills'
+import { createWorkspaceConnections } from './workspace-connections'
+import { capabilityPresentation } from '../../../agents/roster-people'
+import { getConnectionKind } from '../../../connections/registry'
 import {
   createSqliteScheduleStore,
   type Schedule,
@@ -658,17 +661,11 @@ if (import.meta.main) {
     { createWorkspaceCursorRuntimeConfig },
     { createWorkspaceAgentsExecutor },
     {
-      createAsanaSoftwareEngineerAdapter,
       createGitHubSoftwareEngineerAdapter,
-      createGrafanaAdapter,
       createLinearSoftwareEngineerAdapter,
-      createOutlineAdapter,
       createWorkspaceIssuesAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
-    { readAsanaConfiguration },
-    { readGrafanaConfiguration },
-    { readOutlineConfiguration },
     { createGitHubCliClient },
     { createMcpGatewayHttpServer },
     { createAppleContainerClient },
@@ -682,9 +679,6 @@ if (import.meta.main) {
     import('./cursor-runtime-config'),
     import('../../../agents/roster'),
     import('../../../agents/software-engineer-adapters'),
-    import('../../../mcp/asana'),
-    import('../../../mcp/grafana'),
-    import('../../../mcp/outline'),
     import('../../../mcp/github'),
     import('../../../mcp/http'),
     import('../../../sdk/src'),
@@ -694,6 +688,7 @@ if (import.meta.main) {
   const admissionStore = createAdmissionStore(sqlite)
   const llm = createWorkspaceLlmConfig(sqlite)
   const cursorRuntime = createWorkspaceCursorRuntimeConfig(sqlite)
+  const connections = createWorkspaceConnections(sqlite)
   const skillsDirectory = skillDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
   )
@@ -724,9 +719,6 @@ if (import.meta.main) {
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
   )
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
-  const asana = readAsanaConfiguration()
-  const grafana = readGrafanaConfiguration()
-  const outline = readOutlineConfiguration()
   const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
   const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
@@ -768,6 +760,8 @@ if (import.meta.main) {
           return person?.kind
         },
       },
+      connectionAdapters: (agentDefinitionId) =>
+        connections.adaptersForAgent(agentDefinitionId),
       adapters: [
         createWorkspaceSoftwareEngineerAdapter({
           port: {
@@ -883,16 +877,6 @@ if (import.meta.main) {
               }),
             ]
           : []),
-        ...(asana
-          ? [
-              createAsanaSoftwareEngineerAdapter({
-                apiToken: asana.apiToken,
-                projectGid: asana.projectGid,
-              }),
-            ]
-          : []),
-        ...(outline ? [createOutlineAdapter(outline)] : []),
-        ...(grafana ? [createGrafanaAdapter(grafana)] : []),
         ...(github && githubRepository
           ? [
               createGitHubSoftwareEngineerAdapter({
@@ -949,13 +933,41 @@ if (import.meta.main) {
           }),
         )
       }
-      return rosterDefinitionSummaries(byAgent)
+      const linksByAgent = connections.listLinksByAgent()
+      const connectionCapabilities = new Map<
+        string,
+        { id: string; name: string; tools: string[] }[]
+      >()
+      for (const [agentId, kindIds] of Object.entries(linksByAgent)) {
+        connectionCapabilities.set(
+          agentId,
+          kindIds.flatMap((kindId) => {
+            const kind = getConnectionKind(kindId)
+            const connection = connections
+              .list()
+              .find((item) => item.id === kindId)
+            if (!kind || !connection?.configured) return []
+            const presentation = capabilityPresentation[kind.capabilityId]
+            return [
+              {
+                id: kind.capabilityId,
+                name: presentation?.name ?? kind.name,
+                tools: kind.tools.map(
+                  (tool) => presentation?.tools[tool] ?? tool,
+                ),
+              },
+            ]
+          }),
+        )
+      }
+      return rosterDefinitionSummaries(byAgent, connectionCapabilities)
     },
     admission: {
       store: admissionStore,
       llm,
       cursorRuntime,
       skills,
+      connections,
       listUsers: () => authContext.internalAdapter.listUsers(100),
       banUser: (request, userId) =>
         auth.api.banUser({ body: { userId }, headers: request.headers }),

@@ -339,10 +339,6 @@ async function configureServer(path: string): Promise<void> {
   const initialIntegrations: Integration[] = [];
   if (existing("SWEAT_GITHUB_REPOSITORY")) initialIntegrations.push("github");
   if (existing("LINEAR_MCP_API_KEY")) initialIntegrations.push("linear");
-  if (existing("ASANA_API_TOKEN") || existing("ASANA_PROJECT_GID"))
-    initialIntegrations.push("asana");
-  if (existing("OUTLINE_URL") || existing("OUTLINE_API_KEY"))
-    initialIntegrations.push("outline");
 
   const integrations = assertNotCancelled(
     await multiselect({
@@ -350,16 +346,6 @@ async function configureServer(path: string): Promise<void> {
       options: [
         { value: "github" as const, label: "GitHub", hint: "repo + base branch" },
         { value: "linear" as const, label: "Linear", hint: "MCP API key" },
-        {
-          value: "asana" as const,
-          label: "Asana",
-          hint: "token + project GID",
-        },
-        {
-          value: "outline" as const,
-          label: "Outline",
-          hint: "instance URL + API key",
-        },
       ],
       initialValues: initialIntegrations,
       required: false,
@@ -367,8 +353,6 @@ async function configureServer(path: string): Promise<void> {
   );
   const useGitHub = integrations.includes("github");
   const useLinear = integrations.includes("linear");
-  const useAsana = integrations.includes("asana");
-  const useOutline = integrations.includes("outline");
 
   if (useGitHub) {
     await requireGitHubCli();
@@ -411,55 +395,6 @@ async function configureServer(path: string): Promise<void> {
     if (!token)
       throw new Error("A Linear API key is required when Linear is selected.");
     document = setEnvValue(document, "LINEAR_MCP_API_KEY", token);
-  }
-  if (useAsana) {
-    const token = await askSecret("Asana API token", existing("ASANA_API_TOKEN"));
-    const projectGid = (
-      await askText(
-        "Asana project GID",
-        existing("ASANA_PROJECT_GID"),
-        (value) =>
-          value.trim() || existing("ASANA_PROJECT_GID")
-            ? undefined
-            : "Asana project GID is required",
-      )
-    ).trim();
-    if (!token || !projectGid)
-      throw new Error(
-        "An Asana API token and project GID are required when Asana is selected.",
-      );
-    document = setEnvValue(document, "ASANA_API_TOKEN", token);
-    document = setEnvValue(document, "ASANA_PROJECT_GID", projectGid);
-  }
-  if (useOutline) {
-    const outlineUrl = (
-      await askText(
-        "Outline URL (without /mcp)",
-        existing("OUTLINE_URL"),
-        (value) => (value.trim() ? undefined : "Outline URL is required"),
-      )
-    )
-      .trim()
-      .replace(/\/$/, "");
-    note(
-      [
-        "Settings → API Keys in your Outline instance.",
-        "Scopes (space-separated):",
-        "documents.list documents.info documents.create documents.update collections.list",
-        "Leave scopes blank for full access.",
-      ].join("\n"),
-      "Outline API key",
-    );
-    const apiKey = await askSecret(
-      "Outline API key",
-      existing("OUTLINE_API_KEY"),
-    );
-    if (!outlineUrl || !apiKey)
-      throw new Error(
-        "An Outline URL and API key are required when Outline is selected.",
-      );
-    document = setEnvValue(document, "OUTLINE_URL", outlineUrl);
-    document = setEnvValue(document, "OUTLINE_API_KEY", apiKey);
   }
 
   const preparing = spinner();

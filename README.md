@@ -35,7 +35,7 @@ make setup
 
 Choose **Server setup** to configure `.env.local`. The wizard generates the
 authentication secret, asks for the server URL, browser origin, sandbox
-runtime, and optional GitHub, Linear, and project-scoped Asana integrations. It preserves existing
+runtime, and optional GitHub and Linear integrations. It preserves existing
 values, backs up an existing environment file, installs dependencies, pulls the
 CI-published agent image, and runs database migrations.
 
@@ -115,27 +115,16 @@ To enable repository-backed software-engineer runs, authenticate the host
 GitHub CLI and set `SWEAT_GITHUB_REPOSITORY`. Set `SWEAT_VERIFY_COMMAND` to
 allow verified pull-request publishing.
 
-To enable scoped Asana tasks, set both `ASANA_API_TOKEN` and
-`ASANA_PROJECT_GID`. Use a dedicated service-account token with access only to
-that project.
+Configure Asana, Outline, and Grafana under **Workspace → Connections** after
+sign-in (admin only). Save credentials there, then link each Connection to the
+agents that should receive its tools. Clearing a Connection removes its
+credentials and links. Env vars are not used for these providers.
 
-To let antboy search and write the Outline wiki, set both `OUTLINE_URL` (your
-instance URL, without `/mcp`) and `OUTLINE_API_KEY`, and enable MCP in Outline
-under Settings → AI. Only antboy requests this capability; the software engineer
-never receives it. Create the key under Settings → API Keys with scopes
-`documents:read documents:write collections:read`; anything narrower fails the
-session warm-up with `Granted MCP tools are unavailable`.
-
-To give antboy read-only Grafana observability tools, set both
-`GRAFANA_MCP_URL` (streamable HTTP MCP endpoint) and `GRAFANA_MCP_API_KEY`.
-Sweat only consumes that remote MCP; it does not host or supervise the server.
-Only antboy requests this capability.
-
-A self-hosted Outline behind an internal CA also needs `NODE_EXTRA_CA_CERTS` set
-to that CA bundle, or the coordinator fails with
+A self-hosted Outline or other connection behind an internal CA also needs
+`NODE_EXTRA_CA_CERTS` set to that CA bundle, or the coordinator fails with
 `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. This is the host's trust store: the
-coordinator reaches Outline directly, while `SWEAT_AGENT_CA_CERT` covers only
-agent containers, which never contact Outline. Set it in `.env.local`.
+coordinator reaches provider MCP upstreams directly, while `SWEAT_AGENT_CA_CERT`
+covers only agent containers. Set it in `.env.local`.
 `make service-install` / `make service-upgrade` hoist it into the systemd unit
 `Environment=` so Bun sees it before TLS starts; a bare
 `bun --env-file=… src/server/coordinator.ts` still reads it too late.

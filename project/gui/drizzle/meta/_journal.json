@@ -148,6 +148,13 @@
       "when": 1789000000000,
       "tag": "0020_bulletins",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790000000000,
+      "tag": "0021_workspace_connections",
+      "breakpoints": true
     }
   ]
 }

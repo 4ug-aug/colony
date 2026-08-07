@@ -13,18 +13,11 @@ test("the software engineer requests scoped issue and pull request tools", () =>
       "workspace.assign_issue",
     ],
   });
-  expect(softwareEngineerRole.requestedCapabilities).toContainEqual({
-    id: "asana.tasks",
-    tools: [
-      "asana.get_project",
-      "asana.create_task",
-      "asana.list_tasks",
-      "asana.get_task",
-      "asana.get_task_comments",
-      "asana.set_task_completion",
-      "asana.add_task_comment",
-    ],
-  });
+  expect(
+    softwareEngineerRole.requestedCapabilities.some(
+      (capability) => capability.id === "asana.tasks",
+    ),
+  ).toBe(false);
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({
     id: "github.pull-requests",
     tools: [

@@ -141,7 +141,7 @@ the session when a run ends.
 
 - Room renaming and room deletion.
 - Native OS notifications and tray status.
-- Gateway HTTP/MCP transport and local encrypted connection storage.
+- Gateway HTTP/MCP transport.
 - Run scheduler, capability-grant policy, and resource-level authorization.
 - Sub-agent scheduling and shared artifact handoff.
 

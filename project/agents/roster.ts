@@ -62,6 +62,8 @@ export interface WorkspaceAgentAdapter {
   };
   capability?: {
     id: string;
+    /** Tool names when this capability is not role-requested (Connection links). */
+    tools?: readonly string[];
     resources?: McpGrant["resources"];
     applies?(context: AgentEligibilityContext): boolean;
     createUpstream(context: AgentCapabilityContext): McpUpstream;
@@ -104,6 +106,10 @@ export function createWorkspaceAgentsExecutor(options: {
   /** Explicit Cursor agent image for software-engineer. */
   cursorImage?: string;
   adapters?: readonly WorkspaceAgentAdapter[];
+  /** Configured + linked Connection adapters for one agent, resolved at grant time. */
+  connectionAdapters?: (
+    agentDefinitionId: string,
+  ) => readonly WorkspaceAgentAdapter[];
   createCapabilityEndpoint?: (gateway: ReturnType<typeof createMcpGateway>) => {
     url: string;
     close(): Promise<void>;
@@ -122,6 +128,7 @@ export function createWorkspaceAgentsExecutor(options: {
   const capabilityAdapters = adapters.flatMap((adapter) =>
     adapter.capability ? [adapter.capability] : [],
   );
+  type CapabilityAdapter = NonNullable<WorkspaceAgentAdapter["capability"]>;
 
   const openaiImage =
     options.image ?? Bun.env.SWEAT_AGENT_IMAGE ?? "sweat-agent:latest";
@@ -175,31 +182,54 @@ export function createWorkspaceAgentsExecutor(options: {
       }
     }
   }
-  if (capabilityAdapters.length && !options.createCapabilityEndpoint) {
-    throw new Error("A capability endpoint is required for workspace agent adapters");
-  }
   if (!options.model && !options.cursor) {
     throw new Error(
       "Workspace agents executor requires an OpenAI model and/or Cursor runtime config",
     );
   }
 
+  const connectionCapabilityAdapters = (
+    agentDefinitionId: string,
+  ): CapabilityAdapter[] =>
+    (options.connectionAdapters?.(agentDefinitionId) ?? []).flatMap((adapter) =>
+      adapter.capability ? [adapter.capability] : [],
+    );
+
   const eligibleAdapters = (
     agentDefinitionId: string,
     grantContext: AgentGrantContext | undefined,
-  ) => {
+  ): CapabilityAdapter[] => {
     const requested = allRequested.get(agentDefinitionId);
     if (!requested) return [];
-    return capabilityAdapters.filter((adapter) => {
+    const fromRole = capabilityAdapters.filter((adapter) => {
       if (!requested.has(adapter.id)) return false;
       return adapter.applies ? adapter.applies({ grantContext }) : true;
     });
+    const fromConnections = connectionCapabilityAdapters(
+      agentDefinitionId,
+    ).filter((adapter) =>
+      adapter.applies ? adapter.applies({ grantContext }) : true,
+    );
+    const seen = new Set(fromRole.map((adapter) => adapter.id));
+    const merged = [...fromRole];
+    for (const adapter of fromConnections) {
+      if (seen.has(adapter.id)) continue;
+      seen.add(adapter.id);
+      merged.push(adapter);
+    }
+    return merged;
   };
 
-  const capabilities = capabilityAdapters.length
+  const needsCapabilityEndpoint =
+    capabilityAdapters.length > 0 || Boolean(options.connectionAdapters);
+  if (needsCapabilityEndpoint && !options.createCapabilityEndpoint) {
+    throw new Error("A capability endpoint is required for workspace agent adapters");
+  }
+
+  const capabilities = needsCapabilityEndpoint
     ? createCapabilitySessionFactory({
         // Same eligibility decision as startRun, from the same function, so the
-        // gateway can never expose an upstream the person did not request.
+        // gateway can never expose an upstream the person did not request or link.
         createGateway: (context) => {
           const eligible = eligibleAdapters(
             context.grantContext?.agentDefinitionId ?? SOFTWARE_ENGINEER_ID,
@@ -225,12 +255,22 @@ export function createWorkspaceAgentsExecutor(options: {
         const person = byId.get(id);
         if (!person) return undefined;
         const image = imagesByKind[person.kind];
+        const linkedCapabilities = connectionCapabilityAdapters(id).map(
+          (adapter) => ({
+            id: adapter.id,
+            tools: adapter.tools ?? [],
+          }),
+        );
+        const requestedCapabilities = [
+          ...person.role.requestedCapabilities,
+          ...linkedCapabilities,
+        ];
         if (person.kind === "cursor") {
           if (!options.cursor) return undefined;
           return {
             id: person.id,
             instructions: person.role.instructions,
-            requestedCapabilities: person.role.requestedCapabilities,
+            requestedCapabilities,
             runtime: {
               kind: "cursor",
               image,
@@ -243,7 +283,7 @@ export function createWorkspaceAgentsExecutor(options: {
         return {
           id: person.id,
           instructions: person.role.instructions,
-          requestedCapabilities: person.role.requestedCapabilities,
+          requestedCapabilities,
           runtime: {
             kind: "openai-agents",
             image,
@@ -291,7 +331,7 @@ export function createWorkspaceAgentsExecutor(options: {
 
       const requested = allRequested.get(agentDefinitionId)!;
       const eligibleTools = eligible.flatMap(
-        (adapter) => requested.get(adapter.id) ?? [],
+        (adapter) => requested.get(adapter.id) ?? adapter.tools ?? [],
       );
       const attachmentNote = attachments.length
         ? `\n\nAttachments (inspect these paths before acting):\n${attachments
