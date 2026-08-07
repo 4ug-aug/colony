@@ -6,6 +6,9 @@ import { Textarea } from '#/components/ui/textarea'
 import { cn } from '#/lib/utils'
 import type { Bulletin } from './types'
 
+const hideScrollbar =
+  '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+
 export function BulletinCard({
   bulletin,
   editing,
@@ -76,7 +79,10 @@ export function BulletinCard({
         <Textarea
           autoFocus
           defaultValue={bulletin.body}
-          className="min-h-28 resize-none rounded-none border-0 bg-transparent p-3 pt-9 shadow-none focus-visible:ring-0"
+          className={cn(
+            'max-h-80 min-h-28 resize-none overflow-y-auto rounded-none border-0 bg-transparent p-3 pt-9 shadow-none focus-visible:ring-0',
+            hideScrollbar,
+          )}
           placeholder="Write markdown…"
           onBlur={(event) => onCommitBody(event.currentTarget.value)}
           onKeyDown={(event) => {
@@ -91,17 +97,19 @@ export function BulletinCard({
           }}
         />
       ) : (
-        <button
-          type="button"
-          className="block w-full cursor-text p-3 pt-9 text-left"
-          onClick={onBeginEdit}
-        >
-          {bulletin.body.trim() ? (
-            <Markdown>{bulletin.body}</Markdown>
-          ) : (
-            <p className="text-sm text-muted-foreground">Empty bulletin</p>
-          )}
-        </button>
+        <div className={cn('max-h-80 overflow-y-auto', hideScrollbar)}>
+          <button
+            type="button"
+            className="block w-full cursor-text p-3 pt-9 text-left"
+            onClick={onBeginEdit}
+          >
+            {bulletin.body.trim() ? (
+              <Markdown>{bulletin.body}</Markdown>
+            ) : (
+              <p className="text-sm text-muted-foreground">Empty bulletin</p>
+            )}
+          </button>
+        </div>
       )}
     </article>
   )
