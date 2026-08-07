@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   formatStepText,
   groupActivity,
+  isFailedToolResult,
   mergeSteps,
   pairSteps,
 } from './run-activity'
@@ -211,8 +212,18 @@ export function RunActivityContent({
                             {step.tool ?? 'Tool call'}
                           </span>
                         </span>
-                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                          {result ? 'Completed' : 'Pending'}
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
+                            result && isFailedToolResult(result.text)
+                              ? 'bg-destructive/15 text-destructive'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {result
+                            ? isFailedToolResult(result.text)
+                              ? 'Failed'
+                              : 'Completed'
+                            : 'Pending'}
                         </span>
                       </summary>
                       <div className="mt-3 space-y-3 text-xs group-open:animate-in group-open:fade-in-0 group-open:slide-in-from-top-1 group-open:duration-200">

@@ -316,6 +316,47 @@ Body
   await workspace.dispose();
 });
 
+test("skills alone still provision a workspace for openai-agents layout", async () => {
+  const provisioner = createRepositoryWorkspaceProvisioner({
+    sources: [],
+    skillSource: {
+      layoutForAgent: () => "openai-agents",
+      listForAgent: async () => [
+        {
+          name: "issue-writer",
+          files: [
+            {
+              path: "SKILL.md",
+              bytes: new TextEncoder().encode(`---
+name: issue-writer
+description: Write issues.
+---
+
+Body
+`),
+            },
+          ],
+        },
+      ],
+    },
+    createDirectory: async () => mkdtemp(join(tmpdir(), "sweat-run-")),
+    removeDirectory: async (directory) =>
+      rm(directory, { force: true, recursive: true }),
+  });
+
+  const prepared = await provisioner.prepare([], {
+    runId: "run-skills-only",
+    agentDefinitionId: "antboy",
+  });
+  const workspace = prepared.workspace!;
+  expect(
+    await Bun.file(
+      join(workspace.path, ".agents/skills/issue-writer/SKILL.md"),
+    ).text(),
+  ).toContain("name: issue-writer");
+  await workspace.dispose();
+});
+
 test("unavailable attachments fail without leaking a temporary workspace", async () => {
   const input = attachment("attachment-1", "notes.txt", "expected\n");
   const expected = `Attachment unavailable: ${input.id}`;

@@ -20,11 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '#/components/ui/dialog'
-import { Input } from '#/components/ui/input'
 import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
 import { apiFetch, apiJson } from '#/lib/api-transport'
+import { cn } from '#/lib/utils'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Upload } from 'lucide-react'
+import { useRef, useState } from 'react'
 
 type WorkspaceSkill = {
   id: string
@@ -72,13 +73,40 @@ function useWorkspaceSkills() {
   })
 }
 
+function isSkillPackageFile(file: File) {
+  const name = file.name.toLowerCase()
+  return (
+    name.endsWith('.md') ||
+    name.endsWith('.zip') ||
+    file.type === 'text/markdown' ||
+    file.type === 'text/x-markdown' ||
+    file.type === 'application/zip' ||
+    file.type === 'application/x-zip-compressed'
+  )
+}
+
 export function AgentSkillsSettings() {
   const queryClient = useQueryClient()
   const { data, isPending, error, isFetching } = useWorkspaceSkills()
   const [skillFile, setSkillFile] = useState<File | null>(null)
+  const [dragActive, setDragActive] = useState(false)
   const [pendingSkillId, setPendingSkillId] = useState<string>()
   const [viewingSkillId, setViewingSkillId] = useState<string>()
   const [actionError, setActionError] = useState<string>()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const acceptSkillFile = (file: File | undefined) => {
+    if (!file) {
+      setSkillFile(null)
+      return
+    }
+    if (!isSkillPackageFile(file)) {
+      setActionError('Choose a SKILL.md or skill package zip')
+      return
+    }
+    setActionError(undefined)
+    setSkillFile(file)
+  }
 
   const skillDetail = useQuery({
     queryKey: [...workspaceSkillsQueryKey, 'detail', viewingSkillId] as const,
@@ -266,14 +294,59 @@ export function AgentSkillsSettings() {
         </p>
       )}      <div className="mt-4 grid gap-3">
         <div className="grid max-w-xl gap-3">
-          <Input
-            aria-label="Skill markdown or package zip"
+          <button
+            type="button"
             disabled={busy}
-            onChange={(event) =>
-              setSkillFile(event.target.files?.[0] ?? null)
-            }
+            aria-label="Skill markdown or package zip"
+            onClick={() => fileInputRef.current?.click()}
+            onDragEnter={(event) => {
+              event.preventDefault()
+              if (!busy) setDragActive(true)
+            }}
+            onDragOver={(event) => {
+              event.preventDefault()
+              if (!busy) setDragActive(true)
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault()
+              setDragActive(false)
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              setDragActive(false)
+              if (busy) return
+              acceptSkillFile(event.dataTransfer.files?.[0])
+            }}
+            className={cn(
+              'flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed px-4 py-6 text-center transition-colors',
+              'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              'disabled:pointer-events-none disabled:opacity-50',
+              dragActive
+                ? 'border-ring bg-muted/60'
+                : 'border-input bg-transparent hover:bg-muted/40',
+            )}
+          >
+            <Upload className="size-5 text-muted-foreground" aria-hidden />
+            <span className="text-sm">
+              {skillFile
+                ? skillFile.name
+                : 'Drop a SKILL.md or skill package zip here'}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              or click to browse
+            </span>
+          </button>
+          <input
+            ref={fileInputRef}
             type="file"
             accept=".md,.zip,text/markdown,application/zip"
+            className="sr-only"
+            tabIndex={-1}
+            disabled={busy}
+            onChange={(event) => {
+              acceptSkillFile(event.target.files?.[0])
+              event.target.value = ''
+            }}
           />
           <div className="flex items-center gap-3">
             <Button
@@ -286,6 +359,16 @@ export function AgentSkillsSettings() {
                 'Import skill'
               )}
             </Button>
+            {skillFile && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setSkillFile(null)}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </div>
         {isPending ? (

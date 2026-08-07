@@ -467,7 +467,8 @@ export async function runAgent(
       }),
       tool({
         name: "shell",
-        description: "Run one shell command in the current sandbox.",
+        description:
+          "Run one shell command in the current sandbox. This is also how you open files: `cat .agents/skills/<name>/SKILL.md`.",
         parameters: {
           type: "object",
           properties: { command: { type: "string" } },

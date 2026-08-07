@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   formatStepText,
   groupActivity,
+  isFailedToolResult,
   mergeSteps,
   pairSteps,
 } from './run-activity'
@@ -27,6 +28,13 @@ describe('run activity', () => {
 }`,
     )
     expect(formatStepText('plain text')).toBe('plain text')
+  })
+
+  test('detects tool-not-found results as failures', () => {
+    expect(isFailedToolResult("Tool 'issue-writer.SKILL.md' not found.")).toBe(
+      true,
+    )
+    expect(isFailedToolResult('{"ok":true}')).toBe(false)
   })
 
   test('merges persisted and live steps without duplicates', () => {

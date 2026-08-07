@@ -5,7 +5,8 @@ import { parseSkillFrontmatter } from "../skills/package";
 
 /**
  * Build OpenAI Agents SDK skill discovery instructions from a staged
- * `.agents/skills` tree. Bodies stay on disk for progressive disclosure.
+ * `.agents/skills` tree. Bodies stay on disk for progressive disclosure; the
+ * agent opens them with the `shell` tool.
  */
 export async function openaiSkillInstructions(
   skillsRoot: string,

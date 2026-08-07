@@ -13,6 +13,16 @@ export function formatStepText(text: string) {
   }
 }
 
+/** True when a tool_result payload is an error returned to the model. */
+export function isFailedToolResult(text: string) {
+  const trimmed = text.trim()
+  return (
+    /^Tool '.*' not found\.?$/i.test(trimmed) ||
+    /^Unknown skill:/i.test(trimmed) ||
+    /^Unable to view image:/i.test(trimmed)
+  )
+}
+
 export function mergeSteps(...groups: Step[][]) {
   const byId = new Map(groups.flat().map((step) => [step.id, step]))
   return [...byId.values()].sort((a, b) => a.idx - b.idx)
