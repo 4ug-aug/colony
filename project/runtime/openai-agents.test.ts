@@ -191,8 +191,8 @@ test("custom providers rewrite vLLM mcp_call items into function calls", () => {
       providerData: {
         type: "mcp_call",
         id: "mcp_1",
-        name: "shell",
-        arguments: '{"command":"pwd"}',
+        name: "exec_command",
+        arguments: '{"cmd":"pwd"}',
         server_label: "functions",
       },
     },
@@ -219,8 +219,8 @@ test("custom providers rewrite vLLM mcp_call items into function calls", () => {
       type: "function_call",
       id: "mcp_1",
       callId: "mcp_1",
-      name: "shell",
-      arguments: '{"command":"pwd"}',
+      name: "exec_command",
+      arguments: '{"cmd":"pwd"}',
       status: "completed",
     },
   ]);
@@ -229,7 +229,7 @@ test("custom providers rewrite vLLM mcp_call items into function calls", () => {
     stripMcpProtocolInput([
       {
         type: "function_call_result",
-        name: "shell",
+        name: "exec_command",
         callId: "call-1",
         status: "completed",
         output: "ok",
@@ -241,7 +241,7 @@ test("custom providers rewrite vLLM mcp_call items into function calls", () => {
         status: "completed",
         providerData: {
           type: "mcp_call",
-          name: "shell",
+          name: "exec_command",
           arguments: "{}",
         },
       },
@@ -249,7 +249,7 @@ test("custom providers rewrite vLLM mcp_call items into function calls", () => {
   ).toEqual([
     {
       type: "function_call_result",
-      name: "shell",
+      name: "exec_command",
       callId: "call-1",
       status: "completed",
       output: "ok",
@@ -282,8 +282,8 @@ test("the runtime completes an SDK tool loop against an OpenAI-compatible API", 
           ? {
               toolCall: {
                 id: "call-1",
-                name: "shell",
-                arguments: '{"command":"printf runtime-ready"}',
+                name: "exec_command",
+                arguments: '{"cmd":"printf runtime-ready"}',
               },
             }
           : { content: "runtime ready" },
@@ -312,6 +312,7 @@ test("the runtime completes an SDK tool loop against an OpenAI-compatible API", 
   expect(messageSteps.length).toBeGreaterThan(0);
   expect(messageSteps[messageSteps.length - 1]!.text).toBe("runtime ready");
   expect(calls).toBe(2);
+  expect(steps.some((step) => step.kind === "tool_call" && step.tool === "exec_command")).toBe(true);
 });
 
 test("an unknown tool call returns an error to the model instead of crashing", async () => {
@@ -378,41 +379,39 @@ test("an unknown tool call returns an error to the model instead of crashing", a
   expect(steps.some((step) => step.kind === "tool_result" && step.tool === "outline.list_documents")).toBe(true);
 });
 
-test("view_image sends a staged image to the model", async () => {
-  const root = await mkdtemp(join(tmpdir(), "sweat-view-image-"));
-  const outsideRoot = await mkdtemp(join(tmpdir(), "sweat-view-image-outside-"));
-  const image = join(root, "attachment-1", "pie.png");
-  const outsideImage = join(outsideRoot, "private.png");
-  await mkdir(join(root, "attachment-1"));
-  const png = new Uint8Array([
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-  ]);
-  await Promise.all([
-    writeFile(image, png),
-    writeFile(outsideImage, png),
-  ]);
+test("skillsRoot wires SDK load_skill without pasting skill bodies into instructions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "sweat-skills-root-"));
+  const skillDir = join(root, "issue-writer");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    join(skillDir, "SKILL.md"),
+    `---
+name: issue-writer
+description: Draft a clear GitHub issue.
+---
+
+# Secret skill body
+`,
+  );
+
   const client = new OpenAI({
     apiKey: "test-key",
     baseURL: "https://models.example/v1",
   });
-  class ImageModel extends OpenAIResponsesModel {
-    requests: unknown[] = [];
+  class SkillsModel extends OpenAIResponsesModel {
+    requests: ModelRequest[] = [];
 
     override async *getStreamedResponse(
       request: ModelRequest,
     ): AsyncIterable<ResponseStreamEvent> {
-      this.requests.push(
-        this._buildResponsesCreateRequest(request, true).requestData,
-      );
+      this.requests.push(request);
       const output =
-        this.requests.length < 3
+        this.requests.length === 1
           ? [{
               type: "function_call" as const,
-              callId: `call-view-image-${this.requests.length}`,
-              name: "view_image",
-              arguments: JSON.stringify({
-                path: this.requests.length === 1 ? outsideImage : image,
-              }),
+              callId: "call-load-skill",
+              name: "load_skill",
+              arguments: '{"skill_name":"issue-writer"}',
               status: "completed" as const,
             }]
           : [{
@@ -421,7 +420,7 @@ test("view_image sends a staged image to the model", async () => {
               status: "completed" as const,
               content: [{
                 type: "output_text" as const,
-                text: "I see an apple pie recipe.",
+                text: "skill loaded",
               }],
             }];
       yield {
@@ -434,51 +433,42 @@ test("view_image sends a staged image to the model", async () => {
       };
     }
   }
-  const model = new ImageModel(client, "test-model");
+
+  const model = new SkillsModel(client, "test-model");
   const steps: Step[] = [];
 
   try {
-    expect(
-      await runAgent(
-        {
-          task: "What is in the attached image?",
-          instructions: "Inspect attached images before answering.",
-          agentId: "software-engineer",
-          model: {
-            baseUrl: "https://models.example/v1",
-            apiKey: "test-key",
-            model: "test-model",
-          },
+    const result = await runAgent(
+      {
+        task: "Use the issue-writer skill.",
+        instructions: "Load skills before following them.",
+        agentId: "antboy",
+        model: {
+          baseUrl: "https://models.example/v1",
+          apiKey: "test-key",
+          model: "test-model",
         },
-        {
-          model,
-          attachmentRoot: root,
-          onStep: (step) => steps.push(step),
-        },
-      ),
-    ).toBe("I see an apple pie recipe.");
-    expect(JSON.stringify(model.requests[1])).toContain(
-      "Image path must be a staged attachment",
+        skillsRoot: root,
+      },
+      {
+        model,
+        onStep: (step) => steps.push(step),
+      },
     );
-    expect(JSON.stringify(model.requests[1])).not.toContain(
-      "data:image/png;base64,",
-    );
-    expect(JSON.stringify(model.requests[2])).toContain(
-      "data:image/png;base64,",
-    );
+
+    expect(result).toBe("skill loaded");
     expect(
-      steps
-        .filter((step) => step.kind === "tool_result")
-        .map((step) => step.text),
-    ).toEqual([
-        "Unable to view image: Image path must be a staged attachment",
-        "[image]",
-      ]);
+      steps.some((step) => step.kind === "tool_call" && step.tool === "load_skill"),
+    ).toBe(true);
+    expect(
+      steps.some((step) => step.kind === "tool_result" && step.tool === "load_skill"),
+    ).toBe(true);
+    const firstInstructions = model.requests[0]?.systemInstructions ?? "";
+    expect(firstInstructions).toContain("issue-writer");
+    expect(firstInstructions).toContain("load_skill");
+    expect(firstInstructions).not.toContain("Secret skill body");
   } finally {
-    await Promise.all([
-      rm(root, { force: true, recursive: true }),
-      rm(outsideRoot, { force: true, recursive: true }),
-    ]);
+    await rm(root, { force: true, recursive: true });
   }
 });
 
@@ -498,8 +488,8 @@ test("the runtime emits structured steps for a tool call and final message", asy
           ? {
               toolCall: {
                 id: "call-abc",
-                name: "shell",
-                arguments: '{"command":"echo hello"}',
+                name: "exec_command",
+                arguments: '{"cmd":"echo hello"}',
               },
             }
           : { content: "done" },
@@ -530,8 +520,8 @@ test("the runtime emits structured steps for a tool call and final message", asy
   const messageStep = steps.find((s) => s.kind === "message" && s.text === "done");
 
   expect(toolCallStep).toBeDefined();
-  expect(toolCallStep?.tool).toBe("shell");
-  expect(toolCallStep?.text).toBe('{"command":"echo hello"}');
+  expect(toolCallStep?.tool).toBe("exec_command");
+  expect(toolCallStep?.text).toBe('{"cmd":"echo hello"}');
   expect(typeof toolCallStep?.callId).toBe("string");
 
   expect(toolResultStep).toBeDefined();
@@ -563,8 +553,8 @@ test("the runtime allows a coding task to exceed the SDK's ten-turn default", as
           ? {
               toolCall: {
                 id: `call-${calls}`,
-                name: "shell",
-                arguments: '{"command":"true"}',
+                name: "exec_command",
+                arguments: '{"cmd":"true"}',
               },
             }
           : { content: "coding task complete" },

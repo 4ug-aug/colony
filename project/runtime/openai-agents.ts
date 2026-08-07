@@ -1,5 +1,4 @@
 import {
-  Agent,
   MCPServers,
   MCPServerStreamableHttp,
   type Model,
@@ -10,17 +9,20 @@ import {
   OpenAIResponsesModel,
   type ResponseStreamEvent,
   Runner,
-  tool,
-  type ToolOutputImage,
 } from "@openai/agents";
-import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  Capabilities,
+  localBindMountStrategy,
+  mount,
+  SandboxAgent,
+} from "@openai/agents/sandbox";
+import { UnixLocalSandboxClient } from "@openai/agents/sandbox/local";
+import { resolve } from "node:path";
 import OpenAI from "openai";
 
 import type { Step } from "./step";
-import { STEP_TEXT_LIMIT } from "./step";
 import type { CapabilitySessionBinding } from "../mcp/session";
-import { openaiSkillInstructions } from "./openai-skills";
+import { openaiSkillsCapability } from "./openai-skills";
 
 export interface OpenAICompatibleModel {
   provider?: "openai" | "custom";
@@ -301,120 +303,14 @@ export function createModelProvider(
   });
 }
 
-function shellEnvironment(): Record<string, string | undefined> {
-  const env = { ...Bun.env };
-  delete env.SWEAT_MODEL_API_KEY;
-  delete env.SWEAT_MCP_TOKEN;
-  delete env.OPENAI_API_KEY;
-  return env;
-}
-
-async function runShell(command: string): Promise<string> {
-  const process = Bun.spawn(["sh", "-lc", command], {
-    env: shellEnvironment(),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    process.exited,
-    new Response(process.stdout).text(),
-    new Response(process.stderr).text(),
-  ]);
-
-  return JSON.stringify({
-    exitCode,
-    stdout: stdout.slice(0, STEP_TEXT_LIMIT),
-    stderr: stderr.slice(0, STEP_TEXT_LIMIT),
-  });
-}
-
-function shellCommand(input: unknown): string {
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Shell command is required");
-  const command = Object.entries(input).find(([name]) => name === "command")?.[1];
-  if (typeof command !== "string") throw new Error("Shell command is required");
-  return command;
-}
-
-const maxImageBytes = 10 * 1024 * 1024;
-
-function imagePath(input: unknown): string {
-  if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new Error("Image path is required");
-  const path = Object.entries(input).find(([name]) => name === "path")?.[1];
-  if (typeof path !== "string") throw new Error("Image path is required");
-  return path;
-}
-
-function imageMediaType(bytes: Uint8Array): string | undefined {
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47 &&
-    bytes[4] === 0x0d &&
-    bytes[5] === 0x0a &&
-    bytes[6] === 0x1a &&
-    bytes[7] === 0x0a
-  )
-    return "image/png";
-  if (
-    bytes.length >= 3 &&
-    bytes[0] === 0xff &&
-    bytes[1] === 0xd8 &&
-    bytes[2] === 0xff
-  )
-    return "image/jpeg";
-  if (
-    bytes.length >= 6 &&
-    String.fromCharCode(...bytes.subarray(0, 6)) in {
-      GIF87a: true,
-      GIF89a: true,
-    }
-  )
-    return "image/gif";
-  if (
-    bytes.length >= 12 &&
-    String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF" &&
-    String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP"
-  )
-    return "image/webp";
-  return undefined;
-}
-
-async function viewImage(
-  path: string,
-  attachmentRoot: string,
-): Promise<ToolOutputImage> {
-  const [root, image] = await Promise.all([
-    realpath(attachmentRoot),
-    realpath(resolve(path)),
-  ]);
-  const child = relative(root, image);
-  if (
-    !child ||
-    child === ".." ||
-    child.startsWith(`..${sep}`) ||
-    isAbsolute(child)
-  )
-    throw new Error("Image path must be a staged attachment");
-  const info = await stat(image);
-  if (!info.isFile()) throw new Error("Image path must be a file");
-  if (info.size > maxImageBytes)
-    throw new Error("Image exceeds the 10 MiB limit");
-  const bytes = new Uint8Array(await readFile(image));
-  const mediaType = imageMediaType(bytes);
-  if (!mediaType) throw new Error("Unsupported image format");
-  return { type: "image", image: { data: bytes, mediaType } };
-}
-
 export async function runAgent(
   request: AgentRuntimeRequest,
   dependencies: {
     model?: Model;
     modelProvider?: ModelProvider;
     onStep?: (step: Step) => void;
-    attachmentRoot?: string;
+    /** Host path bind-mounted as `work/` in the SDK session. Defaults to cwd. */
+    workspaceRoot?: string;
   } = {},
 ): Promise<string> {
   const mcpServers = request.capabilitySession
@@ -430,55 +326,41 @@ export async function runAgent(
         }),
       ], { strict: true })
     : undefined;
-  const skillInstructions = request.skillsRoot
-    ? await openaiSkillInstructions(request.skillsRoot)
+
+  const workspaceRoot = resolve(dependencies.workspaceRoot ?? process.cwd());
+  const skillsRoot = request.skillsRoot
+    ? resolve(request.skillsRoot)
     : undefined;
-  const instructions = skillInstructions
-    ? `${request.instructions}\n\n${skillInstructions}`
-    : request.instructions;
-  const agent = new Agent({
+  const skillsCapability = skillsRoot
+    ? openaiSkillsCapability(skillsRoot)
+    : undefined;
+
+  const agent = new SandboxAgent({
     name: request.agentId,
-    instructions,
+    instructions: request.instructions,
     model: dependencies.model ?? request.model.model,
     mcpServers: mcpServers?.active,
-    tools: [
-      tool({
-        name: "view_image",
-        description:
-          "View a PNG, JPEG, GIF, or WebP attachment from a listed /work/.sweat/attachments path.",
-        parameters: {
-          type: "object",
-          properties: { path: { type: "string" } },
-          required: ["path"],
-          additionalProperties: false,
-        },
-        strict: true,
-        execute: async (input): Promise<ToolOutputImage | string> => {
-          try {
-            return await viewImage(
-              imagePath(input),
-              dependencies.attachmentRoot ??
-                resolve(".sweat", "attachments"),
-            );
-          } catch (error) {
-            return `Unable to view image: ${error instanceof Error ? error.message : String(error)}`;
-          }
-        },
-      }),
-      tool({
-        name: "shell",
-        description:
-          "Run one shell command in the current sandbox. This is also how you open files: `cat .agents/skills/<name>/SKILL.md`.",
-        parameters: {
-          type: "object",
-          properties: { command: { type: "string" } },
-          required: ["command"],
-          additionalProperties: false,
-        },
-        strict: true,
-        execute: async (input) =>
-          runShell(shellCommand(input)),
-      }),
+    defaultManifest: {
+      entries: {
+        work: mount({
+          source: workspaceRoot,
+          // Unix-local bind mounts are symlinks; the SDK requires an explicit
+          // writable flag because it cannot enforce read-only symlink mounts.
+          readOnly: false,
+          mountStrategy: localBindMountStrategy(),
+        }),
+      },
+      extraPathGrants: skillsRoot
+        ? [{
+            path: skillsRoot,
+            readOnly: true,
+            description: "Staged Agent Skills",
+          }]
+        : [],
+    },
+    capabilities: [
+      ...Capabilities.default(),
+      ...(skillsCapability ? [skillsCapability] : []),
     ],
   });
 
@@ -491,7 +373,11 @@ export async function runAgent(
       // Hallucinated/ungranted tool names (often from role text) should guide
       // the model, not kill the run.
       toolNotFoundBehavior: "return_error_to_model",
-    }).run(agent, request.task, { maxTurns: 50, stream: true });
+    }).run(agent, request.task, {
+      maxTurns: 50,
+      stream: true,
+      sandbox: { client: new UnixLocalSandboxClient() },
+    });
 
     let lastMessageText: string | undefined;
 

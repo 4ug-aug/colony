@@ -17,8 +17,16 @@ const modelProvider = (): "openai" | "custom" => {
 
 try {
   const apiKey = required("SWEAT_MODEL_API_KEY");
+  const mcpUrl = Bun.env.SWEAT_MCP_URL;
+  const mcpToken = Bun.env.SWEAT_MCP_TOKEN;
+  const mcpAllowedTools = Bun.env.SWEAT_MCP_ALLOWED_TOOLS?.split(",") ?? [];
+  // Scrub secrets before the SDK sandbox shell can inherit process env.
   delete Bun.env.SWEAT_MODEL_API_KEY;
   delete process.env.SWEAT_MODEL_API_KEY;
+  delete Bun.env.SWEAT_MCP_TOKEN;
+  delete process.env.SWEAT_MCP_TOKEN;
+  delete Bun.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
 
   await runAgent(
     {
@@ -31,11 +39,11 @@ try {
         apiKey,
         model: required("SWEAT_MODEL_NAME"),
       },
-      capabilitySession: Bun.env.SWEAT_MCP_URL && Bun.env.SWEAT_MCP_TOKEN
+      capabilitySession: mcpUrl && mcpToken
         ? {
-            url: Bun.env.SWEAT_MCP_URL,
-            token: Bun.env.SWEAT_MCP_TOKEN,
-            allowedTools: Bun.env.SWEAT_MCP_ALLOWED_TOOLS?.split(",") ?? [],
+            url: mcpUrl,
+            token: mcpToken,
+            allowedTools: mcpAllowedTools,
             expiresAt: new Date(0),
             revoke: () => {},
           }

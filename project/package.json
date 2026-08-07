@@ -13,7 +13,8 @@
   "dependencies": {
     "@cursor/sdk": "^1.0.26",
     "@openai/agents": "^0.13.5",
-    "octokit": "^5.0.5"
+    "octokit": "^5.0.5",
+    "zod": "^4"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
