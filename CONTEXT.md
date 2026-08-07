@@ -78,8 +78,16 @@ sessions while retaining its profile and authored history.
 _Avoid_: Account deletion, member removal
 
 **Workspace**: The customer-owned collaborative environment containing people,
-agent definitions, rooms, and their shared work history.
+agent definitions, rooms, Bulletins, and their shared work history.
 _Avoid_: Community
+
+**Bulletin**: A workspace-owned freeform markdown note with a position on the
+shared Bulletin board. It is not a unit of work and not scoped to a Room.
+_Avoid_: Sticky, note, post-it, card (as a domain noun)
+
+**Bulletin board**: The workspace-scoped shared canvas where Bulletins are
+positioned. It is not a separate persisted entity.
+_Avoid_: Board, corkboard, whiteboard, kanban
 
 **Room**: A durable context in a workspace where people coordinate work and
 where related runs and their results remain visible.

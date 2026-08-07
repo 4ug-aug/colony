@@ -4,6 +4,8 @@ import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import { AccountSettingsPage } from '#/features/account/account-settings'
 import { IssuesPage } from '#/features/issues/issues-page'
 import type { IssueStatus } from '#/features/issues/types'
+import { BulletinsPage } from '#/features/bulletins/bulletins-page'
+import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
 import { MembersPanel } from '#/features/members/members-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
@@ -24,9 +26,10 @@ import {
   Lock,
   Plus,
   Settings,
+  StickyNote,
   UserRound,
   Wifi,
-  WifiOff
+  WifiOff,
 } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { DashboardView } from './room-sidebar'
@@ -82,6 +85,7 @@ export function Dashboard({
   const [selectedRunId, setSelectedRunId] = useState<string>()
   const [editingMessage, setEditingMessage] = useState<RoomMessage>()
   const composer = useRef<MessageComposerHandle>(null)
+  const bulletinsRef = useRef<BulletinsPageHandle>(null)
   const scrollRef = useRef<HTMLElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
@@ -211,6 +215,7 @@ export function Dashboard({
         }}
         onOpenSchedules={() => setView('schedules')}
         onOpenIssues={() => setView('issues')}
+        onOpenBulletins={() => setView('bulletins')}
         user={user}
       />
       <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
@@ -223,6 +228,8 @@ export function Dashboard({
             <CalendarClock className="size-4 text-muted-foreground" />
           ) : view === 'issues' ? (
             <Cuboid className="size-4 text-muted-foreground" />
+          ) : view === 'bulletins' ? (
+            <StickyNote className="size-4 text-muted-foreground" />
           ) : room?.visibility === 'private' ? (
             <Lock className="size-4 text-muted-foreground" />
           ) : (
@@ -237,7 +244,9 @@ export function Dashboard({
                   ? 'Schedules'
                   : view === 'issues'
                     ? 'Issues'
-                    : (room?.name ?? 'Rooms')}
+                    : view === 'bulletins'
+                      ? 'Bulletin board'
+                      : (room?.name ?? 'Rooms')}
           </p>
           {view === 'room' && room?.visibility === 'private' && (
             <MembersPanel
@@ -255,6 +264,17 @@ export function Dashboard({
             >
               <Plus data-icon="inline-start" />
               New issue
+            </Button>
+          )}
+          {view === 'bulletins' && (
+            <Button
+              type="button"
+              size="sm"
+              className="ml-auto"
+              onClick={() => bulletinsRef.current?.addBulletin()}
+            >
+              <Plus data-icon="inline-start" />
+              Add bulletin
             </Button>
           )}
           {view === 'room' && (
@@ -284,12 +304,11 @@ export function Dashboard({
             createOpen={issueCreate.open}
             createStatus={issueCreate.status}
             onCreateOpenChange={(open: boolean, status?: IssueStatus) =>
-              setIssueCreate(
-                open ? { open: true, status } : { open: false },
-              )
+              setIssueCreate(open ? { open: true, status } : { open: false })
             }
           />
         )}
+        {view === 'bulletins' && <BulletinsPage ref={bulletinsRef} />}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
             <div className="relative flex min-w-0 flex-1 flex-col">

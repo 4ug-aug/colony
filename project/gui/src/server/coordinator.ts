@@ -46,6 +46,11 @@ import {
   type IssueRunStep,
   type IssueStore,
 } from './issue-store'
+import {
+  createSqliteBulletinStore,
+  type Bulletin,
+  type BulletinStore,
+} from './bulletin-store'
 import { createIssueRunner, type IssueRunner } from './issue-runner'
 import {
   createScheduleRunner,
@@ -58,6 +63,7 @@ import {
 } from './http/respond'
 import { createIssuesHttp } from './issues-http'
 import { createSchedulesHttp } from './schedules-http'
+import { createBulletinsHttp } from './bulletins-http'
 import { createRoomsHttp } from './rooms-http'
 import { createMembersHttp } from './members-http'
 
@@ -147,6 +153,10 @@ export type WorkspaceServerMessage =
   | { type: 'issue_run.created'; run: IssueRun }
   | { type: 'issue_run.changed'; run: IssueRun }
   | { type: 'issue_run.step'; runId: string; step: IssueRunStep }
+  | { type: 'bulletin.created'; bulletin: Bulletin }
+  | { type: 'bulletin.changed'; bulletin: Bulletin }
+  | { type: 'bulletin.moved'; bulletin: Bulletin }
+  | { type: 'bulletin.deleted'; bulletinId: string }
 export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
 
 export type AgentDefinitionSummary = {
@@ -196,6 +206,7 @@ export function createCoordinator(options: {
   agentReady?: (agentDefinitionId?: string) => boolean
   scheduleStore?: ScheduleStore
   issueStore?: IssueStore
+  bulletinStore?: BulletinStore
   issueNotify?: {
     onCreated: (issue: Issue) => void
     onChanged: (issue: Issue) => void
@@ -501,6 +512,12 @@ export function createCoordinator(options: {
         broadcastWorkspace,
       })
     : undefined
+  const bulletinsHttp = options.bulletinStore
+    ? createBulletinsHttp({
+        bulletinStore: options.bulletinStore,
+        broadcastWorkspace,
+      })
+    : undefined
   const roomsHttp = createRoomsHttp({
     store: options.store,
     messages: options.messages,
@@ -586,6 +603,9 @@ export function createCoordinator(options: {
           ? await schedulesHttp(request, url, user)
           : undefined) ??
         (issuesHttp ? await issuesHttp(request, url) : undefined) ??
+        (bulletinsHttp
+          ? await bulletinsHttp(request, url, user)
+          : undefined) ??
         (await roomsHttp(request, url, user)) ??
         (await membersHttp(request, url, user))
       if (handled) return cors(handled)
@@ -682,6 +702,7 @@ if (import.meta.main) {
   const store = createSqliteRoomStore(sqlite)
   const scheduleStore = createSqliteScheduleStore(sqlite)
   const issueStore = createSqliteIssueStore(sqlite)
+  const bulletinStore = createSqliteBulletinStore(sqlite)
   const issueNotify = {
     onCreated: (_issue: Issue) => {},
     onChanged: (_issue: Issue) => {},
@@ -898,6 +919,7 @@ if (import.meta.main) {
     port: Number(process.env.SWEAT_COORDINATOR_PORT ?? 3001),
     scheduleStore,
     issueStore,
+    bulletinStore,
     issueNotify,
     agentDefinitions: () => {
       const attachments = skills.listAttachments()

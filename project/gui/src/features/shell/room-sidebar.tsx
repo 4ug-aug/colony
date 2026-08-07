@@ -72,6 +72,7 @@ import {
   Hash,
   Lock,
   LogOut,
+  StickyNote,
   ScrollText,
   Settings,
   Trash2,
@@ -100,6 +101,7 @@ export type DashboardView =
   | 'workspace'
   | 'schedules'
   | 'issues'
+  | 'bulletins'
 
 /**
  * A sidebar section that remembers whether it is expanded. Sections stay
@@ -364,6 +366,7 @@ export function RoomSidebar({
   onOpenWorkspace,
   onOpenSchedules,
   onOpenIssues,
+  onOpenBulletins,
   user,
 }: {
   rooms: Room[]
@@ -379,6 +382,7 @@ export function RoomSidebar({
   onOpenWorkspace: () => void
   onOpenSchedules: () => void
   onOpenIssues: () => void
+  onOpenBulletins: () => void
   user: Author
 }) {
   const { data: agents = [] } = useAgentDefinitions()
@@ -436,6 +440,16 @@ export function RoomSidebar({
                 >
                   <Cuboid />
                   <span>Issues</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={view === 'bulletins'}
+                  onClick={onOpenBulletins}
+                  tooltip="Bulletin board"
+                >
+                  <StickyNote />
+                  <span>Bulletin board</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

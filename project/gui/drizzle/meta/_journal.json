@@ -141,6 +141,13 @@
       "when": 1788000000000,
       "tag": "0019_workspace_skills",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0020_bulletins",
+      "breakpoints": true
     }
   ]
 }

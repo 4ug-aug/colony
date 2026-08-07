@@ -21,6 +21,7 @@ import { Toaster } from '#/components/ui/toast'
 import { WindowDragRegion } from '#/features/shell/window-toolbar'
 import { initInviteDeepLinks } from '#/lib/invite-deep-link'
 import { attachIssueWorkspaceSync } from '#/features/issues/issue-workspace-sync'
+import { attachBulletinWorkspaceSync } from '#/features/bulletins/bulletin-workspace-sync'
 import { createAppQueryClient } from '#/lib/query-client'
 
 const rootEl = document.getElementById('root')!
@@ -30,6 +31,7 @@ const queryClient = createAppQueryClient()
 function connectConfiguredServer() {
   initAuthClient()
   attachIssueWorkspaceSync(queryClient)
+  attachBulletinWorkspaceSync(queryClient)
 }
 
 class ErrorBoundary extends Component<
