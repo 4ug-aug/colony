@@ -137,7 +137,7 @@ export const BulletinsPage = forwardRef<BulletinsPageHandle>(
       const boardRect = board.getBoundingClientRect()
       if (boardRect.width <= 0 || boardRect.height <= 0) return
       const cardRect = source.element?.getBoundingClientRect()
-      const cardWidth = cardRect?.width ?? 240
+      const cardWidth = cardRect?.width ?? 384
       const cardHeight = cardRect?.height ?? 48
       const maxX = Math.max(0, 1 - cardWidth / boardRect.width)
       const maxY = Math.max(0, 1 - cardHeight / boardRect.height)

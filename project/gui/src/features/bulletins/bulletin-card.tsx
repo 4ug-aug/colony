@@ -1,9 +1,9 @@
-import { GripVertical, Trash2 } from 'lucide-react'
-import { useDraggable } from '@dnd-kit/react'
 import { Markdown } from '#/components/markdown'
 import { Button } from '#/components/ui/button'
 import { Textarea } from '#/components/ui/textarea'
 import { cn } from '#/lib/utils'
+import { useDraggable } from '@dnd-kit/react'
+import { GripVertical, Trash2 } from 'lucide-react'
 import type { Bulletin } from './types'
 
 const hideScrollbar =
@@ -33,7 +33,7 @@ export function BulletinCard({
     <article
       ref={ref}
       className={cn(
-        'group absolute max-h-80 w-60 overflow-hidden rounded-md border border-border/80 bg-background/95 shadow-sm backdrop-blur-sm',
+        'group absolute max-h-80 w-80 overflow-hidden rounded-md border border-border/80 bg-background/95 shadow-sm backdrop-blur-sm',
         isDragging && 'opacity-90 shadow-md',
         editing && 'ring-2 ring-ring',
       )}
@@ -41,7 +41,6 @@ export function BulletinCard({
         left: `${bulletin.x * 100}%`,
         top: `${bulletin.y * 100}%`,
         zIndex,
-        width: 240,
       }}
     >
       <div
