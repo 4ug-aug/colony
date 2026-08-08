@@ -20,7 +20,11 @@ export const antboyRole: AgentRole = {
     },
     {
       id: "workspace.grill",
-      tools: ["workspace.set_grill_frontier"],
+      tools: [
+        "workspace.set_grill_frontier",
+        "workspace.propose_grill_issues",
+        "workspace.propose_grill_writeup",
+      ],
     },
   ],
 };

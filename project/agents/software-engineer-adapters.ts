@@ -86,6 +86,11 @@ export function createWorkspaceGrillAdapter(options: {
       issues: GrillProposedIssue[],
       now: number,
     ): { issueProposal?: GrillIssueProposal } | undefined;
+    setWriteup(
+      grillId: string,
+      writeup: { title: string; body: string },
+      now: number,
+    ): { writeup?: { title: string; body: string } } | undefined;
   };
 }): WorkspaceAgentAdapter {
   return {
@@ -119,6 +124,16 @@ export function createWorkspaceGrillAdapter(options: {
               if (!grill?.issueProposal)
                 throw new Error(`Grill not found: ${grillId}`);
               return grill.issueProposal;
+            },
+            proposeWriteup(writeup) {
+              const grill = options.port.setWriteup(
+                grillId,
+                writeup,
+                Date.now(),
+              );
+              if (!grill?.writeup)
+                throw new Error(`Grill not found: ${grillId}`);
+              return grill.writeup;
             },
           },
         });

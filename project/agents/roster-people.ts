@@ -91,6 +91,8 @@ export const capabilityPresentation: Record<
     name: "Grill",
     tools: {
       "workspace.set_grill_frontier": "Set grill frontier",
+      "workspace.propose_grill_issues": "Propose grill Issues",
+      "workspace.propose_grill_writeup": "Propose grill Doc writeup",
     },
   },
 };

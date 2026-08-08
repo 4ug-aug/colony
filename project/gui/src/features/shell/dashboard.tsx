@@ -6,6 +6,10 @@ import { IssuesPage } from '#/features/issues/issues-page'
 import type { IssueStatus } from '#/features/issues/types'
 import { BulletinsPage } from '#/features/bulletins/bulletins-page'
 import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
+import {
+  DocsPage,
+  DocSessionHeader,
+} from '#/features/docs/docs-page'
 import { GrillsPage, GrillSessionHeader } from '#/features/grills/grills-page'
 import { MembersPanel } from '#/features/members/members-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
@@ -23,6 +27,7 @@ import {
   ArrowDown,
   CalendarClock,
   Cuboid,
+  FileText,
   Flame,
   Hash,
   Lock,
@@ -85,9 +90,16 @@ export function Dashboard({
   }>({ open: false })
   const [grillStartOpen, setGrillStartOpen] = useState(false)
   const [selectedGrillId, setSelectedGrillId] = useState<string>()
+  const [selectedDocId, setSelectedDocId] = useState<string>()
   const openView = (next: DashboardView) => {
     if (next !== 'grills') setSelectedGrillId(undefined)
+    if (next !== 'docs') setSelectedDocId(undefined)
     setView(next)
+  }
+  const openDoc = (docId: string) => {
+    setSelectedGrillId(undefined)
+    setSelectedDocId(docId)
+    setView('docs')
   }
   const [searchOpen, setSearchOpen] = useState(false)
   const [selectedRunId, setSelectedRunId] = useState<string>()
@@ -224,6 +236,7 @@ export function Dashboard({
         onOpenSchedules={() => openView('schedules')}
         onOpenIssues={() => openView('issues')}
         onOpenBulletins={() => openView('bulletins')}
+        onOpenDocs={() => openView('docs')}
         onOpenGrills={() => openView('grills')}
         user={user}
       />
@@ -233,6 +246,11 @@ export function Dashboard({
             <GrillSessionHeader
               grillId={selectedGrillId}
               onBack={() => setSelectedGrillId(undefined)}
+            />
+          ) : view === 'docs' && selectedDocId ? (
+            <DocSessionHeader
+              docId={selectedDocId}
+              onBack={() => setSelectedDocId(undefined)}
             />
           ) : (
             <>
@@ -246,6 +264,8 @@ export function Dashboard({
                 <Cuboid className="size-4 text-muted-foreground" />
               ) : view === 'bulletins' ? (
                 <StickyNote className="size-4 text-muted-foreground" />
+              ) : view === 'docs' ? (
+                <FileText className="size-4 text-muted-foreground" />
               ) : view === 'grills' ? (
                 <Flame className="size-4 text-muted-foreground" />
               ) : room?.visibility === 'private' ? (
@@ -264,9 +284,11 @@ export function Dashboard({
                         ? 'Issues'
                         : view === 'bulletins'
                           ? 'Bulletin board'
-                          : view === 'grills'
-                            ? 'Grills'
-                            : (room?.name ?? 'Rooms')}
+                          : view === 'docs'
+                            ? 'Docs'
+                            : view === 'grills'
+                              ? 'Grills'
+                              : (room?.name ?? 'Rooms')}
               </p>
               {view === 'room' && room?.visibility === 'private' && (
                 <MembersPanel
@@ -344,6 +366,14 @@ export function Dashboard({
         {view === 'bulletins' && (
           <BulletinsPage ref={bulletinsRef} currentUserId={user.id} />
         )}
+        {view === 'docs' && (
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <DocsPage
+              selectedId={selectedDocId}
+              onSelectedIdChange={setSelectedDocId}
+            />
+          </div>
+        )}
         {view === 'grills' && (
           <div className="min-h-0 flex-1 overflow-hidden">
             <GrillsPage
@@ -351,6 +381,7 @@ export function Dashboard({
               onStartOpenChange={setGrillStartOpen}
               selectedId={selectedGrillId}
               onSelectedIdChange={setSelectedGrillId}
+              onOpenDoc={openDoc}
             />
           </div>
         )}

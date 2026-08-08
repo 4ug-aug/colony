@@ -69,6 +69,7 @@ import {
   CalendarClock,
   ChevronRight,
   Cuboid,
+  FileText,
   Flame,
   Hash,
   Lock,
@@ -104,6 +105,7 @@ export type DashboardView =
   | 'schedules'
   | 'issues'
   | 'bulletins'
+  | 'docs'
   | 'grills'
 
 /**
@@ -370,6 +372,7 @@ export function RoomSidebar({
   onOpenSchedules,
   onOpenIssues,
   onOpenBulletins,
+  onOpenDocs,
   onOpenGrills,
   user,
 }: {
@@ -387,6 +390,7 @@ export function RoomSidebar({
   onOpenSchedules: () => void
   onOpenIssues: () => void
   onOpenBulletins: () => void
+  onOpenDocs: () => void
   onOpenGrills: () => void
   user: Author
 }) {
@@ -455,6 +459,16 @@ export function RoomSidebar({
                 >
                   <StickyNote />
                   <span>Bulletin board</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={view === 'docs'}
+                  onClick={onOpenDocs}
+                  tooltip="Docs"
+                >
+                  <FileText />
+                  <span>Docs</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

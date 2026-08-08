@@ -44,6 +44,7 @@ function harness(opts?: {
   materializeCodeGrill?: Parameters<
     typeof createSqliteGrillStore
   >[1]['materializeCodeGrill']
+  setIssueBranch?: Parameters<typeof createSqliteGrillStore>[1]['setIssueBranch']
 }) {
   const sqlite = new Database(':memory:')
   sqlite.exec('PRAGMA foreign_keys = ON')
@@ -57,6 +58,7 @@ function harness(opts?: {
     ...(opts?.materializeCodeGrill
       ? { materializeCodeGrill: opts.materializeCodeGrill }
       : {}),
+    ...(opts?.setIssueBranch ? { setIssueBranch: opts.setIssueBranch } : {}),
   })
   return { sqlite, store }
 }
@@ -494,5 +496,142 @@ test('successful Code Grill materializes remote branch; abandon publishes nothin
   })
   expect(store.discardGrill('g-code-abandon')).toBe(true)
   expect(published).toHaveLength(1)
+  sqlite.close()
+})
+
+test('Code Grill confirm binds session branch on root Issues only; General does not', async () => {
+  const branches: Array<{ id: string; branch: string }> = []
+  const { store, sqlite } = harness({
+    createIssue: (input) => ({ id: input.id }),
+    setIssueBranch: (id, branch) => {
+      branches.push({ id, branch })
+    },
+    materializeCodeGrill: (input) => ({ branch: input.branch }),
+  })
+
+  store.createGrill({
+    id: 'g-code',
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+  await store.completeGrill(
+    'g-code',
+    { files: [{ path: 'CONTEXT.md', content: '# Grill\n' }] },
+    20,
+  )
+  store.setIssueProposal(
+    'g-code',
+    [
+      { key: 'root', title: 'Initiative' },
+      { key: 'child', title: 'Child work', parentKey: 'root' },
+    ],
+    30,
+  )
+  const confirmed = store.confirmIssueProposal('g-code', 40)
+  expect(confirmed?.grill.sessionBranch).toBe('sweat/grill/g-code')
+  expect(branches).toEqual([
+    { id: confirmed!.issues[0]!.id, branch: 'sweat/grill/g-code' },
+  ])
+  expect(confirmed!.issues[1]!.parentId).toBe(confirmed!.issues[0]!.id)
+
+  branches.length = 0
+  store.createGrill({
+    id: 'g-general',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 50,
+  })
+  store.setIssueProposal(
+    'g-general',
+    [{ key: 'solo', title: 'No branch' }],
+    60,
+  )
+  store.confirmIssueProposal('g-general', 70)
+  expect(branches).toEqual([])
+
+  store.createGrill({
+    id: 'g-code-early',
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 80,
+  })
+  store.setIssueProposal(
+    'g-code-early',
+    [{ key: 'early', title: 'Before materialize' }],
+    90,
+  )
+  store.confirmIssueProposal('g-code-early', 100)
+  expect(branches).toEqual([])
+  sqlite.close()
+})
+
+test('Accounts can dismiss an Issue proposal without minting Issues', () => {
+  const created: string[] = []
+  const { store, sqlite } = harness({
+    createIssue: (input) => {
+      created.push(input.title)
+      return { id: input.id }
+    },
+  })
+  store.createGrill({
+    id: 'g1',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+  store.setIssueProposal('g1', [{ key: 'solo', title: 'Optional work' }], 20)
+  const dismissed = store.dismissIssueProposal('g1', 30)
+  expect(dismissed?.issueProposal?.status).toBe('dismissed')
+  expect(created).toEqual([])
+  expect(() => store.confirmIssueProposal('g1', 40)).toThrow(
+    'Issue proposal was dismissed',
+  )
+  sqlite.close()
+})
+
+test('General Grill can propose a writeup for Account complete', () => {
+  const { store, sqlite } = harness()
+  store.createGrill({
+    id: 'g-writeup',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+  const proposed = store.setWriteup(
+    'g-writeup',
+    { title: 'Decisions', body: '# Done\n' },
+    20,
+  )
+  expect(proposed?.writeup).toEqual({ title: 'Decisions', body: '# Done\n' })
+  expect(() =>
+    store.setWriteup(
+      'g-writeup',
+      { title: 'Nope', body: '' },
+      30,
+    ),
+  ).not.toThrow()
+
+  store.createGrill({
+    id: 'g-code',
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 40,
+  })
+  expect(() =>
+    store.setWriteup('g-code', { title: 'X', body: 'Y' }, 50),
+  ).toThrow('Writeup is only for General Grill')
   sqlite.close()
 })

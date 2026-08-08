@@ -163,7 +163,8 @@ export function createGrillsHttp(deps: {
             .join('\n\n')
           const task = [
             'Accounts submitted this Grill round. Treat these as settled answers.',
-            'Publish the next frontier with workspace.set_grill_frontier (questions only; leave answer drafts empty for Accounts).',
+            'If important open decisions remain, publish the next frontier with workspace.set_grill_frontier (questions only; leave answer drafts empty for Accounts). Ask only what is still blocked — do not pad the round.',
+            'If the design tree is settled: General Grill → workspace.propose_grill_writeup; when an Issue tree is ready → workspace.propose_grill_issues. Prefer wrapping up over inventing more questions.',
             '',
             qa,
           ].join('\n')
@@ -267,6 +268,35 @@ export function createGrillsHttp(deps: {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Failed to confirm proposal'
+        return json({ error: message }, 400)
+      }
+    }
+
+    const dismissRoute = url.pathname.match(
+      /^\/api\/grills\/([^/]+)\/proposal\/dismiss$/,
+    )
+    if (dismissRoute && request.method === 'POST') {
+      const id = dismissRoute[1]!
+      if (!deps.grillStore.getGrillForUser(id, user.id))
+        return json({ error: 'Grill not found' }, 404)
+      try {
+        const grill = deps.grillStore.dismissIssueProposal(id, Date.now())
+        if (!grill)
+          return json({ error: 'No Issue proposal to dismiss' }, 400)
+        if (deps.linkedRuns) {
+          void deps.linkedRuns
+            .followUp(
+              id,
+              JSON.stringify({ type: 'grill.proposal_dismissed' }),
+            )
+            .catch((error) => {
+              console.error('Grill follow-up after dismiss failed', error)
+            })
+        }
+        return json({ grill })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to dismiss proposal'
         return json({ error: message }, 400)
       }
     }

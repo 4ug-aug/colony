@@ -13,6 +13,7 @@ test("workspace.grill applies only when grantContext.grillId is set", () => {
     port: {
       setFrontier: () => undefined,
       setIssueProposal: () => undefined,
+      setWriteup: () => undefined,
     },
   });
   expect(adapter.capability?.applies?.({})).toBe(false);

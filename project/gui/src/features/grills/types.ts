@@ -25,7 +25,7 @@ export type GrillProposedIssue = {
 }
 
 export type GrillIssueProposal = {
-  status: 'proposed' | 'revision_requested' | 'confirmed'
+  status: 'proposed' | 'revision_requested' | 'confirmed' | 'dismissed'
   issues: GrillProposedIssue[]
   revisionNotes?: string
 }
@@ -41,6 +41,7 @@ export type Grill = {
   settledAnswers: SettledRound[]
   initialRequest?: string
   issueProposal?: GrillIssueProposal
+  writeup?: { title: string; body: string }
   docId?: string
   sessionBranch?: string
   createdBy: string

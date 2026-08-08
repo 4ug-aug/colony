@@ -796,6 +796,9 @@ if (import.meta.main) {
         createdBy: input.createdBy,
         createdAt: input.createdAt,
       }),
+    setIssueBranch: (issueId, branch, now) => {
+      issueStore.updateIssue(issueId, { branch }, now)
+    },
     ...(github
       ? {
           materializeCodeGrill: async (input) =>
@@ -982,6 +985,8 @@ if (import.meta.main) {
               grillStore.setFrontier(grillId, frontier, now),
             setIssueProposal: (grillId, issues, now) =>
               grillStore.setIssueProposal(grillId, issues, now),
+            setWriteup: (grillId, writeup, now) =>
+              grillStore.setWriteup(grillId, writeup, now),
           },
         }),
         ...(linearAccessToken

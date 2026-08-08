@@ -4,6 +4,7 @@ import { Toaster } from '#/components/ui/toast'
 import { TooltipProvider } from '#/components/ui/tooltip'
 import { SignIn } from '#/features/auth/sign-in'
 import { attachBulletinWorkspaceSync } from '#/features/bulletins/bulletin-workspace-sync'
+import { attachDocWorkspaceSync } from '#/features/docs/doc-workspace-sync'
 import { attachIssueWorkspaceSync } from '#/features/issues/issue-workspace-sync'
 import { EntryShell } from '#/features/setup/entry-shell'
 import { ServerSelection } from '#/features/setup/server-selection'
@@ -32,6 +33,7 @@ function connectConfiguredServer() {
   initAuthClient()
   attachIssueWorkspaceSync(queryClient)
   attachBulletinWorkspaceSync(queryClient)
+  attachDocWorkspaceSync(queryClient)
 }
 
 class ErrorBoundary extends Component<

@@ -1,5 +1,10 @@
 import { Markdown } from '#/components/markdown'
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from '#/components/ui/alert'
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -37,17 +42,24 @@ import {
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import { useDoc } from '#/features/docs/use-docs'
 import type { RunState } from '#/features/runs/run-helpers'
 import { stepLabel } from '#/features/runs/step-label'
 import { cn } from '#/lib/utils'
 import {
   ArrowLeft,
+  CheckCircle2,
   ChevronDown,
   Flame,
   MousePointerClick,
   Trash2,
 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { ProposalPanel } from './grill-proposal-panel'
+import {
+  grillAwaitingWrapUpReview,
+  grillIsComplete,
+} from './grill-status'
 import type {
   Grill,
   GrillKind,
@@ -58,12 +70,11 @@ import type {
   SettledRound,
 } from './types'
 import {
-  useConfirmGrillProposal,
+  useCompleteGrill,
   useCreateGrill,
   useDiscardGrill,
   useGrill,
   useGrills,
-  usePushBackGrillProposal,
   useSubmitGrillRound,
   useUpdateGrillDrafts,
 } from './use-grills'
@@ -258,6 +269,20 @@ function GrillListActivity({ grill }: { grill: GrillListItem }) {
     )
   }
 
+  if (grillAwaitingWrapUpReview(grill)) {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <Badge variant="secondary">your turn</Badge>
+      </span>
+    )
+  }
+
+  if (grillIsComplete(grill)) {
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground">complete</span>
+    )
+  }
+
   const state = linkedRun?.state as RunState | undefined
   const failed = state === 'failed' || state === 'cancelled'
   const agentWorking =
@@ -318,13 +343,20 @@ function FrontierPanel({
 
   const questions = grill.frontier.questions
   if (questions.length === 0) {
+    if (grillIsComplete(grill)) return null
+    if (grillAwaitingWrapUpReview(grill)) {
+      return (
+        <div className="space-y-2 rounded-lg border border-dashed p-6">
+          <p className="text-sm text-muted-foreground">
+            No open frontier — review the wrap-up on the right.
+          </p>
+        </div>
+      )
+    }
     const runState = linkedRun?.state
     const failed = runState === 'failed' || runState === 'cancelled'
     const working =
-      !failed &&
-      (runState === undefined ||
-        runState === 'preparing' ||
-        runState === 'running')
+      !failed && (runState === 'preparing' || runState === 'running')
     const activity = latestStep
       ? grillStepLabel(latestStep)
       : runState === 'preparing'
@@ -346,7 +378,9 @@ function FrontierPanel({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            The grilling agent finished without publishing a frontier.
+            {failed
+              ? 'The grilling agent finished without publishing a frontier.'
+              : 'No open frontier right now.'}
           </p>
         )}
         {failed && (
@@ -466,89 +500,81 @@ function FrontierPanel({
   )
 }
 
-function ProposalPanel({ grill }: { grill: Grill }) {
-  const proposal = grill.issueProposal
-  const pushBack = usePushBackGrillProposal(grill.id)
-  const confirm = useConfirmGrillProposal(grill.id)
-  const [notes, setNotes] = useState('')
-  if (!proposal) return null
+function WriteupPanel({
+  grill,
+  onOpenDoc,
+}: {
+  grill: Grill
+  onOpenDoc?: (docId: string) => void
+}) {
+  const writeup = grill.writeup
+  const complete = useCompleteGrill(grill.id)
+  const { data: doc, isPending: docPending } = useDoc(grill.docId)
+
+  if (grill.docId) {
+    return (
+      <div className="space-y-3 rounded-lg border p-4">
+        <h3 className="text-sm font-semibold">Doc saved</h3>
+        {docPending && !doc ? (
+          <p className="text-sm text-muted-foreground">Loading Doc…</p>
+        ) : doc ? (
+          <>
+            <p className="text-base font-medium">
+              {doc.title.trim() || 'Untitled Doc'}
+            </p>
+            <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
+              <Markdown>{doc.body}</Markdown>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            This General Grill writeup is saved as a workspace Doc.
+          </p>
+        )}
+        {onOpenDoc ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenDoc(grill.docId!)}
+          >
+            Open in Docs
+          </Button>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (!writeup) return null
 
   return (
     <div className="space-y-3 rounded-lg border p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">Issue proposal</h3>
-        <span className="text-xs text-muted-foreground">{proposal.status}</span>
+      <h3 className="text-sm font-semibold">Doc writeup</h3>
+      <p className="text-base font-medium">{writeup.title}</p>
+      <div className="max-h-[min(28rem,50vh)] overflow-auto rounded-md border bg-muted/20 px-3 py-2 text-sm">
+        <Markdown>{writeup.body}</Markdown>
       </div>
-      {proposal.revisionNotes && (
-        <p className="text-xs text-muted-foreground">
-          Revision notes: {proposal.revisionNotes}
-        </p>
-      )}
-      <ul className="space-y-2">
-        {proposal.issues.map((issue) => (
-          <li key={issue.key} className="rounded-md bg-muted/40 px-3 py-2 text-sm">
-            <p className="font-medium">{issue.title}</p>
-            {issue.description && (
-              <p className="text-muted-foreground">{issue.description}</p>
-            )}
-            {issue.parentKey && (
-              <p className="text-xs text-muted-foreground">
-                child of {issue.parentKey}
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
-      {proposal.status !== 'confirmed' && (
-        <div className="space-y-2">
-          <Textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            placeholder="Revision notes for push-back"
-            rows={2}
-          />
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pushBack.isPending || !notes.trim()}
-              onClick={() => {
-                void pushBack
-                  .mutateAsync(notes.trim())
-                  .then(() => setNotes(''))
-                  .catch((reason) => {
-                    toast.add({
-                      title:
-                        reason instanceof Error
-                          ? reason.message
-                          : 'Unable to push back',
-                      type: 'error',
-                    })
-                  })
-              }}
-            >
-              Push back
-            </Button>
-            <Button
-              type="button"
-              disabled={confirm.isPending}
-              onClick={() => {
-                void confirm.mutateAsync().catch((reason) => {
-                  toast.add({
-                    title:
-                      reason instanceof Error
-                        ? reason.message
-                        : 'Unable to confirm',
-                    type: 'error',
-                  })
-                })
-              }}
-            >
-              Confirm Issues
-            </Button>
-          </div>
-        </div>
-      )}
+      <Button
+        type="button"
+        disabled={complete.isPending || !writeup.title.trim()}
+        onClick={() => {
+          void complete
+            .mutateAsync({
+              title: writeup.title.trim(),
+              body: writeup.body,
+            })
+            .catch((reason) => {
+              toast.add({
+                title:
+                  reason instanceof Error
+                    ? reason.message
+                    : 'Unable to complete Grill',
+                type: 'error',
+              })
+            })
+        }}
+      >
+        {complete.isPending ? 'Saving Doc…' : 'Complete & save Doc'}
+      </Button>
     </div>
   )
 }
@@ -644,15 +670,17 @@ function SettledRoundsList({ rounds }: { rounds: SettledRound[] }) {
   )
 }
 
-function GrillSession({ grillId }: { grillId: string }) {
+function GrillSession({
+  grillId,
+  onOpenDoc,
+}: {
+  grillId: string
+  onOpenDoc?: (docId: string) => void
+}) {
   const { data, isPending, isError, error } = useGrill(grillId)
   const grill = data?.grill
   const linkedRun = data?.linkedRun
   const latestStep = data?.latestStep
-  const { data: agents = [] } = useAgentDefinitions()
-  const agentName =
-    agents.find((agent) => agent.id === grill?.agentDefinitionId)?.name ??
-    grill?.agentDefinitionId
 
   if (isPending) {
     return (
@@ -671,28 +699,51 @@ function GrillSession({ grillId }: { grillId: string }) {
     )
   }
 
+  const complete = grillIsComplete(grill)
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="grid flex-1 gap-6 overflow-auto p-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold">Frontier</h2>
-          <FrontierPanel
-            grill={grill}
-            linkedRun={linkedRun}
-            latestStep={latestStep}
-          />
-        </section>
-        <div className="space-y-6">
+      <div
+        className={cn(
+          'flex-1 gap-6 overflow-auto p-4',
+          complete
+            ? 'flex flex-col'
+            : 'grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]',
+        )}
+      >
+        {complete ? (
+          <Alert>
+            <CheckCircle2 />
+            <AlertTitle>Complete</AlertTitle>
+            <AlertDescription>
+              This Grill is finished. Wrap-up artifacts and settled rounds are
+              below.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <section className="space-y-3">
+            <FrontierPanel
+              grill={grill}
+              linkedRun={linkedRun}
+              latestStep={latestStep}
+            />
+          </section>
+        )}
+        <div className={cn('space-y-6', complete && 'min-w-0')}>
           <section className="space-y-3">
             <h2 className="text-sm font-semibold">Wrap-up</h2>
-            {grill.issueProposal ? (
-              <ProposalPanel grill={grill} />
-            ) : (
+            {grill.kind === 'general' && (grill.writeup || grill.docId) ? (
+              <WriteupPanel grill={grill} onOpenDoc={onOpenDoc} />
+            ) : null}
+            {grill.issueProposal ? <ProposalPanel grill={grill} /> : null}
+            {!grill.issueProposal &&
+            !(grill.kind === 'general' && (grill.writeup || grill.docId)) ? (
               <p className="text-sm text-muted-foreground">
-                When the agent proposes an Issue tree, confirm or push it back
-                here.
+                {grill.kind === 'general'
+                  ? 'When the design is settled, the agent proposes a Doc writeup here (and optionally an Issue tree).'
+                  : 'When the agent proposes an Issue tree, confirm or push it back here.'}
               </p>
-            )}
+            ) : null}
           </section>
           {grill.settledAnswers.length > 0 ? (
             <SettledRoundsList rounds={grill.settledAnswers} />
@@ -803,11 +854,13 @@ export function GrillsPage({
   onStartOpenChange,
   selectedId,
   onSelectedIdChange,
+  onOpenDoc,
 }: {
   startOpen?: boolean
   onStartOpenChange?: (open: boolean) => void
   selectedId?: string
   onSelectedIdChange?: (id: string | undefined) => void
+  onOpenDoc?: (docId: string) => void
 }) {
   const { data: grills = [], isPending, isError, error } = useGrills()
   const [internalSelectedId, setInternalSelectedId] = useState<string>()
@@ -824,7 +877,7 @@ export function GrillsPage({
     : setInternalStartOpen
 
   if (activeId) {
-    return <GrillSession grillId={activeId} />
+    return <GrillSession grillId={activeId} onOpenDoc={onOpenDoc} />
   }
 
   if (isPending) {
@@ -857,7 +910,7 @@ export function GrillsPage({
             </div>
           </div>
         ) : (
-          <ul className="mx-auto grid max-w-2xl gap-2">
+          <ul className="mx-auto grid max-w-4xl gap-2">
             {grills.map((grill) => (
               <li key={grill.id}>
                 <button

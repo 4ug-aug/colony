@@ -32,9 +32,15 @@ export type GrillProposedIssue = {
 }
 
 export type GrillIssueProposal = {
-  status: 'proposed' | 'revision_requested' | 'confirmed'
+  status: 'proposed' | 'revision_requested' | 'confirmed' | 'dismissed'
   issues: GrillProposedIssue[]
   revisionNotes?: string
+}
+
+/** Proposed lasting Doc writeup for a General Grill (Accounts complete to persist). */
+export type GrillWriteupProposal = {
+  title: string
+  body: string
 }
 
 export type GrillCreatedIssue = {
@@ -55,6 +61,7 @@ export type Grill = {
   settledAnswers: SettledRound[]
   initialRequest?: string
   issueProposal?: GrillIssueProposal
+  writeup?: GrillWriteupProposal
   docId?: string
   sessionBranch?: string
   draftArtifacts?: unknown
@@ -109,6 +116,7 @@ export type GrillStoreDeps = {
     branch: string
     files: GrillMaterializeFile[]
   }) => Promise<{ branch: string }> | { branch: string }
+  setIssueBranch?: (issueId: string, branch: string, now: number) => void
 }
 
 export interface GrillStore {
@@ -136,6 +144,11 @@ export interface GrillStore {
     issues: GrillProposedIssue[],
     now: number,
   ): Grill | undefined
+  setWriteup(
+    grillId: string,
+    writeup: GrillWriteupProposal,
+    now: number,
+  ): Grill | undefined
   pushBackIssueProposal(
     grillId: string,
     revisionNotes: string,
@@ -145,6 +158,7 @@ export interface GrillStore {
     grillId: string,
     now: number,
   ): { grill: Grill; issues: GrillCreatedIssue[] } | undefined
+  dismissIssueProposal(grillId: string, now: number): Grill | undefined
   completeGrill(
     grillId: string,
     artifact: GrillWriteup | { files: GrillMaterializeFile[] },
@@ -196,6 +210,7 @@ const parseDraftArtifacts = (
   raw: string | null,
 ): {
   issueProposal?: GrillIssueProposal
+  writeup?: GrillWriteupProposal
   initialRequest?: string
   docId?: string
   sessionBranch?: string
@@ -217,6 +232,18 @@ const parseDraftArtifacts = (
       !Array.isArray(record.issueProposal)
         ? (record.issueProposal as GrillIssueProposal)
         : undefined
+    const writeupRaw = record.writeup
+    const writeup =
+      writeupRaw &&
+      typeof writeupRaw === 'object' &&
+      !Array.isArray(writeupRaw) &&
+      typeof (writeupRaw as { title?: unknown }).title === 'string' &&
+      typeof (writeupRaw as { body?: unknown }).body === 'string'
+        ? {
+            title: (writeupRaw as { title: string }).title,
+            body: (writeupRaw as { body: string }).body,
+          }
+        : undefined
     const docId =
       typeof record.docId === 'string' && record.docId.trim()
         ? record.docId.trim()
@@ -227,11 +254,13 @@ const parseDraftArtifacts = (
         : undefined
     const rest = { ...record }
     delete rest.issueProposal
+    delete rest.writeup
     delete rest.initialRequest
     delete rest.docId
     delete rest.sessionBranch
     return {
       ...(issueProposal ? { issueProposal } : {}),
+      ...(writeup ? { writeup } : {}),
       ...(initialRequest ? { initialRequest } : {}),
       ...(docId ? { docId } : {}),
       ...(sessionBranch ? { sessionBranch } : {}),
@@ -248,10 +277,12 @@ const encodeDraftArtifacts = (
   initialRequest?: string,
   docId?: string,
   sessionBranch?: string,
+  writeup?: GrillWriteupProposal,
 ): string | null => {
   const envelope: Record<string, unknown> = {}
   if (initialRequest) envelope.initialRequest = initialRequest
   if (issueProposal) envelope.issueProposal = issueProposal
+  if (writeup) envelope.writeup = writeup
   if (docId) envelope.docId = docId
   if (sessionBranch) envelope.sessionBranch = sessionBranch
   if (
@@ -312,6 +343,7 @@ const mapGrill = (row: GrillRow): Grill => {
     ...(artifacts.issueProposal
       ? { issueProposal: artifacts.issueProposal }
       : {}),
+    ...(artifacts.writeup ? { writeup: artifacts.writeup } : {}),
     ...(artifacts.docId ? { docId: artifacts.docId } : {}),
     ...(artifacts.sessionBranch
       ? { sessionBranch: artifacts.sessionBranch }
@@ -544,6 +576,34 @@ export function createSqliteGrillStore(
             current.initialRequest,
             current.docId,
             current.sessionBranch,
+            current.writeup,
+          ),
+          now,
+          grillId,
+        )
+      return selectGrill(sqlite, grillId)
+    },
+    setWriteup: (grillId, writeup, now) => {
+      const current = selectGrill(sqlite, grillId)
+      if (!current) return undefined
+      if (current.kind !== 'general')
+        throw new Error('Writeup is only for General Grill')
+      if (current.docId) throw new Error('Grill already completed')
+      const title = writeup.title.trim()
+      if (!title) throw new Error('Writeup title is required')
+      const next: GrillWriteupProposal = { title, body: writeup.body }
+      sqlite
+        .prepare(
+          `UPDATE grill SET draft_artifacts = ?, updated_at = ? WHERE id = ?`,
+        )
+        .run(
+          encodeDraftArtifacts(
+            current.issueProposal,
+            current.draftArtifacts,
+            current.initialRequest,
+            current.docId,
+            current.sessionBranch,
+            next,
           ),
           now,
           grillId,
@@ -555,6 +615,8 @@ export function createSqliteGrillStore(
       if (!current?.issueProposal) return undefined
       if (current.issueProposal.status === 'confirmed')
         throw new Error('Issue proposal already confirmed')
+      if (current.issueProposal.status === 'dismissed')
+        throw new Error('Issue proposal was dismissed')
       const notes = revisionNotes.trim()
       if (!notes) throw new Error('Revision notes required')
       const proposal: GrillIssueProposal = {
@@ -573,6 +635,7 @@ export function createSqliteGrillStore(
             current.initialRequest,
             current.docId,
             current.sessionBranch,
+            current.writeup,
           ),
           now,
           grillId,
@@ -584,6 +647,8 @@ export function createSqliteGrillStore(
       if (!current?.issueProposal) return undefined
       if (current.issueProposal.status === 'confirmed')
         throw new Error('Issue proposal already confirmed')
+      if (current.issueProposal.status === 'dismissed')
+        throw new Error('Issue proposal was dismissed')
       if (!deps.createIssue)
         throw new Error('Issue creation is unavailable')
       const proposed = current.issueProposal.issues
@@ -618,6 +683,16 @@ export function createSqliteGrillStore(
         }
         if (!progressed) throw new Error('Cyclic Issue proposal parent')
       }
+      if (
+        current.kind === 'code' &&
+        current.sessionBranch &&
+        deps.setIssueBranch
+      ) {
+        for (const issue of created) {
+          if (issue.parentId) continue
+          deps.setIssueBranch(issue.id, current.sessionBranch, now)
+        }
+      }
       const proposal: GrillIssueProposal = {
         status: 'confirmed',
         issues: proposed,
@@ -633,6 +708,7 @@ export function createSqliteGrillStore(
             current.initialRequest,
             current.docId,
             current.sessionBranch,
+            current.writeup,
           ),
           now,
           grillId,
@@ -640,6 +716,35 @@ export function createSqliteGrillStore(
       const grill = selectGrill(sqlite, grillId)
       if (!grill) return undefined
       return { grill, issues: created }
+    },
+    dismissIssueProposal: (grillId, now) => {
+      const current = selectGrill(sqlite, grillId)
+      if (!current?.issueProposal) return undefined
+      if (current.issueProposal.status === 'confirmed')
+        throw new Error('Issue proposal already confirmed')
+      if (current.issueProposal.status === 'dismissed')
+        return current
+      const proposal: GrillIssueProposal = {
+        status: 'dismissed',
+        issues: current.issueProposal.issues,
+      }
+      sqlite
+        .prepare(
+          `UPDATE grill SET draft_artifacts = ?, updated_at = ? WHERE id = ?`,
+        )
+        .run(
+          encodeDraftArtifacts(
+            proposal,
+            current.draftArtifacts,
+            current.initialRequest,
+            current.docId,
+            current.sessionBranch,
+            current.writeup,
+          ),
+          now,
+          grillId,
+        )
+      return selectGrill(sqlite, grillId)
     },
     completeGrill: async (grillId, artifact, now) => {
       const current = selectGrill(sqlite, grillId)
@@ -673,6 +778,7 @@ export function createSqliteGrillStore(
               current.initialRequest,
               docId,
               current.sessionBranch,
+              current.writeup,
             ),
             now,
             grillId,
@@ -711,6 +817,7 @@ export function createSqliteGrillStore(
             current.initialRequest,
             current.docId,
             published.branch,
+            current.writeup,
           ),
           now,
           grillId,

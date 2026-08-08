@@ -19,9 +19,14 @@ export type GrillProposedIssue = {
 };
 
 export type GrillIssueProposal = {
-  status: "proposed" | "revision_requested" | "confirmed";
+  status: "proposed" | "revision_requested" | "confirmed" | "dismissed";
   issues: GrillProposedIssue[];
   revisionNotes?: string;
+};
+
+export type GrillWriteupProposal = {
+  title: string;
+  body: string;
 };
 
 export interface WorkspaceGrillPort {
@@ -30,6 +35,7 @@ export interface WorkspaceGrillPort {
     drafts?: Record<string, string>,
   ): GrillFrontier;
   proposeIssues(issues: GrillProposedIssue[]): GrillIssueProposal;
+  proposeWriteup(writeup: GrillWriteupProposal): GrillWriteupProposal;
 }
 
 const textResult = (value: unknown) => ({
@@ -101,6 +107,15 @@ const asProposedIssues = (
   return issues;
 };
 
+const asWriteup = (value: unknown): GrillWriteupProposal | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
+  const { title, body } = value as Record<string, unknown>;
+  if (typeof title !== "string" || !title.trim()) return undefined;
+  if (typeof body !== "string") return undefined;
+  return { title: title.trim(), body };
+};
+
 export function createWorkspaceGrillMcpUpstream(options: {
   port: WorkspaceGrillPort;
 }): McpUpstream {
@@ -110,7 +125,7 @@ export function createWorkspaceGrillMcpUpstream(options: {
         {
           name: "workspace.set_grill_frontier",
           description:
-            "Replace the current Grill frontier: structured questions for this round. Put framing in each question prompt. Put the suggested answer in recommendation (Accounts can one-click accept it). Leave drafts empty — Accounts fill those in the UI.",
+            "Replace the current Grill frontier: structured questions for this round. Put framing in each question prompt. Put the suggested answer in recommendation (Accounts can one-click accept it). Leave drafts empty — Accounts fill those in the UI. Only ask questions that are still open; when nothing important remains, wrap up instead of inventing more.",
           inputSchema: {
             type: "object",
             properties: {
@@ -145,7 +160,7 @@ export function createWorkspaceGrillMcpUpstream(options: {
         {
           name: "workspace.propose_grill_issues",
           description:
-            "Publish or revise the Grill wrap-up Issue tree proposal (title, description, parent/child via parentKey). Accounts must confirm before Issues are created; do not invent owners.",
+            "Wrap-up: publish or revise the Grill Issue tree proposal (title, description, parent/child via parentKey). Use when the design is settled and work should become Issues. Accounts must confirm before Issues are created; do not invent owners.",
           inputSchema: {
             type: "object",
             properties: {
@@ -164,6 +179,22 @@ export function createWorkspaceGrillMcpUpstream(options: {
               },
             },
             required: ["issues"],
+          },
+        },
+        {
+          name: "workspace.propose_grill_writeup",
+          description:
+            "Wrap-up for General Grill: publish the lasting freeform markdown Doc writeup (title + body). Accounts complete the Grill to persist it as a workspace Doc. Prefer this over more frontier questions once decisions are settled.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              body: {
+                type: "string",
+                description: "Freeform markdown writeup",
+              },
+            },
+            required: ["title", "body"],
           },
         },
       ];
@@ -186,6 +217,11 @@ export function createWorkspaceGrillMcpUpstream(options: {
         const issues = asProposedIssues(args.issues);
         if (!issues) throw new Error("Invalid issues");
         return textResult(options.port.proposeIssues(issues));
+      }
+      if (name === "workspace.propose_grill_writeup") {
+        const writeup = asWriteup(args);
+        if (!writeup) throw new Error("Invalid writeup");
+        return textResult(options.port.proposeWriteup(writeup));
       }
       throw new Error(`Unknown workspace grill tool: ${name}`);
     },

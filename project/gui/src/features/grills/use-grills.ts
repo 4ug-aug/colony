@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
+import { docsQueryKey } from '#/features/docs/use-docs'
 import type { RunState } from '#/features/runs/run-helpers'
+import {
+  grillAwaitingWrapUpReview,
+  grillIsComplete,
+} from './grill-status'
 import type {
   Grill,
   GrillCreatedIssue,
@@ -122,6 +127,7 @@ function grillListHasActiveRun(grills: GrillListItem[] | undefined) {
   return (
     grills?.some((grill) => {
       if (grill.frontier.questions.length > 0) return false
+      if (grillAwaitingWrapUpReview(grill) || grillIsComplete(grill)) return false
       const state = grill.linkedRun?.state as RunState | undefined
       return state === 'preparing' || state === 'running'
     }) ?? false
@@ -153,16 +159,23 @@ export function useGrill(id: string | undefined) {
       if (!data) return false
       // Open frontier = Accounts' turn; poll slower.
       if (data.grill.frontier.questions.length > 0) return 4_000
+      if (
+        grillAwaitingWrapUpReview(data.grill) ||
+        grillIsComplete(data.grill)
+      ) {
+        return 4_000
+      }
       const state = data.linkedRun?.state
       if (state === 'failed' || state === 'cancelled') return 4_000
-      // Empty frontier: agent should publish next round.
-      return 1_000
+      if (state === 'preparing' || state === 'running') return 1_000
+      // Empty frontier with no active run: idle.
+      return 4_000
     },
   })
 }
 
 const grillStartGuidance =
-  'Use workspace.set_grill_frontier to publish the first round of structured questions for Accounts to answer together. Do not wait for chat replies — the frontier cards are the authoritative surface.'
+  'Use workspace.set_grill_frontier for the first round of structured questions (Accounts answer on frontier cards, not chat). When the design is settled, wrap up: General Grill → workspace.propose_grill_writeup; Issue breakdown → workspace.propose_grill_issues. Do not keep asking once nothing important remains open.'
 
 export function useCreateGrill() {
   const queryClient = useQueryClient()
@@ -302,6 +315,48 @@ export function useConfirmGrillProposal(grillId: string) {
     onSuccess: ({ grill }) => {
       upsertGrillCache(queryClient, grill)
       void queryClient.invalidateQueries({ queryKey: ['issues'] })
+    },
+  })
+}
+
+export function useDismissGrillProposal(grillId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (): Promise<Grill> => {
+      const data = await apiJsonBody<{ grill?: Grill }>(
+        `/api/grills/${encodeURIComponent(grillId)}/proposal/dismiss`,
+        'POST',
+        undefined,
+        'Unable to dismiss proposal',
+      )
+      if (!data.grill) throw new Error('Unable to dismiss proposal')
+      return data.grill
+    },
+    onSuccess: (grill) => {
+      upsertGrillCache(queryClient, grill)
+    },
+  })
+}
+
+export function useCompleteGrill(grillId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: {
+      title: string
+      body: string
+    }): Promise<Grill> => {
+      const data = await apiJsonBody<{ grill?: Grill }>(
+        `/api/grills/${encodeURIComponent(grillId)}/complete`,
+        'POST',
+        input,
+        'Unable to complete Grill',
+      )
+      if (!data.grill) throw new Error('Unable to complete Grill')
+      return data.grill
+    },
+    onSuccess: (grill) => {
+      upsertGrillCache(queryClient, grill)
+      void queryClient.invalidateQueries({ queryKey: docsQueryKey })
     },
   })
 }
