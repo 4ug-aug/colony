@@ -303,3 +303,59 @@ test('GET /api/grills includes linked-run activity when present', async () => {
   })
   sqlite.close()
 })
+
+test('POST /run appends the Grill turn contract so questions must use tools', async () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec('PRAGMA foreign_keys = ON')
+  sqlite.exec(schema)
+  const grillStore = createSqliteGrillStore(sqlite, {
+    hasGuidanceSkill: () => true,
+    defaultRepository: 'acme/sweat',
+    defaultBaseRef: 'main',
+  })
+  const starts: Array<{ task: string }> = []
+  const handle = createGrillsHttp({
+    grillStore,
+    linkedRuns: {
+      start: (input) => {
+        starts.push({ task: input.task })
+        return {
+          id: 'run-1',
+          task: input.task,
+          state: 'preparing',
+          agentId: input.agentDefinitionId,
+          provider: 'openai',
+          model: 'gpt',
+          createdAt: 1,
+        }
+      },
+      followUp: async () => undefined,
+      dispose: async () => undefined,
+    },
+  })
+  const grill = grillStore.createGrill({
+    id: 'g1',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'Grill the auth redesign',
+    createdBy: 'ada',
+    createdAt: 1,
+  })
+  const url = new URL(`http://localhost/api/grills/${grill.id}/run`)
+  const response = await handle(
+    new Request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ task: 'Grill the auth redesign' }),
+    }),
+    url,
+    ada,
+  )
+  expect(response?.status).toBe(201)
+  expect(starts).toHaveLength(1)
+  expect(starts[0]!.task).toContain('Grill the auth redesign')
+  expect(starts[0]!.task).toContain('HARD RULE — Grill questions are tools, never chat')
+  expect(starts[0]!.task).toContain('workspace.set_grill_frontier')
+  sqlite.close()
+})

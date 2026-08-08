@@ -174,9 +174,6 @@ export function useGrill(id: string | undefined) {
   })
 }
 
-const grillStartGuidance =
-  'Use workspace.set_grill_frontier for the first round of structured questions (Accounts answer on frontier cards, not chat). When the design is settled, wrap up: General Grill → workspace.propose_grill_writeup; Issue breakdown → workspace.propose_grill_issues. Do not keep asking once nothing important remains open.'
-
 export function useCreateGrill() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -206,7 +203,8 @@ export function useCreateGrill() {
         `/api/grills/${encodeURIComponent(data.grill.id)}/run`,
         'POST',
         {
-          task: `${initialRequest}\n\n${grillStartGuidance}`,
+          // Server appends GRILL_TURN_CONTRACT (never ask in chat).
+          task: initialRequest,
         },
         'Unable to start Grill run',
       )

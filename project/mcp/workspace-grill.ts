@@ -38,6 +38,19 @@ export interface WorkspaceGrillPort {
   proposeWriteup(writeup: GrillWriteupProposal): GrillWriteupProposal;
 }
 
+/** Appended to Grill-linked run turns so the agent cannot stall on chat questions. */
+export const GRILL_TURN_CONTRACT = [
+  "HARD RULE — Grill questions are tools, never chat:",
+  "- Never ask Accounts a question in assistant text, narration, or workspace.post_message.",
+  "- Every question for Accounts MUST go through workspace.set_grill_frontier before you end the turn (leave drafts empty; put suggested answers in recommendation).",
+  "- Chat questions are invisible to the UI and stall the Grill.",
+  "- The topic is the task above — do not ask what to grill; publish the first frontier from that topic.",
+  "- When the design tree is settled: General Grill → workspace.propose_grill_writeup; Issue breakdown → workspace.propose_grill_issues. Prefer wrap-up over inventing more questions.",
+].join("\n");
+
+const SET_GRILL_FRONTIER_DESCRIPTION =
+  "REQUIRED for asking Accounts anything. Publishes structured frontier cards Accounts answer in the UI. Never ask questions in chat or assistant text — those are invisible and stall the Grill. Put framing in each question prompt; put your suggested answer in recommendation; leave drafts empty. Only ask what is still open; when nothing important remains, call a wrap-up tool instead.";
+
 const textResult = (value: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
 });
@@ -124,8 +137,7 @@ export function createWorkspaceGrillMcpUpstream(options: {
       return [
         {
           name: "workspace.set_grill_frontier",
-          description:
-            "Replace the current Grill frontier: structured questions for this round. Put framing in each question prompt. Put the suggested answer in recommendation (Accounts can one-click accept it). Leave drafts empty — Accounts fill those in the UI. Only ask questions that are still open; when nothing important remains, wrap up instead of inventing more.",
+          description: SET_GRILL_FRONTIER_DESCRIPTION,
           inputSchema: {
             type: "object",
             properties: {

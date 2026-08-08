@@ -31,4 +31,7 @@ test("the software engineer requests scoped issue and pull request tools", () =>
   expect(softwareEngineerRole.instructions).toContain(
     "Do not use it to deliver your final result",
   );
+  expect(softwareEngineerRole.instructions).toContain(
+    "never ask Accounts questions in assistant text",
+  );
 });

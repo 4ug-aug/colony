@@ -1,3 +1,4 @@
+import { GRILL_TURN_CONTRACT } from '../../../mcp/workspace-grill'
 import type { GrillStore, GrillKind, GrillVisibility } from './grill-store'
 import type { RoomUser } from './room-store'
 import { json, readBody } from './http/respond'
@@ -91,7 +92,7 @@ export function createGrillsHttp(deps: {
       if (!task) return json({ error: 'Invalid task' }, 400)
       const run = deps.linkedRuns.start({
         grillId: id,
-        task,
+        task: `${task}\n\n${GRILL_TURN_CONTRACT}`,
         agentDefinitionId: grill.agentDefinitionId,
       })
       return json({ run }, 201)
@@ -163,8 +164,7 @@ export function createGrillsHttp(deps: {
             .join('\n\n')
           const task = [
             'Accounts submitted this Grill round. Treat these as settled answers.',
-            'If important open decisions remain, publish the next frontier with workspace.set_grill_frontier (questions only; leave answer drafts empty for Accounts). Ask only what is still blocked — do not pad the round.',
-            'If the design tree is settled: General Grill → workspace.propose_grill_writeup; when an Issue tree is ready → workspace.propose_grill_issues. Prefer wrapping up over inventing more questions.',
+            GRILL_TURN_CONTRACT,
             '',
             qa,
           ].join('\n')

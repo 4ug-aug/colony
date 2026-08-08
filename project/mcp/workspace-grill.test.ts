@@ -63,6 +63,10 @@ test("listTools returns frontier, issue proposal, and writeup tools", async () =
     "workspace.propose_grill_issues",
     "workspace.propose_grill_writeup",
   ]);
+  const frontier = tools.find(
+    (tool) => tool.name === "workspace.set_grill_frontier",
+  );
+  expect(frontier?.description).toContain("Never ask questions in chat");
 });
 
 test("set_grill_frontier updates the port and returns the frontier", async () => {
