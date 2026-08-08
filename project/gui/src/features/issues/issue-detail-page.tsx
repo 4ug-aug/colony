@@ -16,6 +16,7 @@ import {
   TabsTrigger,
 } from '#/components/ui/tabs'
 import { toast } from '#/components/ui/toast'
+import { GitHubIcon } from '#/components/github-icon'
 import { terminal } from '#/features/runs/run-helpers'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { Plus } from 'lucide-react'
@@ -443,6 +444,32 @@ export function IssueDetailPage({
             </RailRow>
             <RailRow label="Assignee">
               <OwnerPicker issue={issue} />
+            </RailRow>
+            <RailRow label="Branch">
+              {issue.effectiveBranch ? (
+                <span
+                  className="inline-flex h-8 max-w-full items-center gap-2 rounded-sm px-1.5 text-sm"
+                  title={
+                    issue.branch
+                      ? issue.effectiveBranch
+                      : `${issue.effectiveBranch} (inherited)`
+                  }
+                >
+                  <GitHubIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 truncate font-mono text-xs">
+                    {issue.effectiveBranch}
+                  </span>
+                  {!issue.branch ? (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      inherited
+                    </span>
+                  ) : null}
+                </span>
+              ) : (
+                <span className="px-1.5 pt-1.5 text-sm text-muted-foreground">
+                  —
+                </span>
+              )}
             </RailRow>
           </section>
           <section className="mb-5">

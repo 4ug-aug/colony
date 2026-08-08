@@ -106,7 +106,7 @@ export function ProposalPanel({ grill }: { grill: Grill }) {
     proposal.status === 'proposed' || proposal.status === 'revision_requested'
 
   return (
-    <div className="space-y-3 rounded-lg border p-4">
+    <div className="space-y-3 rounded-lg border p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-both motion-reduce:animate-none">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Issue proposal</h3>
         <span className="text-xs text-muted-foreground">{proposal.status}</span>

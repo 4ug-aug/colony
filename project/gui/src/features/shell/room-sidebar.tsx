@@ -50,6 +50,7 @@ import {
   useSidebar,
 } from '#/components/ui/sidebar'
 import { toast } from '#/components/ui/toast'
+import { GitHubIcon } from '#/components/github-icon'
 import { agentIcon } from '#/features/agents/agent-icon'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { canDeleteRoom } from '#/features/rooms/permissions'
@@ -84,11 +85,11 @@ import { useEffect, useRef, useState } from 'react'
 
 const capabilityIcons: Record<
   string,
-  { icon?: string; invertOnDark?: boolean }
+  { icon?: string; invertOnDark?: boolean; github?: boolean }
 > = {
   'linear.issues': { icon: '/icons/linear.svg' },
   'workspace.issues': { icon: '/app-icon.png' },
-  'github.pull-requests': { icon: '/icons/github.svg', invertOnDark: true },
+  'github.pull-requests': { github: true },
   'asana.tasks': { icon: '/icons/asana.svg' },
   'outline.documents': { icon: '/icons/outline.svg', invertOnDark: true },
   'grafana.observability': { icon: '/icons/grafana.svg' },
@@ -525,7 +526,9 @@ export function RoomSidebar({
                               className="flex flex-col gap-1"
                             >
                               <div className="flex items-center gap-2">
-                                {presentation.icon && (
+                                {presentation.github ? (
+                                  <GitHubIcon className="size-4 shrink-0 text-muted-foreground" />
+                                ) : presentation.icon ? (
                                   <img
                                     src={presentation.icon}
                                     alt=""
@@ -535,7 +538,7 @@ export function RoomSidebar({
                                         'dark:invert',
                                     )}
                                   />
-                                )}
+                                ) : null}
                                 <p className="text-xs font-medium">
                                   {capability.name}
                                 </p>

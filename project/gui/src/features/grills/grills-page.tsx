@@ -396,6 +396,12 @@ function GrillListActivity({ grill }: { grill: GrillListItem }) {
   )
 }
 
+const grillEnterClassName =
+  'animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-both motion-reduce:animate-none'
+
+const grillEnterAlertClassName =
+  'animate-in fade-in-0 slide-in-from-top-1 duration-200 ease-out fill-mode-both motion-reduce:animate-none'
+
 function FrontierPanel({
   grill,
   linkedRun,
@@ -428,7 +434,12 @@ function FrontierPanel({
         ? 'is preparing'
         : 'is working'
     return (
-      <div className="space-y-3 rounded-lg border border-dashed p-6">
+      <div
+        className={cn(
+          'space-y-3 rounded-lg border border-dashed p-6',
+          grillEnterClassName,
+        )}
+      >
         {working ? (
           <div className="space-y-2">
             <BrailleLoader
@@ -467,13 +478,18 @@ function FrontierPanel({
   const missingAnswers = questions.some(
     (question) => !(drafts[question.id] ?? '').trim(),
   )
+  const questionsKey = questions.map((question) => question.id).join(',')
 
   return (
-    <div className="space-y-4">
-      {questions.map((question) => {
+    <div key={questionsKey} className="space-y-4">
+      {questions.map((question, index) => {
         const recommendation = question.recommendation?.trim()
         return (
-          <div key={question.id} className="space-y-2 rounded-lg border p-4">
+          <div
+            key={question.id}
+            className={cn('space-y-2 rounded-lg border p-4', grillEnterClassName)}
+            style={{ animationDelay: `${Math.min(index, 4) * 40}ms` }}
+          >
             <Markdown>{question.prompt}</Markdown>
             {recommendation ? (
               <button
@@ -578,7 +594,7 @@ function WriteupPanel({
 
   if (grill.docId) {
     return (
-      <div className="space-y-3 rounded-lg border p-4">
+      <div className={cn('space-y-3 rounded-lg border p-4', grillEnterClassName)}>
         <h3 className="text-sm font-semibold">Doc saved</h3>
         {docPending && !doc ? (
           <p className="text-sm text-muted-foreground">Loading Doc…</p>
@@ -612,7 +628,7 @@ function WriteupPanel({
   if (!writeup) return null
 
   return (
-    <div className="space-y-3 rounded-lg border p-4">
+    <div className={cn('space-y-3 rounded-lg border p-4', grillEnterClassName)}>
       <h3 className="text-sm font-semibold">Doc writeup</h3>
       <p className="text-base font-medium">{writeup.title}</p>
       <div className="max-h-[min(28rem,50vh)] overflow-auto rounded-md border bg-muted/20 px-3 py-2 text-sm">
@@ -717,7 +733,7 @@ function SettledRoundsList({ rounds }: { rounds: SettledRound[] }) {
   }
 
   return (
-    <section className="space-y-3">
+    <section className={cn('space-y-3', grillEnterClassName)}>
       <h2 className="text-sm font-semibold">Settled rounds</h2>
       <div className="overflow-hidden rounded-lg border">
         <ul className="divide-y">
@@ -774,14 +790,14 @@ function GrillSession({
     <div className="flex h-full flex-col overflow-hidden">
       <div
         className={cn(
-          'flex-1 gap-6 overflow-auto p-4',
+          'grid flex-1 gap-6 overflow-auto p-4 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none',
           focusWrapUp
-            ? 'flex flex-col'
-            : 'grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]',
+            ? 'grid-cols-1'
+            : 'lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]',
         )}
       >
         {complete ? (
-          <Alert>
+          <Alert key="complete" className={grillEnterAlertClassName}>
             <CheckCircle2 />
             <AlertTitle>Complete</AlertTitle>
             <AlertDescription>
@@ -790,7 +806,7 @@ function GrillSession({
             </AlertDescription>
           </Alert>
         ) : awaitingWrapUp ? (
-          <Alert>
+          <Alert key="awaiting-wrap-up" className={grillEnterAlertClassName}>
             <Flame />
             <AlertTitle>No open frontier</AlertTitle>
             <AlertDescription>
@@ -798,7 +814,7 @@ function GrillSession({
             </AlertDescription>
           </Alert>
         ) : (
-          <section className="space-y-3">
+          <section key="frontier" className={cn('space-y-3', grillEnterClassName)}>
             <FrontierPanel
               grill={grill}
               linkedRun={linkedRun}
@@ -806,7 +822,7 @@ function GrillSession({
             />
           </section>
         )}
-        <div className={cn('space-y-6', focusWrapUp && 'min-w-0')}>
+        <div className="min-w-0 space-y-6">
           <section className="space-y-3">
             <h2 className="text-sm font-semibold">Wrap-up</h2>
             {grill.kind === 'general' && (grill.writeup || grill.docId) ? (
@@ -815,7 +831,12 @@ function GrillSession({
             {grill.issueProposal ? <ProposalPanel grill={grill} /> : null}
             {!grill.issueProposal &&
             !(grill.kind === 'general' && (grill.writeup || grill.docId)) ? (
-              <p className="text-sm text-muted-foreground">
+              <p
+                className={cn(
+                  'text-sm text-muted-foreground',
+                  grillEnterClassName,
+                )}
+              >
                 {grill.kind === 'general'
                   ? 'When the design is settled, the agent proposes a Doc writeup here (and optionally an Issue tree).'
                   : 'When the agent proposes an Issue tree, confirm or push it back here.'}
