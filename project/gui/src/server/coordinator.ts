@@ -734,7 +734,7 @@ if (import.meta.main) {
       createWorkspaceGrillAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
-    { createGitHubCliClient },
+    { createGitHubCliClient, publishGitHubBranchFiles },
     { createMcpGatewayHttpServer },
     { createAppleContainerClient },
     { createAppleContainerSandboxProvider },
@@ -770,6 +770,11 @@ if (import.meta.main) {
   const issueStore = createSqliteIssueStore(sqlite)
   const bulletinStore = createSqliteBulletinStore(sqlite)
   const docStore = createSqliteDocStore(sqlite)
+  const linearAccessToken = process.env.LINEAR_MCP_API_KEY
+  const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
+  const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
+  const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
+  const github = githubRepository ? await createGitHubCliClient() : undefined
   const grillStore = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: (agentDefinitionId) =>
       skills.listAttachedSkillIds(agentDefinitionId).length > 0,
@@ -783,6 +788,26 @@ if (import.meta.main) {
         ...(input.parentId ? { parentId: input.parentId } : {}),
         createdAt: input.createdAt,
       }),
+    createDoc: (input) =>
+      docStore.createDoc({
+        id: input.id,
+        title: input.title,
+        body: input.body,
+        createdBy: input.createdBy,
+        createdAt: input.createdAt,
+      }),
+    ...(github
+      ? {
+          materializeCodeGrill: async (input) =>
+            publishGitHubBranchFiles({
+              octokit: github,
+              repository: input.repository,
+              base: input.baseRef,
+              branch: input.branch,
+              files: input.files,
+            }),
+        }
+      : {}),
   })
   const issueNotify = {
     onCreated: (_issue: Issue) => {},
@@ -801,11 +826,6 @@ if (import.meta.main) {
   const attachmentsDirectory = attachmentDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
   )
-  const linearAccessToken = process.env.LINEAR_MCP_API_KEY
-  const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
-  const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
-  const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
-  const github = githubRepository ? await createGitHubCliClient() : undefined
   const capabilityUrl = (u: string): string =>
     u.replace(
       'http://0.0.0.0',

@@ -46,6 +46,10 @@ function harness(
   hasGuidanceSkill = true,
   opts?: {
     createIssue?: Parameters<typeof createSqliteGrillStore>[1]['createIssue']
+    createDoc?: Parameters<typeof createSqliteGrillStore>[1]['createDoc']
+    materializeCodeGrill?: Parameters<
+      typeof createSqliteGrillStore
+    >[1]['materializeCodeGrill']
   },
 ) {
   const sqlite = new Database(':memory:')
@@ -56,6 +60,10 @@ function harness(
     defaultRepository: 'acme/sweat',
     defaultBaseRef: 'main',
     ...(opts?.createIssue ? { createIssue: opts.createIssue } : {}),
+    ...(opts?.createDoc ? { createDoc: opts.createDoc } : {}),
+    ...(opts?.materializeCodeGrill
+      ? { materializeCodeGrill: opts.materializeCodeGrill }
+      : {}),
   })
   const handle = createGrillsHttp({ grillStore })
   const call = async (
@@ -212,6 +220,30 @@ test('Accounts can push back or confirm an Issue proposal', async () => {
     'Leaf B',
   ])
   expect(minted).toEqual(['Parent', 'Leaf A', 'Leaf B'])
+  sqlite.close()
+})
+
+test('POST /api/grills/:id/complete persists General Grill Doc', async () => {
+  const docs: Array<{ title: string; body: string }> = []
+  const { call, sqlite } = harness(true, {
+    createDoc: (doc) => {
+      docs.push({ title: doc.title, body: doc.body })
+      return doc
+    },
+  })
+  const created = await call(ada, 'POST', '/api/grills', {
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+  })
+  const id = created.body.grill.id as string
+  const completed = await call(ada, 'POST', `/api/grills/${id}/complete`, {
+    title: 'Writeup',
+    body: '# Done\n',
+  })
+  expect(completed.status).toBe(200)
+  expect(typeof completed.body.grill.docId).toBe('string')
+  expect(docs).toEqual([{ title: 'Writeup', body: '# Done\n' }])
   sqlite.close()
 })
 

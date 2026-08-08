@@ -41,6 +41,8 @@ export type Grill = {
   settledAnswers: SettledRound[]
   initialRequest?: string
   issueProposal?: GrillIssueProposal
+  docId?: string
+  sessionBranch?: string
   createdBy: string
   createdAt: number
   updatedAt: number

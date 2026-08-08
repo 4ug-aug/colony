@@ -40,6 +40,7 @@ export type RunStartContext<Output> =
   | {
       issueId: string
       agentDefinitionId?: string
+      repositoryBase?: string
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
   | {
@@ -142,7 +143,13 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
             ? { scheduleId: context.scheduleId, agentDefinitionId }
             : 'grillId' in context
               ? { grillId: context.grillId, agentDefinitionId }
-              : { issueId: context.issueId, agentDefinitionId }
+              : {
+                  issueId: context.issueId,
+                  agentDefinitionId,
+                  ...('repositoryBase' in context && context.repositoryBase
+                    ? { repositoryBase: context.repositoryBase }
+                    : {}),
+                }
       executor.startRun({
         task,
         agentDefinitionId,

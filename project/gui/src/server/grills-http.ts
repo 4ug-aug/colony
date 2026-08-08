@@ -271,6 +271,54 @@ export function createGrillsHttp(deps: {
       }
     }
 
+    const completeRoute = url.pathname.match(
+      /^\/api\/grills\/([^/]+)\/complete$/,
+    )
+    if (completeRoute && request.method === 'POST') {
+      const id = completeRoute[1]!
+      const grill = deps.grillStore.getGrillForUser(id, user.id)
+      if (!grill) return json({ error: 'Grill not found' }, 404)
+      const body = await readBody(request)
+      if (!body) return json({ error: 'Invalid complete payload' }, 400)
+      try {
+        const artifact =
+          grill.kind === 'general'
+            ? {
+                title: typeof body.title === 'string' ? body.title : '',
+                body: typeof body.body === 'string' ? body.body : '',
+              }
+            : {
+                files: Array.isArray(body.files)
+                  ? body.files
+                      .filter(
+                        (file): file is { path: string; content: string } =>
+                          !!file &&
+                          typeof file === 'object' &&
+                          typeof (file as { path?: unknown }).path ===
+                            'string' &&
+                          typeof (file as { content?: unknown }).content ===
+                            'string',
+                      )
+                      .map((file) => ({
+                        path: file.path,
+                        content: file.content,
+                      }))
+                  : [],
+              }
+        const completed = await deps.grillStore.completeGrill(
+          id,
+          artifact,
+          Date.now(),
+        )
+        if (!completed) return json({ error: 'Grill not found' }, 404)
+        return json({ grill: completed })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to complete Grill'
+        return json({ error: message }, 400)
+      }
+    }
+
     const route = url.pathname.match(/^\/api\/grills\/([^/]+)$/)
     if (!route) return undefined
     const id = route[1]!

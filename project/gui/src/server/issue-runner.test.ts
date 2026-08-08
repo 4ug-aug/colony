@@ -199,6 +199,34 @@ test('startRun uses agent owner and moves In review to In progress', () => {
   ).toBe('antboy')
 })
 
+test('startRun passes effective Issue branch as repositoryBase', () => {
+  const store = fakeStore(
+    baseIssue({
+      owner: { kind: 'agent', id: 'software-engineer' },
+      effectiveBranch: 'feat/initiative',
+    }),
+  )
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.startRun('issue-1')
+  expect(control.starts[0]?.context).toMatchObject({
+    issueId: 'issue-1',
+    repositoryBase: 'feat/initiative',
+  })
+})
+
+test('startRun omits repositoryBase when Issue has no effective branch', () => {
+  const store = fakeStore(
+    baseIssue({ owner: { kind: 'agent', id: 'software-engineer' } }),
+  )
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.startRun('issue-1')
+  expect(
+    (control.starts[0]?.context as { repositoryBase?: string }).repositoryBase,
+  ).toBeUndefined()
+})
+
 test('startRun requires agentDefinitionId when owner is an account', () => {
   const store = fakeStore(baseIssue({ owner: { kind: 'account', id: 'ada' } }))
   const runner = createIssueRunner({ store, control: fakeControl() })

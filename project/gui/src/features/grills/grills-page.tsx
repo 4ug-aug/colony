@@ -1,6 +1,4 @@
-import { Badge } from '#/components/ui/badge'
-import { BrailleLoader } from '#/components/ui/braille-loader'
-import { Button } from '#/components/ui/button'
+import { Markdown } from '#/components/markdown'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,6 +10,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '#/components/ui/alert-dialog'
+import { Badge } from '#/components/ui/badge'
+import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Button } from '#/components/ui/button'
 import {
   Collapsible,
   CollapsibleContent,
@@ -35,12 +36,17 @@ import {
 } from '#/components/ui/select'
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
-import { Markdown } from '#/components/markdown'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import type { RunState } from '#/features/runs/run-helpers'
 import { stepLabel } from '#/features/runs/step-label'
 import { cn } from '#/lib/utils'
-import { ArrowLeft, ChevronDown, Flame, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronDown,
+  Flame,
+  MousePointerClick,
+  Trash2,
+} from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type {
   Grill,
@@ -291,59 +297,6 @@ function GrillListActivity({ grill }: { grill: GrillListItem }) {
   )
 }
 
-function AgentStatusStrip({
-  agentName,
-  linkedRun,
-  latestStep,
-  awaitingAnswers,
-}: {
-  agentName: string
-  linkedRun?: GrillLinkedRun
-  latestStep?: GrillLatestStep
-  awaitingAnswers: boolean
-}) {
-  if (!linkedRun) return null
-  const state = linkedRun.state as RunState
-  const failed = state === 'failed' || state === 'cancelled'
-  // Warm Grill runs stay "running" while idle; frontier presence means Accounts' turn.
-  if (awaitingAnswers) return null
-  const agentWorking =
-    !failed && (state === 'preparing' || state === 'running')
-
-  if (agentWorking) {
-    const status = latestStep
-      ? grillStepLabel(latestStep)
-      : state === 'preparing'
-        ? 'is preparing'
-        : 'is working'
-    return (
-      <div className="flex min-w-0 items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
-        <BrailleLoader
-          loader="wave-rows"
-          text={`${agentName} ${status}`}
-          className="min-w-0 [&_span:last-child]:truncate"
-        />
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex min-w-0 items-center gap-1.5 border-b px-4 py-2 text-xs text-muted-foreground">
-      <span className="shrink-0 font-medium text-foreground">{agentName}</span>
-      {failed ? (
-        <span
-          className="min-w-0 truncate text-destructive"
-          title={linkedRun.error?.trim() || state}
-        >
-          {linkedRun.error?.trim() || state}
-        </span>
-      ) : (
-        <span>is idle</span>
-      )}
-    </div>
-  )
-}
-
 function FrontierPanel({
   grill,
   linkedRun,
@@ -444,8 +397,13 @@ function FrontierPanel({
                   })
                 }}
               >
-                <p className="text-xs font-medium text-muted-foreground">
-                  Recommendation — click to use
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  Recommendation
+                  <MousePointerClick
+                    className="size-3.5 shrink-0"
+                    aria-hidden
+                  />
+                  <span className="sr-only">Click to use</span>
                 </p>
                 <p className="mt-1 text-sm">{recommendation}</p>
               </button>
@@ -715,12 +673,6 @@ function GrillSession({ grillId }: { grillId: string }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <AgentStatusStrip
-        agentName={agentName ?? 'Agent'}
-        linkedRun={linkedRun}
-        latestStep={latestStep}
-        awaitingAnswers={grill.frontier.questions.length > 0}
-      />
       <div className="grid flex-1 gap-6 overflow-auto p-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">Frontier</h2>

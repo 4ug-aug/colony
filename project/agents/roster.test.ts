@@ -118,6 +118,73 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
   expect(preparedRepository).toBe("acme/widgets");
 });
 
+test("Issue repositoryBase overrides repository checkout revision", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  let checkedOutRevision: string | undefined;
+  const adapter: WorkspaceAgentAdapter = {
+    repository: {
+      input: {
+        type: "repository",
+        provider: "github",
+        repository: "acme/widgets",
+        revision: "main",
+      },
+      source: {
+        provider: "github",
+        async checkout(input, directory) {
+          checkedOutRevision = input.revision;
+          await writeFile(`${directory}/README.md`, "widgets");
+          return { revision: input.revision };
+        },
+      },
+    },
+  };
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    cursorImage: "sweat-agent-cursor:test",
+    image: "sweat-agent:test",
+    adapters: [adapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-branch",
+    }),
+  });
+
+  const id = executor.startRun({
+    task: "Continue initiative",
+    agentDefinitionId: SOFTWARE_ENGINEER_ID,
+    grantContext: { issueId: "issue-1", repositoryBase: "feat/initiative" },
+  });
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+    await Bun.sleep(0);
+  }
+
+  const run = executor.getRun(id)!;
+  expect(run.inputs).toEqual([
+    {
+      type: "repository",
+      provider: "github",
+      repository: "acme/widgets",
+      revision: "feat/initiative",
+    },
+  ]);
+  expect(checkedOutRevision).toBe("feat/initiative");
+});
+
 test("antboy resolves to openai-agents without repository inputs or github tools", async () => {
   const runner: CommandRunner = {
     async run(args, options): Promise<CommandResult> {

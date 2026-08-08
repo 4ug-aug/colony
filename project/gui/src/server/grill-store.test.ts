@@ -40,6 +40,10 @@ const schema = `
 function harness(opts?: {
   hasGuidanceSkill?: (agentId: string) => boolean
   createIssue?: Parameters<typeof createSqliteGrillStore>[1]['createIssue']
+  createDoc?: Parameters<typeof createSqliteGrillStore>[1]['createDoc']
+  materializeCodeGrill?: Parameters<
+    typeof createSqliteGrillStore
+  >[1]['materializeCodeGrill']
 }) {
   const sqlite = new Database(':memory:')
   sqlite.exec('PRAGMA foreign_keys = ON')
@@ -49,6 +53,10 @@ function harness(opts?: {
     defaultRepository: 'acme/sweat',
     defaultBaseRef: 'main',
     ...(opts?.createIssue ? { createIssue: opts.createIssue } : {}),
+    ...(opts?.createDoc ? { createDoc: opts.createDoc } : {}),
+    ...(opts?.materializeCodeGrill
+      ? { materializeCodeGrill: opts.materializeCodeGrill }
+      : {}),
   })
   return { sqlite, store }
 }
@@ -357,5 +365,134 @@ test('Issue proposal can be revised, confirmed into Issues, or discarded without
   )
   expect(store.discardGrill('g2')).toBe(true)
   expect(created).toEqual([])
+  sqlite.close()
+})
+
+test('successful General Grill persists exactly one Doc; abandon creates none', async () => {
+  const docs: Array<{ id: string; title: string; body: string }> = []
+  const { store, sqlite } = harness({
+    createDoc: (doc) => {
+      docs.push(doc)
+      return doc
+    },
+  })
+
+  store.createGrill({
+    id: 'g-doc',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+
+  const completed = await store.completeGrill(
+    'g-doc',
+    {
+      title: 'Collaborative Grill',
+      body: '# Decisions\n\n- Use Docs for General Grill\n',
+    },
+    20,
+  )
+  expect(completed?.id).toBe('g-doc')
+  expect(typeof completed?.docId).toBe('string')
+  const docId = completed!.docId!
+  expect(docs).toEqual([
+    {
+      id: docId,
+      title: 'Collaborative Grill',
+      body: '# Decisions\n\n- Use Docs for General Grill\n',
+      createdBy: 'ada',
+      createdAt: 20,
+    },
+  ])
+  expect(store.getGrill('g-doc')?.docId).toBe(docId)
+
+  store.createGrill({
+    id: 'g-abandon',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 30,
+  })
+  expect(store.discardGrill('g-abandon')).toBe(true)
+  expect(docs).toHaveLength(1)
+  sqlite.close()
+})
+
+test('successful Code Grill materializes remote branch; abandon publishes nothing', async () => {
+  const published: Array<{
+    repository: string
+    baseRef: string
+    branch: string
+    files: { path: string; content: string }[]
+  }> = []
+  const { store, sqlite } = harness({
+    materializeCodeGrill: (input) => {
+      published.push({
+        repository: input.repository,
+        baseRef: input.baseRef,
+        branch: input.branch,
+        files: input.files,
+      })
+      return { branch: input.branch }
+    },
+  })
+
+  store.createGrill({
+    id: 'g-code',
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+
+  const completed = await store.completeGrill(
+    'g-code',
+    {
+      files: [
+        {
+          path: 'CONTEXT.md',
+          content: '# Glossary\n\n**Grill**: design interview\n',
+        },
+        {
+          path: 'docs/adr/0018-issue-branch-binding.md',
+          content: '# Issue branch binding\n',
+        },
+      ],
+    },
+    20,
+  )
+  expect(completed?.sessionBranch).toBe('sweat/grill/g-code')
+  expect(published).toEqual([
+    {
+      repository: 'acme/sweat',
+      baseRef: 'main',
+      branch: 'sweat/grill/g-code',
+      files: [
+        {
+          path: 'CONTEXT.md',
+          content: '# Glossary\n\n**Grill**: design interview\n',
+        },
+        {
+          path: 'docs/adr/0018-issue-branch-binding.md',
+          content: '# Issue branch binding\n',
+        },
+      ],
+    },
+  ])
+
+  store.createGrill({
+    id: 'g-code-abandon',
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 30,
+  })
+  expect(store.discardGrill('g-code-abandon')).toBe(true)
+  expect(published).toHaveLength(1)
   sqlite.close()
 })

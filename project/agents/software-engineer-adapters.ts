@@ -197,7 +197,7 @@ export function createGitHubSoftwareEngineerAdapter(options: {
           capability: {
             id: "github.pull-requests",
             resources: [{ provider: "github", repository: options.repository }],
-            createUpstream: ({ workspace, sandbox }) => {
+            createUpstream: ({ workspace, sandbox, grantContext }) => {
               if (workspace?.git?.repository !== options.repository) {
                 throw new Error(
                   "GitHub capability and prepared repository must match",
@@ -208,13 +208,14 @@ export function createGitHubSoftwareEngineerAdapter(options: {
                   "A sandbox is required to verify a pull request",
                 );
               }
+              const base = grantContext?.repositoryBase ?? options.base;
               return createGitHubMcpUpstream({
                 octokit: options.octokit,
                 repository: options.repository,
                 workspace: workspace.path,
                 branch: workspace.git.branch,
                 baseCommit: workspace.git.baseCommit,
-                base: options.base,
+                base,
                 verify: async () => {
                   const result = await sandbox.exec({
                     command: ["sh", "-lc", options.verifyCommand!],

@@ -123,6 +123,9 @@ export function createIssueRunner(options: {
     return options.control.start(task, {
       issueId: issue.id,
       agentDefinitionId,
+      ...(issue.effectiveBranch
+        ? { repositoryBase: issue.effectiveBranch }
+        : {}),
       onCreate: (summary) => {
         const created = options.store.createRun({
           ...summary,

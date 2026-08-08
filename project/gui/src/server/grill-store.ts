@@ -55,10 +55,22 @@ export type Grill = {
   settledAnswers: SettledRound[]
   initialRequest?: string
   issueProposal?: GrillIssueProposal
+  docId?: string
+  sessionBranch?: string
   draftArtifacts?: unknown
   createdBy: string
   createdAt: number
   updatedAt: number
+}
+
+export type GrillWriteup = {
+  title: string
+  body: string
+}
+
+export type GrillMaterializeFile = {
+  path: string
+  content: string
 }
 
 export type NewGrill = {
@@ -83,6 +95,20 @@ export type GrillStoreDeps = {
     parentId?: string
     createdAt: number
   }) => { id: string }
+  createDoc?: (input: {
+    id: string
+    title: string
+    body: string
+    createdBy: string
+    createdAt: number
+  }) => { id: string }
+  materializeCodeGrill?: (input: {
+    grillId: string
+    repository: string
+    baseRef: string
+    branch: string
+    files: GrillMaterializeFile[]
+  }) => Promise<{ branch: string }> | { branch: string }
 }
 
 export interface GrillStore {
@@ -119,6 +145,11 @@ export interface GrillStore {
     grillId: string,
     now: number,
   ): { grill: Grill; issues: GrillCreatedIssue[] } | undefined
+  completeGrill(
+    grillId: string,
+    artifact: GrillWriteup | { files: GrillMaterializeFile[] },
+    now: number,
+  ): Promise<Grill | undefined>
   discardGrill(grillId: string): boolean
 }
 
@@ -166,6 +197,8 @@ const parseDraftArtifacts = (
 ): {
   issueProposal?: GrillIssueProposal
   initialRequest?: string
+  docId?: string
+  sessionBranch?: string
   draftArtifacts?: unknown
 } => {
   if (!raw) return {}
@@ -184,12 +217,24 @@ const parseDraftArtifacts = (
       !Array.isArray(record.issueProposal)
         ? (record.issueProposal as GrillIssueProposal)
         : undefined
+    const docId =
+      typeof record.docId === 'string' && record.docId.trim()
+        ? record.docId.trim()
+        : undefined
+    const sessionBranch =
+      typeof record.sessionBranch === 'string' && record.sessionBranch.trim()
+        ? record.sessionBranch.trim()
+        : undefined
     const rest = { ...record }
     delete rest.issueProposal
     delete rest.initialRequest
+    delete rest.docId
+    delete rest.sessionBranch
     return {
       ...(issueProposal ? { issueProposal } : {}),
       ...(initialRequest ? { initialRequest } : {}),
+      ...(docId ? { docId } : {}),
+      ...(sessionBranch ? { sessionBranch } : {}),
       ...(Object.keys(rest).length > 0 ? { draftArtifacts: rest } : {}),
     }
   } catch {
@@ -201,10 +246,14 @@ const encodeDraftArtifacts = (
   issueProposal: GrillIssueProposal | undefined,
   draftArtifacts: unknown,
   initialRequest?: string,
+  docId?: string,
+  sessionBranch?: string,
 ): string | null => {
   const envelope: Record<string, unknown> = {}
   if (initialRequest) envelope.initialRequest = initialRequest
   if (issueProposal) envelope.issueProposal = issueProposal
+  if (docId) envelope.docId = docId
+  if (sessionBranch) envelope.sessionBranch = sessionBranch
   if (
     draftArtifacts &&
     typeof draftArtifacts === 'object' &&
@@ -262,6 +311,10 @@ const mapGrill = (row: GrillRow): Grill => {
       : {}),
     ...(artifacts.issueProposal
       ? { issueProposal: artifacts.issueProposal }
+      : {}),
+    ...(artifacts.docId ? { docId: artifacts.docId } : {}),
+    ...(artifacts.sessionBranch
+      ? { sessionBranch: artifacts.sessionBranch }
       : {}),
     ...(artifacts.draftArtifacts !== undefined
       ? { draftArtifacts: artifacts.draftArtifacts }
@@ -489,6 +542,8 @@ export function createSqliteGrillStore(
             proposal,
             current.draftArtifacts,
             current.initialRequest,
+            current.docId,
+            current.sessionBranch,
           ),
           now,
           grillId,
@@ -516,6 +571,8 @@ export function createSqliteGrillStore(
             proposal,
             current.draftArtifacts,
             current.initialRequest,
+            current.docId,
+            current.sessionBranch,
           ),
           now,
           grillId,
@@ -574,6 +631,8 @@ export function createSqliteGrillStore(
             proposal,
             current.draftArtifacts,
             current.initialRequest,
+            current.docId,
+            current.sessionBranch,
           ),
           now,
           grillId,
@@ -581,6 +640,82 @@ export function createSqliteGrillStore(
       const grill = selectGrill(sqlite, grillId)
       if (!grill) return undefined
       return { grill, issues: created }
+    },
+    completeGrill: async (grillId, artifact, now) => {
+      const current = selectGrill(sqlite, grillId)
+      if (!current) return undefined
+      if (current.docId || current.sessionBranch)
+        throw new Error('Grill already completed')
+
+      if (current.kind === 'general') {
+        if (!('title' in artifact) || !('body' in artifact))
+          throw new Error('General Grill requires a writeup')
+        const title = artifact.title.trim()
+        const body = artifact.body
+        if (!title) throw new Error('General Grill writeup title is required')
+        if (!deps.createDoc) throw new Error('Doc creation is unavailable')
+        const docId = crypto.randomUUID()
+        deps.createDoc({
+          id: docId,
+          title,
+          body,
+          createdBy: current.createdBy,
+          createdAt: now,
+        })
+        sqlite
+          .prepare(
+            `UPDATE grill SET draft_artifacts = ?, updated_at = ? WHERE id = ?`,
+          )
+          .run(
+            encodeDraftArtifacts(
+              current.issueProposal,
+              current.draftArtifacts,
+              current.initialRequest,
+              docId,
+              current.sessionBranch,
+            ),
+            now,
+            grillId,
+          )
+        return selectGrill(sqlite, grillId)
+      }
+
+      if (!('files' in artifact))
+        throw new Error('Code Grill requires materialize files')
+      if (!current.repository || !current.baseRef)
+        throw new Error('Code Grill is missing repository binding')
+      if (!deps.materializeCodeGrill)
+        throw new Error('Code Grill materialize is unavailable')
+      const files = artifact.files
+      if (!Array.isArray(files) || files.length === 0)
+        throw new Error('Code Grill requires materialize files')
+      for (const file of files) {
+        if (!file.path.trim()) throw new Error('Invalid materialize file path')
+      }
+      const branch = `sweat/grill/${grillId}`
+      const published = await deps.materializeCodeGrill({
+        grillId,
+        repository: current.repository,
+        baseRef: current.baseRef,
+        branch,
+        files,
+      })
+      sqlite
+        .prepare(
+          `UPDATE grill SET draft_artifacts = ?, updated_at = ? WHERE id = ?`,
+        )
+        .run(
+          encodeDraftArtifacts(
+            current.issueProposal,
+            current.draftArtifacts,
+            current.initialRequest,
+            current.docId,
+            published.branch,
+          ),
+          now,
+          grillId,
+        )
+      return selectGrill(sqlite, grillId)
     },
     discardGrill: (grillId) =>
       ((
