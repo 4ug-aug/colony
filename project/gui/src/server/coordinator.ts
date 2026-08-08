@@ -581,6 +581,8 @@ export function createCoordinator(options: {
             }),
           followUp: (runId, task) => options.control.followUp(runId, task),
           cancel: (runId) => options.control.cancel(runId),
+          getRun: (runId) => options.control.getRun(runId),
+          subscribeSteps: (listener) => options.control.subscribeSteps(listener),
         }),
       })
     : undefined
@@ -773,6 +775,14 @@ if (import.meta.main) {
       skills.listAttachedSkillIds(agentDefinitionId).length > 0,
     defaultRepository: process.env.SWEAT_GITHUB_REPOSITORY,
     defaultBaseRef: process.env.SWEAT_GITHUB_BASE ?? 'main',
+    createIssue: (input) =>
+      issueStore.createIssue({
+        id: input.id,
+        title: input.title,
+        description: input.description,
+        ...(input.parentId ? { parentId: input.parentId } : {}),
+        createdAt: input.createdAt,
+      }),
   })
   const issueNotify = {
     onCreated: (_issue: Issue) => {},
@@ -950,6 +960,8 @@ if (import.meta.main) {
           port: {
             setFrontier: (grillId, frontier, now) =>
               grillStore.setFrontier(grillId, frontier, now),
+            setIssueProposal: (grillId, issues, now) =>
+              grillStore.setIssueProposal(grillId, issues, now),
           },
         }),
         ...(linearAccessToken

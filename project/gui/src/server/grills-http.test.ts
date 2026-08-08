@@ -42,7 +42,12 @@ const schema = `
 const ada: RoomUser = { id: 'ada', name: 'Ada' }
 const grace: RoomUser = { id: 'grace', name: 'Grace' }
 
-function harness(hasGuidanceSkill = true) {
+function harness(
+  hasGuidanceSkill = true,
+  opts?: {
+    createIssue?: Parameters<typeof createSqliteGrillStore>[1]['createIssue']
+  },
+) {
   const sqlite = new Database(':memory:')
   sqlite.exec('PRAGMA foreign_keys = ON')
   sqlite.exec(schema)
@@ -50,6 +55,7 @@ function harness(hasGuidanceSkill = true) {
     hasGuidanceSkill: () => hasGuidanceSkill,
     defaultRepository: 'acme/sweat',
     defaultBaseRef: 'main',
+    ...(opts?.createIssue ? { createIssue: opts.createIssue } : {}),
   })
   const handle = createGrillsHttp({ grillStore })
   const call = async (
@@ -148,5 +154,120 @@ test('POST invite creates Attention; acknowledge clears badge', async () => {
   expect(acked.status).toBe(200)
   expect(acked.body).toMatchObject({ grillId: id, attentionCount: 0 })
   expect(grillStore.listGrillAttentionCounts('grace').size).toBe(0)
+  sqlite.close()
+})
+
+test('Accounts can push back or confirm an Issue proposal', async () => {
+  const minted: string[] = []
+  const { call, grillStore, sqlite } = harness(true, {
+    createIssue: (input) => {
+      minted.push(input.title)
+      return { id: input.id }
+    },
+  })
+  const created = await call(ada, 'POST', '/api/grills', {
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+  })
+  const id = created.body.grill.id as string
+  grillStore.setIssueProposal(
+    id,
+    [
+      { key: 'root', title: 'Parent', description: 'P' },
+      { key: 'child', title: 'Child', parentKey: 'root' },
+    ],
+    Date.now(),
+  )
+
+  const pushed = await call(ada, 'POST', `/api/grills/${id}/proposal/push-back`, {
+    notes: 'Need a third leaf',
+  })
+  expect(pushed.status).toBe(200)
+  expect(pushed.body.grill.issueProposal).toMatchObject({
+    status: 'revision_requested',
+    revisionNotes: 'Need a third leaf',
+  })
+
+  grillStore.setIssueProposal(
+    id,
+    [
+      { key: 'root', title: 'Parent', description: 'P' },
+      { key: 'a', title: 'Leaf A', parentKey: 'root' },
+      { key: 'b', title: 'Leaf B', parentKey: 'root' },
+    ],
+    Date.now(),
+  )
+
+  const confirmed = await call(
+    ada,
+    'POST',
+    `/api/grills/${id}/proposal/confirm`,
+  )
+  expect(confirmed.status).toBe(200)
+  expect(confirmed.body.grill.issueProposal.status).toBe('confirmed')
+  expect(confirmed.body.issues.map((issue: { title: string }) => issue.title)).toEqual([
+    'Parent',
+    'Leaf A',
+    'Leaf B',
+  ])
+  expect(minted).toEqual(['Parent', 'Leaf A', 'Leaf B'])
+  sqlite.close()
+})
+
+test('GET /api/grills includes linked-run activity when present', async () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec('PRAGMA foreign_keys = ON')
+  sqlite.exec(schema)
+  const grillStore = createSqliteGrillStore(sqlite, {
+    hasGuidanceSkill: () => true,
+    defaultRepository: 'acme/sweat',
+    defaultBaseRef: 'main',
+  })
+  const linkedRun = {
+    id: 'run-1',
+    task: 'grill',
+    state: 'running',
+    agentId: 'interviewer',
+    provider: 'openai',
+    model: 'gpt',
+    createdAt: 1,
+  }
+  const latestStep = {
+    kind: 'message' as const,
+    text: 'asking a question',
+    at: 2,
+  }
+  const handle = createGrillsHttp({
+    grillStore,
+    linkedRuns: {
+      start: () => linkedRun,
+      followUp: async () => linkedRun,
+      dispose: async () => undefined,
+      getLinkedRun: (grillId) => (grillId === 'g1' ? linkedRun : undefined),
+      getLatestStep: (grillId) => (grillId === 'g1' ? latestStep : undefined),
+    },
+  })
+  grillStore.createGrill({
+    id: 'g1',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'We are testing!',
+    createdBy: 'ada',
+    createdAt: 1,
+  })
+  const url = new URL('http://localhost/api/grills')
+  const response = await handle(new Request(url), url, ada)
+  expect(response?.status).toBe(200)
+  const body = (await response!.json()) as {
+    grills: Array<Record<string, unknown>>
+  }
+  expect(body.grills).toHaveLength(1)
+  expect(body.grills[0]).toMatchObject({
+    id: 'g1',
+    linkedRun: { id: 'run-1', state: 'running' },
+    latestStep: { text: 'asking a question' },
+  })
   sqlite.close()
 })

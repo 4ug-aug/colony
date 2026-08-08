@@ -152,6 +152,7 @@ function fakeControl(
       return () => {}
     },
     subscribeSteps: () => () => {},
+    getRun: () => undefined,
     start: (task, context) => {
       startsLog.push({ task, context })
       const summary =
@@ -170,6 +171,7 @@ function fakeControl(
       return context.onCreate(summary)
     },
     cancel: async () => undefined,
+    followUp: async () => undefined,
     stop: async () => {},
     emit: (summary) => {
       for (const listener of listeners) listener(summary)

@@ -8,7 +8,11 @@ type Statement = {
 export type GrillKind = 'code' | 'general'
 export type GrillVisibility = 'invite-only' | 'workspace-open'
 
-export type GrillQuestion = { id: string; prompt: string }
+export type GrillQuestion = {
+  id: string
+  prompt: string
+  recommendation?: string
+}
 
 export type GrillFrontier = {
   questions: GrillQuestion[]
@@ -20,6 +24,26 @@ export type SettledRound = {
   answers: Record<string, string>
 }
 
+export type GrillProposedIssue = {
+  key: string
+  title: string
+  description?: string
+  parentKey?: string
+}
+
+export type GrillIssueProposal = {
+  status: 'proposed' | 'revision_requested' | 'confirmed'
+  issues: GrillProposedIssue[]
+  revisionNotes?: string
+}
+
+export type GrillCreatedIssue = {
+  id: string
+  title: string
+  description: string
+  parentId?: string
+}
+
 export type Grill = {
   id: string
   kind: GrillKind
@@ -29,6 +53,8 @@ export type Grill = {
   baseRef?: string
   frontier: GrillFrontier
   settledAnswers: SettledRound[]
+  initialRequest?: string
+  issueProposal?: GrillIssueProposal
   draftArtifacts?: unknown
   createdBy: string
   createdAt: number
@@ -41,6 +67,7 @@ export type NewGrill = {
   visibility: GrillVisibility
   agentDefinitionId: string
   baseRef?: string
+  initialRequest?: string
   createdBy: string
   createdAt: number
 }
@@ -49,6 +76,13 @@ export type GrillStoreDeps = {
   hasGuidanceSkill: (agentDefinitionId: string) => boolean
   defaultRepository?: string
   defaultBaseRef?: string
+  createIssue?: (input: {
+    id: string
+    title: string
+    description: string
+    parentId?: string
+    createdAt: number
+  }) => { id: string }
 }
 
 export interface GrillStore {
@@ -66,7 +100,25 @@ export interface GrillStore {
     drafts: Record<string, string>,
     now: number,
   ): Grill | undefined
-  submitRound(grillId: string, now: number): Grill | undefined
+  submitRound(
+    grillId: string,
+    now: number,
+    drafts?: Record<string, string>,
+  ): Grill | undefined
+  setIssueProposal(
+    grillId: string,
+    issues: GrillProposedIssue[],
+    now: number,
+  ): Grill | undefined
+  pushBackIssueProposal(
+    grillId: string,
+    revisionNotes: string,
+    now: number,
+  ): Grill | undefined
+  confirmIssueProposal(
+    grillId: string,
+    now: number,
+  ): { grill: Grill; issues: GrillCreatedIssue[] } | undefined
   discardGrill(grillId: string): boolean
 }
 
@@ -109,22 +161,116 @@ const parseSettled = (raw: string): SettledRound[] => {
   }
 }
 
-const mapGrill = (row: GrillRow): Grill => ({
-  id: row.id,
-  kind: row.kind,
-  visibility: row.visibility,
-  agentDefinitionId: row.agent_definition_id,
-  ...(row.repository ? { repository: row.repository } : {}),
-  ...(row.base_ref ? { baseRef: row.base_ref } : {}),
-  frontier: parseFrontier(row.frontier),
-  settledAnswers: parseSettled(row.settled_answers),
-  ...(row.draft_artifacts
-    ? { draftArtifacts: JSON.parse(row.draft_artifacts) as unknown }
-    : {}),
-  createdBy: row.created_by,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-})
+const parseDraftArtifacts = (
+  raw: string | null,
+): {
+  issueProposal?: GrillIssueProposal
+  initialRequest?: string
+  draftArtifacts?: unknown
+} => {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      return { draftArtifacts: parsed }
+    const record = parsed as Record<string, unknown>
+    const initialRequest =
+      typeof record.initialRequest === 'string' && record.initialRequest.trim()
+        ? record.initialRequest.trim()
+        : undefined
+    const issueProposal =
+      record.issueProposal &&
+      typeof record.issueProposal === 'object' &&
+      !Array.isArray(record.issueProposal)
+        ? (record.issueProposal as GrillIssueProposal)
+        : undefined
+    const rest = { ...record }
+    delete rest.issueProposal
+    delete rest.initialRequest
+    return {
+      ...(issueProposal ? { issueProposal } : {}),
+      ...(initialRequest ? { initialRequest } : {}),
+      ...(Object.keys(rest).length > 0 ? { draftArtifacts: rest } : {}),
+    }
+  } catch {
+    return {}
+  }
+}
+
+const encodeDraftArtifacts = (
+  issueProposal: GrillIssueProposal | undefined,
+  draftArtifacts: unknown,
+  initialRequest?: string,
+): string | null => {
+  const envelope: Record<string, unknown> = {}
+  if (initialRequest) envelope.initialRequest = initialRequest
+  if (issueProposal) envelope.issueProposal = issueProposal
+  if (
+    draftArtifacts &&
+    typeof draftArtifacts === 'object' &&
+    !Array.isArray(draftArtifacts)
+  ) {
+    Object.assign(envelope, draftArtifacts as Record<string, unknown>)
+  } else if (draftArtifacts !== undefined) {
+    envelope.other = draftArtifacts
+  }
+  return Object.keys(envelope).length > 0 ? JSON.stringify(envelope) : null
+}
+
+const normalizeProposedIssues = (
+  issues: GrillProposedIssue[],
+): GrillProposedIssue[] => {
+  const keys = new Set<string>()
+  const normalized: GrillProposedIssue[] = []
+  for (const issue of issues) {
+    const key = issue.key.trim()
+    const title = issue.title.trim()
+    if (!key || !title) throw new Error('Invalid Issue proposal')
+    if (keys.has(key)) throw new Error('Duplicate Issue proposal key')
+    keys.add(key)
+    const parentKey = issue.parentKey?.trim()
+    if (parentKey === key) throw new Error('Invalid Issue proposal parent')
+    normalized.push({
+      key,
+      title,
+      ...(issue.description !== undefined
+        ? { description: issue.description }
+        : {}),
+      ...(parentKey ? { parentKey } : {}),
+    })
+  }
+  for (const issue of normalized) {
+    if (issue.parentKey && !keys.has(issue.parentKey))
+      throw new Error('Unknown Issue proposal parent')
+  }
+  return normalized
+}
+
+const mapGrill = (row: GrillRow): Grill => {
+  const artifacts = parseDraftArtifacts(row.draft_artifacts)
+  return {
+    id: row.id,
+    kind: row.kind,
+    visibility: row.visibility,
+    agentDefinitionId: row.agent_definition_id,
+    ...(row.repository ? { repository: row.repository } : {}),
+    ...(row.base_ref ? { baseRef: row.base_ref } : {}),
+    frontier: parseFrontier(row.frontier),
+    settledAnswers: parseSettled(row.settled_answers),
+    ...(artifacts.initialRequest
+      ? { initialRequest: artifacts.initialRequest }
+      : {}),
+    ...(artifacts.issueProposal
+      ? { issueProposal: artifacts.issueProposal }
+      : {}),
+    ...(artifacts.draftArtifacts !== undefined
+      ? { draftArtifacts: artifacts.draftArtifacts }
+      : {}),
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
 
 const selectGrill = (sqlite: Sqlite, id: string): Grill | undefined => {
   const row = sqlite
@@ -171,12 +317,14 @@ export function createSqliteGrillStore(
         input.kind === 'code'
           ? (input.baseRef ?? deps.defaultBaseRef ?? 'main')
           : null
+      const initialRequest = input.initialRequest?.trim() || undefined
       sqlite
         .prepare(
           `INSERT INTO grill (
              id, kind, visibility, agent_definition_id, repository, base_ref,
-             frontier, settled_answers, created_by, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             frontier, settled_answers, draft_artifacts, created_by, created_at,
+             updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.id,
@@ -187,6 +335,7 @@ export function createSqliteGrillStore(
           baseRef,
           JSON.stringify(emptyFrontier()),
           '[]',
+          encodeDraftArtifacts(undefined, undefined, initialRequest),
           input.createdBy,
           input.createdAt,
           input.createdAt,
@@ -260,11 +409,16 @@ export function createSqliteGrillStore(
         .run(at, grillId, userId)
     },
     setFrontier: (grillId, frontier, now) => {
+      // Questions are agent-authored; shared answer drafts belong to Accounts.
+      const next: GrillFrontier = {
+        questions: frontier.questions,
+        drafts: {},
+      }
       const result = sqlite
         .prepare(
           `UPDATE grill SET frontier = ?, updated_at = ? WHERE id = ?`,
         )
-        .run(JSON.stringify(frontier), now, grillId) as { changes?: number }
+        .run(JSON.stringify(next), now, grillId) as { changes?: number }
       if ((result.changes ?? 0) === 0) return undefined
       return selectGrill(sqlite, grillId)
     },
@@ -282,14 +436,27 @@ export function createSqliteGrillStore(
         .run(JSON.stringify(frontier), now, grillId)
       return selectGrill(sqlite, grillId)
     },
-    submitRound: (grillId, now) => {
+    submitRound: (grillId, now, drafts) => {
       const current = selectGrill(sqlite, grillId)
       if (!current) return undefined
+      if (current.frontier.questions.length === 0)
+        throw new Error('No frontier questions to submit')
+      const mergedDrafts = {
+        ...current.frontier.drafts,
+        ...(drafts ?? {}),
+      }
+      const answers: Record<string, string> = {}
+      for (const question of current.frontier.questions) {
+        const answer = (mergedDrafts[question.id] ?? '').trim()
+        if (!answer)
+          throw new Error('Every frontier question needs an answer before submit')
+        answers[question.id] = answer
+      }
       const settled: SettledRound[] = [
         ...current.settledAnswers,
         {
           questions: current.frontier.questions,
-          answers: { ...current.frontier.drafts },
+          answers,
         },
       ]
       sqlite
@@ -303,6 +470,117 @@ export function createSqliteGrillStore(
           grillId,
         )
       return selectGrill(sqlite, grillId)
+    },
+    setIssueProposal: (grillId, issues, now) => {
+      const current = selectGrill(sqlite, grillId)
+      if (!current) return undefined
+      if (current.issueProposal?.status === 'confirmed')
+        throw new Error('Issue proposal already confirmed')
+      const proposal: GrillIssueProposal = {
+        status: 'proposed',
+        issues: normalizeProposedIssues(issues),
+      }
+      sqlite
+        .prepare(
+          `UPDATE grill SET draft_artifacts = ?, updated_at = ? WHERE id = ?`,
+        )
+        .run(
+          encodeDraftArtifacts(
+            proposal,
+            current.draftArtifacts,
+            current.initialRequest,
+          ),
+          now,
+          grillId,
+        )
+      return selectGrill(sqlite, grillId)
+    },
+    pushBackIssueProposal: (grillId, revisionNotes, now) => {
+      const current = selectGrill(sqlite, grillId)
+      if (!current?.issueProposal) return undefined
+      if (current.issueProposal.status === 'confirmed')
+        throw new Error('Issue proposal already confirmed')
+      const notes = revisionNotes.trim()
+      if (!notes) throw new Error('Revision notes required')
+      const proposal: GrillIssueProposal = {
+        status: 'revision_requested',
+        issues: current.issueProposal.issues,
+        revisionNotes: notes,
+      }
+      sqlite
+        .prepare(
+          `UPDATE grill SET draft_artifacts = ?, updated_at = ? WHERE id = ?`,
+        )
+        .run(
+          encodeDraftArtifacts(
+            proposal,
+            current.draftArtifacts,
+            current.initialRequest,
+          ),
+          now,
+          grillId,
+        )
+      return selectGrill(sqlite, grillId)
+    },
+    confirmIssueProposal: (grillId, now) => {
+      const current = selectGrill(sqlite, grillId)
+      if (!current?.issueProposal) return undefined
+      if (current.issueProposal.status === 'confirmed')
+        throw new Error('Issue proposal already confirmed')
+      if (!deps.createIssue)
+        throw new Error('Issue creation is unavailable')
+      const proposed = current.issueProposal.issues
+      const remaining = new Map(proposed.map((issue) => [issue.key, issue]))
+      const keyToId = new Map<string, string>()
+      const created: GrillCreatedIssue[] = []
+      while (remaining.size > 0) {
+        let progressed = false
+        for (const [key, issue] of remaining) {
+          if (issue.parentKey && !keyToId.has(issue.parentKey)) continue
+          const id = crypto.randomUUID()
+          const parentId = issue.parentKey
+            ? keyToId.get(issue.parentKey)
+            : undefined
+          const description = issue.description ?? ''
+          deps.createIssue({
+            id,
+            title: issue.title,
+            description,
+            ...(parentId ? { parentId } : {}),
+            createdAt: now,
+          })
+          keyToId.set(key, id)
+          created.push({
+            id,
+            title: issue.title,
+            description,
+            ...(parentId ? { parentId } : {}),
+          })
+          remaining.delete(key)
+          progressed = true
+        }
+        if (!progressed) throw new Error('Cyclic Issue proposal parent')
+      }
+      const proposal: GrillIssueProposal = {
+        status: 'confirmed',
+        issues: proposed,
+      }
+      sqlite
+        .prepare(
+          `UPDATE grill SET draft_artifacts = ?, updated_at = ? WHERE id = ?`,
+        )
+        .run(
+          encodeDraftArtifacts(
+            proposal,
+            current.draftArtifacts,
+            current.initialRequest,
+          ),
+          now,
+          grillId,
+        )
+      const grill = selectGrill(sqlite, grillId)
+      if (!grill) return undefined
+      return { grill, issues: created }
     },
     discardGrill: (grillId) =>
       ((

@@ -24,6 +24,8 @@ import {
 import {
   createWorkspaceGrillMcpUpstream,
   type GrillFrontier,
+  type GrillIssueProposal,
+  type GrillProposedIssue,
 } from "../mcp/workspace-grill";
 import { STEP_TEXT_LIMIT } from "../runtime/step";
 import { rosterParticipant } from "./roster-meta";
@@ -79,6 +81,11 @@ export function createWorkspaceGrillAdapter(options: {
       frontier: GrillFrontier,
       now: number,
     ): { frontier: GrillFrontier } | undefined;
+    setIssueProposal(
+      grillId: string,
+      issues: GrillProposedIssue[],
+      now: number,
+    ): { issueProposal?: GrillIssueProposal } | undefined;
   };
 }): WorkspaceAgentAdapter {
   return {
@@ -102,6 +109,16 @@ export function createWorkspaceGrillAdapter(options: {
               );
               if (!grill) throw new Error(`Grill not found: ${grillId}`);
               return grill.frontier;
+            },
+            proposeIssues(issues) {
+              const grill = options.port.setIssueProposal(
+                grillId,
+                issues,
+                Date.now(),
+              );
+              if (!grill?.issueProposal)
+                throw new Error(`Grill not found: ${grillId}`);
+              return grill.issueProposal;
             },
           },
         });

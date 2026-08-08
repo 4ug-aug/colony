@@ -16,9 +16,13 @@ export function BrailleLoader({
   loader = 'diagonal-swipe',
 }: BrailleLoaderProps) {
   return (
-    <span className={cn('inline-flex items-center gap-1.5', className)}>
+    <span
+      className={cn('inline-flex items-center gap-1.5', className)}
+      aria-live="polite"
+      aria-label={text}
+    >
       <Loader
-        fallbackLabel={text}
+        fallbackLabel=""
         loader={loader}
         renderer="svg-grid"
         rendererOptions={{ cellSize: 4, gap: 1, inactiveOpacity: 0.15 }}

@@ -37,7 +37,10 @@ const schema = `
   );
 `
 
-function harness(opts?: { hasGuidanceSkill?: (agentId: string) => boolean }) {
+function harness(opts?: {
+  hasGuidanceSkill?: (agentId: string) => boolean
+  createIssue?: Parameters<typeof createSqliteGrillStore>[1]['createIssue']
+}) {
   const sqlite = new Database(':memory:')
   sqlite.exec('PRAGMA foreign_keys = ON')
   sqlite.exec(schema)
@@ -45,6 +48,7 @@ function harness(opts?: { hasGuidanceSkill?: (agentId: string) => boolean }) {
     hasGuidanceSkill: opts?.hasGuidanceSkill ?? (() => true),
     defaultRepository: 'acme/sweat',
     defaultBaseRef: 'main',
+    ...(opts?.createIssue ? { createIssue: opts.createIssue } : {}),
   })
   return { sqlite, store }
 }
@@ -132,12 +136,16 @@ test('shared answer drafts and round submit advance the frontier', () => {
         { id: 'q1', prompt: 'Who decides?' },
         { id: 'q2', prompt: 'What ships?' },
       ],
-      drafts: {},
+      drafts: { q1: 'agent framing should be ignored' },
     },
     20,
   )
-  store.updateDrafts('g1', { q1: 'Accounts', q2: 'Docs' }, 30)
+  expect(store.getGrill('g1')?.frontier.drafts).toEqual({})
+  expect(() => store.submitRound('g1', 25)).toThrow(
+    'Every frontier question needs an answer before submit',
+  )
 
+  store.updateDrafts('g1', { q1: 'Accounts', q2: 'Docs' }, 30)
   const submitted = store.submitRound('g1', 40)
   expect(submitted?.settledAnswers).toEqual([
     {
@@ -239,5 +247,115 @@ test('discard Grill cascades Attention away', () => {
     .prepare('SELECT COUNT(*) AS n FROM grill_attention')
     .get() as { n: number }
   expect(leftover.n).toBe(0)
+  sqlite.close()
+})
+
+test('Issue proposal can be revised, confirmed into Issues, or discarded without minting', () => {
+  const created: Array<{
+    id: string
+    title: string
+    description: string
+    parentId?: string
+  }> = []
+  const { store, sqlite } = harness({
+    createIssue: (input) => {
+      created.push({
+        id: input.id,
+        title: input.title,
+        description: input.description,
+        ...(input.parentId ? { parentId: input.parentId } : {}),
+      })
+      return { id: input.id }
+    },
+  })
+  store.createGrill({
+    id: 'g1',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+
+  const proposed = store.setIssueProposal(
+    'g1',
+    [
+      { key: 'root', title: 'Ship Grill', description: 'Parent' },
+      { key: 'child', title: 'Frontier UX', parentKey: 'root' },
+    ],
+    20,
+  )
+  expect(proposed?.issueProposal).toEqual({
+    status: 'proposed',
+    issues: [
+      { key: 'root', title: 'Ship Grill', description: 'Parent' },
+      { key: 'child', title: 'Frontier UX', parentKey: 'root' },
+    ],
+  })
+
+  const pushed = store.pushBackIssueProposal('g1', 'Split the child', 30)
+  expect(pushed?.issueProposal).toEqual({
+    status: 'revision_requested',
+    issues: [
+      { key: 'root', title: 'Ship Grill', description: 'Parent' },
+      { key: 'child', title: 'Frontier UX', parentKey: 'root' },
+    ],
+    revisionNotes: 'Split the child',
+  })
+
+  store.setIssueProposal(
+    'g1',
+    [
+      { key: 'root', title: 'Ship Grill', description: 'Parent' },
+      { key: 'ui', title: 'Frontier UI', parentKey: 'root' },
+      { key: 'api', title: 'Proposal API', parentKey: 'root' },
+    ],
+    40,
+  )
+
+  const confirmed = store.confirmIssueProposal('g1', 50)
+  expect(confirmed?.grill.issueProposal?.status).toBe('confirmed')
+  expect(created).toEqual([
+    {
+      id: expect.any(String),
+      title: 'Ship Grill',
+      description: 'Parent',
+    },
+    {
+      id: expect.any(String),
+      title: 'Frontier UI',
+      description: '',
+      parentId: created[0]!.id,
+    },
+    {
+      id: expect.any(String),
+      title: 'Proposal API',
+      description: '',
+      parentId: created[0]!.id,
+    },
+  ])
+  expect(confirmed?.issues.map((issue) => issue.title)).toEqual([
+    'Ship Grill',
+    'Frontier UI',
+    'Proposal API',
+  ])
+
+  // Abandon before confirm must not mint Issues.
+  created.length = 0
+  store.createGrill({
+    id: 'g2',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 60,
+  })
+  store.setIssueProposal(
+    'g2',
+    [{ key: 'x', title: 'Should not exist' }],
+    70,
+  )
+  expect(store.discardGrill('g2')).toBe(true)
+  expect(created).toEqual([])
   sqlite.close()
 })

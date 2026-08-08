@@ -53,6 +53,7 @@ export type RunStartContext<Output> =
 export interface RunControl {
   subscribe(listener: (run: RunSummary) => void): () => void
   subscribeSteps(listener: (runId: string, step: Step) => void): () => void
+  getRun(runId: string): RunSummary | undefined
   start<Output>(
     task: string,
     context: RunStartContext<Output>,
@@ -109,7 +110,13 @@ export function runSummary<Input extends RunInput>(
 
 type RunControlExecutor = Pick<
   WorkspaceAgentExecutor,
-  'startRun' | 'followUp' | 'subscribe' | 'subscribeSteps' | 'cancelRun' | 'stop'
+  | 'startRun'
+  | 'followUp'
+  | 'getRun'
+  | 'subscribe'
+  | 'subscribeSteps'
+  | 'cancelRun'
+  | 'stop'
 >
 
 export function createRunControl(executor: RunControlExecutor): RunControl {
@@ -117,6 +124,10 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
     subscribe: (listener) =>
       executor.subscribe((run) => listener(runSummary(run))),
     subscribeSteps: (listener) => executor.subscribeSteps(listener),
+    getRun: (runId) => {
+      const run = executor.getRun(runId)
+      return run ? runSummary(run) : undefined
+    },
     start: <Output>(
       task: string,
       context: RunStartContext<Output>,

@@ -73,6 +73,7 @@ function fakeControl() {
       return () => listeners.delete(listener)
     },
     subscribeSteps: () => () => undefined,
+    getRun: () => undefined,
     start: (task, context) => {
       const run = {
         id: `run-${++nextId}`,
@@ -90,6 +91,7 @@ function fakeControl() {
       return created
     },
     cancel: async () => undefined,
+    followUp: async () => undefined,
     stop: async () => undefined,
   }
   return {

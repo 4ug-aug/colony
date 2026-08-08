@@ -11,12 +11,19 @@ export function createRoutingAgentRuntime(options: {
 } = {}): AgentProvider {
   const openai = options.openai ?? createOpenAIAgentsRuntime({});
   const cursor = options.cursor ?? createCursorSdkRuntime({});
+
+  const select = (request: Pick<RuntimeRequest, "definition">): AgentProvider =>
+    request.definition.runtime.kind === "cursor" ? cursor : openai;
+
   return {
-    run: async (sandbox, request: RuntimeRequest) => {
-      if (request.definition.runtime.kind === "cursor") {
-        return cursor.run(sandbox, request);
+    run: async (sandbox, request: RuntimeRequest) =>
+      select(request).run(sandbox, request),
+    openWarmSession: async (sandbox, request) => {
+      const provider = select(request);
+      if (!provider.openWarmSession) {
+        throw new Error("Runtime does not support warm Grill-linked runs");
       }
-      return openai.run(sandbox, request);
+      return provider.openWarmSession(sandbox, request);
     },
   };
 }

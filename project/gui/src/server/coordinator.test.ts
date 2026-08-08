@@ -51,6 +51,9 @@ class FakeRunControl implements RunControl {
   listRuns() {
     return this.runs
   }
+  getRun(id: string) {
+    return this.runs.find((run) => run.id === id)
+  }
   subscribe(listener: (run: RunSummary) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -104,6 +107,9 @@ class FakeRunControl implements RunControl {
     this.runs = this.runs.map((item) => (item.id === id ? changed : item))
     this.publish(changed)
     return changed
+  }
+  async followUp(_runId: string, _task: string) {
+    return undefined
   }
   async stop() {
     this.stops++

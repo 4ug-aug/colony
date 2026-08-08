@@ -1,5 +1,13 @@
 import { DEFAULT_WARM_IDLE_TTL_MS } from '../../../runs'
+import type { Step } from '../../../runs'
 import type { RunSummary } from './run-control'
+
+export type GrillLatestStep = {
+  kind: Step['kind']
+  tool?: string
+  text: string
+  at: number
+}
 
 export type GrillLinkedRuns = {
   start(input: {
@@ -10,6 +18,8 @@ export type GrillLinkedRuns = {
   followUp(grillId: string, task: string): Promise<RunSummary | undefined>
   dispose(grillId: string): Promise<void>
   getRunId(grillId: string): string | undefined
+  getLinkedRun(grillId: string): RunSummary | undefined
+  getLatestStep(grillId: string): GrillLatestStep | undefined
 }
 
 /**
@@ -26,35 +36,71 @@ export function createGrillLinkedRuns(deps: {
   }) => RunSummary
   followUp: (runId: string, task: string) => Promise<RunSummary | undefined>
   cancel: (runId: string) => Promise<unknown>
+  getRun: (runId: string) => RunSummary | undefined
+  subscribeSteps: (listener: (runId: string, step: Step) => void) => () => void
 }): GrillLinkedRuns {
   const byGrill = new Map<string, string>()
+  const grillByRun = new Map<string, string>()
+  const latestStepByGrill = new Map<string, GrillLatestStep>()
+
+  deps.subscribeSteps((runId, step) => {
+    const grillId = grillByRun.get(runId)
+    if (!grillId) return
+    latestStepByGrill.set(grillId, {
+      kind: step.kind,
+      ...(step.tool !== undefined ? { tool: step.tool } : {}),
+      text: step.text,
+      at: step.at,
+    })
+  })
+
+  const remember = (grillId: string, runId: string) => {
+    const previous = byGrill.get(grillId)
+    if (previous) grillByRun.delete(previous)
+    byGrill.set(grillId, runId)
+    grillByRun.set(runId, grillId)
+  }
+
   return {
     start: ({ grillId, task, agentDefinitionId }) => {
       const existing = byGrill.get(grillId)
       if (existing) void deps.cancel(existing)
+      latestStepByGrill.delete(grillId)
       const run = deps.startWarm({
         grillId,
         task,
         agentDefinitionId,
         idleTtlMs: DEFAULT_WARM_IDLE_TTL_MS,
         onCreate: (summary) => {
-          byGrill.set(grillId, summary.id)
+          remember(grillId, summary.id)
           return summary
         },
       })
-      byGrill.set(grillId, run.id)
+      remember(grillId, run.id)
       return run
     },
     followUp: async (grillId, task) => {
       const runId = byGrill.get(grillId)
       if (!runId) return undefined
+      // Drop the previous turn's step so the UI shows "working" until new
+      // steps stream in for this follow-up.
+      latestStepByGrill.delete(grillId)
       return deps.followUp(runId, task)
     },
     dispose: async (grillId) => {
       const runId = byGrill.get(grillId)
       byGrill.delete(grillId)
-      if (runId) await deps.cancel(runId)
+      latestStepByGrill.delete(grillId)
+      if (runId) {
+        grillByRun.delete(runId)
+        await deps.cancel(runId)
+      }
     },
     getRunId: (grillId) => byGrill.get(grillId),
+    getLinkedRun: (grillId) => {
+      const runId = byGrill.get(grillId)
+      return runId ? deps.getRun(runId) : undefined
+    },
+    getLatestStep: (grillId) => latestStepByGrill.get(grillId),
   }
 }

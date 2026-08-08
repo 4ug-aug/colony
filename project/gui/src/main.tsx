@@ -1,28 +1,28 @@
-import { Component, StrictMode, useCallback, useState } from 'react'
-import type { ErrorInfo, ReactNode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { App } from './App'
-import './styles.css'
-import { Button } from '#/components/ui/button'
-import { TooltipProvider } from '#/components/ui/tooltip'
 import { ThemeProvider } from '#/components/theme-provider'
+import { Button } from '#/components/ui/button'
+import { Toaster } from '#/components/ui/toast'
+import { TooltipProvider } from '#/components/ui/tooltip'
+import { SignIn } from '#/features/auth/sign-in'
+import { attachBulletinWorkspaceSync } from '#/features/bulletins/bulletin-workspace-sync'
+import { attachIssueWorkspaceSync } from '#/features/issues/issue-workspace-sync'
+import { EntryShell } from '#/features/setup/entry-shell'
+import { ServerSelection } from '#/features/setup/server-selection'
+import { Dashboard } from '#/features/shell/dashboard'
+import { WindowDragRegion } from '#/features/shell/window-toolbar'
+import { initAuthClient } from '#/lib/auth-client'
+import { initInviteDeepLinks } from '#/lib/invite-deep-link'
+import { createAppQueryClient } from '#/lib/query-client'
 import {
+  currentServerBase,
   initServerConfig,
   isTauriRuntime,
-  currentServerBase,
 } from '#/lib/server-config'
-import { initAuthClient } from '#/lib/auth-client'
-import { ServerSelection } from '#/features/setup/server-selection'
-import { EntryShell } from '#/features/setup/entry-shell'
-import { Dashboard } from '#/features/shell/dashboard'
-import { SignIn } from '#/features/auth/sign-in'
-import { Toaster } from '#/components/ui/toast'
-import { WindowDragRegion } from '#/features/shell/window-toolbar'
-import { initInviteDeepLinks } from '#/lib/invite-deep-link'
-import { attachIssueWorkspaceSync } from '#/features/issues/issue-workspace-sync'
-import { attachBulletinWorkspaceSync } from '#/features/bulletins/bulletin-workspace-sync'
-import { createAppQueryClient } from '#/lib/query-client'
+import { QueryClientProvider } from '@tanstack/react-query'
+import type { ErrorInfo, ReactNode } from 'react'
+import { Component, StrictMode, useCallback, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import { App } from './App'
+import './styles.css'
 
 const rootEl = document.getElementById('root')!
 const root = createRoot(rootEl)

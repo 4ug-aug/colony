@@ -69,6 +69,7 @@ import {
   CalendarClock,
   ChevronRight,
   Cuboid,
+  Flame,
   Hash,
   Lock,
   LogOut,
@@ -103,6 +104,7 @@ export type DashboardView =
   | 'schedules'
   | 'issues'
   | 'bulletins'
+  | 'grills'
 
 /**
  * A sidebar section that remembers whether it is expanded. Sections stay
@@ -368,6 +370,7 @@ export function RoomSidebar({
   onOpenSchedules,
   onOpenIssues,
   onOpenBulletins,
+  onOpenGrills,
   user,
 }: {
   rooms: Room[]
@@ -384,6 +387,7 @@ export function RoomSidebar({
   onOpenSchedules: () => void
   onOpenIssues: () => void
   onOpenBulletins: () => void
+  onOpenGrills: () => void
   user: Author
 }) {
   const { data: agents = [] } = useAgentDefinitions()
@@ -451,6 +455,16 @@ export function RoomSidebar({
                 >
                   <StickyNote />
                   <span>Bulletin board</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={view === 'grills'}
+                  onClick={onOpenGrills}
+                  tooltip="Grills"
+                >
+                  <Flame />
+                  <span>Grills</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

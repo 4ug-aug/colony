@@ -17,6 +17,7 @@ node_modules/
 *.db
 skills-lock.json
 attachments/
+project/gui/skills/
 
 .sqlite*
 

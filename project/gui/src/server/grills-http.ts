@@ -16,6 +16,8 @@ export function createGrillsHttp(deps: {
     }): unknown
     followUp(grillId: string, task: string): Promise<unknown>
     dispose(grillId: string): Promise<void>
+    getLinkedRun?(grillId: string): unknown
+    getLatestStep?(grillId: string): unknown
   }
 }): (
   request: Request,
@@ -23,8 +25,18 @@ export function createGrillsHttp(deps: {
   user: RoomUser,
 ) => Promise<Response | undefined> {
   return async (request, url, user) => {
-    if (url.pathname === '/api/grills' && request.method === 'GET')
-      return json({ grills: deps.grillStore.listGrillsForUser(user.id) })
+    if (url.pathname === '/api/grills' && request.method === 'GET') {
+      const grills = deps.grillStore.listGrillsForUser(user.id).map((grill) => {
+        const linkedRun = deps.linkedRuns?.getLinkedRun?.(grill.id)
+        const latestStep = deps.linkedRuns?.getLatestStep?.(grill.id)
+        return {
+          ...grill,
+          ...(linkedRun !== undefined ? { linkedRun } : {}),
+          ...(latestStep !== undefined ? { latestStep } : {}),
+        }
+      })
+      return json({ grills })
+    }
 
     if (url.pathname === '/api/grills' && request.method === 'POST') {
       const body = await readBody(request)
@@ -45,6 +57,10 @@ export function createGrillsHttp(deps: {
         typeof body.baseRef === 'string' && body.baseRef
           ? body.baseRef
           : undefined
+      const initialRequest =
+        typeof body.initialRequest === 'string' && body.initialRequest.trim()
+          ? body.initialRequest.trim()
+          : undefined
       try {
         const grill = deps.grillStore.createGrill({
           id: crypto.randomUUID(),
@@ -52,6 +68,7 @@ export function createGrillsHttp(deps: {
           visibility: visibility as GrillVisibility,
           agentDefinitionId,
           ...(baseRef ? { baseRef } : {}),
+          ...(initialRequest ? { initialRequest } : {}),
           createdBy: user.id,
           createdAt: Date.now(),
         })
@@ -119,18 +136,49 @@ export function createGrillsHttp(deps: {
       const id = submitRoute[1]!
       if (!deps.grillStore.getGrillForUser(id, user.id))
         return json({ error: 'Grill not found' }, 404)
-      const grill = deps.grillStore.submitRound(id, Date.now())
-      if (!grill) return json({ error: 'Grill not found' }, 404)
-      const latest = grill.settledAnswers.at(-1)
-      if (latest && deps.linkedRuns) {
-        const task = JSON.stringify({
-          type: 'grill.round_submitted',
-          answers: latest.answers,
-          questions: latest.questions,
-        })
-        await deps.linkedRuns.followUp(id, task)
+      const body = await readBody(request)
+      let drafts: Record<string, string> | undefined
+      if (body?.drafts !== undefined) {
+        if (typeof body.drafts !== 'object' || body.drafts === null)
+          return json({ error: 'Invalid drafts' }, 400)
+        drafts = {}
+        for (const [key, value] of Object.entries(
+          body.drafts as Record<string, unknown>,
+        )) {
+          if (typeof value !== 'string')
+            return json({ error: 'Invalid drafts' }, 400)
+          drafts[key] = value
+        }
       }
-      return json({ grill })
+      try {
+        const grill = deps.grillStore.submitRound(id, Date.now(), drafts)
+        if (!grill) return json({ error: 'Grill not found' }, 404)
+        const latest = grill.settledAnswers.at(-1)
+        if (latest && deps.linkedRuns) {
+          const qa = latest.questions
+            .map((question) => {
+              const answer = latest.answers[question.id] ?? ''
+              return `Q: ${question.prompt}\nA: ${answer}`
+            })
+            .join('\n\n')
+          const task = [
+            'Accounts submitted this Grill round. Treat these as settled answers.',
+            'Publish the next frontier with workspace.set_grill_frontier (questions only; leave answer drafts empty for Accounts).',
+            '',
+            qa,
+          ].join('\n')
+          // Don't block the HTTP response on the agent turn — that made Submit
+          // feel hung and invited double-submits against an empty frontier.
+          void deps.linkedRuns.followUp(id, task).catch((error) => {
+            console.error('Grill follow-up after submit failed', error)
+          })
+        }
+        return json({ grill })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to submit round'
+        return json({ error: message }, 400)
+      }
     }
 
     const draftsRoute = url.pathname.match(/^\/api\/grills\/([^/]+)\/drafts$/)
@@ -154,6 +202,75 @@ export function createGrillsHttp(deps: {
       return json({ grill })
     }
 
+    const pushBackRoute = url.pathname.match(
+      /^\/api\/grills\/([^/]+)\/proposal\/push-back$/,
+    )
+    if (pushBackRoute && request.method === 'POST') {
+      const id = pushBackRoute[1]!
+      if (!deps.grillStore.getGrillForUser(id, user.id))
+        return json({ error: 'Grill not found' }, 404)
+      const body = await readBody(request)
+      const notes = typeof body?.notes === 'string' ? body.notes : ''
+      try {
+        const grill = deps.grillStore.pushBackIssueProposal(
+          id,
+          notes,
+          Date.now(),
+        )
+        if (!grill) return json({ error: 'No Issue proposal to revise' }, 400)
+        if (deps.linkedRuns) {
+          void deps.linkedRuns
+            .followUp(
+              id,
+              JSON.stringify({
+                type: 'grill.proposal_revision_requested',
+                revisionNotes: grill.issueProposal?.revisionNotes,
+              }),
+            )
+            .catch((error) => {
+              console.error('Grill follow-up after push-back failed', error)
+            })
+        }
+        return json({ grill })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to push back proposal'
+        return json({ error: message }, 400)
+      }
+    }
+
+    const confirmRoute = url.pathname.match(
+      /^\/api\/grills\/([^/]+)\/proposal\/confirm$/,
+    )
+    if (confirmRoute && request.method === 'POST') {
+      const id = confirmRoute[1]!
+      if (!deps.grillStore.getGrillForUser(id, user.id))
+        return json({ error: 'Grill not found' }, 404)
+      try {
+        const confirmed = deps.grillStore.confirmIssueProposal(id, Date.now())
+        if (!confirmed)
+          return json({ error: 'No Issue proposal to confirm' }, 400)
+        if (deps.linkedRuns) {
+          void deps.linkedRuns
+            .followUp(
+              id,
+              JSON.stringify({
+                type: 'grill.proposal_confirmed',
+                issues: confirmed.issues,
+              }),
+            )
+            .catch((error) => {
+              console.error('Grill follow-up after confirm failed', error)
+            })
+        }
+        return json(confirmed)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to confirm proposal'
+        return json({ error: message }, 400)
+      }
+    }
+
     const route = url.pathname.match(/^\/api\/grills\/([^/]+)$/)
     if (!route) return undefined
     const id = route[1]!
@@ -161,7 +278,13 @@ export function createGrillsHttp(deps: {
     if (request.method === 'GET') {
       const grill = deps.grillStore.getGrillForUser(id, user.id)
       if (!grill) return json({ error: 'Grill not found' }, 404)
-      return json({ grill })
+      const linkedRun = deps.linkedRuns?.getLinkedRun?.(id)
+      const latestStep = deps.linkedRuns?.getLatestStep?.(id)
+      return json({
+        grill,
+        ...(linkedRun !== undefined ? { linkedRun } : {}),
+        ...(latestStep !== undefined ? { latestStep } : {}),
+      })
     }
 
     if (request.method === 'DELETE') {

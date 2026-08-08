@@ -2,36 +2,52 @@ import { expect, test } from "bun:test";
 import {
   createWorkspaceGrillMcpUpstream,
   type GrillFrontier,
+  type GrillIssueProposal,
+  type GrillProposedIssue,
   type WorkspaceGrillPort,
 } from "./workspace-grill";
 
 function makePort(): WorkspaceGrillPort & {
   calls: { questions: GrillFrontier["questions"]; drafts?: Record<string, string> }[];
+  proposals: GrillProposedIssue[][];
   frontier: GrillFrontier;
+  proposal: GrillIssueProposal | undefined;
 } {
   const calls: {
     questions: GrillFrontier["questions"];
     drafts?: Record<string, string>;
   }[] = [];
+  const proposals: GrillProposedIssue[][] = [];
   let frontier: GrillFrontier = { questions: [], drafts: {} };
+  let proposal: GrillIssueProposal | undefined;
   return {
     calls,
+    proposals,
     get frontier() {
       return frontier;
+    },
+    get proposal() {
+      return proposal;
     },
     setFrontier(questions, drafts) {
       calls.push(drafts === undefined ? { questions } : { questions, drafts });
       frontier = { questions, drafts: drafts ?? {} };
       return frontier;
     },
+    proposeIssues(issues) {
+      proposals.push(issues);
+      proposal = { status: "proposed", issues };
+      return proposal;
+    },
   };
 }
 
-test("listTools returns workspace.set_grill_frontier", async () => {
+test("listTools returns frontier and proposal tools", async () => {
   const upstream = createWorkspaceGrillMcpUpstream({ port: makePort() });
   const tools = await upstream.listTools();
   expect(tools.map((tool) => tool.name)).toEqual([
     "workspace.set_grill_frontier",
+    "workspace.propose_grill_issues",
   ]);
 });
 
@@ -66,4 +82,59 @@ test("set_grill_frontier omits drafts when not provided", async () => {
 
   expect(port.calls).toEqual([{ questions }]);
   expect(port.frontier).toEqual({ questions, drafts: {} });
+});
+
+test("set_grill_frontier round-trips optional recommendation", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+  const questions = [
+    {
+      id: "q1",
+      prompt: "Which unresolved branches matter most?",
+      recommendation:
+        "Pick decisions where disagreeing now would cause rework in architecture or UX.",
+    },
+    { id: "q2", prompt: "What can wait?" },
+  ];
+
+  const result = (await upstream.callTool("workspace.set_grill_frontier", {
+    questions,
+  })) as { content: { text: string }[] };
+
+  expect(JSON.parse(result.content[0]!.text)).toEqual({
+    questions,
+    drafts: {},
+  });
+  expect(port.frontier).toEqual({ questions, drafts: {} });
+});
+
+test("set_grill_frontier rejects blank recommendation", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+
+  await expect(
+    upstream.callTool("workspace.set_grill_frontier", {
+      questions: [{ id: "q1", prompt: "Why?", recommendation: "   " }],
+    }),
+  ).rejects.toThrow("Invalid questions");
+});
+
+test("propose_grill_issues publishes an Issue tree proposal", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+  const issues = [
+    { key: "root", title: "Ship Grill", description: "Parent" },
+    { key: "child", title: "Frontier UX", parentKey: "root" },
+  ];
+
+  const result = (await upstream.callTool("workspace.propose_grill_issues", {
+    issues,
+  })) as { content: { text: string }[] };
+
+  expect(JSON.parse(result.content[0]!.text)).toEqual({
+    status: "proposed",
+    issues,
+  });
+  expect(port.proposals).toEqual([issues]);
+  expect(port.proposal).toEqual({ status: "proposed", issues });
 });
