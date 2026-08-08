@@ -64,6 +64,7 @@ function parseSharedFields(
       tags?: string[]
       timeSpent?: number[]
       parentId?: string | null
+      branch?: string | null
     }
   | IssueBodyError {
   let status: IssueStatus | undefined
@@ -71,6 +72,7 @@ function parseSharedFields(
   let tags: string[] | undefined
   let timeSpent: number[] | undefined
   let parentId: string | null | undefined
+  let branch: string | null | undefined
 
   if (body.status !== undefined) {
     if (!isStatus(body.status)) return { error: 'Invalid status' }
@@ -100,6 +102,11 @@ function parseSharedFields(
       parentId = body.parentId
     }
   }
+  if (mode === 'patch' && body.branch !== undefined) {
+    if (body.branch !== null && typeof body.branch !== 'string')
+      return { error: 'Invalid branch' }
+    branch = body.branch
+  }
 
   return {
     ...(status !== undefined ? { status } : {}),
@@ -107,6 +114,7 @@ function parseSharedFields(
     ...(tags !== undefined ? { tags } : {}),
     ...(timeSpent !== undefined ? { timeSpent } : {}),
     ...(parentId !== undefined ? { parentId } : {}),
+    ...(branch !== undefined ? { branch } : {}),
   }
 }
 

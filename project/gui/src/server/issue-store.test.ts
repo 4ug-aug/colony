@@ -27,6 +27,12 @@ const migration = [
     ),
     'utf8',
   ),
+  readFileSync(
+    fileURLToPath(
+      new URL('../../drizzle/0024_issue_branch.sql', import.meta.url),
+    ),
+    'utf8',
+  ),
 ].join('\n--> statement-breakpoint\n')
 
 const applyMigration = (sqlite: Database) => {
@@ -220,5 +226,65 @@ test('issue store rejects parent cycles and oversized descriptions', () => {
       createdAt: 4,
     }),
   ).toThrow('Invalid Issue description')
+  sqlite.close()
+})
+
+test('issue branch binding resolves own and inherited effectiveBranch', () => {
+  const sqlite = new Database(':memory:')
+  applyMigration(sqlite)
+  const store = createSqliteIssueStore(sqlite)
+
+  const parent = store.createIssue({
+    id: 'parent',
+    title: 'Parent',
+    createdAt: 1,
+  })
+  store.updateIssue(parent.id, { branch: 'feat/parent' }, 2)
+  expect(store.getIssue(parent.id)).toMatchObject({
+    branch: 'feat/parent',
+    effectiveBranch: 'feat/parent',
+  })
+
+  const child = store.createIssue({
+    id: 'child',
+    title: 'Child',
+    parentId: parent.id,
+    createdAt: 3,
+  })
+  expect(store.getIssue(child.id)).toMatchObject({
+    effectiveBranch: 'feat/parent',
+  })
+  expect(store.getIssue(child.id)?.branch).toBeUndefined()
+
+  store.updateIssue(child.id, { branch: 'feat/child' }, 4)
+  expect(store.getIssue(child.id)).toMatchObject({
+    branch: 'feat/child',
+    effectiveBranch: 'feat/child',
+  })
+
+  const middle = store.createIssue({
+    id: 'middle',
+    title: 'Middle',
+    parentId: parent.id,
+    createdAt: 5,
+  })
+  const grandchild = store.createIssue({
+    id: 'grandchild',
+    title: 'Grandchild',
+    parentId: middle.id,
+    createdAt: 6,
+  })
+  expect(store.getIssue(grandchild.id)?.effectiveBranch).toBe('feat/parent')
+
+  store.updateIssue(child.id, { branch: null }, 7)
+  expect(store.getIssue(child.id)?.branch).toBeUndefined()
+  expect(store.getIssue(child.id)?.effectiveBranch).toBe('feat/parent')
+
+  store.updateIssue(middle.id, { branch: 'feat/x' }, 8)
+  expect(store.getIssue(middle.id)).toMatchObject({
+    branch: 'feat/x',
+    effectiveBranch: 'feat/x',
+  })
+
   sqlite.close()
 })

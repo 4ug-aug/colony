@@ -162,6 +162,27 @@
       "when": 1791000000000,
       "tag": "0022_bulletin_poll",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792000000000,
+      "tag": "0023_docs",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793000000000,
+      "tag": "0024_issue_branch",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794000000000,
+      "tag": "0025_grills",
+      "breakpoints": true
     }
   ]
 }

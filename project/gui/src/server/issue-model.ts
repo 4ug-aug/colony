@@ -40,6 +40,10 @@ export type Issue = {
   tags: string[]
   timeSpent: number[]
   parentId?: string
+  /** Own repository branch binding (unset = inherit). */
+  branch?: string
+  /** Resolved branch: own binding or nearest ancestor's. */
+  effectiveBranch?: string
   owner?: IssueOwner
   createdAt: number
   updatedAt: number

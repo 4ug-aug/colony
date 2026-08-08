@@ -29,6 +29,8 @@ export type WorkspaceIssue = {
   tags: string[];
   timeSpent: number[];
   parentId?: string;
+  branch?: string;
+  effectiveBranch?: string;
   owner?: WorkspaceIssueOwner;
   createdAt: number;
   updatedAt: number;
@@ -56,6 +58,7 @@ export interface WorkspaceIssuesPort {
       tags: string[];
       timeSpent: number[];
       parentId: string | null;
+      branch: string | null;
     }>,
   ): WorkspaceIssue;
   assignIssue(ref: string, owner: WorkspaceIssueOwner | null): WorkspaceIssue;
@@ -274,7 +277,7 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         {
           name: "workspace.update_issue",
           description:
-            "Update fields on a Sweat Issue (title, description, status, priority, tags, timeSpent, parentId).",
+            "Update fields on a Sweat Issue (title, description, status, priority, tags, timeSpent, parentId, branch).",
           inputSchema: {
             type: "object",
             properties: {
@@ -286,6 +289,7 @@ export function createWorkspaceIssuesMcpUpstream(options: {
               tags: { type: "array", items: { type: "string" } },
               timeSpent: { type: "array", items: { type: "number" } },
               parentId: { type: ["string", "null"] },
+              branch: { type: ["string", "null"] },
             },
             required: ["ref"],
           },
@@ -376,6 +380,12 @@ export function createWorkspaceIssuesMcpUpstream(options: {
           typeof args.parentId !== "string"
         )
           throw new Error("Invalid parentId");
+        if (
+          args.branch !== undefined &&
+          args.branch !== null &&
+          typeof args.branch !== "string"
+        )
+          throw new Error("Invalid branch");
         return textResult(
           options.port.updateIssue(ref, {
             ...(asString(args.title) !== undefined
@@ -390,6 +400,9 @@ export function createWorkspaceIssuesMcpUpstream(options: {
             ...(timeSpent ? { timeSpent } : {}),
             ...(args.parentId !== undefined
               ? { parentId: args.parentId as string | null }
+              : {}),
+            ...(args.branch !== undefined
+              ? { branch: args.branch as string | null }
               : {}),
           }),
         );

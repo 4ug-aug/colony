@@ -54,6 +54,15 @@ import {
   type Bulletin,
   type BulletinStore,
 } from './bulletin-store'
+import {
+  createSqliteDocStore,
+  type Doc,
+  type DocStore,
+} from './doc-store'
+import {
+  createSqliteGrillStore,
+  type GrillStore,
+} from './grill-store'
 import { createIssueRunner, type IssueRunner } from './issue-runner'
 import {
   createScheduleRunner,
@@ -67,6 +76,8 @@ import {
 import { createIssuesHttp } from './issues-http'
 import { createSchedulesHttp } from './schedules-http'
 import { createBulletinsHttp } from './bulletins-http'
+import { createDocsHttp } from './docs-http'
+import { createGrillsHttp } from './grills-http'
 import { createRoomsHttp } from './rooms-http'
 import { createMembersHttp } from './members-http'
 
@@ -160,6 +171,8 @@ export type WorkspaceServerMessage =
   | { type: 'bulletin.changed'; bulletin: Bulletin }
   | { type: 'bulletin.moved'; bulletin: Bulletin }
   | { type: 'bulletin.deleted'; bulletinId: string }
+  | { type: 'doc.created'; doc: Doc }
+  | { type: 'doc.changed'; doc: Doc }
 export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
 
 export type AgentDefinitionSummary = {
@@ -210,6 +223,8 @@ export function createCoordinator(options: {
   scheduleStore?: ScheduleStore
   issueStore?: IssueStore
   bulletinStore?: BulletinStore
+  docStore?: DocStore
+  grillStore?: GrillStore
   issueNotify?: {
     onCreated: (issue: Issue) => void
     onChanged: (issue: Issue) => void
@@ -521,6 +536,15 @@ export function createCoordinator(options: {
         broadcastWorkspace,
       })
     : undefined
+  const docsHttp = options.docStore
+    ? createDocsHttp({
+        docStore: options.docStore,
+        broadcastWorkspace,
+      })
+    : undefined
+  const grillsHttp = options.grillStore
+    ? createGrillsHttp({ grillStore: options.grillStore })
+    : undefined
   const roomsHttp = createRoomsHttp({
     store: options.store,
     messages: options.messages,
@@ -609,6 +633,8 @@ export function createCoordinator(options: {
         (bulletinsHttp
           ? await bulletinsHttp(request, url, user)
           : undefined) ??
+        (docsHttp ? await docsHttp(request, url, user) : undefined) ??
+        (grillsHttp ? await grillsHttp(request, url, user) : undefined) ??
         (await roomsHttp(request, url, user)) ??
         (await membersHttp(request, url, user))
       if (handled) return cors(handled)
@@ -701,6 +727,13 @@ if (import.meta.main) {
   const scheduleStore = createSqliteScheduleStore(sqlite)
   const issueStore = createSqliteIssueStore(sqlite)
   const bulletinStore = createSqliteBulletinStore(sqlite)
+  const docStore = createSqliteDocStore(sqlite)
+  const grillStore = createSqliteGrillStore(sqlite, {
+    hasGuidanceSkill: (agentDefinitionId) =>
+      skills.listAttachedSkillIds(agentDefinitionId).length > 0,
+    defaultRepository: process.env.SWEAT_GITHUB_REPOSITORY,
+    defaultBaseRef: process.env.SWEAT_GITHUB_BASE ?? 'main',
+  })
   const issueNotify = {
     onCreated: (_issue: Issue) => {},
     onChanged: (_issue: Issue) => {},
@@ -832,6 +865,9 @@ if (import.meta.main) {
                   ...(patch.parentId !== undefined
                     ? { parentId: patch.parentId }
                     : {}),
+                  ...(patch.branch !== undefined
+                    ? { branch: patch.branch }
+                    : {}),
                 },
                 Date.now(),
               )
@@ -909,6 +945,8 @@ if (import.meta.main) {
     scheduleStore,
     issueStore,
     bulletinStore,
+    docStore,
+    grillStore,
     issueNotify,
     agentDefinitions: () => {
       const attachments = skills.listAttachments()

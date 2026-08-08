@@ -22,8 +22,8 @@ engineering Skill file layouts.
 - [ ] Doc body is freeform markdown (no required glossary/ADR schema)
 - [ ] Doc is distinct from Bulletin and Issue description/deliverable in the
       domain model (`CONTEXT.md` **Doc**)
-- [ ] No agent Bulletin-style gap: [NEEDS CLARIFICATION: whether agents get Doc
-      tools in v1, or only the Grill completion path writes Docs]
+- [ ] No agent Bulletin-style gap: Agents do not get Doc tools in v1; only the
+      Grill completion path writes Docs (tools later)
 
 ## Additional Information (Optional)
 

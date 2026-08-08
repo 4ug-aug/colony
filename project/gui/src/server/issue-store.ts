@@ -56,7 +56,7 @@ export type NewIssue = {
 
 export type IssueUpdate = Partial<
   Pick<Issue, 'title' | 'description' | 'status' | 'priority' | 'tags' | 'timeSpent'>
-> & { parentId?: string | null }
+> & { parentId?: string | null; branch?: string | null }
 
 export type NewIssueRun = IssueRun
 
@@ -91,6 +91,7 @@ type IssueRow = {
   tags: string
   time_spent: string
   parent_id: string | null
+  branch: string | null
   owner_kind: 'account' | 'agent' | null
   owner_id: string | null
   created_at: number
@@ -212,6 +213,7 @@ const issueFrom = (
   row: IssueRow,
   childProgress?: IssueChildProgress,
   hasActiveRun?: boolean,
+  effectiveBranch?: string,
 ): Issue => ({
   id: row.id,
   number: row.number,
@@ -227,6 +229,8 @@ const issueFrom = (
     typeof value === 'number' && Number.isFinite(value) ? value : undefined,
   ),
   ...(row.parent_id ? { parentId: row.parent_id } : {}),
+  ...(row.branch ? { branch: row.branch } : {}),
+  ...(effectiveBranch ? { effectiveBranch } : {}),
   ...(row.owner_kind && row.owner_id
     ? { owner: { kind: row.owner_kind, id: row.owner_id } }
     : {}),
@@ -235,6 +239,24 @@ const issueFrom = (
   ...(childProgress && childProgress.total > 0 ? { childProgress } : {}),
   ...(hasActiveRun ? { hasActiveRun: true } : {}),
 })
+
+/** Own branch, else walk parents until a non-null branch is found. */
+const resolveEffectiveBranch = (
+  sqlite: Sqlite,
+  row: Pick<IssueRow, 'branch' | 'parent_id'>,
+): string | undefined => {
+  if (row.branch) return row.branch
+  let cursor = row.parent_id
+  while (cursor) {
+    const parent = sqlite
+      .prepare('SELECT branch, parent_id FROM issue WHERE id = ?')
+      .get(cursor) as Pick<IssueRow, 'branch' | 'parent_id'> | undefined
+    if (!parent) break
+    if (parent.branch) return parent.branch
+    cursor = parent.parent_id
+  }
+  return undefined
+}
 
 const runFrom = (row: IssueRunRow): IssueRun => ({
   id: row.id,
@@ -309,7 +331,12 @@ const selectIssues = (sqlite: Sqlite, where = '', ...values: unknown[]) => {
   const progress = childProgressFor(sqlite, ids)
   const activeRuns = activeRunIssueIds(sqlite, ids)
   return rows.map((row) =>
-    issueFrom(row, progress.get(row.id), activeRuns.has(row.id)),
+    issueFrom(
+      row,
+      progress.get(row.id),
+      activeRuns.has(row.id),
+      resolveEffectiveBranch(sqlite, row),
+    ),
   )
 }
 
@@ -431,11 +458,13 @@ export function createSqliteIssueStore(sqlite: Sqlite): IssueStore {
         patch.parentId === undefined
           ? (current.parentId ?? null)
           : patch.parentId
+      const branch =
+        patch.branch === undefined ? (current.branch ?? null) : patch.branch
       sqlite
         .prepare(
           `UPDATE issue SET
             title = ?, description = ?, status = ?, priority = ?, tags = ?,
-            time_spent = ?, parent_id = ?, updated_at = ?
+            time_spent = ?, parent_id = ?, branch = ?, updated_at = ?
            WHERE id = ?`,
         )
         .run(
@@ -446,6 +475,7 @@ export function createSqliteIssueStore(sqlite: Sqlite): IssueStore {
           JSON.stringify(patch.tags ?? current.tags),
           JSON.stringify(patch.timeSpent ?? current.timeSpent),
           parentId,
+          branch,
           now,
           id,
         )

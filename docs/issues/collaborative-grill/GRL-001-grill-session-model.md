@@ -21,7 +21,8 @@ session model and API. Without it, Grill collapses back into Room chat.
 ## Acceptance Criteria
 
 - [ ] Accounts can create/list/get active Grills per visibility rules
-- [ ] Start rejects agent definitions without an attached Grill Skill
+- [ ] Start rejects agent definitions with no attached Skill (guidance Skill;
+      not name-gated — any attached Skill counts)
 - [ ] Code Grill start binds workspace default repo + chosen/confirmed base ref
 - [ ] Shared answer drafts + round submit are represented in the model
 - [ ] Hard discard clears session state with no durable leftover artifacts

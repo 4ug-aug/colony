@@ -55,9 +55,16 @@ function makePort(seed: WorkspaceIssue[] = []): WorkspaceIssuesPort & {
             : patch.parentId === null
               ? undefined
               : patch.parentId,
+        branch:
+          patch.branch === undefined
+            ? issue.branch
+            : patch.branch === null
+              ? undefined
+              : patch.branch,
         updatedAt: issue.updatedAt + 1,
       });
       if (patch.parentId === null) delete issue.parentId;
+      if (patch.branch === null) delete issue.branch;
       return issue;
     },
     assignIssue(ref, owner) {

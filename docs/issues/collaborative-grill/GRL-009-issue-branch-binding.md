@@ -23,9 +23,8 @@ sets the binding).
       available in v1 — workspace default repo constraints apply)
 - [ ] Read path resolves effective branch: own binding or nearest ancestor
 - [ ] Explicit child binding overrides inheritance
-- [ ] APIs/UI/MCP can set/clear the binding as appropriate for Accounts/agents
-      ([NEEDS CLARIFICATION: whether agents may set Issue branch via
-      workspace.issues update in v1])
+- [ ] APIs/MCP can set/clear the binding for Accounts and agents
+      (`workspace.update_issue` accepts `branch`)
 - [ ] Glossary/ADR 0018 reflected; no Grill dependency required to land this
 
 ## Additional Information (Optional)
