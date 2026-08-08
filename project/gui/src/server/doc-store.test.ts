@@ -63,3 +63,22 @@ test('update body/title changes updatedAt', () => {
   expect(store.updateDoc('missing', { body: 'x' }, 30)).toBeUndefined()
   sqlite.close()
 })
+
+test('deleteDoc removes the Doc', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(schema)
+  const store = createSqliteDocStore(sqlite)
+
+  store.createDoc({
+    id: 'd1',
+    title: 'Draft',
+    body: 'v1',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+  expect(store.deleteDoc('d1')).toBe(true)
+  expect(store.getDoc('d1')).toBeUndefined()
+  expect(store.listDocs()).toEqual([])
+  expect(store.deleteDoc('d1')).toBe(false)
+  sqlite.close()
+})

@@ -180,6 +180,7 @@ export type WorkspaceServerMessage =
   | { type: 'bulletin.deleted'; bulletinId: string }
   | { type: 'doc.created'; doc: Doc }
   | { type: 'doc.changed'; doc: Doc }
+  | { type: 'doc.deleted'; docId: string }
 export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
 
 export type AgentDefinitionSummary = {

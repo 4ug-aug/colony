@@ -85,6 +85,13 @@ test('POST/GET/PATCH happy path', async () => {
   expect(patched.body.doc).toMatchObject({ title: 'Revised', body: 'Updated' })
   expect(broadcasts.at(-1)?.type).toBe('doc.changed')
 
+  const deleted = await call('DELETE', `/api/docs/${id}`)
+  expect(deleted.status).toBe(200)
+  expect(deleted.body.ok).toBe(true)
+  expect(broadcasts.at(-1)?.type).toBe('doc.deleted')
+  expect((await call('GET', `/api/docs/${id}`)).status).toBe(404)
+  expect((await call('GET', '/api/docs')).body.docs).toHaveLength(0)
+
   sqlite.close()
 })
 

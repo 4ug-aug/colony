@@ -76,6 +76,13 @@ export function createDocsHttp(deps: {
       return json({ doc })
     }
 
+    if (request.method === 'DELETE') {
+      const deleted = deps.docStore.deleteDoc(id)
+      if (!deleted) return json({ error: 'Doc not found' }, 404)
+      deps.broadcastWorkspace({ type: 'doc.deleted', docId: id })
+      return json({ ok: true })
+    }
+
     return undefined
   }
 }

@@ -1,10 +1,21 @@
 import { Markdown } from '#/components/markdown'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
-import { cn } from '#/lib/utils'
-import { ArrowLeft, FileText } from 'lucide-react'
+import { toast } from '#/components/ui/toast'
+import { ArrowLeft, FileText, Trash2 } from 'lucide-react'
 import type { Doc } from './types'
-import { useDoc, useDocs } from './use-docs'
+import { useDeleteDoc, useDoc, useDocs } from './use-docs'
 
 function formatDocUpdatedAt(updatedAt: number): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -12,6 +23,80 @@ function formatDocUpdatedAt(updatedAt: number): string {
     day: 'numeric',
     year: 'numeric',
   }).format(updatedAt)
+}
+
+function DeleteDocButton({
+  doc,
+  onDeleted,
+  size = 'sm',
+  stopPropagation,
+}: {
+  doc: Doc
+  onDeleted?: () => void
+  size?: 'sm' | 'icon-sm'
+  stopPropagation?: boolean
+}) {
+  const deleteDoc = useDeleteDoc()
+  const title = doc.title.trim() || 'Untitled Doc'
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button
+            type="button"
+            size={size}
+            variant="ghost"
+            aria-label={`Delete ${title}`}
+            onClick={
+              stopPropagation
+                ? (event) => event.stopPropagation()
+                : undefined
+            }
+          />
+        }
+      >
+        <Trash2 data-icon={size === 'sm' ? 'inline-start' : undefined} />
+        {size === 'sm' ? 'Delete' : null}
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        onClick={stopPropagation ? (event) => event.stopPropagation() : undefined}
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this Doc?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes “{title}”. Grills that produced it are
+            kept.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={deleteDoc.isPending}
+            onClick={() => {
+              void deleteDoc
+                .mutateAsync(doc.id)
+                .then(() => {
+                  onDeleted?.()
+                })
+                .catch((reason) => {
+                  toast.add({
+                    title:
+                      reason instanceof Error
+                        ? reason.message
+                        : 'Unable to delete Doc',
+                    type: 'error',
+                  })
+                })
+            }}
+          >
+            {deleteDoc.isPending ? 'Deleting…' : 'Delete'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
 }
 
 function DocDetail({
@@ -90,6 +175,7 @@ export function DocSessionHeader({
           ? 'Loading Doc…'
           : (doc?.title.trim() || 'Untitled Doc')}
       </p>
+      {doc ? <DeleteDocButton doc={doc} onDeleted={onBack} /> : null}
     </>
   )
 }
@@ -105,26 +191,29 @@ function DocListItem({
 
   return (
     <li>
-      <button
-        type="button"
-        className={cn(
-          'flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-muted/40',
-        )}
-        onClick={() => onOpen(doc.id)}
-      >
-        <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">
-            {doc.title.trim() || 'Untitled Doc'}
-          </p>
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-            {preview}
-          </p>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {doc.createdBy.name} · {formatDocUpdatedAt(doc.updatedAt)}
-          </p>
+      <div className="flex items-stretch gap-1 rounded-lg border transition-colors hover:bg-muted/40">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left"
+          onClick={() => onOpen(doc.id)}
+        >
+          <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">
+              {doc.title.trim() || 'Untitled Doc'}
+            </p>
+            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+              {preview}
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {doc.createdBy.name} · {formatDocUpdatedAt(doc.updatedAt)}
+            </p>
+          </div>
+        </button>
+        <div className="flex shrink-0 items-start p-2">
+          <DeleteDocButton doc={doc} size="icon-sm" stopPropagation />
         </div>
-      </button>
+      </div>
     </li>
   )
 }

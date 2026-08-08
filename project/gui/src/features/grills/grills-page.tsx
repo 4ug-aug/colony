@@ -255,6 +255,80 @@ function grillStepLabel(step: GrillLatestStep): string {
   })
 }
 
+function DiscardGrillButton({
+  grillId,
+  onDiscarded,
+  size = 'sm',
+  stopPropagation,
+}: {
+  grillId: string
+  onDiscarded?: () => void
+  size?: 'sm' | 'icon-sm'
+  stopPropagation?: boolean
+}) {
+  const discard = useDiscardGrill()
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button
+            type="button"
+            size={size}
+            variant="ghost"
+            aria-label="Discard Grill"
+            onClick={
+              stopPropagation
+                ? (event) => event.stopPropagation()
+                : undefined
+            }
+          />
+        }
+      >
+        <Trash2 data-icon={size === 'sm' ? 'inline-start' : undefined} />
+        {size === 'sm' ? 'Discard' : null}
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        onClick={
+          stopPropagation ? (event) => event.stopPropagation() : undefined
+        }
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>Discard this Grill?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently removes the session, settled rounds, and any linked
+            agent run. Confirmed Issues and saved Docs are kept.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={discard.isPending}
+            onClick={() => {
+              void discard
+                .mutateAsync(grillId)
+                .then(() => {
+                  onDiscarded?.()
+                })
+                .catch((reason) => {
+                  toast.add({
+                    title:
+                      reason instanceof Error
+                        ? reason.message
+                        : 'Unable to discard Grill',
+                    type: 'error',
+                  })
+                })
+            }}
+          >
+            {discard.isPending ? 'Discarding…' : 'Discard'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
 function GrillListActivity({ grill }: { grill: GrillListItem }) {
   const linkedRun = grill.linkedRun
   const awaitingAnswers = grill.frontier.questions.length > 0
@@ -343,16 +417,7 @@ function FrontierPanel({
 
   const questions = grill.frontier.questions
   if (questions.length === 0) {
-    if (grillIsComplete(grill)) return null
-    if (grillAwaitingWrapUpReview(grill)) {
-      return (
-        <div className="space-y-2 rounded-lg border border-dashed p-6">
-          <p className="text-sm text-muted-foreground">
-            No open frontier — review the wrap-up on the right.
-          </p>
-        </div>
-      )
-    }
+    if (grillIsComplete(grill) || grillAwaitingWrapUpReview(grill)) return null
     const runState = linkedRun?.state
     const failed = runState === 'failed' || runState === 'cancelled'
     const working =
@@ -627,9 +692,11 @@ function SettledRoundRow({
       <CollapsibleContent className={collapsiblePanelClassName}>
         <div className="space-y-3 px-3 pb-3 text-sm">
           {round.questions.map((question) => (
-            <div key={question.id} className="space-y-1">
-              <Markdown>{question.prompt}</Markdown>
-              <p className="text-foreground">
+            <div key={question.id} className="space-y-1.5">
+              <div className="opacity-70">
+                <Markdown>{question.prompt}</Markdown>
+              </div>
+              <p className="border-l-2 border-foreground/25 pl-3 text-foreground">
                 {round.answers[question.id] ?? '—'}
               </p>
             </div>
@@ -700,13 +767,15 @@ function GrillSession({
   }
 
   const complete = grillIsComplete(grill)
+  const awaitingWrapUp = grillAwaitingWrapUpReview(grill)
+  const focusWrapUp = complete || awaitingWrapUp
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div
         className={cn(
           'flex-1 gap-6 overflow-auto p-4',
-          complete
+          focusWrapUp
             ? 'flex flex-col'
             : 'grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]',
         )}
@@ -720,6 +789,14 @@ function GrillSession({
               below.
             </AlertDescription>
           </Alert>
+        ) : awaitingWrapUp ? (
+          <Alert>
+            <Flame />
+            <AlertTitle>No open frontier</AlertTitle>
+            <AlertDescription>
+              Review the wrap-up below — confirm it or push it back.
+            </AlertDescription>
+          </Alert>
         ) : (
           <section className="space-y-3">
             <FrontierPanel
@@ -729,7 +806,7 @@ function GrillSession({
             />
           </section>
         )}
-        <div className={cn('space-y-6', complete && 'min-w-0')}>
+        <div className={cn('space-y-6', focusWrapUp && 'min-w-0')}>
           <section className="space-y-3">
             <h2 className="text-sm font-semibold">Wrap-up</h2>
             {grill.kind === 'general' && (grill.writeup || grill.docId) ? (
@@ -763,7 +840,6 @@ export function GrillSessionHeader({
 }) {
   const { data, isPending } = useGrill(grillId)
   const grill = data?.grill
-  const discard = useDiscardGrill()
   const { data: agents = [] } = useAgentDefinitions()
   const agentName =
     agents.find((agent) => agent.id === grill?.agentDefinitionId)?.name ??
@@ -806,45 +882,7 @@ export function GrillSessionHeader({
               .join(', ')}
         </p>
       </div>
-      <AlertDialog>
-        <AlertDialogTrigger
-          render={<Button type="button" size="sm" variant="ghost" />}
-        >
-          <Trash2 data-icon="inline-start" />
-          Discard
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard this Grill?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently removes the session, settled rounds, and any
-              linked agent run. Confirmed Issues are kept.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={discard.isPending}
-              onClick={() => {
-                void discard
-                  .mutateAsync(grill.id)
-                  .then(onBack)
-                  .catch((reason) => {
-                    toast.add({
-                      title:
-                        reason instanceof Error
-                          ? reason.message
-                          : 'Unable to discard Grill',
-                      type: 'error',
-                    })
-                  })
-              }}
-            >
-              {discard.isPending ? 'Discarding…' : 'Discard'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DiscardGrillButton grillId={grill.id} onDiscarded={onBack} />
     </>
   )
 }
@@ -913,36 +951,45 @@ export function GrillsPage({
           <ul className="mx-auto grid max-w-4xl gap-2">
             {grills.map((grill) => (
               <li key={grill.id}>
-                <button
-                  type="button"
-                  className={cn(
-                    'flex w-full items-start justify-between gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-muted/40',
-                  )}
-                  onClick={() => setActiveId(grill.id)}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {grill.initialRequest?.trim() ||
-                        (grill.kind === 'code' ? 'Code Grill' : 'General Grill')}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <Badge variant="outline" className="font-normal">
-                        {grill.kind === 'code' ? 'Code' : 'General'}
-                      </Badge>
-                      <Badge variant="secondary" className="font-normal">
-                        {grill.visibility === 'workspace-open'
-                          ? 'Workspace open'
-                          : 'Invite only'}
-                      </Badge>
-                      {grill.issueProposal ? (
+                <div className="flex items-stretch gap-1 rounded-lg border transition-colors hover:bg-muted/40">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-start justify-between gap-3 px-4 py-3 text-left"
+                    onClick={() => setActiveId(grill.id)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {grill.initialRequest?.trim() ||
+                          (grill.kind === 'code'
+                            ? 'Code Grill'
+                            : 'General Grill')}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <Badge variant="outline" className="font-normal">
-                          proposal {grill.issueProposal.status}
+                          {grill.kind === 'code' ? 'Code' : 'General'}
                         </Badge>
-                      ) : null}
+                        <Badge variant="secondary" className="font-normal">
+                          {grill.visibility === 'workspace-open'
+                            ? 'Workspace open'
+                            : 'Invite only'}
+                        </Badge>
+                        {grill.issueProposal ? (
+                          <Badge variant="outline" className="font-normal">
+                            proposal {grill.issueProposal.status}
+                          </Badge>
+                        ) : null}
+                      </div>
                     </div>
+                    <GrillListActivity grill={grill} />
+                  </button>
+                  <div className="flex shrink-0 items-start p-2">
+                    <DiscardGrillButton
+                      grillId={grill.id}
+                      size="icon-sm"
+                      stopPropagation
+                    />
                   </div>
-                  <GrillListActivity grill={grill} />
-                </button>
+                </div>
               </li>
             ))}
           </ul>

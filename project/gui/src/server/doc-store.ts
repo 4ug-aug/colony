@@ -33,6 +33,7 @@ export interface DocStore {
     patch: Partial<Pick<Doc, 'title' | 'body'>>,
     now: number,
   ): Doc | undefined
+  deleteDoc(id: string): boolean
 }
 
 type DocRow = {
@@ -104,5 +105,11 @@ export function createSqliteDocStore(sqlite: Sqlite): DocStore {
         .run(title, body, now, id)
       return selectDocs(sqlite, 'WHERE d.id = ?', id)[0]
     },
+    deleteDoc: (id) =>
+      ((
+        sqlite.prepare('DELETE FROM doc WHERE id = ?').run(id) as {
+          changes?: number
+        }
+      ).changes ?? 0) > 0,
   }
 }
