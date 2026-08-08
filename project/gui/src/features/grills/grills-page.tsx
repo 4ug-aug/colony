@@ -448,7 +448,7 @@ function FrontierPanel({
               className="text-sm [&_span:last-child]:truncate"
             />
             {latestStep?.kind === 'message' && latestStep.text.trim() ? (
-              <div className="max-h-48 overflow-auto rounded-md border bg-muted/20 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground">
+              <div className="max-h-48 overflow-auto rounded-md border bg-muted/20 px-3 py-2 text-xs whitespace-pre-wrap text-muted-foreground">
                 {latestStep.text}
               </div>
             ) : (
