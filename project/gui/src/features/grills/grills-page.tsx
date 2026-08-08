@@ -75,6 +75,7 @@ import {
   useDiscardGrill,
   useGrill,
   useGrills,
+  useReplyToGrill,
   useSubmitGrillRound,
   useUpdateGrillDrafts,
 } from './use-grills'
@@ -413,7 +414,9 @@ function FrontierPanel({
 }) {
   const updateDrafts = useUpdateGrillDrafts(grill.id)
   const submitRound = useSubmitGrillRound(grill.id)
+  const replyToGrill = useReplyToGrill(grill.id)
   const [drafts, setDrafts] = useState(grill.frontier.drafts)
+  const [reply, setReply] = useState('')
   const frontierKey = `${grill.id}:${grill.frontier.questions.map((q) => q.id).join(',')}:${grill.updatedAt}`
   const [syncedKey, setSyncedKey] = useState(frontierKey)
   if (syncedKey !== frontierKey) {
@@ -433,6 +436,8 @@ function FrontierPanel({
       : runState === 'preparing'
         ? 'is preparing'
         : 'is working'
+    const canReply =
+      !working && !replyToGrill.isPending && Boolean(reply.trim())
     return (
       <div
         className={cn(
@@ -477,6 +482,37 @@ function FrontierPanel({
               'Grill-linked run failed before publishing a frontier.'}
           </p>
         )}
+        <div className="space-y-2">
+          <Textarea
+            value={reply}
+            onChange={(event) => setReply(event.target.value)}
+            placeholder="Reply to the grilling agent…"
+            rows={3}
+            disabled={working || replyToGrill.isPending}
+          />
+          <Button
+            type="button"
+            disabled={!canReply}
+            onClick={() => {
+              const message = reply.trim()
+              if (!message) return
+              void replyToGrill
+                .mutateAsync(message)
+                .then(() => setReply(''))
+                .catch((reason) => {
+                  toast.add({
+                    title:
+                      reason instanceof Error
+                        ? reason.message
+                        : 'Unable to reply',
+                    type: 'error',
+                  })
+                })
+            }}
+          >
+            {replyToGrill.isPending ? 'Sending…' : 'Send reply'}
+          </Button>
+        </div>
       </div>
     )
   }

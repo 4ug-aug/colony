@@ -271,6 +271,30 @@ export function useSubmitGrillRound(grillId: string) {
   })
 }
 
+export function useReplyToGrill(grillId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (message: string): Promise<Grill> => {
+      const data = await apiJsonBody<{ grill?: Grill }>(
+        `/api/grills/${encodeURIComponent(grillId)}/reply`,
+        'POST',
+        { message },
+        'Unable to reply',
+      )
+      if (!data.grill) throw new Error('Unable to reply')
+      return data.grill
+    },
+    onSuccess: (grill) => {
+      // Follow-up starts async; clear prior clarifying text so wait UI resets.
+      upsertGrillCache(queryClient, grill, undefined, null)
+      void queryClient.invalidateQueries({ queryKey: grillsQueryKey })
+      void queryClient.invalidateQueries({
+        queryKey: grillQueryKey(grillId),
+      })
+    },
+  })
+}
+
 export function usePushBackGrillProposal(grillId: string) {
   const queryClient = useQueryClient()
   return useMutation({

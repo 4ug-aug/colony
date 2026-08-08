@@ -1,3 +1,7 @@
+import {
+  grillAwaitingWrapUpReview,
+  grillIsComplete,
+} from '#/features/grills/grill-status'
 import { GRILL_TURN_CONTRACT } from '../../../mcp/workspace-grill'
 import type { GrillStore, GrillKind, GrillVisibility } from './grill-store'
 import type { RoomUser } from './room-store'
@@ -200,6 +204,39 @@ export function createGrillsHttp(deps: {
       }
       const grill = deps.grillStore.updateDrafts(id, drafts, Date.now())
       if (!grill) return json({ error: 'Grill not found' }, 404)
+      return json({ grill })
+    }
+
+    const replyRoute = url.pathname.match(/^\/api\/grills\/([^/]+)\/reply$/)
+    if (replyRoute && request.method === 'POST') {
+      const id = replyRoute[1]!
+      const grill = deps.grillStore.getGrillForUser(id, user.id)
+      if (!grill) return json({ error: 'Grill not found' }, 404)
+      const body = await readBody(request)
+      const message =
+        typeof body?.message === 'string' ? body.message.trim() : ''
+      if (!message) return json({ error: 'Invalid message' }, 400)
+      if (grill.frontier.questions.length > 0)
+        return json(
+          { error: 'Reply is only available when the frontier is empty' },
+          400,
+        )
+      if (grillIsComplete(grill))
+        return json({ error: 'Grill is already complete' }, 400)
+      if (grillAwaitingWrapUpReview(grill))
+        return json(
+          { error: 'Reply is unavailable during wrap-up review' },
+          400,
+        )
+      if (deps.linkedRuns) {
+        const task = [
+          JSON.stringify({ type: 'grill.account_reply', message }),
+          GRILL_TURN_CONTRACT,
+        ].join('\n')
+        void deps.linkedRuns.followUp(id, task).catch((error) => {
+          console.error('Grill follow-up after reply failed', error)
+        })
+      }
       return json({ grill })
     }
 

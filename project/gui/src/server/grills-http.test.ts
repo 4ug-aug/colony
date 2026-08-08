@@ -304,6 +304,132 @@ test('GET /api/grills includes linked-run activity when present', async () => {
   sqlite.close()
 })
 
+test('POST /api/grills/:id/reply follows up when frontier is empty', async () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec('PRAGMA foreign_keys = ON')
+  sqlite.exec(schema)
+  const grillStore = createSqliteGrillStore(sqlite, {
+    hasGuidanceSkill: () => true,
+    defaultRepository: 'acme/sweat',
+    defaultBaseRef: 'main',
+    createDoc: (doc) => doc,
+  })
+  const followUps: Array<{ grillId: string; task: string }> = []
+  const handle = createGrillsHttp({
+    grillStore,
+    linkedRuns: {
+      start: () => undefined,
+      followUp: async (grillId, task) => {
+        followUps.push({ grillId, task })
+        return undefined
+      },
+      dispose: async () => undefined,
+    },
+  })
+  const grill = grillStore.createGrill({
+    id: 'g-reply',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'Grill the auth redesign',
+    createdBy: 'ada',
+    createdAt: 1,
+  })
+
+  const okUrl = new URL(`http://localhost/api/grills/${grill.id}/reply`)
+  const okResponse = await handle(
+    new Request(okUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: '  Put the rocket in the title  ' }),
+    }),
+    okUrl,
+    ada,
+  )
+  expect(okResponse?.status).toBe(200)
+  expect(followUps).toHaveLength(1)
+  expect(followUps[0]!.grillId).toBe(grill.id)
+  expect(followUps[0]!.task).toContain(
+    JSON.stringify({
+      type: 'grill.account_reply',
+      message: 'Put the rocket in the title',
+    }),
+  )
+  expect(followUps[0]!.task).toContain(
+    'HARD RULE — Grill questions are tools, never chat',
+  )
+
+  const emptyResponse = await handle(
+    new Request(okUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: '   ' }),
+    }),
+    okUrl,
+    ada,
+  )
+  expect(emptyResponse?.status).toBe(400)
+
+  grillStore.setFrontier(
+    grill.id,
+    {
+      questions: [{ id: 'q1', prompt: 'Open question?' }],
+      drafts: {},
+    },
+    2,
+  )
+  const frontierResponse = await handle(
+    new Request(okUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'Should fail' }),
+    }),
+    okUrl,
+    ada,
+  )
+  expect(frontierResponse?.status).toBe(400)
+  expect(((await frontierResponse!.json()) as { error: string }).error).toContain(
+    'frontier is empty',
+  )
+
+  grillStore.setFrontier(grill.id, { questions: [], drafts: {} }, 3)
+  grillStore.setWriteup(grill.id, { title: 'Decisions', body: '# Done\n' }, 4)
+  const wrapUpResponse = await handle(
+    new Request(okUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'During wrap-up' }),
+    }),
+    okUrl,
+    ada,
+  )
+  expect(wrapUpResponse?.status).toBe(400)
+  expect(((await wrapUpResponse!.json()) as { error: string }).error).toContain(
+    'wrap-up',
+  )
+
+  await grillStore.completeGrill(
+    grill.id,
+    { title: 'Decisions', body: '# Done\n' },
+    5,
+  )
+  const completeResponse = await handle(
+    new Request(okUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'After complete' }),
+    }),
+    okUrl,
+    ada,
+  )
+  expect(completeResponse?.status).toBe(400)
+  expect(((await completeResponse!.json()) as { error: string }).error).toContain(
+    'complete',
+  )
+
+  sqlite.close()
+})
+
 test('POST /run appends the Grill turn contract so questions must use tools', async () => {
   const sqlite = new Database(':memory:')
   sqlite.exec('PRAGMA foreign_keys = ON')

@@ -43,7 +43,7 @@ export const GRILL_TURN_CONTRACT = [
   "HARD RULE — Grill questions are tools, never chat:",
   "- Never ask Accounts a question in assistant text, narration, or workspace.post_message.",
   "- Every question for Accounts MUST go through workspace.set_grill_frontier before you end the turn (leave drafts empty; put suggested answers in recommendation).",
-  "- Chat questions are invisible to the UI and stall the Grill.",
+  "- Chat questions are the wrong path: Accounts can reply when the frontier is empty, but structured frontier cards are still required for multiplayer rounds.",
   "- The topic is the task above — do not ask what to grill; publish the first frontier from that topic.",
   "- The only granted MCP tools are workspace.set_grill_frontier, workspace.propose_grill_issues, and workspace.propose_grill_writeup — do not look for Issues, GitHub, or room tools.",
   "- When the design tree is settled: General Grill → workspace.propose_grill_writeup; Issue breakdown → workspace.propose_grill_issues. Prefer wrap-up over inventing more questions.",
