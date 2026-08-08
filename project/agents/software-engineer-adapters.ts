@@ -21,6 +21,10 @@ import {
   type AssignableOwner,
   type WorkspaceIssuesPort,
 } from "../mcp/workspace-issues";
+import {
+  createWorkspaceGrillMcpUpstream,
+  type GrillFrontier,
+} from "../mcp/workspace-grill";
 import { STEP_TEXT_LIMIT } from "../runtime/step";
 import { rosterParticipant } from "./roster-meta";
 
@@ -64,6 +68,44 @@ export function createWorkspaceIssuesAdapter(options: {
             ? { listAssignableOwners: options.listAssignableOwners }
             : {}),
         }),
+    },
+  };
+}
+
+export function createWorkspaceGrillAdapter(options: {
+  port: {
+    setFrontier(
+      grillId: string,
+      frontier: GrillFrontier,
+      now: number,
+    ): { frontier: GrillFrontier } | undefined;
+  };
+}): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "workspace.grill",
+      applies({ grantContext }) {
+        return Boolean(grantContext?.grillId);
+      },
+      createUpstream({ grantContext }) {
+        const grillId = grantContext?.grillId;
+        if (!grillId) {
+          throw new Error("A grill id is required for the workspace grill capability");
+        }
+        return createWorkspaceGrillMcpUpstream({
+          port: {
+            setFrontier(questions, drafts) {
+              const grill = options.port.setFrontier(
+                grillId,
+                { questions, drafts: drafts ?? {} },
+                Date.now(),
+              );
+              if (!grill) throw new Error(`Grill not found: ${grillId}`);
+              return grill.frontier;
+            },
+          },
+        });
+      },
     },
   };
 }

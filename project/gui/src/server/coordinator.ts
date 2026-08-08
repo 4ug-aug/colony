@@ -78,6 +78,7 @@ import { createSchedulesHttp } from './schedules-http'
 import { createBulletinsHttp } from './bulletins-http'
 import { createDocsHttp } from './docs-http'
 import { createGrillsHttp } from './grills-http'
+import { createGrillLinkedRuns } from './grill-linked-runs'
 import { createRoomsHttp } from './rooms-http'
 import { createMembersHttp } from './members-http'
 
@@ -148,6 +149,12 @@ export type WorkspaceServerMessage =
       attentionCount: number
       mentionCount: number
       kind?: 'mention' | 'run_terminal'
+    }
+  | {
+      type: 'grill_attention.changed'
+      grillId: string
+      attentionCount: number
+      kind?: 'grill_invite'
     }
   | {
       type: 'message.created'
@@ -371,6 +378,17 @@ export function createCoordinator(options: {
       ...(kind ? { kind } : {}),
     })
   }
+  const broadcastGrillAttention = (userId: string, grillId: string): void => {
+    if (!options.grillStore) return
+    const attentionCount =
+      options.grillStore.listGrillAttentionCounts(userId).get(grillId) ?? 0
+    broadcastWorkspaceToUsers(new Set([userId]), {
+      type: 'grill_attention.changed',
+      grillId,
+      attentionCount,
+      kind: 'grill_invite',
+    })
+  }
   const createAttention = (
     roomId: string,
     recipientId: string,
@@ -543,7 +561,28 @@ export function createCoordinator(options: {
       })
     : undefined
   const grillsHttp = options.grillStore
-    ? createGrillsHttp({ grillStore: options.grillStore })
+    ? createGrillsHttp({
+        grillStore: options.grillStore,
+        broadcastGrillAttention,
+        linkedRuns: createGrillLinkedRuns({
+          startWarm: ({
+            grillId,
+            task,
+            agentDefinitionId,
+            idleTtlMs,
+            onCreate,
+          }) =>
+            options.control.start(task, {
+              grillId,
+              agentDefinitionId,
+              warm: true,
+              idleTtlMs,
+              onCreate,
+            }),
+          followUp: (runId, task) => options.control.followUp(runId, task),
+          cancel: (runId) => options.control.cancel(runId),
+        }),
+      })
     : undefined
   const roomsHttp = createRoomsHttp({
     store: options.store,
@@ -690,6 +729,7 @@ if (import.meta.main) {
       createGitHubSoftwareEngineerAdapter,
       createLinearSoftwareEngineerAdapter,
       createWorkspaceIssuesAdapter,
+      createWorkspaceGrillAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
     { createGitHubCliClient },
@@ -905,6 +945,12 @@ if (import.meta.main) {
               name: user.displayName || user.name,
             })),
           ],
+        }),
+        createWorkspaceGrillAdapter({
+          port: {
+            setFrontier: (grillId, frontier, now) =>
+              grillStore.setFrontier(grillId, frontier, now),
+          },
         }),
         ...(linearAccessToken
           ? [

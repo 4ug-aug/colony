@@ -7,6 +7,16 @@ const visibilities = new Set<GrillVisibility>(['invite-only', 'workspace-open'])
 
 export function createGrillsHttp(deps: {
   grillStore: GrillStore
+  broadcastGrillAttention?: (userId: string, grillId: string) => void
+  linkedRuns?: {
+    start(input: {
+      grillId: string
+      task: string
+      agentDefinitionId: string
+    }): unknown
+    followUp(grillId: string, task: string): Promise<unknown>
+    dispose(grillId: string): Promise<void>
+  }
 }): (
   request: Request,
   url: URL,
@@ -53,6 +63,57 @@ export function createGrillsHttp(deps: {
       }
     }
 
+    const runRoute = url.pathname.match(/^\/api\/grills\/([^/]+)\/run$/)
+    if (runRoute && request.method === 'POST') {
+      const id = runRoute[1]!
+      const grill = deps.grillStore.getGrillForUser(id, user.id)
+      if (!grill) return json({ error: 'Grill not found' }, 404)
+      if (!deps.linkedRuns) return json({ error: 'Grill runs unavailable' }, 503)
+      const body = await readBody(request)
+      const task = typeof body?.task === 'string' ? body.task.trim() : ''
+      if (!task) return json({ error: 'Invalid task' }, 400)
+      const run = deps.linkedRuns.start({
+        grillId: id,
+        task,
+        agentDefinitionId: grill.agentDefinitionId,
+      })
+      return json({ run }, 201)
+    }
+
+    const inviteRoute = url.pathname.match(/^\/api\/grills\/([^/]+)\/invite$/)
+    if (inviteRoute && request.method === 'POST') {
+      const id = inviteRoute[1]!
+      if (!deps.grillStore.getGrillForUser(id, user.id))
+        return json({ error: 'Grill not found' }, 404)
+      const body = await readBody(request)
+      const userId = body?.userId
+      if (typeof userId !== 'string' || !userId)
+        return json({ error: 'Invalid userId' }, 400)
+      const grill = deps.grillStore.getGrill(id)
+      if (!grill) return json({ error: 'Grill not found' }, 404)
+      if (grill.visibility !== 'invite-only')
+        return json({ error: 'Only invite-only Grills accept invites' }, 400)
+      deps.grillStore.invite(id, userId, Date.now())
+      deps.broadcastGrillAttention?.(userId, id)
+      const attentionCount =
+        deps.grillStore.listGrillAttentionCounts(userId).get(id) ?? 0
+      return json({ grillId: id, attentionCount })
+    }
+
+    const ackRoute = url.pathname.match(
+      /^\/api\/grills\/([^/]+)\/attention\/acknowledge$/,
+    )
+    if (ackRoute && request.method === 'POST') {
+      const id = ackRoute[1]!
+      if (!deps.grillStore.getGrillForUser(id, user.id))
+        return json({ error: 'Grill not found' }, 404)
+      deps.grillStore.acknowledgeGrillAttention(id, user.id, Date.now())
+      deps.broadcastGrillAttention?.(user.id, id)
+      const attentionCount =
+        deps.grillStore.listGrillAttentionCounts(user.id).get(id) ?? 0
+      return json({ grillId: id, attentionCount })
+    }
+
     const submitRoute = url.pathname.match(/^\/api\/grills\/([^/]+)\/submit$/)
     if (submitRoute && request.method === 'POST') {
       const id = submitRoute[1]!
@@ -60,6 +121,15 @@ export function createGrillsHttp(deps: {
         return json({ error: 'Grill not found' }, 404)
       const grill = deps.grillStore.submitRound(id, Date.now())
       if (!grill) return json({ error: 'Grill not found' }, 404)
+      const latest = grill.settledAnswers.at(-1)
+      if (latest && deps.linkedRuns) {
+        const task = JSON.stringify({
+          type: 'grill.round_submitted',
+          answers: latest.answers,
+          questions: latest.questions,
+        })
+        await deps.linkedRuns.followUp(id, task)
+      }
       return json({ grill })
     }
 
@@ -97,6 +167,7 @@ export function createGrillsHttp(deps: {
     if (request.method === 'DELETE') {
       const grill = deps.grillStore.getGrillForUser(id, user.id)
       if (!grill) return json({ error: 'Grill not found' }, 404)
+      await deps.linkedRuns?.dispose(id)
       deps.grillStore.discardGrill(id)
       return json({ ok: true })
     }

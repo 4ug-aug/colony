@@ -38,4 +38,4 @@ Per-submit containers waste compute and discard provider conversation context
 - Related research: `docs/research/cursor-provider.md`; installed SDK APIs for
   multi-send / session are unused by Sweat today
 - Materialize/publish may be a final phase of this run or a trailing run —
-  [NEEDS CLARIFICATION at implement time; same product outcome]
+  deferred to GRL-011 (warm loop only in this issue)

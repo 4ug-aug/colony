@@ -381,3 +381,91 @@ test("runs bind a granted capability session and revoke it during cleanup", asyn
   expect(boundToken).toBe("run-token");
   expect(revoked).toBe(1);
 });
+
+test("warm run accepts follow-ups without disposing the provider session", async () => {
+  let disposed = 0;
+  let sandboxDisposed = 0;
+  const turns: string[] = [];
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {
+          sandboxDisposed++;
+        },
+      }),
+    },
+    runtime: {
+      run: async () => {
+        throw new Error("one-shot run must not be used for warm");
+      },
+      openWarmSession: async () => ({
+        runTurn: async (task) => {
+          turns.push(task);
+          return { exitCode: 0, stdout: `ok:${task}`, stderr: "" };
+        },
+        dispose: async () => {
+          disposed++;
+        },
+      }),
+    },
+    createId: () => "warm-1",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "round-1",
+    warm: true,
+    idleTtlMs: 60_000,
+  });
+  await waitFor(() => executor.getRun(id)?.state === "running" && turns.length === 1);
+  expect(sandboxDisposed).toBe(0);
+  expect(disposed).toBe(0);
+
+  await executor.followUp(id, "round-2");
+  expect(turns).toEqual(["round-1", "round-2"]);
+  expect(executor.getRun(id)?.state).toBe("running");
+  expect(sandboxDisposed).toBe(0);
+  expect(disposed).toBe(0);
+
+  await executor.cancelRun(id);
+  expect(executor.getRun(id)?.state).toBe("cancelled");
+  expect(disposed).toBe(1);
+  expect(sandboxDisposed).toBe(1);
+});
+
+test("warm run idle TTL recycles resources", async () => {
+  let disposed = 0;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+      openWarmSession: async () => ({
+        runTurn: async () => ({ exitCode: 0, stdout: "hi", stderr: "" }),
+        dispose: async () => {
+          disposed++;
+        },
+      }),
+    },
+    createId: () => "warm-idle",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "start",
+    warm: true,
+    idleTtlMs: 20,
+  });
+  await waitFor(() => executor.getRun(id)?.state === "running");
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(disposed).toBe(1);
+});

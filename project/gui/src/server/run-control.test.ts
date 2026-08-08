@@ -46,6 +46,7 @@ function captureExecutor(
     listRuns: () => [],
     subscribe: () => () => {},
     subscribeSteps: () => () => {},
+    followUp: async () => undefined,
     cancelRun: async () => undefined,
     stop: async () => undefined,
   }

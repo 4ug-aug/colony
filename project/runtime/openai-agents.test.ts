@@ -17,6 +17,7 @@ import {
   normalizeModelBaseUrl,
   rewriteVllmMcpCalls,
   runAgent,
+  openOpenAIAgentSession,
   sanitizeOutputStatuses,
   sanitizeUsageDetails,
   stripMcpProtocolInput,
@@ -617,4 +618,17 @@ test("the runtime fails when its capability server is unreachable", async () => 
     { model: new OpenAIChatCompletionsModel(client, "test-model") },
   )).rejects.toThrow();
   expect(modelCalls).toBe(0);
+});
+
+
+test("openOpenAIAgentSession keeps a durable MemorySession across the handle", async () => {
+  const session = await openOpenAIAgentSession({
+    instructions: "i",
+    agentId: "a",
+    model: { baseUrl: "http://example/v1", apiKey: "k", model: "m" },
+  });
+  expect(session.sessionId).toBeTruthy();
+  const again = session.sessionId;
+  expect(session.sessionId).toBe(again);
+  await session.dispose();
 });

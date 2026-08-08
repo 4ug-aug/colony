@@ -25,6 +25,16 @@ const schema = `
     user_id TEXT NOT NULL REFERENCES user(id),
     PRIMARY KEY (grill_id, user_id)
   );
+  CREATE TABLE grill_attention (
+    id TEXT PRIMARY KEY NOT NULL,
+    grill_id TEXT NOT NULL REFERENCES grill(id) ON DELETE CASCADE,
+    recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('grill_invite')),
+    source_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    acknowledged_at INTEGER,
+    UNIQUE(recipient_id, kind, source_id)
+  );
 `
 
 function harness(opts?: { hasGuidanceSkill?: (agentId: string) => boolean }) {
@@ -164,6 +174,69 @@ test('hard discard clears session state with no leftover rows', () => {
   expect(store.listGrillsForUser('ada')).toHaveLength(0)
   const leftover = sqlite
     .prepare('SELECT COUNT(*) AS n FROM grill_participant')
+    .get() as { n: number }
+  expect(leftover.n).toBe(0)
+  sqlite.close()
+})
+
+test('invite creates participant and unacked Attention; ack clears count', () => {
+  const { store, sqlite } = harness()
+  store.createGrill({
+    id: 'g1',
+    kind: 'general',
+    visibility: 'invite-only',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+
+  store.invite('g1', 'grace', 20)
+  expect(store.getGrillForUser('g1', 'grace')?.id).toBe('g1')
+  expect(store.listGrillAttentionCounts('grace').get('g1')).toBe(1)
+
+  const row = sqlite
+    .prepare(
+      'SELECT kind, source_id, acknowledged_at FROM grill_attention WHERE grill_id = ? AND recipient_id = ?',
+    )
+    .get('g1', 'grace') as {
+    kind: string
+    source_id: string
+    acknowledged_at: number | null
+  }
+  expect(row).toMatchObject({
+    kind: 'grill_invite',
+    source_id: 'g1:grace',
+    acknowledged_at: null,
+  })
+
+  store.acknowledgeGrillAttention('g1', 'grace', 30)
+  expect(store.listGrillAttentionCounts('grace').size).toBe(0)
+  const acked = sqlite
+    .prepare(
+      'SELECT acknowledged_at FROM grill_attention WHERE grill_id = ? AND recipient_id = ?',
+    )
+    .get('g1', 'grace') as { acknowledged_at: number }
+  expect(acked.acknowledged_at).toBe(30)
+  sqlite.close()
+})
+
+test('discard Grill cascades Attention away', () => {
+  const { store, sqlite } = harness()
+  store.createGrill({
+    id: 'g1',
+    kind: 'general',
+    visibility: 'invite-only',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+  store.invite('g1', 'grace', 20)
+  expect(store.listGrillAttentionCounts('grace').get('g1')).toBe(1)
+
+  expect(store.discardGrill('g1')).toBe(true)
+  expect(store.listGrillAttentionCounts('grace').size).toBe(0)
+  const leftover = sqlite
+    .prepare('SELECT COUNT(*) AS n FROM grill_attention')
     .get() as { n: number }
   expect(leftover.n).toBe(0)
   sqlite.close()

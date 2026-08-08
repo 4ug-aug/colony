@@ -324,3 +324,46 @@ test("runCursorAgent passes only inline MCP gateway session", async () => {
     },
   });
 });
+
+test("openCursorAgentSession multi-send keeps one Agent instance", async () => {
+  let createCount = 0;
+  let disposeCount = 0;
+  const prompts: string[] = [];
+  const createAgent: CursorAgentFactory = async () => {
+    createCount++;
+    return {
+      agentId: "agent-warm-1",
+      async send(prompt) {
+        prompts.push(prompt);
+        return {
+          async *stream() {},
+          async wait() {
+            return { status: "finished", result: `reply:${prompts.length}` };
+          },
+        };
+      },
+      async [Symbol.asyncDispose]() {
+        disposeCount++;
+      },
+    };
+  };
+
+  const { openCursorAgentSession } = await import("./cursor-sdk");
+  const session = await openCursorAgentSession(
+    {
+      instructions: "Grill",
+      agentId: "interviewer",
+      apiKey: "k",
+      model: "composer-2.5",
+    },
+    { createAgent },
+  );
+  expect(session.agentId).toBe("agent-warm-1");
+  expect(await session.send("q1")).toBe("reply:1");
+  expect(await session.send("q2")).toBe("reply:2");
+  expect(createCount).toBe(1);
+  expect(disposeCount).toBe(0);
+  await session.dispose();
+  expect(disposeCount).toBe(1);
+  expect(prompts).toHaveLength(2);
+});

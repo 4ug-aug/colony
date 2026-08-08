@@ -42,6 +42,13 @@ export type RunStartContext<Output> =
       agentDefinitionId?: string
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
+  | {
+      grillId: string
+      agentDefinitionId?: string
+      warm?: boolean
+      idleTtlMs?: number
+      onCreate: (run: RunSummary) => NonNullable<Output>
+    }
 
 export interface RunControl {
   subscribe(listener: (run: RunSummary) => void): () => void
@@ -50,6 +57,7 @@ export interface RunControl {
     task: string,
     context: RunStartContext<Output>,
   ): NonNullable<Output>
+  followUp(runId: string, task: string): Promise<RunSummary | undefined>
   cancel(runId: string): Promise<RunSummary | undefined>
   stop(): Promise<void>
 }
@@ -101,7 +109,7 @@ export function runSummary<Input extends RunInput>(
 
 type RunControlExecutor = Pick<
   WorkspaceAgentExecutor,
-  'startRun' | 'subscribe' | 'subscribeSteps' | 'cancelRun' | 'stop'
+  'startRun' | 'followUp' | 'subscribe' | 'subscribeSteps' | 'cancelRun' | 'stop'
 >
 
 export function createRunControl(executor: RunControlExecutor): RunControl {
@@ -116,17 +124,28 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
       let created: NonNullable<Output> | undefined
       const agentDefinitionId =
         context.agentDefinitionId ?? SOFTWARE_ENGINEER_ID
+      const grantContext =
+        'roomId' in context
+          ? { roomId: context.roomId, agentDefinitionId }
+          : 'scheduleId' in context
+            ? { scheduleId: context.scheduleId, agentDefinitionId }
+            : 'grillId' in context
+              ? { grillId: context.grillId, agentDefinitionId }
+              : { issueId: context.issueId, agentDefinitionId }
       executor.startRun({
         task,
         agentDefinitionId,
-        grantContext:
-          'roomId' in context
-            ? { roomId: context.roomId, agentDefinitionId }
-            : 'scheduleId' in context
-              ? { scheduleId: context.scheduleId, agentDefinitionId }
-              : { issueId: context.issueId, agentDefinitionId },
+        grantContext,
         ...('roomId' in context && context.attachments
           ? { attachments: context.attachments }
+          : {}),
+        ...('grillId' in context
+          ? {
+              warm: context.warm ?? true,
+              ...(context.idleTtlMs !== undefined
+                ? { idleTtlMs: context.idleTtlMs }
+                : {}),
+            }
           : {}),
         onCreate: (run) => {
           const registered = context.onCreate(runSummary(run))
@@ -137,6 +156,10 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
       })
       if (created === undefined) throw new Error('Agent run was not created')
       return created
+    },
+    followUp: async (runId, task) => {
+      const run = await executor.followUp(runId, task)
+      return run ? runSummary(run) : undefined
     },
     cancel: async (runId) => {
       const run = await executor.cancelRun(runId)

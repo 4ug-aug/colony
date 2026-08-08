@@ -23,8 +23,8 @@ Brittle parse-of-chat would break shared submit and multiplayer answering.
 - [ ] Frontier updates are visible to Grill participants through the session
       model (GRL-001)
 - [ ] Timeline narration may exist but is not required to submit a round
-- [ ] Capability grant scope for these tools is defined for Grill-linked runs
-      ([NEEDS CLARIFICATION: exact capability id naming])
+- [ ] Capability grant scope for these tools is `workspace.grill`, granted only
+      when `grantContext.grillId` is set
 
 ## Additional Information (Optional)
 

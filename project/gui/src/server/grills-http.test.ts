@@ -27,6 +27,16 @@ const schema = `
     user_id TEXT NOT NULL REFERENCES user(id),
     PRIMARY KEY (grill_id, user_id)
   );
+  CREATE TABLE grill_attention (
+    id TEXT PRIMARY KEY NOT NULL,
+    grill_id TEXT NOT NULL REFERENCES grill(id) ON DELETE CASCADE,
+    recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('grill_invite')),
+    source_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    acknowledged_at INTEGER,
+    UNIQUE(recipient_id, kind, source_id)
+  );
 `
 
 const ada: RoomUser = { id: 'ada', name: 'Ada' }
@@ -110,5 +120,33 @@ test('invite-only Grill is hidden until participant; DELETE hard-discards', asyn
 
   expect((await call(ada, 'DELETE', `/api/grills/${id}`)).status).toBe(200)
   expect((await call(ada, 'GET', `/api/grills/${id}`)).status).toBe(404)
+  sqlite.close()
+})
+
+test('POST invite creates Attention; acknowledge clears badge', async () => {
+  const { call, grillStore, sqlite } = harness()
+  const created = await call(ada, 'POST', '/api/grills', {
+    kind: 'general',
+    visibility: 'invite-only',
+    agentDefinitionId: 'interviewer',
+  })
+  const id = created.body.grill.id as string
+
+  const invited = await call(ada, 'POST', `/api/grills/${id}/invite`, {
+    userId: 'grace',
+  })
+  expect(invited.status).toBe(200)
+  expect(invited.body).toMatchObject({ grillId: id, attentionCount: 1 })
+  expect((await call(grace, 'GET', `/api/grills/${id}`)).status).toBe(200)
+  expect(grillStore.listGrillAttentionCounts('grace').get(id)).toBe(1)
+
+  const acked = await call(
+    grace,
+    'POST',
+    `/api/grills/${id}/attention/acknowledge`,
+  )
+  expect(acked.status).toBe(200)
+  expect(acked.body).toMatchObject({ grillId: id, attentionCount: 0 })
+  expect(grillStore.listGrillAttentionCounts('grace').size).toBe(0)
   sqlite.close()
 })

@@ -47,6 +47,8 @@ export interface CursorSdkRun {
 }
 
 export interface CursorSdkAgent {
+  /** Present on real SDK agents; used for resume across warm turns. */
+  agentId?: string;
   send(prompt: string): Promise<CursorSdkRun>;
   [Symbol.asyncDispose]?(): PromiseLike<void>;
 }
@@ -67,6 +69,17 @@ export type CursorAgentFactory = (options: {
     }
   >;
 }) => Promise<CursorSdkAgent>;
+
+export type CursorAgentResumeFactory = (
+  agentId: string,
+  options: Parameters<CursorAgentFactory>[0],
+) => Promise<CursorSdkAgent>;
+
+export type CursorAgentSession = {
+  send(task: string): Promise<string>;
+  dispose(): Promise<void>;
+  agentId?: string;
+};
 
 export function assistantText(message: Extract<CursorSdkMessage, { type: "assistant" }>): string {
   return message.message.content
@@ -129,14 +142,14 @@ export function scrubCursorApiKeysFromEnv(
   delete env.CURSOR_API_KEY;
 }
 
-export async function runCursorAgent(
-  request: CursorAgentRuntimeRequest,
+export async function openCursorAgentSession(
+  request: Omit<CursorAgentRuntimeRequest, "task"> & { resumeAgentId?: string },
   dependencies: {
     createAgent?: CursorAgentFactory;
+    resumeAgent?: CursorAgentResumeFactory;
     onStep?: (step: Step) => void;
   } = {},
-): Promise<string> {
-  // Key travels only on the request; scrub residual env so shell tools cannot see it.
+): Promise<CursorAgentSession> {
   scrubCursorApiKeysFromEnv();
 
   const createAgent =
@@ -144,6 +157,12 @@ export async function runCursorAgent(
     (async (options) => {
       const { Agent } = await import("@cursor/sdk");
       return Agent.create(options) as Promise<CursorSdkAgent>;
+    });
+  const resumeAgent =
+    dependencies.resumeAgent ??
+    (async (agentId, options) => {
+      const { Agent } = await import("@cursor/sdk");
+      return Agent.resume(agentId, options) as Promise<CursorSdkAgent>;
     });
 
   const mcpServers = request.capabilitySession
@@ -158,35 +177,36 @@ export async function runCursorAgent(
       }
     : undefined;
 
-  const agent = await createAgent({
+  const options = {
     apiKey: request.apiKey,
     model: { id: request.model },
     local: {
       cwd: request.cwd ?? "/work",
-      // Project settings load workspace-staged and repo `.cursor` skills/rules.
-      settingSources: ["project"],
+      settingSources: ["project"] as const,
     },
     ...(mcpServers ? { mcpServers } : {}),
-  });
-
-  const prompt = `${request.instructions}\n\nTask:\n${request.task}`;
-  let lastMessageText: string | undefined;
-  // Cursor streams assistant text as many small delta events. Coalesce into one
-  // Sweat message step per narration turn (flush on tool events / stream end).
-  let pendingMessage = "";
-
-  const flushPendingMessage = (): void => {
-    if (!pendingMessage) return;
-    lastMessageText = pendingMessage;
-    dependencies.onStep?.({
-      kind: "message",
-      text: pendingMessage,
-      at: Date.now(),
-    });
-    pendingMessage = "";
   };
 
-  try {
+  const agent = request.resumeAgentId
+    ? await resumeAgent(request.resumeAgentId, options)
+    : await createAgent(options);
+
+  const runTurn = async (task: string): Promise<string> => {
+    const prompt = `${request.instructions}\n\nTask:\n${task}`;
+    let lastMessageText: string | undefined;
+    let pendingMessage = "";
+
+    const flushPendingMessage = (): void => {
+      if (!pendingMessage) return;
+      lastMessageText = pendingMessage;
+      dependencies.onStep?.({
+        kind: "message",
+        text: pendingMessage,
+        at: Date.now(),
+      });
+      pendingMessage = "";
+    };
+
     const run = await agent.send(prompt);
     for await (const event of run.stream()) {
       if (event.type === "thinking") continue;
@@ -220,9 +240,31 @@ export async function runCursorAgent(
       });
     }
     return finalOutput || lastMessageText || "";
+  };
+
+  return {
+    send: runTurn,
+    agentId: agent.agentId,
+    dispose: async () => {
+      if (agent[Symbol.asyncDispose]) {
+        await agent[Symbol.asyncDispose]();
+      }
+    },
+  };
+}
+
+export async function runCursorAgent(
+  request: CursorAgentRuntimeRequest,
+  dependencies: {
+    createAgent?: CursorAgentFactory;
+    resumeAgent?: CursorAgentResumeFactory;
+    onStep?: (step: Step) => void;
+  } = {},
+): Promise<string> {
+  const session = await openCursorAgentSession(request, dependencies);
+  try {
+    return await session.send(request.task);
   } finally {
-    if (agent[Symbol.asyncDispose]) {
-      await agent[Symbol.asyncDispose]();
-    }
+    await session.dispose();
   }
 }

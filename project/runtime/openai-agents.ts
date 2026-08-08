@@ -1,6 +1,7 @@
 import {
   MCPServers,
   MCPServerStreamableHttp,
+  MemorySession,
   type Model,
   type ModelProvider,
   type ModelRequest,
@@ -9,6 +10,7 @@ import {
   OpenAIResponsesModel,
   type ResponseStreamEvent,
   Runner,
+  type Session,
 } from "@openai/agents";
 import {
   Capabilities,
@@ -311,21 +313,32 @@ export async function runAgent(
     onStep?: (step: Step) => void;
     /** Host path bind-mounted as `work/` in the SDK session. Defaults to cwd. */
     workspaceRoot?: string;
+    /** Reuse across warm Grill follow-ups for conversation continuity. */
+    session?: Session;
+    /** When set with an external session, skip opening/closing MCP. */
+    mcpServers?: Awaited<ReturnType<typeof MCPServers.open>>;
+    retainMcp?: boolean;
   } = {},
 ): Promise<string> {
-  const mcpServers = request.capabilitySession
-    ? await MCPServers.open([
-        new MCPServerStreamableHttp({
-          name: "capabilities",
-          url: request.capabilitySession.url,
-          requestInit: {
-            headers: { Authorization: `Bearer ${request.capabilitySession.token}` },
-          },
-          toolFilter: { allowedToolNames: [...request.capabilitySession.allowedTools] },
-          timeout: 5 * 60_000,
-        }),
-      ], { strict: true })
-    : undefined;
+  const mcpServers =
+    dependencies.mcpServers ??
+    (request.capabilitySession
+      ? await MCPServers.open([
+          new MCPServerStreamableHttp({
+            name: "capabilities",
+            url: request.capabilitySession.url,
+            requestInit: {
+              headers: {
+                Authorization: `Bearer ${request.capabilitySession.token}`,
+              },
+            },
+            toolFilter: {
+              allowedToolNames: [...request.capabilitySession.allowedTools],
+            },
+            timeout: 5 * 60_000,
+          }),
+        ], { strict: true })
+      : undefined);
 
   const workspaceRoot = resolve(dependencies.workspaceRoot ?? process.cwd());
   const skillsRoot = request.skillsRoot
@@ -377,6 +390,7 @@ export async function runAgent(
       maxTurns: 50,
       stream: true,
       sandbox: { client: new UnixLocalSandboxClient() },
+      ...(dependencies.session ? { session: dependencies.session } : {}),
     });
 
     let lastMessageText: string | undefined;
@@ -419,6 +433,62 @@ export async function runAgent(
 
     return finalOutput;
   } finally {
-    await mcpServers?.close();
+    if (!dependencies.retainMcp) {
+      await mcpServers?.close();
+    }
   }
+}
+
+export type OpenAIAgentSession = {
+  runTurn(task: string): Promise<string>;
+  dispose(): Promise<void>;
+  sessionId: string;
+};
+
+/** Warm Grill path: MemorySession continuity across follow-up submits. */
+export async function openOpenAIAgentSession(
+  request: Omit<AgentRuntimeRequest, "task">,
+  dependencies: {
+    model?: Model;
+    modelProvider?: ModelProvider;
+    onStep?: (step: Step) => void;
+    workspaceRoot?: string;
+  } = {},
+): Promise<OpenAIAgentSession> {
+  const session = new MemorySession();
+  const mcpServers = request.capabilitySession
+    ? await MCPServers.open([
+        new MCPServerStreamableHttp({
+          name: "capabilities",
+          url: request.capabilitySession.url,
+          requestInit: {
+            headers: {
+              Authorization: `Bearer ${request.capabilitySession.token}`,
+            },
+          },
+          toolFilter: {
+            allowedToolNames: [...request.capabilitySession.allowedTools],
+          },
+          timeout: 5 * 60_000,
+        }),
+      ], { strict: true })
+    : undefined;
+
+  return {
+    sessionId: await session.getSessionId(),
+    runTurn: (task) =>
+      runAgent(
+        { ...request, task },
+        {
+          ...dependencies,
+          session,
+          mcpServers,
+          retainMcp: true,
+        },
+      ),
+    dispose: async () => {
+      await session.clearSession();
+      await mcpServers?.close();
+    },
+  };
 }

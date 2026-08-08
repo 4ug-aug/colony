@@ -57,6 +57,9 @@ export interface GrillStore {
   getGrillForUser(id: string, userId: string): Grill | undefined
   listGrillsForUser(userId: string): Grill[]
   addParticipant(grillId: string, userId: string): void
+  invite(grillId: string, userId: string, now: number): void
+  listGrillAttentionCounts(userId: string): Map<string, number>
+  acknowledgeGrillAttention(grillId: string, userId: string, at: number): void
   setFrontier(grillId: string, frontier: GrillFrontier, now: number): Grill | undefined
   updateDrafts(
     grillId: string,
@@ -220,6 +223,41 @@ export function createSqliteGrillStore(
           `INSERT OR IGNORE INTO grill_participant (grill_id, user_id) VALUES (?, ?)`,
         )
         .run(grillId, userId)
+    },
+    invite: (grillId, userId, now) => {
+      sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO grill_participant (grill_id, user_id) VALUES (?, ?)`,
+        )
+        .run(grillId, userId)
+      const grill = selectGrill(sqlite, grillId)
+      if (!grill || grill.visibility !== 'invite-only') return
+      sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO grill_attention
+             (id, grill_id, recipient_id, kind, source_id, created_at)
+           VALUES (?, ?, ?, 'grill_invite', ?, ?)`,
+        )
+        .run(crypto.randomUUID(), grillId, userId, `${grillId}:${userId}`, now)
+    },
+    listGrillAttentionCounts: (userId) => {
+      const rows = sqlite
+        .prepare(
+          `SELECT grill_id, COUNT(*) AS count
+           FROM grill_attention
+           WHERE recipient_id = ? AND acknowledged_at IS NULL
+           GROUP BY grill_id`,
+        )
+        .all(userId) as { grill_id: string; count: number }[]
+      return new Map(rows.map(({ grill_id, count }) => [grill_id, count]))
+    },
+    acknowledgeGrillAttention: (grillId, userId, at) => {
+      sqlite
+        .prepare(
+          `UPDATE grill_attention SET acknowledged_at = ?
+           WHERE grill_id = ? AND recipient_id = ? AND acknowledged_at IS NULL`,
+        )
+        .run(at, grillId, userId)
     },
     setFrontier: (grillId, frontier, now) => {
       const result = sqlite

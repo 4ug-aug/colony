@@ -87,6 +87,12 @@ export const capabilityPresentation: Record<
       "workspace.post_message": "Post messages",
     },
   },
+  "workspace.grill": {
+    name: "Grill",
+    tools: {
+      "workspace.set_grill_frontier": "Set grill frontier",
+    },
+  },
 };
 
 export type WorkspacePerson = {

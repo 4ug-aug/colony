@@ -110,9 +110,22 @@ export interface RuntimeRequest {
   onStep?: (step: Step) => void;
 }
 
+/** Multi-turn provider session kept alive across Grill follow-up submits. */
+export interface WarmRuntimeSession {
+  runTurn(task: string): Promise<ExecutionResult>;
+  dispose(): Promise<void>;
+}
+
 export interface AgentProvider {
   run(sandbox: Sandbox, request: RuntimeRequest): Promise<ExecutionResult>;
+  openWarmSession?(
+    sandbox: Sandbox,
+    request: Omit<RuntimeRequest, "task">,
+  ): Promise<WarmRuntimeSession>;
 }
+
+/** Default idle recycle for Grill-linked warm runs (15 minutes). */
+export const DEFAULT_WARM_IDLE_TTL_MS = 15 * 60_000;
 
 export interface StartRunRequest<Input extends RunInput = never> {
   agentDefinitionId?: string;
@@ -125,11 +138,15 @@ export interface StartRunRequest<Input extends RunInput = never> {
   timeoutMs?: number;
   maxOutputBytes?: number;
   maxSteps?: number;
+  /** Keep provider agent + sandbox warm for followUp turns. */
+  warm?: boolean;
+  idleTtlMs?: number;
   onCreate?: (record: RunRecord<Input>) => void;
 }
 
 export interface RunExecutor<Input extends RunInput = never> {
   startRun(request: StartRunRequest<Input>): string;
+  followUp(id: string, task: string): Promise<RunRecord<Input> | undefined>;
   getRun(id: string): RunRecord<Input> | undefined;
   listRuns(): RunRecord<Input>[];
   subscribe(listener: (record: RunRecord<Input>) => void): () => void;
@@ -203,6 +220,16 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   const sandboxes = new Map<string, Sandbox>();
   const disposed = new Map<string, Promise<void>>();
   const stepListeners = new Set<(runId: string, step: Step) => void>();
+  type WarmEntry = {
+    session: WarmRuntimeSession;
+    sandbox: Sandbox;
+    workspace?: PreparedInputs["workspace"];
+    capabilitySession?: CapabilitySessionBinding;
+    idleTtlMs: number;
+    idleTimer?: ReturnType<typeof setTimeout>;
+    turnGate: Promise<void>;
+  };
+  const warm = new Map<string, WarmEntry>();
   let stopping: Promise<void> | undefined;
 
   const publishStep = (runId: string, step: Step): void => {
@@ -220,6 +247,201 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   const finish = (id: string, patch: Partial<RunRecord<Input>>): void => {
     const record = store.get(id);
     if (record && !terminal(record.state)) store.update(id, patch);
+  };
+
+  const clearIdle = (entry: WarmEntry): void => {
+    if (entry.idleTimer) clearTimeout(entry.idleTimer);
+    entry.idleTimer = undefined;
+  };
+
+  const disposeWarm = async (
+    id: string,
+    reason: "idle" | "cancel",
+  ): Promise<void> => {
+    const entry = warm.get(id);
+    if (!entry) return;
+    warm.delete(id);
+    clearIdle(entry);
+    await entry.turnGate.catch(() => undefined);
+    try {
+      await entry.session.dispose();
+    } catch {
+      // best-effort
+    }
+    sandboxes.delete(id);
+    try {
+      await disposeSandbox(id, entry.sandbox);
+    } catch {
+      // best-effort
+    }
+    if (entry.workspace) {
+      try {
+        await entry.workspace.dispose();
+      } catch {
+        // best-effort
+      }
+    }
+    if (entry.capabilitySession) {
+      try {
+        await entry.capabilitySession.revoke();
+      } catch {
+        // best-effort
+      }
+    }
+    finish(id, {
+      state: reason === "idle" ? "succeeded" : "cancelled",
+      completedAt: now(),
+    });
+  };
+
+  const armIdle = (id: string, entry: WarmEntry): void => {
+    clearIdle(entry);
+    entry.idleTimer = setTimeout(() => {
+      void disposeWarm(id, "idle");
+    }, entry.idleTtlMs);
+  };
+
+  const bindTurnHandlers = (
+    record: RunRecord<Input>,
+    request: Omit<RuntimeRequest, "task">,
+  ): Omit<RuntimeRequest, "task"> => {
+    let stepCount = 0;
+    let stepsTruncated = false;
+    return {
+      ...request,
+      onOutput: (chunk) => {
+        const current = store.get(record.id);
+        if (!current || terminal(current.state)) return;
+        store.update(record.id, {
+          [chunk.stream]: retainOutput(
+            current[chunk.stream] + chunk.text,
+            record.effectiveLimits.maxOutputBytes,
+          ),
+        });
+      },
+      onStep: (step) => {
+        if (stepsTruncated) return;
+        if (stepCount >= record.effectiveLimits.maxSteps) {
+          stepsTruncated = true;
+          publishStep(record.id, {
+            kind: "message",
+            text: "[steps truncated: reached maxSteps limit]",
+            at: now(),
+          });
+          return;
+        }
+        const cap = Math.min(
+          record.effectiveLimits.maxOutputBytes,
+          MAX_STEP_TEXT_BYTES,
+        );
+        stepCount++;
+        publishStep(record.id, { ...step, text: tail(step.text, cap) });
+      },
+    };
+  };
+
+  const executeWarm = async (
+    record: RunRecord<Input>,
+    idleTtlMs: number,
+  ): Promise<void> => {
+    let workspace: PreparedInputs["workspace"];
+    let capabilitySession: CapabilitySessionBinding | undefined;
+    let sandbox: Sandbox | undefined;
+    try {
+      if (!dependencies.runtime.openWarmSession) {
+        throw new Error("Runtime does not support warm Grill-linked runs");
+      }
+      workspace = (
+        await dependencies.inputs?.prepare(record.inputs, {
+          runId: record.id,
+          agentDefinitionId: record.definition.id,
+        })
+      )?.workspace;
+      if (cancellation.has(record.id)) return;
+      const spec: SandboxSpec = {
+        image: record.definition.runtime.image,
+        ...(workspace ? { volumes: [`${workspace.path}:/work`] } : {}),
+      };
+      sandbox = await dependencies.sandboxes.create(spec);
+      sandboxes.set(record.id, sandbox);
+      if (cancellation.has(record.id)) return;
+      capabilitySession = record.capabilityGrant
+        ? await dependencies.capabilities?.create(record.capabilityGrant, {
+            workspace,
+            sandbox,
+            grantContext: record.grantContext,
+          })
+        : undefined;
+      if (cancellation.has(record.id)) return;
+
+      store.update(record.id, { state: "running", startedAt: now() });
+      const baseRequest = bindTurnHandlers(record, {
+        definition: snapshot(record.definition),
+        ...(workspace ? { workspace: "/work" } : {}),
+        ...(capabilitySession ? { capabilitySession } : {}),
+      });
+      const session = await dependencies.runtime.openWarmSession(
+        sandbox,
+        baseRequest,
+      );
+      const result = await session.runTurn(record.task);
+      store.update(record.id, {
+        stdout: tail(result.stdout, record.effectiveLimits.maxOutputBytes),
+        stderr: tail(result.stderr, record.effectiveLimits.maxOutputBytes),
+        exitCode: result.exitCode,
+      });
+      if (result.exitCode !== 0) {
+        await session.dispose();
+        throw new Error(`Runtime exited with code ${result.exitCode}`);
+      }
+      if (cancellation.has(record.id)) {
+        await session.dispose();
+        return;
+      }
+      const entry: WarmEntry = {
+        session,
+        sandbox,
+        workspace,
+        capabilitySession,
+        idleTtlMs,
+        turnGate: Promise.resolve(),
+      };
+      warm.set(record.id, entry);
+      armIdle(record.id, entry);
+      // Keep resources; disposeWarm handles cleanup on idle/cancel.
+      sandbox = undefined;
+      workspace = undefined;
+      capabilitySession = undefined;
+    } catch (error) {
+      finish(record.id, {
+        state: "failed",
+        completedAt: now(),
+        error: errorText(error),
+      });
+    } finally {
+      if (sandbox) {
+        sandboxes.delete(record.id);
+        try {
+          await disposeSandbox(record.id, sandbox);
+        } catch {
+          // best-effort
+        }
+      }
+      if (workspace) {
+        try {
+          await workspace.dispose();
+        } catch {
+          // best-effort
+        }
+      }
+      if (capabilitySession) {
+        try {
+          await capabilitySession.revoke();
+        } catch {
+          // best-effort
+        }
+      }
+    }
   };
 
   const execute = async (record: RunRecord<Input>): Promise<void> => {
@@ -359,6 +581,10 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     const record = store.get(id);
     if (!record || terminal(record.state)) return record;
     cancellation.add(id);
+    if (warm.has(id)) {
+      await disposeWarm(id, "cancel");
+      return store.get(id);
+    }
     const sandbox = sandboxes.get(id);
     if (sandbox) {
       try {
@@ -371,6 +597,74 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     return store.get(id);
   };
 
+  const followUp = async (
+    id: string,
+    task: string,
+  ): Promise<RunRecord<Input> | undefined> => {
+    const entry = warm.get(id);
+    const record = store.get(id);
+    if (!entry || !record || terminal(record.state)) return record;
+    clearIdle(entry);
+    const turn = (async () => {
+      const result = await entry.session.runTurn(task);
+      const current = store.get(id);
+      if (!current || terminal(current.state)) return;
+      store.update(id, {
+        task,
+        stdout: tail(
+          current.stdout + result.stdout,
+          current.effectiveLimits.maxOutputBytes,
+        ),
+        stderr: tail(
+          current.stderr + result.stderr,
+          current.effectiveLimits.maxOutputBytes,
+        ),
+        exitCode: result.exitCode,
+      });
+      if (result.exitCode !== 0) {
+        warm.delete(id);
+        clearIdle(entry);
+        try {
+          await entry.session.dispose();
+        } catch {
+          // best-effort
+        }
+        sandboxes.delete(id);
+        try {
+          await disposeSandbox(id, entry.sandbox);
+        } catch {
+          // best-effort
+        }
+        if (entry.workspace) {
+          try {
+            await entry.workspace.dispose();
+          } catch {
+            // best-effort
+          }
+        }
+        if (entry.capabilitySession) {
+          try {
+            await entry.capabilitySession.revoke();
+          } catch {
+            // best-effort
+          }
+        }
+        finish(id, {
+          state: "failed",
+          completedAt: now(),
+          error: `Runtime exited with code ${result.exitCode}`,
+        });
+      }
+    })();
+    entry.turnGate = turn.then(
+      () => undefined,
+      () => undefined,
+    );
+    await turn;
+    if (warm.has(id)) armIdle(id, entry);
+    return store.get(id);
+  };
+
   return {
     startRun(request) {
       if (stopping) throw new Error("Run executor is stopping");
@@ -380,6 +674,9 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       if (!definition) throw new Error(`Unknown agent definition: ${definitionId}`);
       if (request.capabilityGrant && !dependencies.capabilities) {
         throw new Error("A capability session factory is required for a capability grant");
+      }
+      if (request.warm && !dependencies.runtime.openWarmSession) {
+        throw new Error("Runtime does not support warm Grill-linked runs");
       }
       if (request.capabilityGrant) {
         const requestedTools = new Set(
@@ -428,14 +725,21 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       };
       request.onCreate?.(snapshot(record));
       store.create(record);
-      const operation = execute(record);
+      const idleTtlMs = request.idleTtlMs ?? DEFAULT_WARM_IDLE_TTL_MS;
+      const operation = request.warm
+        ? executeWarm(record, idleTtlMs)
+        : execute(record);
       active.set(record.id, operation);
       void operation.then(
-        () => active.delete(record.id),
+        () => {
+          if (!warm.has(record.id)) active.delete(record.id);
+        },
         () => active.delete(record.id),
       );
       return record.id;
     },
+
+    followUp,
 
     getRun(id) {
       return store.get(id);
@@ -458,7 +762,10 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
 
     stop() {
       return stopping ??= (async () => {
-        await Promise.all([...active.keys()].map(cancelRun));
+        await Promise.all([
+          ...active.keys(),
+          ...warm.keys(),
+        ].map((id) => cancelRun(id)));
       })();
     },
   };

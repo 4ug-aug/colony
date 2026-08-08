@@ -18,5 +18,9 @@ export const antboyRole: AgentRole = {
       id: "workspace.room",
       tools: ["workspace.read_messages", "workspace.post_message"],
     },
+    {
+      id: "workspace.grill",
+      tools: ["workspace.set_grill_frontier"],
+    },
   ],
 };
