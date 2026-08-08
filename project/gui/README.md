@@ -23,13 +23,14 @@ make setup
 make dev
 ```
 
-The setup wizard creates the root `.env.local`, pulls the CI-published agent
-image, and runs migrations. After signing in, an administrator configures the
-model provider in Workspace Settings. The root environment file is the only one
-used by the development commands.
-`make dev` migrates the database, pulls the agent image, and starts the client
-on `http://localhost:3010` and API on `http://localhost:3011`. Set
-`VITE_SWEAT_API_URL` / `SWEAT_COORDINATOR_PORT` when those should differ.
+The setup wizard creates the root `.env.local` and runs migrations. After
+signing in, an administrator configures the model provider in Workspace
+Settings. The root environment file is the only one used by the development
+commands.
+`make dev` migrates the database, builds local agent images for your machine,
+and starts the client on `http://localhost:3010` and API on
+`http://localhost:3011`. Set `VITE_SWEAT_API_URL` / `SWEAT_COORDINATOR_PORT`
+when those should differ.
 
 On an empty database, the coordinator prints a one-time setup token after it
 starts. Paste it into the browser setup form to create the administrator. Use

@@ -69,11 +69,11 @@ make service-upgrade
 
 That runs `git pull --ff-only` first so the service is not restarted on a
 stale checkout.
-The agent image is published to GitHub Container Registry for each release and
-must be publicly readable. To build the image from a local checkout instead,
-set `SWEAT_AGENT_IMAGE=sweat-agent:latest` before running `make agent`.
-After the first release, set `sweat-v2-agent` to Public in the package settings
-if GitHub created it as private.
+`make dev` / `make agent` always build local `sweat-agent:latest` and
+`sweat-agent-cursor:latest` images for your machine's architecture. Published
+GHCR images are for production/server hosts and are linux/amd64 today; after
+the first release, set `sweat-v2-agent` to Public in the package settings if
+GitHub created it as private.
 
 Choose **Install mac application** on macOS to download and open the latest
 universal DMG. Drag Sweat into Applications, then connect it to the server URL

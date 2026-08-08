@@ -32,7 +32,7 @@ type CommandOptions = {
 
 const root = join(import.meta.dirname, "..");
 const defaultEnvPath = join(root, ".env.local");
-const defaultAgentImage = "ghcr.io/4ug-aug/sweat-v2-agent:latest";
+const defaultAgentImage = "sweat-agent:latest";
 // Docker 26+; add version gating only if older rootless engines need support.
 const rootlessDockerMcpHost = "http://10.0.2.2";
 const rootlessDockerOverride = `[Service]

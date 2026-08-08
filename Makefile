@@ -46,14 +46,21 @@ env:
 		exit 2; \
 	fi
 
+# Local builds beat GHCR: published agent images are linux/amd64 only today.
+DEV_AGENT_IMAGE := sweat-agent:latest
+DEV_CURSOR_AGENT_IMAGE := sweat-agent-cursor:latest
+
 dev: migrate agent
-	@$(MAKE) --no-print-directory -j2 gui coordinator
+	@SWEAT_AGENT_IMAGE=$(DEV_AGENT_IMAGE) SWEAT_CURSOR_AGENT_IMAGE=$(DEV_CURSOR_AGENT_IMAGE) \
+		$(MAKE) --no-print-directory -j2 gui coordinator
 
 dev-seeded: seed agent
-	@$(MAKE) --no-print-directory -j2 gui coordinator
+	@SWEAT_AGENT_IMAGE=$(DEV_AGENT_IMAGE) SWEAT_CURSOR_AGENT_IMAGE=$(DEV_CURSOR_AGENT_IMAGE) \
+		$(MAKE) --no-print-directory -j2 gui coordinator
 
 server: migrate agent
-	@$(MAKE) --no-print-directory coordinator
+	@SWEAT_AGENT_IMAGE=$(DEV_AGENT_IMAGE) SWEAT_CURSOR_AGENT_IMAGE=$(DEV_CURSOR_AGENT_IMAGE) \
+		$(MAKE) --no-print-directory coordinator
 
 service-install: env
 	@ENV_FILE="$(ENV_FILE)" bun scripts/service.ts install
@@ -97,25 +104,13 @@ reset-admin-password: env
 
 agent: env
 	@provider="$${SWEAT_SANDBOX_PROVIDER:-$$(sed -n 's/^SWEAT_SANDBOX_PROVIDER=//p' "$(ENV_FILE)" | tail -n 1)}"; \
-	image="$${SWEAT_AGENT_IMAGE:-$$(sed -n 's/^SWEAT_AGENT_IMAGE=//p' "$(ENV_FILE)" | tail -n 1)}"; \
-	image="$${image#\"}"; image="$${image%\"}"; \
-	cursor_image="$${SWEAT_CURSOR_AGENT_IMAGE:-$$(sed -n 's/^SWEAT_CURSOR_AGENT_IMAGE=//p' "$(ENV_FILE)" | tail -n 1)}"; \
-	cursor_image="$${cursor_image#\"}"; cursor_image="$${cursor_image%\"}"; \
+	provider="$${provider#\"}"; provider="$${provider%\"}"; \
 	case "$$provider" in \
 		apple-container) \
-			case "$$image" in */*|*@*) container image pull "$$image" ;; *) cd project && bun $(BUN_ENV) run agent:build ;; esac; \
-			case "$$cursor_image" in \
-				"") ;; \
-				*/*|*@*) container image pull "$$cursor_image" ;; \
-				*) cd project && bun $(BUN_ENV) run agent:build:cursor ;; \
-			esac ;; \
+			cd project && bun $(BUN_ENV) run agent:build && bun $(BUN_ENV) run agent:build:cursor ;; \
 		docker) \
-			case "$$image" in */*|*@*) docker pull "$$image" ;; *) docker build -t sweat-agent:latest project ;; esac; \
-			case "$$cursor_image" in \
-				"") ;; \
-				*/*|*@*) docker pull "$$cursor_image" ;; \
-				*) docker build -f project/Dockerfile.cursor -t sweat-agent-cursor:latest project ;; \
-			esac ;; \
+			docker build -t $(DEV_AGENT_IMAGE) project && \
+			docker build -f project/Dockerfile.cursor -t $(DEV_CURSOR_AGENT_IMAGE) project ;; \
 		*) echo "SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker"; exit 2 ;; \
 	esac
 
