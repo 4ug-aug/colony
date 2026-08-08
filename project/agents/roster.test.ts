@@ -622,6 +622,133 @@ test("unlinked connection adapters are omitted; linked agents receive tools", as
   expect(granted.capabilityGrant?.tools).toEqual(grafanaTools);
 });
 
+test("Grill-linked runs grant only workspace.grill tools", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const issuesAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "workspace.issues",
+      createUpstream: () => ({
+        listTools: async () => [
+          { name: "workspace.list_issues" },
+          { name: "workspace.get_issue" },
+          { name: "workspace.create_issue" },
+          { name: "workspace.update_issue" },
+          { name: "workspace.assign_issue" },
+        ],
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const githubAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "github.pull-requests",
+      createUpstream: () => ({
+        listTools: async () => [
+          { name: "github.create_pull_request" },
+          { name: "github.wait_for_pull_request_checks" },
+        ],
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const grillAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "workspace.grill",
+      applies: ({ grantContext }) => Boolean(grantContext?.grillId),
+      createUpstream: () => ({
+        listTools: async () => [
+          { name: "workspace.set_grill_frontier" },
+          { name: "workspace.propose_grill_issues" },
+          { name: "workspace.propose_grill_writeup" },
+        ],
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const connectionAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "outline.documents",
+      createUpstream: () => ({
+        listTools: async () => [{ name: "outline.search" }],
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    adapters: [issuesAdapter, githubAdapter, grillAdapter],
+    connectionAdapters: () => [connectionAdapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-grill",
+    }),
+  });
+
+  const id = executor.startRun({
+    task: "grill the design",
+    agentDefinitionId: SOFTWARE_ENGINEER_ID,
+    grantContext: { grillId: "grill-1" },
+  });
+  const run = executor.getRun(id)!;
+  expect(run.capabilityGrant?.tools).toEqual([
+    "workspace.set_grill_frontier",
+    "workspace.propose_grill_issues",
+    "workspace.propose_grill_writeup",
+  ]);
+});
+
+test("Grill-linked runs fail when workspace.grill is unavailable", () => {
+  const runner: CommandRunner = {
+    async run(): Promise<CommandResult> {
+      return { args: [], exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+  const issuesAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "workspace.issues",
+      createUpstream: () => ({
+        listTools: async () => [{ name: "workspace.list_issues" }],
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    adapters: [issuesAdapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-grill-missing",
+    }),
+  });
+
+  expect(() =>
+    executor.startRun({
+      task: "grill the design",
+      agentDefinitionId: SOFTWARE_ENGINEER_ID,
+      grantContext: { grillId: "grill-1" },
+    }),
+  ).toThrow("Grill-linked runs require the workspace.grill capability");
+});
+
 test("client-safe roster presentation never reaches role instructions", async () => {
   // run-helpers.ts and markdown.tsx import roster-people from the GUI bundle.
   // Anything it reaches transitively ships to the browser, so role modules

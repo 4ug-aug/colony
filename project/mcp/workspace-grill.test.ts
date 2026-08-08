@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   createWorkspaceGrillMcpUpstream,
+  GRILL_TURN_CONTRACT,
   type GrillFrontier,
   type GrillIssueProposal,
   type GrillProposedIssue,
@@ -67,6 +68,13 @@ test("listTools returns frontier, issue proposal, and writeup tools", async () =
     (tool) => tool.name === "workspace.set_grill_frontier",
   );
   expect(frontier?.description).toContain("Never ask questions in chat");
+});
+
+test("GRILL_TURN_CONTRACT states only grill MCP tools are granted", () => {
+  expect(GRILL_TURN_CONTRACT).toContain(
+    "The only granted MCP tools are workspace.set_grill_frontier",
+  );
+  expect(GRILL_TURN_CONTRACT).toContain("do not look for Issues, GitHub, or room tools");
 });
 
 test("set_grill_frontier updates the port and returns the frontier", async () => {

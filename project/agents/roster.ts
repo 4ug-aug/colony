@@ -217,6 +217,19 @@ export function createWorkspaceAgentsExecutor(options: {
       seen.add(adapter.id);
       merged.push(adapter);
     }
+    // Grill sessions get only workspace.grill MCP tools — Issues/GitHub/
+    // connections drown out the frontier tool and invite "tool not found".
+    if (grantContext?.grillId) {
+      const grillOnly = merged.filter(
+        (adapter) => adapter.id === "workspace.grill",
+      );
+      if (grillOnly.length === 0) {
+        throw new Error(
+          "Grill-linked runs require the workspace.grill capability",
+        );
+      }
+      return grillOnly;
+    }
     return merged;
   };
 

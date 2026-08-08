@@ -357,5 +357,8 @@ test('POST /run appends the Grill turn contract so questions must use tools', as
   expect(starts[0]!.task).toContain('Grill the auth redesign')
   expect(starts[0]!.task).toContain('HARD RULE — Grill questions are tools, never chat')
   expect(starts[0]!.task).toContain('workspace.set_grill_frontier')
+  expect(starts[0]!.task).toContain(
+    'The only granted MCP tools are workspace.set_grill_frontier',
+  )
   sqlite.close()
 })

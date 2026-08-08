@@ -45,6 +45,7 @@ export const GRILL_TURN_CONTRACT = [
   "- Every question for Accounts MUST go through workspace.set_grill_frontier before you end the turn (leave drafts empty; put suggested answers in recommendation).",
   "- Chat questions are invisible to the UI and stall the Grill.",
   "- The topic is the task above — do not ask what to grill; publish the first frontier from that topic.",
+  "- The only granted MCP tools are workspace.set_grill_frontier, workspace.propose_grill_issues, and workspace.propose_grill_writeup — do not look for Issues, GitHub, or room tools.",
   "- When the design tree is settled: General Grill → workspace.propose_grill_writeup; Issue breakdown → workspace.propose_grill_issues. Prefer wrap-up over inventing more questions.",
 ].join("\n");
 
