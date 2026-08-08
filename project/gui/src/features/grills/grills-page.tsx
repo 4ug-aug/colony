@@ -447,10 +447,16 @@ function FrontierPanel({
               text={activity}
               className="text-sm [&_span:last-child]:truncate"
             />
-            <p className="text-xs text-muted-foreground">
-              Waiting for the grilling agent to publish this round&apos;s
-              frontier…
-            </p>
+            {latestStep?.kind === 'message' && latestStep.text.trim() ? (
+              <div className="max-h-48 overflow-auto rounded-md border bg-muted/20 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground">
+                {latestStep.text}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Waiting for the grilling agent to publish this round&apos;s
+                frontier…
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -797,7 +803,10 @@ function GrillSession({
         )}
       >
         {complete ? (
-          <Alert key="complete" className={grillEnterAlertClassName}>
+          <Alert
+            key="complete"
+            className={cn(grillEnterAlertClassName, 'w-fit max-w-full self-start')}
+          >
             <CheckCircle2 />
             <AlertTitle>Complete</AlertTitle>
             <AlertDescription>
@@ -806,7 +815,10 @@ function GrillSession({
             </AlertDescription>
           </Alert>
         ) : awaitingWrapUp ? (
-          <Alert key="awaiting-wrap-up" className={grillEnterAlertClassName}>
+          <Alert
+            key="awaiting-wrap-up"
+            className={cn(grillEnterAlertClassName, 'w-fit max-w-full self-start')}
+          >
             <Flame />
             <AlertTitle>No open frontier</AlertTitle>
             <AlertDescription>

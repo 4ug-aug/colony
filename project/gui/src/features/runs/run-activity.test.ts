@@ -65,18 +65,40 @@ describe('run activity', () => {
     ])
   })
 
-  test('groups consecutive tool calls without grouping reasoning', () => {
-    const firstReasoning = step({ id: 'reasoning-1', idx: 0, kind: 'message' })
-    const firstTool = step({ id: 'tool-1', idx: 1, kind: 'tool_call' })
-    const secondTool = step({ id: 'tool-2', idx: 2, kind: 'tool_call' })
-    const secondReasoning = step({ id: 'reasoning-2', idx: 3, kind: 'message' })
+  test('collapses consecutive reasoning to the latest snapshot', () => {
+    const firstReasoning = step({
+      id: 'reasoning-1',
+      idx: 0,
+      kind: 'message',
+      text: 'a',
+    })
+    const liveReasoning = step({
+      id: 'reasoning-live',
+      idx: 1,
+      kind: 'message',
+      text: 'ab',
+    })
+    const firstTool = step({ id: 'tool-1', idx: 2, kind: 'tool_call' })
+    const secondTool = step({ id: 'tool-2', idx: 3, kind: 'tool_call' })
+    const secondReasoning = step({
+      id: 'reasoning-2',
+      idx: 4,
+      kind: 'message',
+      text: 'done',
+    })
 
     expect(
       groupActivity(
-        pairSteps([firstReasoning, firstTool, secondTool, secondReasoning]),
+        pairSteps([
+          firstReasoning,
+          liveReasoning,
+          firstTool,
+          secondTool,
+          secondReasoning,
+        ]),
       ),
     ).toEqual([
-      { kind: 'reasoning', item: { step: firstReasoning } },
+      { kind: 'reasoning', item: { step: liveReasoning } },
       { kind: 'tools', items: [{ step: firstTool }, { step: secondTool }] },
       { kind: 'reasoning', item: { step: secondReasoning } },
     ])

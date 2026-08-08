@@ -48,7 +48,9 @@ export function groupActivity(items: ActivityItem[]): ActivityGroup[] {
 
   for (const item of items) {
     if (item.step.kind === 'message') {
-      groups.push({ kind: 'reasoning', item })
+      const previous = groups.at(-1)
+      if (previous?.kind === 'reasoning') previous.item = item
+      else groups.push({ kind: 'reasoning', item })
       continue
     }
 

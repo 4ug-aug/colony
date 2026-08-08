@@ -88,7 +88,8 @@ export function assistantText(message: Extract<CursorSdkMessage, { type: "assist
     .join("");
 }
 
-/** Maps non-assistant Cursor stream events to Sweat steps (assistant is coalesced in runCursorAgent). */
+/** Maps non-assistant/thinking Cursor stream events to Sweat steps
+ * (thinking + assistant are live-published in runTurn). */
 export function mapCursorEventToSteps(event: CursorSdkMessage): Step[] {
   const at = Date.now();
   if (event.type === "thinking" || event.type === "assistant") return [];
@@ -118,6 +119,16 @@ export function mapCursorEventToSteps(event: CursorSdkMessage): Step[] {
     }
   }
   return [];
+}
+
+/** How often live thinking/assistant snapshots may publish as message steps. */
+export const LIVE_MESSAGE_THROTTLE_MS = 400;
+
+function combineLiveNarration(thinking: string, assistant: string): string {
+  const t = thinking.trim();
+  const a = assistant.trim();
+  if (t && a) return `${t}\n\n${a}`;
+  return t || a;
 }
 
 /**
@@ -194,32 +205,63 @@ export async function openCursorAgentSession(
   const runTurn = async (task: string): Promise<string> => {
     const prompt = `${request.instructions}\n\nTask:\n${task}`;
     let lastMessageText: string | undefined;
-    let pendingMessage = "";
+    let thinkingText = "";
+    let assistantBuf = "";
+    let lastPublished = "";
+    let throttleTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const flushPendingMessage = (): void => {
-      if (!pendingMessage) return;
-      lastMessageText = pendingMessage;
+    const publishLive = (): void => {
+      const text = combineLiveNarration(thinkingText, assistantBuf);
+      if (!text || text === lastPublished) return;
+      lastPublished = text;
+      lastMessageText = text;
       dependencies.onStep?.({
         kind: "message",
-        text: pendingMessage,
+        text: boundStepText(text),
         at: Date.now(),
       });
-      pendingMessage = "";
+    };
+
+    const scheduleLive = (): void => {
+      if (throttleTimer) return;
+      throttleTimer = setTimeout(() => {
+        throttleTimer = undefined;
+        publishLive();
+      }, LIVE_MESSAGE_THROTTLE_MS);
+    };
+
+    const flushLive = (): void => {
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+        throttleTimer = undefined;
+      }
+      publishLive();
+      thinkingText = "";
+      assistantBuf = "";
+      lastPublished = "";
     };
 
     const run = await agent.send(prompt);
     for await (const event of run.stream()) {
-      if (event.type === "thinking") continue;
-      if (event.type === "assistant") {
-        pendingMessage += assistantText(event);
+      if (event.type === "thinking") {
+        const thinking = event as Extract<CursorSdkMessage, { type: "thinking" }>
+        thinkingText += thinking.text ?? "";
+        scheduleLive();
         continue;
       }
-      flushPendingMessage();
+      if (event.type === "assistant") {
+        assistantBuf += assistantText(
+          event as Extract<CursorSdkMessage, { type: "assistant" }>,
+        );
+        scheduleLive();
+        continue;
+      }
+      flushLive();
       for (const step of mapCursorEventToSteps(event)) {
         dependencies.onStep?.(step);
       }
     }
-    flushPendingMessage();
+    flushLive();
     const result = await run.wait();
     if (result.status === "error") {
       throw new Error(`Cursor run failed with status ${result.status}`);
@@ -235,9 +277,10 @@ export async function openCursorAgentSession(
     ) {
       dependencies.onStep({
         kind: "message",
-        text: finalOutput,
+        text: boundStepText(finalOutput),
         at: Date.now(),
       });
+      lastMessageText = finalOutput;
     }
     return finalOutput || lastMessageText || "";
   };

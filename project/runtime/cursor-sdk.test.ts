@@ -24,7 +24,7 @@ test("takeCursorApiKeyFromEnv clears SWEAT_CURSOR_API_KEY and CURSOR_API_KEY", (
   expect(env.PATH).toBe("/usr/bin");
 });
 
-test("mapCursorEventToSteps ignores assistant and thinking (coalesced elsewhere)", () => {
+test("mapCursorEventToSteps ignores assistant and thinking (live-published in runTurn)", () => {
   const assistant: CursorSdkMessage = {
     type: "assistant",
     message: {
@@ -130,6 +130,49 @@ test("runCursorAgent coalesces streamed assistant deltas into one message step",
     {
       kind: "message",
       text: "no checkout, no open PR, and nothing to build or fix right now.",
+      at: expect.any(Number),
+    },
+  ]);
+});
+
+test("runCursorAgent publishes thinking as a message step", async () => {
+  const steps: Array<{ kind: string; text: string }> = [];
+  const createAgent: CursorAgentFactory = async () => ({
+    async send() {
+      return {
+        async *stream() {
+          yield {
+            type: "thinking",
+            text: "Considering the frontier…",
+          } satisfies CursorSdkMessage;
+          yield {
+            type: "thinking",
+            text: " then wrap up.",
+          } satisfies CursorSdkMessage;
+        },
+        async wait() {
+          return { status: "finished", result: "" };
+        },
+      };
+    },
+    async [Symbol.asyncDispose]() {},
+  });
+
+  await runCursorAgent(
+    {
+      task: "t",
+      instructions: "i",
+      agentId: "software-engineer",
+      apiKey: "k",
+      model: "composer-2.5",
+    },
+    { createAgent, onStep: (step) => steps.push(step) },
+  );
+
+  expect(steps).toEqual([
+    {
+      kind: "message",
+      text: "Considering the frontier… then wrap up.",
       at: expect.any(Number),
     },
   ]);
