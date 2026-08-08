@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
-import type { Bulletin } from './types'
+import type { Bulletin, Poll } from './types'
 
 export const bulletinsQueryKey = ['bulletins'] as const
 
@@ -89,6 +89,7 @@ export function useUpdateBulletin() {
       body?: string
       x?: number
       y?: number
+      poll?: Poll | null
     }): Promise<Bulletin> => {
       const { id, ...patch } = input
       const data = await apiJsonBody<{ bulletin?: Bulletin }>(
@@ -111,8 +112,50 @@ export function useUpdateBulletin() {
             ...(input.body !== undefined ? { body: input.body } : {}),
             ...(input.x !== undefined ? { x: input.x } : {}),
             ...(input.y !== undefined ? { y: input.y } : {}),
+            ...(input.poll !== undefined ? { poll: input.poll } : {}),
           })
         }
+      }
+      return { previous }
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous)
+        queryClient.setQueryData(bulletinsQueryKey, context.previous)
+    },
+    onSuccess: (bulletin) => {
+      upsertBulletinInCache(queryClient, bulletin)
+    },
+  })
+}
+
+export function useVoteBulletin(currentUserId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: {
+      id: string
+      options: number[] | null
+    }): Promise<Bulletin> => {
+      const data = await apiJsonBody<{ bulletin?: Bulletin }>(
+        `/api/bulletins/${input.id}/vote`,
+        'POST',
+        { options: input.options },
+        'Unable to vote',
+      )
+      if (!data.bulletin) throw new Error('Unable to vote')
+      return data.bulletin
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: bulletinsQueryKey })
+      const previous = queryClient.getQueryData<Bulletin[]>(bulletinsQueryKey)
+      const current = previous?.find((item) => item.id === input.id)
+      if (current?.poll) {
+        const votes = { ...current.poll.votes }
+        if (input.options === null) delete votes[currentUserId]
+        else votes[currentUserId] = input.options
+        upsertBulletinInCache(queryClient, {
+          ...current,
+          poll: { ...current.poll, votes },
+        })
       }
       return { previous }
     },

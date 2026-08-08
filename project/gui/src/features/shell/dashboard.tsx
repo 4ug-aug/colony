@@ -308,7 +308,9 @@ export function Dashboard({
             }
           />
         )}
-        {view === 'bulletins' && <BulletinsPage ref={bulletinsRef} />}
+        {view === 'bulletins' && (
+          <BulletinsPage ref={bulletinsRef} currentUserId={user.id} />
+        )}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
             <div className="relative flex min-w-0 flex-1 flex-col">

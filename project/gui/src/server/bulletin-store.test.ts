@@ -5,11 +5,13 @@ import { clampNormalized, createSqliteBulletinStore } from './bulletin-store'
 const schema = `
   CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT);
   INSERT INTO user VALUES ('ada', 'Ada', NULL);
+  INSERT INTO user VALUES ('grace', 'Grace', NULL);
   CREATE TABLE bulletin (
     id TEXT PRIMARY KEY NOT NULL,
     body TEXT NOT NULL DEFAULT '',
     x REAL NOT NULL CHECK (x >= 0 AND x <= 1),
     y REAL NOT NULL CHECK (y >= 0 AND y <= 1),
+    poll TEXT,
     created_by TEXT NOT NULL REFERENCES user(id),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -54,5 +56,64 @@ test('bulletin store creates, updates, moves, and deletes', () => {
   expect(store.deleteBulletin('b1')).toBe(true)
   expect(store.listBulletins()).toHaveLength(0)
   expect(store.getBulletin('b1')).toBeUndefined()
+  sqlite.close()
+})
+
+test('bulletin poll records, replaces, and retracts votes', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(schema)
+  const store = createSqliteBulletinStore(sqlite)
+
+  store.createBulletin({
+    id: 'b1',
+    body: 'Lunch?',
+    x: 0.5,
+    y: 0.5,
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+  expect(store.getBulletin('b1')?.poll).toBeNull()
+  // A bulletin without a poll cannot be voted on.
+  expect(store.voteBulletin('b1', 'ada', [0], 15)).toBeUndefined()
+
+  store.updateBulletin(
+    'b1',
+    { poll: { options: ['Pizza', 'Sushi', 'Tacos'], votes: {} } },
+    20,
+  )
+
+  expect(store.voteBulletin('b1', 'ada', [0], 30)?.poll?.votes).toEqual({
+    ada: [0],
+  })
+  expect(store.voteBulletin('b1', 'grace', [2], 40)?.poll?.votes).toEqual({
+    ada: [0],
+    grace: [2],
+  })
+
+  // Re-voting replaces rather than appends.
+  expect(store.voteBulletin('b1', 'ada', [1], 50)?.poll?.votes).toEqual({
+    ada: [1],
+    grace: [2],
+  })
+
+  // Multi-choice keeps every index it is handed.
+  expect(store.voteBulletin('b1', 'grace', [0, 1], 60)?.poll?.votes).toEqual({
+    ada: [1],
+    grace: [0, 1],
+  })
+
+  // Retracting removes the voter entirely, leaving the options untouched.
+  const retracted = store.voteBulletin('b1', 'ada', null, 70)
+  expect(retracted?.poll?.votes).toEqual({ grace: [0, 1] })
+  expect(retracted?.poll?.options).toEqual(['Pizza', 'Sushi', 'Tacos'])
+  expect(retracted?.updatedAt).toBe(70)
+
+  // Editing the body leaves the poll alone; clearing the poll drops the votes.
+  expect(
+    store.updateBulletin('b1', { body: 'Dinner?' }, 80)?.poll?.votes,
+  ).toEqual({ grace: [0, 1] })
+  expect(store.updateBulletin('b1', { poll: null }, 90)?.poll).toBeNull()
+
+  expect(store.voteBulletin('missing', 'ada', [0], 100)).toBeUndefined()
   sqlite.close()
 })

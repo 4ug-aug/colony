@@ -7,11 +7,20 @@ type Statement = {
 
 export type BulletinActor = { id: string; name: string; image?: string }
 
+// ponytail: options are identified by array index, so reordering or removing an
+// option while votes exist shifts them. Give options stable ids if that bites.
+export type Poll = {
+  multi?: boolean
+  options: string[]
+  votes: Record<string, number[]>
+}
+
 export type Bulletin = {
   id: string
   body: string
   x: number
   y: number
+  poll: Poll | null
   createdBy: BulletinActor
   createdAt: number
   updatedAt: number
@@ -32,7 +41,13 @@ export interface BulletinStore {
   createBulletin(bulletin: NewBulletin): Bulletin
   updateBulletin(
     id: string,
-    patch: Partial<Pick<Bulletin, 'body' | 'x' | 'y'>>,
+    patch: Partial<Pick<Bulletin, 'body' | 'x' | 'y' | 'poll'>>,
+    now: number,
+  ): Bulletin | undefined
+  voteBulletin(
+    id: string,
+    userId: string,
+    options: number[] | null,
     now: number,
   ): Bulletin | undefined
   deleteBulletin(id: string): boolean
@@ -43,6 +58,7 @@ type BulletinRow = {
   body: string
   x: number
   y: number
+  poll: string | null
   created_by: string
   created_name: string
   created_image: string | null
@@ -60,11 +76,27 @@ const actor = (
   ...(image ? { image } : {}),
 })
 
+const parsePoll = (raw: string | null): Poll | null => {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<Poll>
+    if (!Array.isArray(parsed.options)) return null
+    return {
+      ...(parsed.multi ? { multi: true } : {}),
+      options: parsed.options,
+      votes: parsed.votes ?? {},
+    }
+  } catch {
+    return null
+  }
+}
+
 const mapBulletin = (row: BulletinRow): Bulletin => ({
   id: row.id,
   body: row.body,
   x: row.x,
   y: row.y,
+  poll: parsePoll(row.poll),
   createdBy: actor(row.created_by, row.created_name, row.created_image),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -73,7 +105,7 @@ const mapBulletin = (row: BulletinRow): Bulletin => ({
 const selectBulletins = (sqlite: Sqlite, where = '', ...values: unknown[]) => {
   const rows = sqlite
     .prepare(
-      `SELECT b.id, b.body, b.x, b.y, b.created_by, c.name AS created_name,
+      `SELECT b.id, b.body, b.x, b.y, b.poll, b.created_by, c.name AS created_name,
               c.image AS created_image, b.created_at, b.updated_at
        FROM bulletin b JOIN user c ON c.id = b.created_by ${where}
        ORDER BY b.updated_at ASC`,
@@ -116,11 +148,28 @@ export function createSqliteBulletinStore(sqlite: Sqlite): BulletinStore {
       const body = patch.body !== undefined ? patch.body : current.body
       const x = patch.x !== undefined ? clampNormalized(patch.x) : current.x
       const y = patch.y !== undefined ? clampNormalized(patch.y) : current.y
+      const poll = patch.poll !== undefined ? patch.poll : current.poll
       sqlite
         .prepare(
-          `UPDATE bulletin SET body = ?, x = ?, y = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE bulletin SET body = ?, x = ?, y = ?, poll = ?, updated_at = ? WHERE id = ?`,
         )
-        .run(body, x, y, now, id)
+        .run(body, x, y, poll ? JSON.stringify(poll) : null, now, id)
+      return selectBulletins(sqlite, 'WHERE b.id = ?', id)[0]
+    },
+    // One statement so concurrent voters can't clobber each other's choice.
+    voteBulletin: (id, userId, options, now) => {
+      const choice = options === null ? null : JSON.stringify(options)
+      const result = sqlite
+        .prepare(
+          `UPDATE bulletin
+           SET poll = CASE WHEN ? IS NULL
+                 THEN json_remove(poll, '$.votes.' || json_quote(?))
+                 ELSE json_set(poll, '$.votes.' || json_quote(?), json(?)) END,
+               updated_at = ?
+           WHERE id = ? AND poll IS NOT NULL`,
+        )
+        .run(choice, userId, userId, choice, now, id) as { changes?: number }
+      if ((result.changes ?? 0) === 0) return undefined
       return selectBulletins(sqlite, 'WHERE b.id = ?', id)[0]
     },
     deleteBulletin: (id) =>

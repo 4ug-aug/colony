@@ -155,6 +155,13 @@
       "when": 1790000000000,
       "tag": "0021_workspace_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0022_bulletin_poll",
+      "breakpoints": true
     }
   ]
 }
