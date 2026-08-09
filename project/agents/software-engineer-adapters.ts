@@ -25,6 +25,7 @@ import {
   createWorkspaceGrillMcpUpstream,
   type GrillFrontier,
   type GrillIssueProposal,
+  type GrillMaterializeFile,
   type GrillProposedIssue,
 } from "../mcp/workspace-grill";
 import { STEP_TEXT_LIMIT } from "../runtime/step";
@@ -85,6 +86,7 @@ export function createWorkspaceGrillAdapter(options: {
       grillId: string,
       issues: GrillProposedIssue[],
       now: number,
+      files?: GrillMaterializeFile[],
     ): { issueProposal?: GrillIssueProposal } | undefined;
     setWriteup(
       grillId: string,
@@ -115,11 +117,12 @@ export function createWorkspaceGrillAdapter(options: {
               if (!grill) throw new Error(`Grill not found: ${grillId}`);
               return grill.frontier;
             },
-            proposeIssues(issues) {
+            proposeIssues(issues, files) {
               const grill = options.port.setIssueProposal(
                 grillId,
                 issues,
                 Date.now(),
+                files,
               );
               if (!grill?.issueProposal)
                 throw new Error(`Grill not found: ${grillId}`);

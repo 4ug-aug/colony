@@ -125,6 +125,39 @@ test('follow-up marks turnActive until the warm turn finishes', async () => {
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(false)
 })
 
+test('follow-up keeps its final answer when no message step was published', async () => {
+  const runs = new Map<string, RunSummary>()
+  const linked = createGrillLinkedRuns({
+    startWarm: ({ grillId, onCreate }) => {
+      const run = summary(`run-${grillId}`, { stdout: 'Earlier answer.' })
+      runs.set(run.id, run)
+      return onCreate(run)
+    },
+    followUp: async (runId) => {
+      const run = summary(runId, {
+        stdout: 'Earlier answer.Can you respond to this question?',
+      })
+      runs.set(runId, run)
+      return run
+    },
+    cancel: async () => undefined,
+    getRun: (runId) => runs.get(runId),
+    subscribeSteps: () => () => undefined,
+  })
+
+  linked.start({
+    grillId: 'g1',
+    task: 'begin',
+    agentDefinitionId: 'interviewer',
+  })
+  await linked.followUp('g1', 'ask without a tool')
+
+  expect(linked.getLatestStep('g1')).toMatchObject({
+    kind: 'message',
+    text: 'Can you respond to this question?',
+  })
+})
+
 test('turnActive follows run.turnActive after idle exitCode is set', async () => {
   const runs = new Map<string, RunSummary>()
   const linked = createGrillLinkedRuns({

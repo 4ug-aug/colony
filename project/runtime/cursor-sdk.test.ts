@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   boundStepText,
   STEP_TEXT_LIMIT,
@@ -6,6 +9,7 @@ import {
 import {
   mapCursorEventToSteps,
   runCursorAgent,
+  runCursorAgentPersisted,
   scrubCursorApiKeysFromEnv,
   takeCursorApiKeyFromEnv,
   type CursorAgentFactory,
@@ -409,4 +413,51 @@ test("openCursorAgentSession multi-send keeps one Agent instance", async () => {
   await session.dispose();
   expect(disposeCount).toBe(1);
   expect(prompts).toHaveLength(2);
+});
+
+test("persisted Cursor turns resume the same SDK agent", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "sweat-cursor-session-"));
+  const statePath = join(directory, "agent-id");
+  let creates = 0;
+  const resumed: string[] = [];
+  const agent = {
+    agentId: "agent-warm-1",
+    async send() {
+      return {
+        async *stream() {},
+        async wait() {
+          return { status: "finished", result: "ok" };
+        },
+      };
+    },
+    async [Symbol.asyncDispose]() {},
+  };
+
+  try {
+    const request = {
+      task: "turn",
+      instructions: "Grill",
+      agentId: "interviewer",
+      apiKey: "k",
+      model: "composer-2.5",
+    };
+    const dependencies = {
+      createAgent: async () => {
+        creates++;
+        return agent;
+      },
+      resumeAgent: async (agentId: string) => {
+        resumed.push(agentId);
+        return agent;
+      },
+    };
+
+    await runCursorAgentPersisted(request, statePath, dependencies);
+    await runCursorAgentPersisted(request, statePath, dependencies);
+
+    expect(creates).toBe(1);
+    expect(resumed).toEqual(["agent-warm-1"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

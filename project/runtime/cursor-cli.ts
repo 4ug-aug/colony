@@ -1,8 +1,10 @@
 import { serializeStep } from "./step.ts";
 import {
-  runCursorAgent,
+  runCursorAgentPersisted,
   takeCursorApiKeyFromEnv,
 } from "./cursor-sdk.ts";
+
+const SESSION_PATH = "/tmp/sweat-cursor-agent-id";
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -14,7 +16,7 @@ try {
   // Transport key into memory, then scrub env before any SDK/shell work.
   const apiKey = takeCursorApiKeyFromEnv(process.env);
 
-  await runCursorAgent(
+  await runCursorAgentPersisted(
     {
       task: required("SWEAT_AGENT_TASK"),
       instructions: required("SWEAT_AGENT_INSTRUCTIONS"),
@@ -33,6 +35,7 @@ try {
             }
           : undefined,
     },
+    SESSION_PATH,
     {
       onStep: (step) => process.stdout.write(serializeStep(step) + "\n"),
     },

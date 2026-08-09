@@ -93,12 +93,30 @@ export function createGrillLinkedRuns(deps: {
     followUp: async (grillId, task) => {
       const runId = byGrill.get(grillId)
       if (!runId) return undefined
+      const previousOutput = deps.getRun(runId)?.stdout ?? ''
       // Drop the previous turn's step so the UI shows "working" until new
       // steps stream in for this follow-up.
       latestStepByGrill.delete(grillId)
       followUpInFlight.add(grillId)
       try {
-        return await deps.followUp(runId, task)
+        const run = await deps.followUp(runId, task)
+        const output = run?.stdout ?? ''
+        const finalAnswer = output.startsWith(previousOutput)
+          ? output.slice(previousOutput.length)
+          : output
+        // ponytail: retained stdout tail is enough; persist turns if exact transcripts matter.
+        if (
+          byGrill.get(grillId) === runId &&
+          finalAnswer.trim() &&
+          latestStepByGrill.get(grillId)?.kind !== 'message'
+        ) {
+          latestStepByGrill.set(grillId, {
+            kind: 'message',
+            text: finalAnswer,
+            at: Date.now(),
+          })
+        }
+        return run
       } finally {
         followUpInFlight.delete(grillId)
       }

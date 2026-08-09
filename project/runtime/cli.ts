@@ -1,5 +1,11 @@
 import { serializeStep } from "./step";
-import { runAgent } from "./openai-agents";
+import {
+  loadOpenAIAgentSession,
+  runAgent,
+  saveOpenAIAgentSession,
+} from "./openai-agents";
+
+const SESSION_PATH = "/tmp/sweat-openai-session.json";
 
 const required = (name: string): string => {
   const value = Bun.env[name];
@@ -28,32 +34,38 @@ try {
   delete Bun.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
 
-  await runAgent(
-    {
-      task: required("SWEAT_AGENT_TASK"),
-      instructions: required("SWEAT_AGENT_INSTRUCTIONS"),
-      agentId: required("SWEAT_AGENT_ID"),
-      model: {
-        provider: modelProvider(),
-        baseUrl: required("SWEAT_MODEL_BASE_URL"),
-        apiKey,
-        model: required("SWEAT_MODEL_NAME"),
+  const session = await loadOpenAIAgentSession(SESSION_PATH);
+  try {
+    await runAgent(
+      {
+        task: required("SWEAT_AGENT_TASK"),
+        instructions: required("SWEAT_AGENT_INSTRUCTIONS"),
+        agentId: required("SWEAT_AGENT_ID"),
+        model: {
+          provider: modelProvider(),
+          baseUrl: required("SWEAT_MODEL_BASE_URL"),
+          apiKey,
+          model: required("SWEAT_MODEL_NAME"),
+        },
+        capabilitySession: mcpUrl && mcpToken
+          ? {
+              url: mcpUrl,
+              token: mcpToken,
+              allowedTools: mcpAllowedTools,
+              expiresAt: new Date(0),
+              revoke: () => {},
+            }
+          : undefined,
+        skillsRoot: Bun.env.SWEAT_SKILLS_ROOT,
       },
-      capabilitySession: mcpUrl && mcpToken
-        ? {
-            url: mcpUrl,
-            token: mcpToken,
-            allowedTools: mcpAllowedTools,
-            expiresAt: new Date(0),
-            revoke: () => {},
-          }
-        : undefined,
-      skillsRoot: Bun.env.SWEAT_SKILLS_ROOT,
-    },
-    {
-      onStep: (step) => process.stdout.write(serializeStep(step) + "\n"),
-    },
-  );
+      {
+        session,
+        onStep: (step) => process.stdout.write(serializeStep(step) + "\n"),
+      },
+    );
+  } finally {
+    await saveOpenAIAgentSession(SESSION_PATH, session);
+  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);

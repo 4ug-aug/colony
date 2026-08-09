@@ -766,13 +766,13 @@ if (import.meta.main) {
     directory: skillsDirectory,
   })
   const authContext = await auth.$context
+  const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const store = createSqliteRoomStore(sqlite)
   const scheduleStore = createSqliteScheduleStore(sqlite)
-  const issueStore = createSqliteIssueStore(sqlite)
+  const issueStore = createSqliteIssueStore(sqlite, githubRepository)
   const bulletinStore = createSqliteBulletinStore(sqlite)
   const docStore = createSqliteDocStore(sqlite)
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
-  const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
   const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
   const github = githubRepository ? await createGitHubCliClient() : undefined
@@ -984,8 +984,8 @@ if (import.meta.main) {
           port: {
             setFrontier: (grillId, frontier, now) =>
               grillStore.setFrontier(grillId, frontier, now),
-            setIssueProposal: (grillId, issues, now) =>
-              grillStore.setIssueProposal(grillId, issues, now),
+            setIssueProposal: (grillId, issues, now, files) =>
+              grillStore.setIssueProposal(grillId, issues, now, files),
             setWriteup: (grillId, writeup, now) =>
               grillStore.setWriteup(grillId, writeup, now),
           },

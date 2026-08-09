@@ -232,7 +232,7 @@ test('issue store rejects parent cycles and oversized descriptions', () => {
 test('issue branch binding resolves own and inherited effectiveBranch', () => {
   const sqlite = new Database(':memory:')
   applyMigration(sqlite)
-  const store = createSqliteIssueStore(sqlite)
+  const store = createSqliteIssueStore(sqlite, 'acme/widgets')
 
   const parent = store.createIssue({
     id: 'parent',
@@ -243,6 +243,7 @@ test('issue branch binding resolves own and inherited effectiveBranch', () => {
   expect(store.getIssue(parent.id)).toMatchObject({
     branch: 'feat/parent',
     effectiveBranch: 'feat/parent',
+    branchUrl: 'https://github.com/acme/widgets/tree/feat/parent',
   })
 
   const child = store.createIssue({

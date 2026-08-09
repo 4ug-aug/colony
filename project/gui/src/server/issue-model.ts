@@ -44,6 +44,7 @@ export type Issue = {
   branch?: string
   /** Resolved branch: own binding or nearest ancestor's. */
   effectiveBranch?: string
+  branchUrl?: string
   owner?: IssueOwner
   createdAt: number
   updatedAt: number

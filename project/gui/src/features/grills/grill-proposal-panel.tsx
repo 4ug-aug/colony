@@ -1,4 +1,5 @@
 import { Markdown } from '#/components/markdown'
+import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
@@ -180,7 +181,17 @@ export function ProposalPanel({ grill }: { grill: Grill }) {
                 })
               }}
             >
-              Confirm Issues
+              {confirm.isPending ? (
+                <BrailleLoader
+                  text={
+                    grill.kind === 'code'
+                      ? 'Materializing branch in github'
+                      : 'Confirming Issues'
+                  }
+                />
+              ) : (
+                'Confirm Issues'
+              )}
             </Button>
           </div>
           {grill.kind === 'general' ? (

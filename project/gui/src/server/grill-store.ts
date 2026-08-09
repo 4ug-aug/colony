@@ -34,6 +34,7 @@ export type GrillProposedIssue = {
 export type GrillIssueProposal = {
   status: 'proposed' | 'revision_requested' | 'confirmed' | 'dismissed'
   issues: GrillProposedIssue[]
+  files?: GrillMaterializeFile[]
   revisionNotes?: string
 }
 
@@ -143,6 +144,7 @@ export interface GrillStore {
     grillId: string,
     issues: GrillProposedIssue[],
     now: number,
+    files?: GrillMaterializeFile[],
   ): Grill | undefined
   setWriteup(
     grillId: string,
@@ -556,14 +558,27 @@ export function createSqliteGrillStore(
         )
       return selectGrill(sqlite, grillId)
     },
-    setIssueProposal: (grillId, issues, now) => {
+    setIssueProposal: (grillId, issues, now, files) => {
       const current = selectGrill(sqlite, grillId)
       if (!current) return undefined
       if (current.issueProposal?.status === 'confirmed')
         throw new Error('Issue proposal already confirmed')
+      const materializeFiles = files?.map((file) => ({
+        path: file.path.trim(),
+        content: file.content,
+      }))
+      if (materializeFiles?.some((file) => !file.path))
+        throw new Error('Invalid materialize file path')
+      if (
+        current.kind === 'code' &&
+        !current.sessionBranch &&
+        !materializeFiles?.length
+      )
+        throw new Error('Code Grill Issue proposal requires materialize files')
       const proposal: GrillIssueProposal = {
         status: 'proposed',
         issues: normalizeProposedIssues(issues),
+        ...(materializeFiles?.length ? { files: materializeFiles } : {}),
       }
       sqlite
         .prepare(
@@ -622,6 +637,9 @@ export function createSqliteGrillStore(
       const proposal: GrillIssueProposal = {
         status: 'revision_requested',
         issues: current.issueProposal.issues,
+        ...(current.issueProposal.files
+          ? { files: current.issueProposal.files }
+          : {}),
         revisionNotes: notes,
       }
       sqlite
@@ -651,6 +669,8 @@ export function createSqliteGrillStore(
         throw new Error('Issue proposal was dismissed')
       if (!deps.createIssue)
         throw new Error('Issue creation is unavailable')
+      if (current.kind === 'code' && !current.sessionBranch)
+        throw new Error('Code Grill must materialize before confirming Issues')
       const proposed = current.issueProposal.issues
       const remaining = new Map(proposed.map((issue) => [issue.key, issue]))
       const keyToId = new Map<string, string>()
@@ -696,6 +716,9 @@ export function createSqliteGrillStore(
       const proposal: GrillIssueProposal = {
         status: 'confirmed',
         issues: proposed,
+        ...(current.issueProposal.files
+          ? { files: current.issueProposal.files }
+          : {}),
       }
       sqlite
         .prepare(
@@ -727,6 +750,9 @@ export function createSqliteGrillStore(
       const proposal: GrillIssueProposal = {
         status: 'dismissed',
         issues: current.issueProposal.issues,
+        ...(current.issueProposal.files
+          ? { files: current.issueProposal.files }
+          : {}),
       }
       sqlite
         .prepare(

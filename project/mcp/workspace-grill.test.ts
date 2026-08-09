@@ -43,9 +43,9 @@ function makePort(): WorkspaceGrillPort & {
       frontier = { questions, drafts: drafts ?? {} };
       return frontier;
     },
-    proposeIssues(issues) {
+    proposeIssues(issues, files) {
       proposals.push(issues);
-      proposal = { status: "proposed", issues };
+      proposal = { status: "proposed", issues, ...(files ? { files } : {}) };
       return proposal;
     },
     proposeWriteup(next) {
@@ -152,17 +152,20 @@ test("propose_grill_issues publishes an Issue tree proposal", async () => {
     { key: "root", title: "Ship Grill", description: "Parent" },
     { key: "child", title: "Frontier UX", parentKey: "root" },
   ];
+  const files = [{ path: "CONTEXT.md", content: "# Decisions\n" }];
 
   const result = (await upstream.callTool("workspace.propose_grill_issues", {
     issues,
+    files,
   })) as { content: { text: string }[] };
 
   expect(JSON.parse(result.content[0]!.text)).toEqual({
     status: "proposed",
     issues,
+    files,
   });
   expect(port.proposals).toEqual([issues]);
-  expect(port.proposal).toEqual({ status: "proposed", issues });
+  expect(port.proposal).toEqual({ status: "proposed", issues, files });
 });
 
 test("propose_grill_writeup publishes a Doc writeup proposal", async () => {

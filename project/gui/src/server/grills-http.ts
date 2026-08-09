@@ -96,7 +96,7 @@ export function createGrillsHttp(deps: {
       if (!task) return json({ error: 'Invalid task' }, 400)
       const run = deps.linkedRuns.start({
         grillId: id,
-        task: `${task}\n\n${GRILL_TURN_CONTRACT}`,
+        task: `${task}\n\nThis is a ${grill.kind === 'code' ? 'Code' : 'General'} Grill.\n${GRILL_TURN_CONTRACT}`,
         agentDefinitionId: grill.agentDefinitionId,
       })
       return json({ run }, 201)
@@ -282,9 +282,16 @@ export function createGrillsHttp(deps: {
     )
     if (confirmRoute && request.method === 'POST') {
       const id = confirmRoute[1]!
-      if (!deps.grillStore.getGrillForUser(id, user.id))
+      const grill = deps.grillStore.getGrillForUser(id, user.id)
+      if (!grill)
         return json({ error: 'Grill not found' }, 404)
       try {
+        if (grill.kind === 'code' && !grill.sessionBranch) {
+          const files = grill.issueProposal?.files
+          if (!files?.length)
+            throw new Error('Code Grill Issue proposal has no materialize files')
+          await deps.grillStore.completeGrill(id, { files }, Date.now())
+        }
         const confirmed = deps.grillStore.confirmIssueProposal(id, Date.now())
         if (!confirmed)
           return json({ error: 'No Issue proposal to confirm' }, 400)

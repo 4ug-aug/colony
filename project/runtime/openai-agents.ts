@@ -2,6 +2,7 @@ import {
   MCPServers,
   MCPServerStreamableHttp,
   MemorySession,
+  type AgentInputItem,
   type Model,
   type ModelProvider,
   type ModelRequest,
@@ -12,6 +13,7 @@ import {
   Runner,
   type Session,
 } from "@openai/agents";
+import { readFile, writeFile } from "node:fs/promises";
 import {
   Capabilities,
   localBindMountStrategy,
@@ -444,6 +446,43 @@ export type OpenAIAgentSession = {
   dispose(): Promise<void>;
   sessionId: string;
 };
+
+export async function loadOpenAIAgentSession(
+  statePath: string,
+): Promise<MemorySession> {
+  try {
+    const state = JSON.parse(await readFile(statePath, "utf8")) as {
+      sessionId?: unknown;
+      items?: unknown;
+    };
+    if (typeof state.sessionId !== "string" || !Array.isArray(state.items)) {
+      throw new Error("Invalid persisted OpenAI agent session");
+    }
+    return new MemorySession({
+      sessionId: state.sessionId,
+      initialItems: state.items as AgentInputItem[],
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return new MemorySession();
+    }
+    throw error;
+  }
+}
+
+export async function saveOpenAIAgentSession(
+  statePath: string,
+  session: MemorySession,
+): Promise<void> {
+  await writeFile(
+    statePath,
+    JSON.stringify({
+      sessionId: await session.getSessionId(),
+      items: await session.getItems(),
+    }),
+    "utf8",
+  );
+}
 
 /** Warm Grill path: MemorySession continuity across follow-up submits. */
 export async function openOpenAIAgentSession(

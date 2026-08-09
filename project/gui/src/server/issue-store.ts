@@ -385,17 +385,29 @@ export function resolveIssue(
     : store.getIssue(parsed.id)
 }
 
-export function createSqliteIssueStore(sqlite: Sqlite): IssueStore {
+export function createSqliteIssueStore(
+  sqlite: Sqlite,
+  githubRepository?: string,
+): IssueStore {
+  const issues = (where = '', ...values: unknown[]): Issue[] =>
+    selectIssues(sqlite, where, ...values).map((issue) =>
+      githubRepository && issue.effectiveBranch
+        ? {
+            ...issue,
+            branchUrl: `https://github.com/${githubRepository}/tree/${issue.effectiveBranch.split('/').map(encodeURIComponent).join('/')}`,
+          }
+        : issue,
+    )
+
   return {
     listIssues: (filter) =>
       filter?.status
-        ? selectIssues(sqlite, 'WHERE status = ?', filter.status)
-        : selectIssues(sqlite),
+        ? issues('WHERE status = ?', filter.status)
+        : issues(),
     listChildIssues: (parentId) =>
-      selectIssues(sqlite, 'WHERE parent_id = ?', parentId),
-    getIssue: (id) => selectIssues(sqlite, 'WHERE id = ?', id)[0],
-    getIssueByNumber: (number) =>
-      selectIssues(sqlite, 'WHERE number = ?', number)[0],
+      issues('WHERE parent_id = ?', parentId),
+    getIssue: (id) => issues('WHERE id = ?', id)[0],
+    getIssueByNumber: (number) => issues('WHERE number = ?', number)[0],
     createIssue: (issue) =>
       transaction(sqlite, () => {
         const counter = sqlite
@@ -439,12 +451,12 @@ export function createSqliteIssueStore(sqlite: Sqlite): IssueStore {
             issue.createdAt,
             issue.createdAt,
           )
-        const created = selectIssues(sqlite, 'WHERE id = ?', issue.id)[0]
+        const created = issues('WHERE id = ?', issue.id)[0]
         if (!created) throw new Error('Issue was not created')
         return created
       }),
     updateIssue: (id, patch, now) => {
-      const current = selectIssues(sqlite, 'WHERE id = ?', id)[0]
+      const current = issues('WHERE id = ?', id)[0]
       if (!current) throw new Error('Issue not found')
       if (patch.parentId !== undefined && patch.parentId !== null)
         assertParentAcyclic(sqlite, id, patch.parentId)
@@ -479,31 +491,31 @@ export function createSqliteIssueStore(sqlite: Sqlite): IssueStore {
           now,
           id,
         )
-      const updated = selectIssues(sqlite, 'WHERE id = ?', id)[0]
+      const updated = issues('WHERE id = ?', id)[0]
       if (!updated) throw new Error('Issue was not updated')
       return updated
     },
     assignIssue: (id, owner, now) => {
-      const current = selectIssues(sqlite, 'WHERE id = ?', id)[0]
+      const current = issues('WHERE id = ?', id)[0]
       if (!current) throw new Error('Issue not found')
       sqlite
         .prepare(
           `UPDATE issue SET owner_kind = ?, owner_id = ?, updated_at = ? WHERE id = ?`,
         )
         .run(owner?.kind ?? null, owner?.id ?? null, now, id)
-      const updated = selectIssues(sqlite, 'WHERE id = ?', id)[0]
+      const updated = issues('WHERE id = ?', id)[0]
       if (!updated) throw new Error('Issue was not assigned')
       return updated
     },
     setDeliverable: (id, deliverable, now) => {
-      const current = selectIssues(sqlite, 'WHERE id = ?', id)[0]
+      const current = issues('WHERE id = ?', id)[0]
       if (!current) throw new Error('Issue not found')
       sqlite
         .prepare(
           `UPDATE issue SET deliverable = ?, updated_at = ? WHERE id = ?`,
         )
         .run(deliverable, now, id)
-      const updated = selectIssues(sqlite, 'WHERE id = ?', id)[0]
+      const updated = issues('WHERE id = ?', id)[0]
       if (!updated) throw new Error('Issue deliverable was not updated')
       return updated
     },

@@ -438,6 +438,49 @@ test("warm run accepts follow-ups without disposing the provider session", async
   expect(sandboxDisposed).toBe(1);
 });
 
+test("warm run stays turn-active while the provider session opens", async () => {
+  let openSession!: () => void;
+  const sessionGate = new Promise<void>((resolve) => {
+    openSession = resolve;
+  });
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async () => {
+        throw new Error("one-shot run must not be used for warm");
+      },
+      openWarmSession: async () => {
+        await sessionGate;
+        return {
+          runTurn: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+          dispose: async () => {},
+        };
+      },
+    },
+    createId: () => "warm-opening",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "round-1",
+    warm: true,
+    idleTtlMs: 60_000,
+  });
+  await waitFor(() => executor.getRun(id)?.state === "running");
+  expect(executor.getRun(id)?.turnActive).toBe(true);
+
+  openSession();
+  await waitFor(() => executor.getRun(id)?.turnActive === false);
+  await executor.cancelRun(id);
+});
+
 test("warm follow-up sets turnActive until runTurn resolves", async () => {
   let resolveTurn!: (value: { exitCode: number; stdout: string; stderr: string }) => void;
   const turnGate = new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve) => {

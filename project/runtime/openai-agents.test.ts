@@ -14,10 +14,12 @@ import type { Step } from "./step";
 import {
   CompatibleResponsesModel,
   createModelProvider,
+  loadOpenAIAgentSession,
   normalizeModelBaseUrl,
   rewriteVllmMcpCalls,
   runAgent,
   openOpenAIAgentSession,
+  saveOpenAIAgentSession,
   sanitizeOutputStatuses,
   sanitizeUsageDetails,
   stripMcpProtocolInput,
@@ -631,4 +633,23 @@ test("openOpenAIAgentSession keeps a durable MemorySession across the handle", a
   const again = session.sessionId;
   expect(session.sessionId).toBe(again);
   await session.dispose();
+});
+
+test("OpenAI session items survive between CLI processes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "sweat-openai-session-"));
+  const statePath = join(directory, "session.json");
+  try {
+    const first = await loadOpenAIAgentSession(statePath);
+    await first.addItems([
+      { role: "user", content: "The proposal needs a rocket." },
+    ]);
+    await saveOpenAIAgentSession(statePath, first);
+
+    const second = await loadOpenAIAgentSession(statePath);
+    expect(await second.getItems()).toEqual([
+      { role: "user", content: "The proposal needs a rocket." },
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

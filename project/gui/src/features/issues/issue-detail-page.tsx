@@ -447,8 +447,9 @@ export function IssueDetailPage({
             </RailRow>
             <RailRow label="Branch">
               {issue.effectiveBranch ? (
-                <span
-                  className="inline-flex h-8 max-w-full items-center gap-2 rounded-sm px-1.5 text-sm"
+                <a
+                  href={issue.branchUrl}
+                  className="inline-flex h-8 max-w-full items-center gap-2 rounded-sm px-1.5 text-sm hover:underline"
                   title={
                     issue.branch
                       ? issue.effectiveBranch
@@ -456,7 +457,7 @@ export function IssueDetailPage({
                   }
                 >
                   <GitHubIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 truncate font-mono text-xs">
+                  <span className="min-w-0 truncate">
                     {issue.effectiveBranch}
                   </span>
                   {!issue.branch ? (
@@ -464,7 +465,7 @@ export function IssueDetailPage({
                       inherited
                     </span>
                   ) : null}
-                </span>
+                </a>
               ) : (
                 <span className="px-1.5 pt-1.5 text-sm text-muted-foreground">
                   —

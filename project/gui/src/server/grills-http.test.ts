@@ -50,6 +50,9 @@ function harness(
     materializeCodeGrill?: Parameters<
       typeof createSqliteGrillStore
     >[1]['materializeCodeGrill']
+    setIssueBranch?: Parameters<
+      typeof createSqliteGrillStore
+    >[1]['setIssueBranch']
   },
 ) {
   const sqlite = new Database(':memory:')
@@ -64,6 +67,7 @@ function harness(
     ...(opts?.materializeCodeGrill
       ? { materializeCodeGrill: opts.materializeCodeGrill }
       : {}),
+    ...(opts?.setIssueBranch ? { setIssueBranch: opts.setIssueBranch } : {}),
   })
   const handle = createGrillsHttp({ grillStore })
   const call = async (
@@ -220,6 +224,54 @@ test('Accounts can push back or confirm an Issue proposal', async () => {
     'Leaf B',
   ])
   expect(minted).toEqual(['Parent', 'Leaf A', 'Leaf B'])
+  sqlite.close()
+})
+
+test('Code Grill confirm materializes before creating branch-bound Issues', async () => {
+  const events: string[] = []
+  const { call, grillStore, sqlite } = harness(true, {
+    materializeCodeGrill: async (input) => {
+      events.push(`materialize:${input.files[0]?.path}`)
+      return { branch: input.branch }
+    },
+    createIssue: (input) => {
+      events.push(`create:${input.title}`)
+      return { id: input.id }
+    },
+    setIssueBranch: (_id, branch) => {
+      events.push(`branch:${branch}`)
+    },
+  })
+  const created = await call(ada, 'POST', '/api/grills', {
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+  })
+  const id = created.body.grill.id as string
+  grillStore.setIssueProposal(
+    id,
+    [
+      { key: 'root', title: 'Initiative' },
+      { key: 'child', title: 'Child', parentKey: 'root' },
+    ],
+    Date.now(),
+    [{ path: 'CONTEXT.md', content: '# Decisions\n' }],
+  )
+
+  const confirmed = await call(
+    ada,
+    'POST',
+    `/api/grills/${id}/proposal/confirm`,
+  )
+
+  expect(confirmed.status).toBe(200)
+  expect(confirmed.body.grill.sessionBranch).toBe(`sweat/grill/${id}`)
+  expect(events).toEqual([
+    'materialize:CONTEXT.md',
+    'create:Initiative',
+    'create:Child',
+    `branch:sweat/grill/${id}`,
+  ])
   sqlite.close()
 })
 

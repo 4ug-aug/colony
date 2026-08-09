@@ -331,7 +331,12 @@ export function usePushBackGrillProposal(grillId: string) {
       return data.grill
     },
     onSuccess: (grill) => {
-      upsertGrillCache(queryClient, grill)
+      // Proposal revision is another agent turn, just like submit/reply.
+      markGrillFollowUpStarted(queryClient, grill)
+      void queryClient.invalidateQueries({ queryKey: grillsQueryKey })
+      void queryClient.invalidateQueries({
+        queryKey: grillQueryKey(grillId),
+      })
     },
   })
 }

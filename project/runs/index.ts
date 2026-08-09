@@ -377,7 +377,11 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         : undefined;
       if (cancellation.has(record.id)) return;
 
-      store.update(record.id, { state: "running", startedAt: now() });
+      store.update(record.id, {
+        state: "running",
+        startedAt: now(),
+        turnActive: true,
+      });
       const baseRequest = bindTurnHandlers(record, {
         definition: snapshot(record.definition),
         ...(workspace ? { workspace: "/work" } : {}),
@@ -387,7 +391,6 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         sandbox,
         baseRequest,
       );
-      store.update(record.id, { turnActive: true });
       try {
         const result = await session.runTurn(record.task);
         store.update(record.id, {

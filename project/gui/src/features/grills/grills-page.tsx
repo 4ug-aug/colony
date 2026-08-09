@@ -843,7 +843,7 @@ function GrillSession({
     <div className="flex h-full flex-col overflow-hidden">
       <div
         className={cn(
-          'grid flex-1 gap-6 overflow-auto p-4 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none',
+          'grid flex-1 content-start gap-6 overflow-auto p-4 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none',
           focusWrapUp
             ? 'grid-cols-1'
             : 'lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]',

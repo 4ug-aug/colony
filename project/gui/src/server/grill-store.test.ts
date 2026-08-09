@@ -566,8 +566,11 @@ test('Code Grill confirm binds session branch on root Issues only; General does 
     'g-code-early',
     [{ key: 'early', title: 'Before materialize' }],
     90,
+    [{ path: 'CONTEXT.md', content: '# Pending\n' }],
   )
-  store.confirmIssueProposal('g-code-early', 100)
+  expect(() => store.confirmIssueProposal('g-code-early', 100)).toThrow(
+    'must materialize',
+  )
   expect(branches).toEqual([])
   sqlite.close()
 })

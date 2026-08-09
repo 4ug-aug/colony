@@ -18,9 +18,15 @@ export type GrillProposedIssue = {
   parentKey?: string;
 };
 
+export type GrillMaterializeFile = {
+  path: string;
+  content: string;
+};
+
 export type GrillIssueProposal = {
   status: "proposed" | "revision_requested" | "confirmed" | "dismissed";
   issues: GrillProposedIssue[];
+  files?: GrillMaterializeFile[];
   revisionNotes?: string;
 };
 
@@ -34,7 +40,10 @@ export interface WorkspaceGrillPort {
     questions: GrillQuestion[],
     drafts?: Record<string, string>,
   ): GrillFrontier;
-  proposeIssues(issues: GrillProposedIssue[]): GrillIssueProposal;
+  proposeIssues(
+    issues: GrillProposedIssue[],
+    files?: GrillMaterializeFile[],
+  ): GrillIssueProposal;
   proposeWriteup(writeup: GrillWriteupProposal): GrillWriteupProposal;
 }
 
@@ -46,6 +55,7 @@ export const GRILL_TURN_CONTRACT = [
   "- Chat questions are the wrong path: Accounts can reply when the frontier is empty, but structured frontier cards are still required for multiplayer rounds.",
   "- The topic is the task above — do not ask what to grill; publish the first frontier from that topic.",
   "- The only granted MCP tools are workspace.set_grill_frontier, workspace.propose_grill_issues, and workspace.propose_grill_writeup — do not look for Issues, GitHub, or room tools.",
+  "- Code Grill wrap-up MUST include its markdown design artifacts in workspace.propose_grill_issues files; General Grill omits files.",
   "- When the design tree is settled: General Grill → workspace.propose_grill_writeup; Issue breakdown → workspace.propose_grill_issues. Prefer wrap-up over inventing more questions.",
 ].join("\n");
 
@@ -121,6 +131,22 @@ const asProposedIssues = (
   return issues;
 };
 
+const asMaterializeFiles = (
+  value: unknown,
+): GrillMaterializeFile[] | undefined => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const files: GrillMaterializeFile[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") return undefined;
+    const { path, content } = item as Record<string, unknown>;
+    if (typeof path !== "string" || !path.trim()) return undefined;
+    if (typeof content !== "string") return undefined;
+    files.push({ path: path.trim(), content });
+  }
+  return files;
+};
+
 const asWriteup = (value: unknown): GrillWriteupProposal | undefined => {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return undefined;
@@ -173,7 +199,7 @@ export function createWorkspaceGrillMcpUpstream(options: {
         {
           name: "workspace.propose_grill_issues",
           description:
-            "Wrap-up: publish or revise the Grill Issue tree proposal (title, description, parent/child via parentKey). Use when the design is settled and work should become Issues. Accounts must confirm before Issues are created; do not invent owners.",
+            "Wrap-up: publish or revise the Grill Issue tree proposal (title, description, parent/child via parentKey). For Code Grills, files is required and contains the complete markdown design artifacts to publish on the session branch. General Grills omit files. Accounts must confirm before Issues are created; do not invent owners.",
           inputSchema: {
             type: "object",
             properties: {
@@ -188,6 +214,19 @@ export function createWorkspaceGrillMcpUpstream(options: {
                     parentKey: { type: "string" },
                   },
                   required: ["key", "title"],
+                },
+              },
+              files: {
+                type: "array",
+                description:
+                  "Code Grill only: complete markdown design artifacts for the session branch",
+                items: {
+                  type: "object",
+                  properties: {
+                    path: { type: "string" },
+                    content: { type: "string" },
+                  },
+                  required: ["path", "content"],
                 },
               },
             },
@@ -229,7 +268,10 @@ export function createWorkspaceGrillMcpUpstream(options: {
       if (name === "workspace.propose_grill_issues") {
         const issues = asProposedIssues(args.issues);
         if (!issues) throw new Error("Invalid issues");
-        return textResult(options.port.proposeIssues(issues));
+        const files = asMaterializeFiles(args.files);
+        if (args.files !== undefined && !files)
+          throw new Error("Invalid materialize files");
+        return textResult(options.port.proposeIssues(issues, files));
       }
       if (name === "workspace.propose_grill_writeup") {
         const writeup = asWriteup(args);

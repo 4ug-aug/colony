@@ -1,4 +1,5 @@
 import { boundStepText, type Step } from "./step.ts";
+import { readFile, writeFile } from "node:fs/promises";
 
 export interface CursorCapabilitySession {
   url: string;
@@ -81,6 +82,12 @@ export type CursorAgentSession = {
   agentId?: string;
 };
 
+type CursorAgentDependencies = {
+  createAgent?: CursorAgentFactory;
+  resumeAgent?: CursorAgentResumeFactory;
+  onStep?: (step: Step) => void;
+};
+
 export function assistantText(message: Extract<CursorSdkMessage, { type: "assistant" }>): string {
   return message.message.content
     .filter((block): block is { type: "text"; text: string } => block.type === "text")
@@ -155,11 +162,7 @@ export function scrubCursorApiKeysFromEnv(
 
 export async function openCursorAgentSession(
   request: Omit<CursorAgentRuntimeRequest, "task"> & { resumeAgentId?: string },
-  dependencies: {
-    createAgent?: CursorAgentFactory;
-    resumeAgent?: CursorAgentResumeFactory;
-    onStep?: (step: Step) => void;
-  } = {},
+  dependencies: CursorAgentDependencies = {},
 ): Promise<CursorAgentSession> {
   scrubCursorApiKeysFromEnv();
 
@@ -298,14 +301,34 @@ export async function openCursorAgentSession(
 
 export async function runCursorAgent(
   request: CursorAgentRuntimeRequest,
-  dependencies: {
-    createAgent?: CursorAgentFactory;
-    resumeAgent?: CursorAgentResumeFactory;
-    onStep?: (step: Step) => void;
-  } = {},
+  dependencies: CursorAgentDependencies = {},
 ): Promise<string> {
   const session = await openCursorAgentSession(request, dependencies);
   try {
+    return await session.send(request.task);
+  } finally {
+    await session.dispose();
+  }
+}
+
+export async function runCursorAgentPersisted(
+  request: CursorAgentRuntimeRequest,
+  statePath: string,
+  dependencies: CursorAgentDependencies = {},
+): Promise<string> {
+  let resumeAgentId: string | undefined;
+  try {
+    resumeAgentId = (await readFile(statePath, "utf8")).trim() || undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const session = await openCursorAgentSession(
+    { ...request, ...(resumeAgentId ? { resumeAgentId } : {}) },
+    dependencies,
+  );
+  try {
+    if (session.agentId) await writeFile(statePath, session.agentId, "utf8");
     return await session.send(request.task);
   } finally {
     await session.dispose();
