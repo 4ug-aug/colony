@@ -122,6 +122,11 @@ design writeup from a General Grill (or similar). It is not typed into
 glossary/ADR kinds, not an Issue, and not a Bulletin.
 _Avoid_: PRD (as a type), Bulletin, Issue description, typed design doc kinds
 
+**Doc tools**: First-party, read-only agent tools for listing and reading Sweat
+Docs through the workspace-wide `workspace.docs` MCP capability. They expose no
+create, update, or delete operation.
+_Avoid_: Outline tools, writable Doc capability
+
 **Grill Skill**: The Skill attached to the grilling agent definition that
 supplies interview style and artifact conventions. Sweat owns the multiplayer
 Grill loop (rounds, shared answering, submit); the Skill is replaceable guidance,

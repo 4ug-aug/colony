@@ -22,6 +22,10 @@ import {
   type WorkspaceIssuesPort,
 } from "../mcp/workspace-issues";
 import {
+  createWorkspaceDocsMcpUpstream,
+  type WorkspaceDocsPort,
+} from "../mcp/workspace-docs";
+import {
   createWorkspaceGrillMcpUpstream,
   type GrillFrontier,
   type GrillIssueProposal,
@@ -71,6 +75,17 @@ export function createWorkspaceIssuesAdapter(options: {
             ? { listAssignableOwners: options.listAssignableOwners }
             : {}),
         }),
+    },
+  };
+}
+
+export function createWorkspaceDocsAdapter(options: {
+  port: WorkspaceDocsPort;
+}): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "workspace.docs",
+      createUpstream: () => createWorkspaceDocsMcpUpstream(options),
     },
   };
 }

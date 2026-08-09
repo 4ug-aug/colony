@@ -731,6 +731,7 @@ if (import.meta.main) {
     {
       createGitHubSoftwareEngineerAdapter,
       createLinearSoftwareEngineerAdapter,
+      createWorkspaceDocsAdapter,
       createWorkspaceIssuesAdapter,
       createWorkspaceGrillAdapter,
       createWorkspaceSoftwareEngineerAdapter,
@@ -879,6 +880,19 @@ if (import.meta.main) {
             postMessage: (input) => {
               messages.postMessage(input)
             },
+          },
+        }),
+        createWorkspaceDocsAdapter({
+          port: {
+            listDocs: () =>
+              docStore.listDocs().map((doc) => ({
+                id: doc.id,
+                title: doc.title,
+                createdBy: doc.createdBy,
+                createdAt: doc.createdAt,
+                updatedAt: doc.updatedAt,
+              })),
+            getDoc: (id) => docStore.getDoc(id),
           },
         }),
         createWorkspaceIssuesAdapter({

@@ -622,7 +622,7 @@ test("unlinked connection adapters are omitted; linked agents receive tools", as
   expect(granted.capabilityGrant?.tools).toEqual(grafanaTools);
 });
 
-test("Grill-linked runs grant only workspace.grill tools", async () => {
+test("Grill-linked runs grant Grill tools and read-only workspace Docs", async () => {
   const runner: CommandRunner = {
     async run(args, options): Promise<CommandResult> {
       const stdout =
@@ -660,6 +660,18 @@ test("Grill-linked runs grant only workspace.grill tools", async () => {
       }),
     },
   };
+  const docsAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "workspace.docs",
+      createUpstream: () => ({
+        listTools: async () => [
+          { name: "workspace.list_docs" },
+          { name: "workspace.get_doc" },
+        ],
+        callTool: async () => ({}),
+      }),
+    },
+  };
   const grillAdapter: WorkspaceAgentAdapter = {
     capability: {
       id: "workspace.grill",
@@ -686,7 +698,7 @@ test("Grill-linked runs grant only workspace.grill tools", async () => {
   const executor = createWorkspaceAgentsExecutor({
     cursor: cursorConfig,
     model: modelConfig,
-    adapters: [issuesAdapter, githubAdapter, grillAdapter],
+    adapters: [issuesAdapter, githubAdapter, docsAdapter, grillAdapter],
     connectionAdapters: () => [connectionAdapter],
     createCapabilityEndpoint: () => ({
       url: "http://capabilities.example/mcp",
@@ -705,6 +717,8 @@ test("Grill-linked runs grant only workspace.grill tools", async () => {
   });
   const run = executor.getRun(id)!;
   expect(run.capabilityGrant?.tools).toEqual([
+    "workspace.list_docs",
+    "workspace.get_doc",
     "workspace.set_grill_frontier",
     "workspace.propose_grill_issues",
     "workspace.propose_grill_writeup",

@@ -70,9 +70,9 @@ test("listTools returns frontier, issue proposal, and writeup tools", async () =
   expect(frontier?.description).toContain("Never ask questions in chat");
 });
 
-test("GRILL_TURN_CONTRACT states only grill MCP tools are granted", () => {
+test("GRILL_TURN_CONTRACT limits workspace access to Grill and read-only Docs", () => {
   expect(GRILL_TURN_CONTRACT).toContain(
-    "The only granted MCP tools are workspace.set_grill_frontier",
+    "read-only workspace.list_docs / workspace.get_doc",
   );
   expect(GRILL_TURN_CONTRACT).toContain("do not look for Issues, GitHub, or room tools");
 });
