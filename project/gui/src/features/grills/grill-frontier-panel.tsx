@@ -21,11 +21,13 @@ export function GrillFrontierPanel({
   grill,
   linkedRun,
   latestStep,
+  narration,
   realtime,
 }: {
   grill: Grill
   linkedRun?: GrillLinkedRun
   latestStep?: GrillLatestStep
+  narration: GrillLatestStep[]
   realtime: ReturnType<typeof useGrillRealtime>
 }) {
   const submitRound = useSubmitGrillRound(grill.id)
@@ -60,6 +62,21 @@ export function GrillFrontierPanel({
     }
   }
 
+  const noteSteps =
+    narration.length > 0
+      ? narration
+      : latestStep?.kind === 'message' && latestStep.text.trim()
+        ? [latestStep]
+        : []
+  const agentNotes = noteSteps.length ? (
+    <section className="space-y-3 rounded-lg border bg-muted/20 p-4">
+      <h2 className="text-sm font-semibold">Agent notes</h2>
+      {noteSteps.map((step, index) => (
+        <Markdown key={`${step.at}:${index}`}>{step.text}</Markdown>
+      ))}
+    </section>
+  ) : null
+
   const questions = grill.frontier.questions
   if (questions.length === 0) {
     if (grillIsComplete(grill) || grillAwaitingWrapUpReview(grill)) return null
@@ -71,10 +88,6 @@ export function GrillFrontierPanel({
       : runState === 'preparing'
         ? 'is preparing'
         : 'is working'
-    const messageText =
-      latestStep?.kind === 'message' && latestStep.text.trim()
-        ? latestStep.text
-        : undefined
     const canReply =
       !working && !replyToGrill.isPending && Boolean(reply.trim())
     return (
@@ -91,11 +104,7 @@ export function GrillFrontierPanel({
               text={activity}
               className="text-sm [&_span:last-child]:truncate"
             />
-            {messageText ? (
-              <div className="max-h-48 overflow-auto rounded-md border bg-muted/20 px-3 py-2 text-xs whitespace-pre-wrap text-muted-foreground">
-                {messageText}
-              </div>
-            ) : (
+            {agentNotes ?? (
               <p className="text-xs text-muted-foreground">
                 Waiting for the grilling agent to publish this round&apos;s
                 frontier…
@@ -104,11 +113,7 @@ export function GrillFrontierPanel({
           </div>
         ) : (
           <div className="space-y-2">
-            {messageText ? (
-              <div className="max-h-48 overflow-auto rounded-md border bg-muted/20 px-3 py-2 text-xs whitespace-pre-wrap text-muted-foreground">
-                {messageText}
-              </div>
-            ) : (
+            {agentNotes ?? (
               <p className="text-sm text-muted-foreground">
                 {failed
                   ? 'The grilling agent finished without publishing a frontier.'
@@ -173,6 +178,7 @@ export function GrillFrontierPanel({
 
   return (
     <div key={questionsKey} className="space-y-4">
+      {agentNotes}
       {questions.map((question, index) => {
         const recommendation = question.recommendation?.trim()
         const lease = realtime.leases.find(

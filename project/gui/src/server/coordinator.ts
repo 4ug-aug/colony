@@ -79,7 +79,10 @@ import { createSchedulesHttp } from './schedules-http'
 import { createBulletinsHttp } from './bulletins-http'
 import { createDocsHttp } from './docs-http'
 import { createGrillsHttp } from './grills-http'
-import { createGrillLinkedRuns } from './grill-linked-runs'
+import {
+  createGrillLinkedRuns,
+  type GrillLatestStep,
+} from './grill-linked-runs'
 import { createRoomsHttp } from './rooms-http'
 import { createMembersHttp } from './members-http'
 
@@ -198,6 +201,13 @@ export type GrillServerMessage =
       presenceId: string
       leases: GrillLeaseMessage[]
       participants: GrillParticipantMessage[]
+      latestStep?: GrillLatestStep
+      narration: GrillLatestStep[]
+    }
+  | {
+      type: 'grill.activity.changed'
+      latestStep?: GrillLatestStep
+      narration: GrillLatestStep[]
     }
   | { type: 'grill.presence.changed'; participants: GrillParticipantMessage[] }
   | {
@@ -353,6 +363,34 @@ export function createCoordinator(options: {
       if (socket.data.scope === 'grill' && socket.data.grillId === grillId)
         send(socket, message)
   }
+  const grillLinkedRuns = options.grillStore
+    ? createGrillLinkedRuns({
+        startWarm: ({
+          grillId,
+          task,
+          agentDefinitionId,
+          idleTtlMs,
+          onCreate,
+        }) =>
+          options.control.start(task, {
+            grillId,
+            agentDefinitionId,
+            warm: true,
+            idleTtlMs,
+            onCreate,
+          }),
+        followUp: (runId, task) => options.control.followUp(runId, task),
+        cancel: (runId) => options.control.cancel(runId),
+        getRun: (runId) => options.control.getRun(runId),
+        subscribeSteps: (listener) => options.control.subscribeSteps(listener),
+        onActivityChanged: ({ grillId, latestStep, narration }) =>
+          broadcastGrill(grillId, {
+            type: 'grill.activity.changed',
+            ...(latestStep ? { latestStep } : {}),
+            narration,
+          }),
+      })
+    : undefined
   const grillParticipants = (grillId: string): GrillParticipantMessage[] => {
     const participants = new Map<string, GrillParticipantMessage>()
     for (const socket of sockets) {
@@ -534,6 +572,7 @@ export function createCoordinator(options: {
       )
       if (!grill) return socket.close()
       expireGrillLeases()
+      const latestStep = grillLinkedRuns?.getLatestStep(socket.data.grillId)
       send(socket, {
         type: 'grill.snapshot',
         grill,
@@ -542,6 +581,8 @@ export function createCoordinator(options: {
           publicLease,
         ),
         participants: grillParticipants(socket.data.grillId),
+        ...(latestStep ? { latestStep } : {}),
+        narration: grillLinkedRuns?.getNarration(socket.data.grillId) ?? [],
       })
       return
     }
@@ -795,26 +836,7 @@ export function createCoordinator(options: {
         grillStore: options.grillStore,
         broadcastGrillAttention,
         hasActiveEditLeases: hasActiveGrillLeases,
-        linkedRuns: createGrillLinkedRuns({
-          startWarm: ({
-            grillId,
-            task,
-            agentDefinitionId,
-            idleTtlMs,
-            onCreate,
-          }) =>
-            options.control.start(task, {
-              grillId,
-              agentDefinitionId,
-              warm: true,
-              idleTtlMs,
-              onCreate,
-            }),
-          followUp: (runId, task) => options.control.followUp(runId, task),
-          cancel: (runId) => options.control.cancel(runId),
-          getRun: (runId) => options.control.getRun(runId),
-          subscribeSteps: (listener) => options.control.subscribeSteps(listener),
-        }),
+        linkedRuns: grillLinkedRuns,
       })
     : undefined
   const roomsHttp = createRoomsHttp({

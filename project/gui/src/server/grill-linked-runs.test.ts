@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test'
-import { createGrillLinkedRuns } from './grill-linked-runs'
+import {
+  createGrillLinkedRuns,
+  type GrillLatestStep,
+} from './grill-linked-runs'
 import type { RunSummary } from './run-control'
 
 const summary = (
@@ -21,8 +24,14 @@ const summary = (
 test('grill-linked runs start follow-up and dispose the warm spine', async () => {
   const cancelled: string[] = []
   const followUps: { runId: string; task: string }[] = []
+  const activities: Array<{
+    grillId: string
+    latestStep?: GrillLatestStep
+    narration: GrillLatestStep[]
+  }> = []
   let n = 0
-  let stepListener: ((runId: string, step: import('../../../runs').Step) => void) | undefined
+  let stepListener:
+    ((runId: string, step: import('../../../runs').Step) => void) | undefined
   const runs = new Map<string, RunSummary>()
   const linked = createGrillLinkedRuns({
     startWarm: ({ grillId, onCreate }) => {
@@ -46,6 +55,7 @@ test('grill-linked runs start follow-up and dispose the warm spine', async () =>
         stepListener = undefined
       }
     },
+    onActivityChanged: (activity) => activities.push(activity),
   })
 
   const started = linked.start({
@@ -58,6 +68,16 @@ test('grill-linked runs start follow-up and dispose the warm spine', async () =>
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(true)
 
   stepListener?.(started.id, {
+    kind: 'message',
+    text: 'I narrowed this down',
+    at: 40,
+  })
+  stepListener?.(started.id, {
+    kind: 'message',
+    text: 'I narrowed this down to one decision.',
+    at: 41,
+  })
+  stepListener?.(started.id, {
     kind: 'tool_call',
     tool: 'workspace.set_grill_frontier',
     text: '{}',
@@ -69,6 +89,18 @@ test('grill-linked runs start follow-up and dispose the warm spine', async () =>
     text: '{}',
     at: 42,
   })
+  expect(linked.getNarration('g1')).toEqual([
+    {
+      kind: 'message',
+      text: 'I narrowed this down to one decision.',
+      at: 41,
+    },
+  ])
+  expect(activities.at(-1)).toMatchObject({
+    grillId: 'g1',
+    latestStep: { kind: 'tool_call' },
+    narration: [{ text: 'I narrowed this down to one decision.' }],
+  })
 
   runs.set(started.id, summary(started.id, { turnActive: false, exitCode: 0 }))
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(false)
@@ -76,12 +108,15 @@ test('grill-linked runs start follow-up and dispose the warm spine', async () =>
   await linked.followUp('g1', 'round answers')
   expect(followUps).toEqual([{ runId: started.id, task: 'round answers' }])
   expect(linked.getLatestStep('g1')).toBeUndefined()
+  expect(linked.getNarration('g1')).toEqual([])
+  expect(activities.at(-1)).toMatchObject({ grillId: 'g1', narration: [] })
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(false)
 
   await linked.dispose('g1')
   expect(cancelled).toEqual([started.id])
   expect(linked.getRunId('g1')).toBeUndefined()
   expect(linked.getLatestStep('g1')).toBeUndefined()
+  expect(linked.getNarration('g1')).toEqual([])
 })
 
 test('follow-up marks turnActive until the warm turn finishes', async () => {
@@ -118,7 +153,10 @@ test('follow-up marks turnActive until the warm turn finishes', async () => {
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(true)
   expect(linked.getLatestStep('g1')).toBeUndefined()
 
-  const done = summary(linked.getRunId('g1')!, { turnActive: false, exitCode: 0 })
+  const done = summary(linked.getRunId('g1')!, {
+    turnActive: false,
+    exitCode: 0,
+  })
   runs.set(done.id, done)
   resolveFollowUp(done)
   await pending
@@ -156,6 +194,9 @@ test('follow-up keeps its final answer when no message step was published', asyn
     kind: 'message',
     text: 'Can you respond to this question?',
   })
+  expect(linked.getNarration('g1')).toMatchObject([
+    { kind: 'message', text: 'Can you respond to this question?' },
+  ])
 })
 
 test('turnActive follows run.turnActive after idle exitCode is set', async () => {

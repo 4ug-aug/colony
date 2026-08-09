@@ -23,6 +23,7 @@ export type GrillLinkedRuns = {
   getRunId(grillId: string): string | undefined
   getLinkedRun(grillId: string): GrillLinkedRunView | undefined
   getLatestStep(grillId: string): GrillLatestStep | undefined
+  getNarration(grillId: string): GrillLatestStep[]
 }
 
 /**
@@ -41,16 +42,52 @@ export function createGrillLinkedRuns(deps: {
   cancel: (runId: string) => Promise<unknown>
   getRun: (runId: string) => RunSummary | undefined
   subscribeSteps: (listener: (runId: string, step: Step) => void) => () => void
+  onActivityChanged?: (activity: {
+    grillId: string
+    latestStep?: GrillLatestStep
+    narration: GrillLatestStep[]
+  }) => void
 }): GrillLinkedRuns {
   const byGrill = new Map<string, string>()
   const grillByRun = new Map<string, string>()
   const latestStepByGrill = new Map<string, GrillLatestStep>()
+  const narrationByGrill = new Map<string, GrillLatestStep[]>()
   const followUpInFlight = new Set<string>()
+
+  const publishActivity = (grillId: string) => {
+    const latestStep = latestStepByGrill.get(grillId)
+    deps.onActivityChanged?.({
+      grillId,
+      ...(latestStep ? { latestStep } : {}),
+      narration: [...(narrationByGrill.get(grillId) ?? [])],
+    })
+  }
+
+  const clearActivity = (grillId: string) => {
+    latestStepByGrill.delete(grillId)
+    narrationByGrill.delete(grillId)
+    publishActivity(grillId)
+  }
+
+  const recordStep = (grillId: string, next: GrillLatestStep) => {
+    const previous = latestStepByGrill.get(grillId)
+    if (next.kind === 'message' && next.text.trim()) {
+      const narration = narrationByGrill.get(grillId) ?? []
+      narrationByGrill.set(
+        grillId,
+        previous?.kind === 'message' && next.text.startsWith(previous.text)
+          ? [...narration.slice(0, -1), next]
+          : [...narration, next],
+      )
+    }
+    latestStepByGrill.set(grillId, next)
+    publishActivity(grillId)
+  }
 
   deps.subscribeSteps((runId, step) => {
     const grillId = grillByRun.get(runId)
     if (!grillId) return
-    latestStepByGrill.set(grillId, {
+    recordStep(grillId, {
       kind: step.kind,
       ...(step.tool !== undefined ? { tool: step.tool } : {}),
       text: step.text,
@@ -76,7 +113,7 @@ export function createGrillLinkedRuns(deps: {
       const existing = byGrill.get(grillId)
       if (existing) void deps.cancel(existing)
       followUpInFlight.delete(grillId)
-      latestStepByGrill.delete(grillId)
+      clearActivity(grillId)
       const run = deps.startWarm({
         grillId,
         task,
@@ -96,7 +133,7 @@ export function createGrillLinkedRuns(deps: {
       const previousOutput = deps.getRun(runId)?.stdout ?? ''
       // Drop the previous turn's step so the UI shows "working" until new
       // steps stream in for this follow-up.
-      latestStepByGrill.delete(grillId)
+      clearActivity(grillId)
       followUpInFlight.add(grillId)
       try {
         const run = await deps.followUp(runId, task)
@@ -110,11 +147,12 @@ export function createGrillLinkedRuns(deps: {
           finalAnswer.trim() &&
           latestStepByGrill.get(grillId)?.kind !== 'message'
         ) {
-          latestStepByGrill.set(grillId, {
+          const next: GrillLatestStep = {
             kind: 'message',
             text: finalAnswer,
             at: Date.now(),
-          })
+          }
+          recordStep(grillId, next)
         }
         return run
       } finally {
@@ -124,7 +162,7 @@ export function createGrillLinkedRuns(deps: {
     dispose: async (grillId) => {
       const runId = byGrill.get(grillId)
       byGrill.delete(grillId)
-      latestStepByGrill.delete(grillId)
+      clearActivity(grillId)
       followUpInFlight.delete(grillId)
       if (runId) {
         grillByRun.delete(runId)
@@ -140,5 +178,6 @@ export function createGrillLinkedRuns(deps: {
       return { ...run, turnActive: isTurnActive(grillId, run) }
     },
     getLatestStep: (grillId) => latestStepByGrill.get(grillId),
+    getNarration: (grillId) => [...(narrationByGrill.get(grillId) ?? [])],
   }
 }

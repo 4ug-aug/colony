@@ -40,6 +40,7 @@ export function GrillSession({
   const grill = data?.grill
   const linkedRun = data?.linkedRun
   const latestStep = data?.latestStep
+  const narration = data?.narration ?? []
 
   if (isPending) {
     return (
@@ -147,6 +148,7 @@ export function GrillSession({
               grill={grill}
               linkedRun={linkedRun}
               latestStep={latestStep}
+              narration={narration}
               realtime={realtime}
             />
           </section>

@@ -24,6 +24,7 @@ export function createGrillsHttp(deps: {
     dispose(grillId: string): Promise<void>
     getLinkedRun?(grillId: string): unknown
     getLatestStep?(grillId: string): unknown
+    getNarration?(grillId: string): unknown[]
   }
 }): (
   request: Request,
@@ -91,7 +92,8 @@ export function createGrillsHttp(deps: {
       const id = runRoute[1]!
       const grill = deps.grillStore.getGrillForUser(id, user.id)
       if (!grill) return json({ error: 'Grill not found' }, 404)
-      if (!deps.linkedRuns) return json({ error: 'Grill runs unavailable' }, 503)
+      if (!deps.linkedRuns)
+        return json({ error: 'Grill runs unavailable' }, 503)
       const body = await readBody(request)
       const task = typeof body?.task === 'string' ? body.task.trim() : ''
       if (!task) return json({ error: 'Invalid task' }, 400)
@@ -278,7 +280,9 @@ export function createGrillsHttp(deps: {
         return json({ grill })
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'Failed to push back proposal'
+          error instanceof Error
+            ? error.message
+            : 'Failed to push back proposal'
         return json({ error: message }, 400)
       }
     }
@@ -289,13 +293,14 @@ export function createGrillsHttp(deps: {
     if (confirmRoute && request.method === 'POST') {
       const id = confirmRoute[1]!
       const grill = deps.grillStore.getGrillForUser(id, user.id)
-      if (!grill)
-        return json({ error: 'Grill not found' }, 404)
+      if (!grill) return json({ error: 'Grill not found' }, 404)
       try {
         if (grill.kind === 'code' && !grill.sessionBranch) {
           const files = grill.issueProposal?.files
           if (!files?.length)
-            throw new Error('Code Grill Issue proposal has no materialize files')
+            throw new Error(
+              'Code Grill Issue proposal has no materialize files',
+            )
           await deps.grillStore.completeGrill(id, { files }, Date.now())
         }
         const confirmed = deps.grillStore.confirmIssueProposal(id, Date.now())
@@ -331,14 +336,10 @@ export function createGrillsHttp(deps: {
         return json({ error: 'Grill not found' }, 404)
       try {
         const grill = deps.grillStore.dismissIssueProposal(id, Date.now())
-        if (!grill)
-          return json({ error: 'No Issue proposal to dismiss' }, 400)
+        if (!grill) return json({ error: 'No Issue proposal to dismiss' }, 400)
         if (deps.linkedRuns) {
           void deps.linkedRuns
-            .followUp(
-              id,
-              JSON.stringify({ type: 'grill.proposal_dismissed' }),
-            )
+            .followUp(id, JSON.stringify({ type: 'grill.proposal_dismissed' }))
             .catch((error) => {
               console.error('Grill follow-up after dismiss failed', error)
             })
@@ -408,10 +409,12 @@ export function createGrillsHttp(deps: {
       if (!grill) return json({ error: 'Grill not found' }, 404)
       const linkedRun = deps.linkedRuns?.getLinkedRun?.(id)
       const latestStep = deps.linkedRuns?.getLatestStep?.(id)
+      const narration = deps.linkedRuns?.getNarration?.(id)
       return json({
         grill,
         ...(linkedRun !== undefined ? { linkedRun } : {}),
         ...(latestStep !== undefined ? { latestStep } : {}),
+        ...(narration?.length ? { narration } : {}),
       })
     }
 

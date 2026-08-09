@@ -32,6 +32,13 @@ export type GrillStreamMessage =
       presenceId: string
       leases: GrillEditLease[]
       participants: GrillParticipant[]
+      latestStep?: GrillLatestStep
+      narration: GrillLatestStep[]
+    }
+  | {
+      type: 'grill.activity.changed'
+      latestStep?: GrillLatestStep
+      narration: GrillLatestStep[]
     }
   | {
       type: 'grill.presence.changed'

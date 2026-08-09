@@ -2672,7 +2672,22 @@ test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edi
     { id: 'user-1', name: 'Ada' },
     { id: 'user-2', name: 'Grace' },
   ]
-  const { coordinator, base } = await makeCoordinator({ store, grillStore })
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    grillStore,
+    control,
+  })
+  const runResponse = await fetch(`${base}/api/grills/g-live/run`, {
+    method: 'POST',
+    headers: {
+      origin: 'http://gui.test',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ task: 'Grill this' }),
+  })
+  expect(runResponse.status).toBe(201)
+  const run = ((await runResponse.json()) as { run: RunSummary }).run
   const wsBase = base.replace(/^http/, 'ws')
   const ada = await open(
     `${wsBase}/api/grills/g-live/stream?ticket=${mintRealtimeTicket('user-1')}`,
@@ -2694,6 +2709,23 @@ test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edi
     participants: [{ id: 'user-1' }, { id: 'user-2' }],
   })
   expect((await grace.next()).type).toBe('grill.presence.changed')
+
+  control.emitStep(run.id, {
+    kind: 'message',
+    text: 'I found one decision to resolve.',
+    at: 3,
+  })
+  expect(await ada.next()).toMatchObject({
+    type: 'grill.activity.changed',
+    latestStep: { kind: 'message' },
+    narration: [{ text: 'I found one decision to resolve.' }],
+  })
+  expect((await grace.next()).type).toBe('grill.activity.changed')
+  ada.socket.send('snapshot')
+  expect(await ada.next()).toMatchObject({
+    type: 'grill.snapshot',
+    narration: [{ text: 'I found one decision to resolve.' }],
+  })
 
   ada.socket.send(JSON.stringify({ type: 'grill.focus', questionId: 'q1' }))
   expect(await ada.next()).toMatchObject({
