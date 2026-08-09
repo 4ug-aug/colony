@@ -1,40 +1,63 @@
 import { Markdown } from '#/components/markdown'
 import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
 import { cn } from '#/lib/utils'
 import { MousePointerClick } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { grillEnterClassName, grillStepLabel } from './grill-presentation'
 import { grillAwaitingWrapUpReview, grillIsComplete } from './grill-status'
 import type { Grill, GrillLatestStep, GrillLinkedRun } from './types'
+import type { useGrillRealtime } from './use-grills'
 import {
   grillTurnActive,
   useReplyToGrill,
   useSubmitGrillRound,
-  useUpdateGrillDrafts,
 } from './use-grills'
 
 export function GrillFrontierPanel({
   grill,
   linkedRun,
   latestStep,
+  realtime,
 }: {
   grill: Grill
   linkedRun?: GrillLinkedRun
   latestStep?: GrillLatestStep
+  realtime: ReturnType<typeof useGrillRealtime>
 }) {
-  const updateDrafts = useUpdateGrillDrafts(grill.id)
   const submitRound = useSubmitGrillRound(grill.id)
   const replyToGrill = useReplyToGrill(grill.id)
   const [drafts, setDrafts] = useState(grill.frontier.drafts)
   const [reply, setReply] = useState('')
-  const frontierKey = `${grill.id}:${grill.frontier.questions.map((q) => q.id).join(',')}:${grill.updatedAt}`
-  const [syncedKey, setSyncedKey] = useState(frontierKey)
-  if (syncedKey !== frontierKey) {
-    setSyncedKey(frontierKey)
-    setDrafts(grill.frontier.drafts)
+  const textareas = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const questionsKey = grill.frontier.questions.map((q) => q.id).join(',')
+  const frontierKey = `${grill.id}:${questionsKey}:${JSON.stringify(grill.frontier.drafts)}`
+  const [synced, setSynced] = useState({
+    key: frontierKey,
+    questionsKey,
+  })
+  if (synced.key !== frontierKey) {
+    setSynced({ key: frontierKey, questionsKey })
+    if (synced.questionsKey !== questionsKey) {
+      setDrafts(grill.frontier.drafts)
+    } else {
+      setDrafts((current) => {
+        const next = { ...current }
+        for (const [questionId, value] of Object.entries(
+          grill.frontier.drafts,
+        )) {
+          const lease = realtime.leases.find(
+            (item) => item.questionId === questionId,
+          )
+          if (lease?.presenceId !== realtime.presenceId)
+            next[questionId] = value
+        }
+        return next
+      })
+    }
   }
 
   const questions = grill.frontier.questions
@@ -144,12 +167,22 @@ export function GrillFrontierPanel({
   const missingAnswers = questions.some(
     (question) => !(drafts[question.id] ?? '').trim(),
   )
-  const questionsKey = questions.map((question) => question.id).join(',')
+  const activeEditors = realtime.leases.map(
+    ({ editor }) => editor.displayName || editor.name,
+  )
 
   return (
     <div key={questionsKey} className="space-y-4">
       {questions.map((question, index) => {
         const recommendation = question.recommendation?.trim()
+        const lease = realtime.leases.find(
+          ({ questionId }) => questionId === question.id,
+        )
+        const mine = lease?.presenceId === realtime.presenceId
+        const blocked = Boolean(lease && !mine)
+        const editorName = lease
+          ? lease.editor.displayName || lease.editor.name
+          : ''
         return (
           <div
             key={question.id}
@@ -164,21 +197,16 @@ export function GrillFrontierPanel({
               <button
                 type="button"
                 className="w-full rounded-md border border-dashed px-3 py-2 text-left transition-colors hover:bg-muted/40"
+                disabled={!realtime.connected || Boolean(lease && !mine)}
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
+                  textareas.current[question.id]?.focus()
                   const next = {
                     ...drafts,
                     [question.id]: recommendation,
                   }
                   setDrafts(next)
-                  void updateDrafts.mutateAsync(next).catch((reason) => {
-                    toast.add({
-                      title:
-                        reason instanceof Error
-                          ? reason.message
-                          : 'Unable to save drafts',
-                      type: 'error',
-                    })
-                  })
+                  realtime.change(question.id, recommendation)
                 }}
               >
                 <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -193,30 +221,62 @@ export function GrillFrontierPanel({
               </button>
             ) : null}
             <Textarea
+              ref={(node) => {
+                textareas.current[question.id] = node
+              }}
               value={drafts[question.id] ?? ''}
+              readOnly={!realtime.connected || !mine}
+              className={cn(
+                blocked &&
+                  'border-amber-500/70 ring-2 ring-amber-500/25',
+              )}
+              onFocus={() => realtime.focus(question.id)}
               onChange={(event) => {
                 const value = event.target.value
                 setDrafts((current) => ({ ...current, [question.id]: value }))
+                realtime.change(question.id, value)
               }}
-              onBlur={(event) => {
-                const next = {
-                  ...drafts,
-                  [question.id]: event.target.value,
-                }
-                setDrafts(next)
-                void updateDrafts.mutateAsync(next).catch((reason) => {
-                  toast.add({
-                    title:
-                      reason instanceof Error
-                        ? reason.message
-                        : 'Unable to save drafts',
-                    type: 'error',
-                  })
-                })
-              }}
+              onBlur={() => realtime.blur(question.id)}
               placeholder="Your shared answer"
               rows={3}
             />
+            <div className="flex min-h-6 justify-end">
+              {lease ? (
+                <div
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                  title={`${editorName} is editing`}
+                >
+                  <Avatar size="sm">
+                    {lease.editor.image ? (
+                      <AvatarImage src={lease.editor.image} alt="" />
+                    ) : null}
+                    <AvatarFallback>
+                      {editorName.slice(0, 1).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span>
+                    {mine ? 'You are editing' : `${editorName} is editing`}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            {realtime.recoveries[question.id] ? (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+                <p className="font-medium">Unsaved text from reconnect</p>
+                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                  {realtime.recoveries[question.id]}
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="mt-1"
+                  onClick={() => realtime.dismissRecovery(question.id)}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            ) : null}
           </div>
         )
       })}
@@ -242,10 +302,22 @@ export function GrillFrontierPanel({
             })
           })
         }}
-        disabled={submitRound.isPending || missingAnswers}
+        disabled={
+          submitRound.isPending ||
+          missingAnswers ||
+          realtime.leases.length > 0 ||
+          !realtime.connected
+        }
       >
         {submitRound.isPending ? 'Submitting…' : 'Submit round'}
       </Button>
+      {!realtime.connected ? (
+        <p className="text-xs text-muted-foreground">Reconnecting…</p>
+      ) : activeEditors.length ? (
+        <p className="text-xs text-muted-foreground">
+          Waiting for {activeEditors.join(', ')} to finish editing.
+        </p>
+      ) : null}
     </div>
   )
 }

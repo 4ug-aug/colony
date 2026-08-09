@@ -12,6 +12,49 @@ export type GrillFrontier = {
   drafts: Record<string, string>
 }
 
+export type GrillEditLease = {
+  questionId: string
+  presenceId: string
+  editor: {
+    id: string
+    name: string
+    image?: string
+    displayName?: string
+  }
+}
+
+export type GrillParticipant = GrillEditLease['editor']
+
+export type GrillStreamMessage =
+  | {
+      type: 'grill.snapshot'
+      grill: Grill
+      presenceId: string
+      leases: GrillEditLease[]
+      participants: GrillParticipant[]
+    }
+  | {
+      type: 'grill.presence.changed'
+      participants: GrillParticipant[]
+    }
+  | {
+      type: 'grill.lease.changed'
+      questionId: string
+      lease?: GrillEditLease
+    }
+  | {
+      type: 'grill.draft.changed'
+      questionId: string
+      value: string
+      presenceId: string
+      updatedAt: number
+    }
+  | {
+      type: 'grill.edit.rejected'
+      questionId: string
+      reason: 'lease-held' | 'lease-required' | 'question-not-found'
+    }
+
 export type SettledRound = {
   questions: GrillQuestion[]
   answers: Record<string, string>

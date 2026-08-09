@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { apiJson, apiJsonBody } from '#/lib/api-transport'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { apiJson, apiJsonBody, connectGrillStream } from '#/lib/api-transport'
+import type { RealtimeStreamHandle } from '#/lib/api-transport'
 import { docsQueryKey } from '#/features/docs/use-docs'
 import type { RunState } from '#/features/runs/run-helpers'
 import {
@@ -10,9 +12,12 @@ import type {
   Grill,
   GrillCreatedIssue,
   GrillKind,
+  GrillEditLease,
   GrillLatestStep,
   GrillLinkedRun,
   GrillListItem,
+  GrillParticipant,
+  GrillStreamMessage,
   GrillVisibility,
 } from './types'
 
@@ -180,8 +185,9 @@ export function useGrill(id: string | undefined) {
     refetchInterval: (query) => {
       const data = query.state.data
       if (!data) return false
-      // Open frontier = Accounts' turn; poll slower.
-      if (data.grill.frontier.questions.length > 0) return 4_000
+      // Open frontier = Accounts' realtime turn; polling can overwrite a newer
+      // socket draft with a response that started before that draft arrived.
+      if (data.grill.frontier.questions.length > 0) return false
       if (
         grillAwaitingWrapUpReview(data.grill) ||
         grillIsComplete(data.grill)
@@ -195,6 +201,214 @@ export function useGrill(id: string | undefined) {
       return 4_000
     },
   })
+}
+
+export function useGrillRealtime(grillId: string) {
+  const queryClient = useQueryClient()
+  const streamRef = useRef<RealtimeStreamHandle | undefined>(undefined)
+  const presenceIdRef = useRef<string | undefined>(undefined)
+  const focusedQuestionRef = useRef<string | undefined>(undefined)
+  const pendingRef = useRef(
+    new Map<string, { value: string; baseValue: string }>(),
+  )
+  const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const [connected, setConnected] = useState(false)
+  const [presenceId, setPresenceId] = useState<string>()
+  const [leases, setLeases] = useState<GrillEditLease[]>([])
+  const [participants, setParticipants] = useState<GrillParticipant[]>([])
+  const [recoveries, setRecoveries] = useState<Record<string, string>>({})
+
+  const send = useCallback((message: Record<string, unknown>) => {
+    streamRef.current?.send(JSON.stringify(message))
+  }, [])
+
+  const flushDraft = useCallback(
+    (questionId: string) => {
+      const timer = timersRef.current.get(questionId)
+      if (timer) clearTimeout(timer)
+      timersRef.current.delete(questionId)
+      const pending = pendingRef.current.get(questionId)
+      if (pending)
+        send({ type: 'grill.draft', questionId, value: pending.value })
+    },
+    [send],
+  )
+
+  useEffect(() => {
+    let stopped = false
+    let attempts = 0
+    let retry: ReturnType<typeof setTimeout> | undefined
+
+    const connect = () => {
+      if (stopped) return
+      const stream = connectGrillStream(grillId, {
+        onOpen() {
+          attempts = 0
+          setConnected(true)
+        },
+        onMessage(data) {
+          if (stopped) return
+          const event = JSON.parse(data) as GrillStreamMessage
+          if (event.type === 'grill.snapshot') {
+            presenceIdRef.current = event.presenceId
+            setPresenceId(event.presenceId)
+            setLeases(event.leases)
+            setParticipants(event.participants)
+            upsertGrillCache(queryClient, event.grill)
+            for (const [questionId, pending] of pendingRef.current) {
+              const canonical = event.grill.frontier.drafts[questionId] ?? ''
+              if (
+                canonical !== pending.baseValue &&
+                canonical !== pending.value
+              ) {
+                setRecoveries((current) => ({
+                  ...current,
+                  [questionId]: pending.value,
+                }))
+                pendingRef.current.delete(questionId)
+              }
+            }
+            if (focusedQuestionRef.current)
+              send({
+                type: 'grill.focus',
+                questionId: focusedQuestionRef.current,
+              })
+            return
+          }
+          if (event.type === 'grill.presence.changed') {
+            setParticipants(event.participants)
+            return
+          }
+          if (event.type === 'grill.lease.changed') {
+            setLeases((current) => [
+              ...current.filter(
+                ({ questionId }) => questionId !== event.questionId,
+              ),
+              ...(event.lease ? [event.lease] : []),
+            ])
+            if (event.lease?.presenceId === presenceIdRef.current)
+              flushDraft(event.questionId)
+            return
+          }
+          if (event.type === 'grill.draft.changed') {
+            const current = queryClient.getQueryData<GrillDetail>(
+              grillQueryKey(grillId),
+            )
+            if (current) {
+              upsertGrillCache(queryClient, {
+                ...current.grill,
+                frontier: {
+                  ...current.grill.frontier,
+                  drafts: {
+                    ...current.grill.frontier.drafts,
+                    [event.questionId]: event.value,
+                  },
+                },
+                updatedAt: event.updatedAt,
+              })
+            }
+            const pending = pendingRef.current.get(event.questionId)
+            if (pending?.value === event.value) {
+              pendingRef.current.delete(event.questionId)
+            } else if (pending && event.presenceId === presenceIdRef.current) {
+              pending.baseValue = event.value
+            } else if (
+              pending &&
+              event.presenceId !== presenceIdRef.current &&
+              event.value !== pending.baseValue
+            ) {
+              setRecoveries((existing) => ({
+                ...existing,
+                [event.questionId]: pending.value,
+              }))
+              pendingRef.current.delete(event.questionId)
+            }
+            return
+          }
+          const pending = pendingRef.current.get(event.questionId)
+          if (pending) {
+            setRecoveries((current) => ({
+              ...current,
+              [event.questionId]: pending.value,
+            }))
+            pendingRef.current.delete(event.questionId)
+          }
+        },
+        onClose() {
+          if (stopped) return
+          setConnected(false)
+          setLeases([])
+          setParticipants([])
+          retry = setTimeout(connect, Math.min(1_000 * 2 ** attempts++, 10_000))
+        },
+        onError() {
+          streamRef.current?.close()
+        },
+      })
+      streamRef.current = stream
+    }
+
+    connect()
+    return () => {
+      stopped = true
+      if (retry) clearTimeout(retry)
+      for (const timer of timersRef.current.values()) clearTimeout(timer)
+      timersRef.current.clear()
+      streamRef.current?.close()
+    }
+  }, [flushDraft, grillId, queryClient, send])
+
+  useEffect(() => {
+    const heartbeat = setInterval(() => {
+      if (connected && focusedQuestionRef.current)
+        send({
+          type: 'grill.heartbeat',
+          questionId: focusedQuestionRef.current,
+        })
+    }, 2_000)
+    return () => clearInterval(heartbeat)
+  }, [connected, send])
+
+  return {
+    connected,
+    presenceId,
+    leases,
+    participants,
+    recoveries,
+    focus(questionId: string) {
+      focusedQuestionRef.current = questionId
+      send({ type: 'grill.focus', questionId })
+    },
+    blur(questionId: string) {
+      flushDraft(questionId)
+      send({ type: 'grill.blur', questionId })
+      if (focusedQuestionRef.current === questionId)
+        focusedQuestionRef.current = undefined
+    },
+    change(questionId: string, value: string) {
+      const prior = pendingRef.current.get(questionId)
+      const detail = queryClient.getQueryData<GrillDetail>(
+        grillQueryKey(grillId),
+      )
+      pendingRef.current.set(questionId, {
+        value,
+        baseValue:
+          prior?.baseValue ?? detail?.grill.frontier.drafts[questionId] ?? '',
+      })
+      if (timersRef.current.has(questionId)) return
+      timersRef.current.set(
+        questionId,
+        setTimeout(() => flushDraft(questionId), 100),
+      )
+    },
+    dismissRecovery(questionId: string) {
+      setRecoveries((current) => {
+        const next = { ...current }
+        delete next[questionId]
+        return next
+      })
+    },
+  }
 }
 
 export function useCreateGrill() {
@@ -244,25 +458,6 @@ export function useCreateGrill() {
         detail.latestStep,
       )
       void queryClient.invalidateQueries({ queryKey: grillsQueryKey })
-    },
-  })
-}
-
-export function useUpdateGrillDrafts(grillId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async (drafts: Record<string, string>): Promise<Grill> => {
-      const data = await apiJsonBody<{ grill?: Grill }>(
-        `/api/grills/${encodeURIComponent(grillId)}/drafts`,
-        'PATCH',
-        { drafts },
-        'Unable to save drafts',
-      )
-      if (!data.grill) throw new Error('Unable to save drafts')
-      return data.grill
-    },
-    onSuccess: (grill) => {
-      upsertGrillCache(queryClient, grill)
     },
   })
 }

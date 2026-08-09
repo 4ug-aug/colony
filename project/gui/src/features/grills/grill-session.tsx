@@ -1,6 +1,18 @@
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
 import { BrailleLoader } from '#/components/ui/braille-loader'
+import {
+  Avatar,
+  AvatarBadge,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarImage,
+} from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '#/components/ui/tooltip'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { cn } from '#/lib/utils'
 import { ArrowLeft, CheckCircle2, Flame } from 'lucide-react'
@@ -14,7 +26,7 @@ import { ProposalPanel } from './grill-proposal-panel'
 import { GrillSettledRounds } from './grill-settled-rounds'
 import { grillAwaitingWrapUpReview, grillIsComplete } from './grill-status'
 import { GrillWriteupPanel } from './grill-writeup-panel'
-import { useGrill } from './use-grills'
+import { useGrill, useGrillRealtime } from './use-grills'
 
 export function GrillSession({
   grillId,
@@ -24,6 +36,7 @@ export function GrillSession({
   onOpenDoc?: (docId: string) => void
 }) {
   const { data, isPending, isError, error } = useGrill(grillId)
+  const realtime = useGrillRealtime(grillId)
   const grill = data?.grill
   const linkedRun = data?.linkedRun
   const latestStep = data?.latestStep
@@ -51,6 +64,43 @@ export function GrillSession({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex min-h-12 shrink-0 items-center -mb-4 gap-3 px-4">
+        <span className="text-xs font-medium text-muted-foreground">
+          Participating
+        </span>
+        <AvatarGroup>
+          {realtime.participants.map((participant) => {
+            const name = participant.displayName || participant.name
+            const label =
+              participant.displayName &&
+              participant.displayName !== participant.name
+                ? `${name} (${participant.name})`
+                : name
+            return (
+              <Tooltip key={participant.id}>
+                <TooltipTrigger
+                  render={
+                    <Avatar size="sm">
+                      {participant.image ? (
+                        <AvatarImage
+                          src={participant.image}
+                          alt=""
+                          className="border-1 hover:border-foreground"
+                        />
+                      ) : null}
+                      <AvatarFallback className="border-1 hover:border-foreground">
+                        {name.slice(0, 1).toUpperCase()}
+                      </AvatarFallback>
+                      <AvatarBadge className="bg-emerald-500" />
+                    </Avatar>
+                  }
+                />
+                <TooltipContent side="bottom">{label}</TooltipContent>
+              </Tooltip>
+            )
+          })}
+        </AvatarGroup>
+      </div>
       <div
         className={cn(
           'grid flex-1 content-start gap-6 overflow-auto p-4 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none',
@@ -97,6 +147,7 @@ export function GrillSession({
               grill={grill}
               linkedRun={linkedRun}
               latestStep={latestStep}
+              realtime={realtime}
             />
           </section>
         )}

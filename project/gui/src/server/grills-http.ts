@@ -13,6 +13,7 @@ const visibilities = new Set<GrillVisibility>(['invite-only', 'workspace-open'])
 export function createGrillsHttp(deps: {
   grillStore: GrillStore
   broadcastGrillAttention?: (userId: string, grillId: string) => void
+  hasActiveEditLeases?: (grillId: string) => boolean
   linkedRuns?: {
     start(input: {
       grillId: string
@@ -141,6 +142,11 @@ export function createGrillsHttp(deps: {
       const id = submitRoute[1]!
       if (!deps.grillStore.getGrillForUser(id, user.id))
         return json({ error: 'Grill not found' }, 404)
+      if (deps.hasActiveEditLeases?.(id))
+        return json(
+          { error: 'Wait for active answer edits before submitting' },
+          409,
+        )
       const body = await readBody(request)
       let drafts: Record<string, string> | undefined
       if (body?.drafts !== undefined) {

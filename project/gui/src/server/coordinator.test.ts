@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { createServer } from 'node:net'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -36,6 +37,7 @@ import {
 } from './room-store'
 import { createRoomMessageHub } from './room-hub'
 import { createRoomAttachmentSource } from './attachments'
+import { createSqliteGrillStore } from './grill-store'
 
 class FakeRunControl implements RunControl {
   private listeners = new Set<(run: RunSummary) => void>()
@@ -2615,6 +2617,129 @@ test('verifyRealtimeTicket rejects tampered and malformed tickets', () => {
   expect(verifyRealtimeTicket(ticket.slice(0, -2) + 'xx')).toBeUndefined()
   expect(verifyRealtimeTicket('not-a-ticket')).toBeUndefined()
   expect(verifyRealtimeTicket('')).toBeUndefined()
+})
+
+test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edits', async () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(`
+    CREATE TABLE grill (
+      id TEXT PRIMARY KEY NOT NULL,
+      kind TEXT NOT NULL,
+      visibility TEXT NOT NULL,
+      agent_definition_id TEXT NOT NULL,
+      repository TEXT,
+      base_ref TEXT,
+      frontier TEXT NOT NULL,
+      settled_answers TEXT NOT NULL,
+      draft_artifacts TEXT,
+      created_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE grill_participant (
+      grill_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      PRIMARY KEY (grill_id, user_id)
+    );
+    CREATE TABLE grill_attention (
+      id TEXT PRIMARY KEY NOT NULL,
+      grill_id TEXT NOT NULL,
+      recipient_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      acknowledged_at INTEGER
+    );
+  `)
+  const grillStore = createSqliteGrillStore(sqlite, {
+    hasGuidanceSkill: () => true,
+  })
+  grillStore.createGrill({
+    id: 'g-live',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'user-1',
+    createdAt: 1,
+  })
+  grillStore.setFrontier(
+    'g-live',
+    { questions: [{ id: 'q1', prompt: 'Ship it?' }], drafts: {} },
+    2,
+  )
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Ada' },
+    { id: 'user-2', name: 'Grace' },
+  ]
+  const { coordinator, base } = await makeCoordinator({ store, grillStore })
+  const wsBase = base.replace(/^http/, 'ws')
+  const ada = await open(
+    `${wsBase}/api/grills/g-live/stream?ticket=${mintRealtimeTicket('user-1')}`,
+  )
+  const grace = await open(
+    `${wsBase}/api/grills/g-live/stream?ticket=${mintRealtimeTicket('user-2')}`,
+  )
+  expect(await ada.next()).toMatchObject({
+    type: 'grill.snapshot',
+    participants: [{ id: 'user-1' }],
+  })
+  expect(await grace.next()).toMatchObject({
+    type: 'grill.snapshot',
+    participants: [{ id: 'user-1' }, { id: 'user-2' }],
+  })
+  await ada.next()
+  expect(await ada.next()).toMatchObject({
+    type: 'grill.presence.changed',
+    participants: [{ id: 'user-1' }, { id: 'user-2' }],
+  })
+  expect((await grace.next()).type).toBe('grill.presence.changed')
+
+  ada.socket.send(JSON.stringify({ type: 'grill.focus', questionId: 'q1' }))
+  expect(await ada.next()).toMatchObject({
+    type: 'grill.lease.changed',
+    lease: { editor: { id: 'user-1', name: 'Ada' } },
+  })
+  expect((await grace.next()).type).toBe('grill.lease.changed')
+
+  ada.socket.send(
+    JSON.stringify({ type: 'grill.draft', questionId: 'q1', value: 'Yes' }),
+  )
+  expect(await grace.next()).toMatchObject({
+    type: 'grill.draft.changed',
+    questionId: 'q1',
+    value: 'Yes',
+  })
+  expect((await ada.next()).type).toBe('grill.draft.changed')
+  expect(grillStore.getGrill('g-live')?.frontier.drafts.q1).toBe('Yes')
+
+  grace.socket.send(
+    JSON.stringify({ type: 'grill.draft', questionId: 'q1', value: 'No' }),
+  )
+  expect(await grace.next()).toMatchObject({
+    type: 'grill.edit.rejected',
+    reason: 'lease-held',
+  })
+  expect(grillStore.getGrill('g-live')?.frontier.drafts.q1).toBe('Yes')
+
+  const submit = await fetch(`${base}/api/grills/g-live/submit`, {
+    method: 'POST',
+    headers: { origin: 'http://gui.test' },
+  })
+  expect(submit.status).toBe(409)
+
+  ada.socket.close()
+  expect(await grace.next()).toMatchObject({
+    type: 'grill.lease.changed',
+    questionId: 'q1',
+  })
+  expect(await grace.next()).toMatchObject({
+    type: 'grill.presence.changed',
+    participants: [{ id: 'user-2' }],
+  })
+  grace.socket.close()
+  await coordinator.stop()
+  sqlite.close()
 })
 
 test('sandbox provider configuration accepts only the supported providers', () => {

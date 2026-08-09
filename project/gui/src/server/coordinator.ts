@@ -61,6 +61,7 @@ import {
 } from './doc-store'
 import {
   createSqliteGrillStore,
+  type Grill,
   type GrillStore,
 } from './grill-store'
 import { createIssueRunner, type IssueRunner } from './issue-runner'
@@ -181,7 +182,43 @@ export type WorkspaceServerMessage =
   | { type: 'doc.created'; doc: Doc }
   | { type: 'doc.changed'; doc: Doc }
   | { type: 'doc.deleted'; docId: string }
-export type ServerMessage = RoomServerMessage | WorkspaceServerMessage
+type GrillLeaseMessage = {
+  questionId: string
+  presenceId: string
+  editor: Pick<RoomUser, 'id' | 'name' | 'image' | 'displayName'>
+}
+type GrillParticipantMessage = Pick<
+  RoomUser,
+  'id' | 'name' | 'image' | 'displayName'
+>
+export type GrillServerMessage =
+  | {
+      type: 'grill.snapshot'
+      grill: Grill
+      presenceId: string
+      leases: GrillLeaseMessage[]
+      participants: GrillParticipantMessage[]
+    }
+  | { type: 'grill.presence.changed'; participants: GrillParticipantMessage[] }
+  | {
+      type: 'grill.lease.changed'
+      questionId: string
+      lease?: GrillLeaseMessage
+    }
+  | {
+      type: 'grill.draft.changed'
+      questionId: string
+      value: string
+      presenceId: string
+      updatedAt: number
+    }
+  | {
+      type: 'grill.edit.rejected'
+      questionId: string
+      reason: 'lease-held' | 'lease-required' | 'question-not-found'
+    }
+export type ServerMessage =
+  RoomServerMessage | WorkspaceServerMessage | GrillServerMessage
 
 export type AgentDefinitionSummary = {
   id: string
@@ -194,10 +231,18 @@ export type AgentDefinitionSummary = {
 }
 
 const roomHistoryPageSize = 50
+const grillLeaseTtlMs = 4_000
 
 type SocketData =
   | { scope: 'room'; roomId: string; userId: string }
   | { scope: 'workspace'; userId: string }
+  | {
+      scope: 'grill'
+      grillId: string
+      userId: string
+      presenceId: string
+      user: RoomUser
+    }
 
 const send = (
   socket: ServerWebSocket<SocketData>,
@@ -250,6 +295,11 @@ export function createCoordinator(options: {
     options.attachmentDirectory ??
     attachmentDirectory(process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite')
   const sockets = new Set<ServerWebSocket<SocketData>>()
+  type GrillLease = GrillLeaseMessage & {
+    socket: ServerWebSocket<SocketData>
+    lastSeen: number
+  }
+  const grillLeases = new Map<string, Map<string, GrillLease>>()
   const admissionHandler = options.admission
     ? createAdmissionHttpHandler({
         ...options.admission,
@@ -294,6 +344,66 @@ export function createCoordinator(options: {
     for (const socket of sockets)
       if (socket.data.scope === 'room' && socket.data.roomId === roomId)
         send(socket, message)
+  }
+  const broadcastGrill = (
+    grillId: string,
+    message: GrillServerMessage,
+  ): void => {
+    for (const socket of sockets)
+      if (socket.data.scope === 'grill' && socket.data.grillId === grillId)
+        send(socket, message)
+  }
+  const grillParticipants = (grillId: string): GrillParticipantMessage[] => {
+    const participants = new Map<string, GrillParticipantMessage>()
+    for (const socket of sockets) {
+      if (socket.data.scope !== 'grill' || socket.data.grillId !== grillId)
+        continue
+      const user = socket.data.user
+      participants.set(user.id, {
+        id: user.id,
+        name: user.name,
+        ...(user.image ? { image: user.image } : {}),
+        ...(user.displayName ? { displayName: user.displayName } : {}),
+      })
+    }
+    return [...participants.values()]
+  }
+  const broadcastGrillPresence = (grillId: string): void =>
+    broadcastGrill(grillId, {
+      type: 'grill.presence.changed',
+      participants: grillParticipants(grillId),
+    })
+  const publicLease = ({
+    questionId,
+    presenceId,
+    editor,
+  }: GrillLease): GrillLeaseMessage => ({ questionId, presenceId, editor })
+  const releaseGrillLease = (grillId: string, questionId: string): void => {
+    const leases = grillLeases.get(grillId)
+    if (!leases?.delete(questionId)) return
+    if (leases.size === 0) grillLeases.delete(grillId)
+    broadcastGrill(grillId, { type: 'grill.lease.changed', questionId })
+  }
+  const expireGrillLeases = (now = Date.now()): void => {
+    for (const [grillId, leases] of grillLeases)
+      for (const [questionId, lease] of leases)
+        if (now - lease.lastSeen >= grillLeaseTtlMs)
+          releaseGrillLease(grillId, questionId)
+  }
+  const releaseSocketGrillLeases = (
+    socket: ServerWebSocket<SocketData>,
+    exceptQuestionId?: string,
+  ): void => {
+    if (socket.data.scope !== 'grill') return
+    const leases = grillLeases.get(socket.data.grillId)
+    if (!leases) return
+    for (const [questionId, lease] of leases)
+      if (lease.socket === socket && questionId !== exceptQuestionId)
+        releaseGrillLease(socket.data.grillId, questionId)
+  }
+  const hasActiveGrillLeases = (grillId: string): boolean => {
+    expireGrillLeases()
+    return (grillLeases.get(grillId)?.size ?? 0) > 0
   }
   const broadcastWorkspaceToUsers = (
     userIds: Set<string>,
@@ -417,6 +527,24 @@ export function createCoordinator(options: {
       })
       return
     }
+    if (socket.data.scope === 'grill') {
+      const grill = options.grillStore?.getGrillForUser(
+        socket.data.grillId,
+        socket.data.userId,
+      )
+      if (!grill) return socket.close()
+      expireGrillLeases()
+      send(socket, {
+        type: 'grill.snapshot',
+        grill,
+        presenceId: socket.data.presenceId,
+        leases: [...(grillLeases.get(socket.data.grillId)?.values() ?? [])].map(
+          publicLease,
+        ),
+        participants: grillParticipants(socket.data.grillId),
+      })
+      return
+    }
     const room = options.store.getRoom(socket.data.roomId)
     if (!room) return socket.close()
     const page = options.store.listRoomHistoryPage(socket.data.roomId, {
@@ -441,6 +569,104 @@ export function createCoordinator(options: {
       latestSteps: [
         ...options.store.latestStepsForActiveRuns(socket.data.roomId).values(),
       ],
+    })
+  }
+  const handleGrillMessage = (
+    socket: ServerWebSocket<SocketData>,
+    raw: string,
+  ): void => {
+    if (socket.data.scope !== 'grill' || !options.grillStore) return
+    let input: Record<string, unknown>
+    try {
+      input = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      return
+    }
+    const questionId = input.questionId
+    if (typeof questionId !== 'string' || !questionId) return
+    const { grillId } = socket.data
+    const grill = options.grillStore.getGrillForUser(
+      grillId,
+      socket.data.userId,
+    )
+    if (!grill) return socket.close()
+    if (!grill.frontier.questions.some(({ id }) => id === questionId)) {
+      send(socket, {
+        type: 'grill.edit.rejected',
+        questionId,
+        reason: 'question-not-found',
+      })
+      return
+    }
+    expireGrillLeases()
+    const leases = grillLeases.get(grillId) ?? new Map<string, GrillLease>()
+    const current = leases.get(questionId)
+
+    if (input.type === 'grill.focus') {
+      releaseSocketGrillLeases(socket, questionId)
+      if (current && current.socket !== socket) {
+        send(socket, {
+          type: 'grill.lease.changed',
+          questionId,
+          lease: publicLease(current),
+        })
+        return
+      }
+      const user = socket.data.user
+      const lease: GrillLease = {
+        questionId,
+        presenceId: socket.data.presenceId,
+        editor: {
+          id: user.id,
+          name: user.name,
+          ...(user.image ? { image: user.image } : {}),
+          ...(user.displayName ? { displayName: user.displayName } : {}),
+        },
+        socket,
+        lastSeen: Date.now(),
+      }
+      leases.set(questionId, lease)
+      grillLeases.set(grillId, leases)
+      broadcastGrill(grillId, {
+        type: 'grill.lease.changed',
+        questionId,
+        lease: publicLease(lease),
+      })
+      return
+    }
+
+    if (input.type === 'grill.blur') {
+      if (current?.socket === socket) releaseGrillLease(grillId, questionId)
+      return
+    }
+
+    if (input.type === 'grill.heartbeat') {
+      if (current?.socket === socket) current.lastSeen = Date.now()
+      return
+    }
+
+    if (input.type !== 'grill.draft' || typeof input.value !== 'string') return
+    if (current?.socket !== socket) {
+      send(socket, {
+        type: 'grill.edit.rejected',
+        questionId,
+        reason: current ? 'lease-held' : 'lease-required',
+      })
+      return
+    }
+    current.lastSeen = Date.now()
+    const updated = options.grillStore.updateDrafts(
+      grillId,
+      { [questionId]: input.value },
+      Date.now(),
+    )
+    if (!updated) return
+    broadcastGrill(grillId, {
+      type: 'grill.draft.changed',
+      questionId,
+      value: input.value,
+      presenceId: socket.data.presenceId,
+      updatedAt: updated.updatedAt,
     })
   }
   const notifyRunTerminal = (run: RoomRun): void => {
@@ -532,6 +758,9 @@ export function createCoordinator(options: {
   const scheduleInterval = scheduleRunner
     ? setInterval(() => scheduleRunner!.tick(), 15_000)
     : undefined
+  const grillLeaseInterval = options.grillStore
+    ? setInterval(() => expireGrillLeases(), 1_000)
+    : undefined
   const schedulesHttp = options.scheduleStore
     ? createSchedulesHttp({
         scheduleStore: options.scheduleStore,
@@ -565,6 +794,7 @@ export function createCoordinator(options: {
     ? createGrillsHttp({
         grillStore: options.grillStore,
         broadcastGrillAttention,
+        hasActiveEditLeases: hasActiveGrillLeases,
         linkedRuns: createGrillLinkedRuns({
           startWarm: ({
             grillId,
@@ -635,16 +865,19 @@ export function createCoordinator(options: {
       if (url.pathname.startsWith('/api/auth/'))
         return cors(await options.authHandler(request))
       const stream = url.pathname.match(/^\/api\/rooms\/([^/]+)\/stream$/)
+      const grillStream = url.pathname.match(/^\/api\/grills\/([^/]+)\/stream$/)
       const workspaceStream = url.pathname === '/api/workspace/stream'
       if (
-        (stream || workspaceStream) &&
+        (stream || grillStream || workspaceStream) &&
         request.headers.get('upgrade')?.toLowerCase() === 'websocket'
       ) {
         // Authenticate the upgrade by realtime ticket (desktop) or session (browser).
         const ticket = url.searchParams.get('ticket')
-        const userId =
-          (ticket ? verifyRealtimeTicket(ticket) : undefined) ??
-          (await options.authenticator.authenticate(request))?.id
+        const ticketUserId = ticket ? verifyRealtimeTicket(ticket) : undefined
+        const sessionUser = ticketUserId
+          ? undefined
+          : await options.authenticator.authenticate(request)
+        const userId = ticketUserId ?? sessionUser?.id
         if (!userId) return cors(json({ error: 'Unauthorized' }, 401))
         if (workspaceStream)
           return server.upgrade(request, {
@@ -652,6 +885,26 @@ export function createCoordinator(options: {
           })
             ? undefined
             : json({ error: 'Upgrade failed' }, 400)
+        if (grillStream) {
+          const grillId = grillStream[1]!
+          if (!options.grillStore?.getGrillForUser(grillId, userId))
+            return cors(json({ error: 'Grill not found' }, 404))
+          const user = sessionUser ??
+            options.store
+              .listWorkspaceUsers()
+              .find(({ id }) => id === userId) ?? { id: userId, name: userId }
+          return server.upgrade(request, {
+            data: {
+              scope: 'grill',
+              grillId,
+              userId,
+              user,
+              presenceId: crypto.randomUUID(),
+            },
+          })
+            ? undefined
+            : json({ error: 'Upgrade failed' }, 400)
+        }
         const roomId = stream![1]!
         if (!options.store.canAccessRoom(roomId, userId))
           return cors(json({ error: 'Room not found' }, 404))
@@ -686,12 +939,19 @@ export function createCoordinator(options: {
       open(socket) {
         sockets.add(socket)
         sendSnapshot(socket)
+        if (socket.data.scope === 'grill')
+          broadcastGrillPresence(socket.data.grillId)
       },
       message(socket, message) {
-        if (message.toString() === 'snapshot') sendSnapshot(socket)
+        const raw = message.toString()
+        if (raw === 'snapshot') sendSnapshot(socket)
+        else handleGrillMessage(socket, raw)
       },
       close(socket) {
+        releaseSocketGrillLeases(socket)
         sockets.delete(socket)
+        if (socket.data.scope === 'grill')
+          broadcastGrillPresence(socket.data.grillId)
       },
     },
   })
@@ -704,6 +964,7 @@ export function createCoordinator(options: {
         unsubscribeMessages()
         unsubscribeSteps()
         if (scheduleInterval) clearInterval(scheduleInterval)
+        if (grillLeaseInterval) clearInterval(grillLeaseInterval)
         scheduleRunner?.stop()
         issueRunner?.stop()
         await Promise.all([server.stop(true), options.control.stop()])

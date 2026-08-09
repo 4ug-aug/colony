@@ -109,7 +109,8 @@ export interface RealtimeStreamHandlers {
 }
 
 export interface RealtimeStreamHandle {
-  close(): void
+  send: (data: string) => void
+  close: () => void
 }
 
 function connectRealtimeStream(
@@ -126,15 +127,20 @@ function connectRealtimeStream(
     ws.onmessage = (event) => handlers.onMessage(event.data as string)
     ws.onclose = () => handlers.onClose?.()
     ws.onerror = () => handlers.onError?.()
-    return { close: () => ws.close() }
+    return {
+      send: (data) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(data)
+      },
+      close: () => ws.close(),
+    }
   }
 
   // Tauri path: async connect, track early close
   let closed = false
   let tauriWs:
     | {
-        disconnect(): Promise<void>
-        send(message: string): Promise<void>
+        disconnect: () => Promise<void>
+        send: (message: string) => Promise<void>
       }
     | undefined
 
@@ -167,7 +173,7 @@ function connectRealtimeStream(
 
     ws.addListener((msg) => {
       if (msg.type === 'Text') {
-        handlers.onMessage(msg.data as string)
+        handlers.onMessage(msg.data)
       } else if (msg.type === 'Close') {
         handlers.onClose?.()
       }
@@ -182,6 +188,9 @@ function connectRealtimeStream(
   })
 
   return {
+    send(data) {
+      if (tauriWs) void tauriWs.send(data)
+    },
     close() {
       closed = true
       if (tauriWs) void tauriWs.disconnect()
@@ -196,3 +205,12 @@ export const connectRoomStream = (
 
 export const connectWorkspaceStream = (handlers: RealtimeStreamHandlers) =>
   connectRealtimeStream('/api/workspace/stream', handlers)
+
+export const connectGrillStream = (
+  grillId: string,
+  handlers: RealtimeStreamHandlers,
+) =>
+  connectRealtimeStream(
+    `/api/grills/${encodeURIComponent(grillId)}/stream`,
+    handlers,
+  )
