@@ -6,10 +6,7 @@ import { IssuesPage } from '#/features/issues/issues-page'
 import type { IssueStatus } from '#/features/issues/types'
 import { BulletinsPage } from '#/features/bulletins/bulletins-page'
 import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
-import {
-  DocsPage,
-  DocSessionHeader,
-} from '#/features/docs/docs-page'
+import { DocsPage, DocSessionHeader } from '#/features/docs/docs-page'
 import { GrillsPage, GrillSessionHeader } from '#/features/grills/grills-page'
 import { MembersPanel } from '#/features/members/members-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
@@ -23,6 +20,7 @@ import { RunActivityRail } from '#/features/runs/run-activity-rail'
 import { SchedulesPage } from '#/features/schedules/schedules-page'
 import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
+import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import {
   ArrowDown,
   CalendarClock,
@@ -38,10 +36,17 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  historyDirection,
+  readDashboardLocation,
+  writeDashboardLocation,
+} from './dashboard-navigation'
+import type { DashboardLocation } from './dashboard-navigation'
 import type { DashboardView } from './room-sidebar'
 import { RoomSidebar } from './room-sidebar'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
+import { Kbd } from '#/components/ui/kbd'
 
 const bottomScrollThreshold = 150
 const historyTopThreshold = 80
@@ -83,23 +88,39 @@ export function Dashboard({
     notificationByRoom,
   } = useRooms(user.id)
   const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
-  const [view, setView] = useState<DashboardView>('room')
+  const [location, setLocation] = useState<DashboardLocation>(
+    () =>
+      readDashboardLocation(window.history.state, user.id) ?? { view: 'room' },
+  )
+  const view = location.view
+  const selectedIssueId = view === 'issues' ? location.id : undefined
+  const selectedDocId = view === 'docs' ? location.id : undefined
+  const selectedGrillId = view === 'grills' ? location.id : undefined
+  const selectRef = useRef(select)
+  selectRef.current = select
+
+  const applyLocation = (next: DashboardLocation) => {
+    setLocation(next)
+    if (next.view === 'room' && next.id) select(next.id)
+  }
+  const navigate = (next: DashboardLocation) => {
+    if (next.view === location.view && next.id === location.id) return
+    writeDashboardLocation(user.id, next)
+    applyLocation(next)
+  }
   const [issueCreate, setIssueCreate] = useState<{
     open: boolean
     status?: IssueStatus
   }>({ open: false })
   const [grillStartOpen, setGrillStartOpen] = useState(false)
-  const [selectedGrillId, setSelectedGrillId] = useState<string>()
-  const [selectedDocId, setSelectedDocId] = useState<string>()
   const openView = (next: DashboardView) => {
-    if (next !== 'grills') setSelectedGrillId(undefined)
-    if (next !== 'docs') setSelectedDocId(undefined)
-    setView(next)
+    navigate({
+      view: next,
+      ...(next === 'room' && room ? { id: room.id } : {}),
+    })
   }
   const openDoc = (docId: string) => {
-    setSelectedGrillId(undefined)
-    setSelectedDocId(docId)
-    setView('docs')
+    navigate({ view: 'docs', id: docId })
   }
   const [searchOpen, setSearchOpen] = useState(false)
   const [selectedRunId, setSelectedRunId] = useState<string>()
@@ -114,6 +135,27 @@ export function Dashboard({
     undefined,
   )
   const [atBottom, setAtBottom] = useState(true)
+
+  useEffect(() => {
+    writeDashboardLocation(user.id, location, true)
+    if (location.view === 'room' && location.id) selectRef.current(location.id)
+    const onPopState = (event: PopStateEvent) => {
+      const next = readDashboardLocation(event.state, user.id)
+      if (!next) return
+      setLocation(next)
+      if (next.view === 'room' && next.id) selectRef.current(next.id)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [user.id])
+
+  useWindowKeydown((event) => {
+    const direction = historyDirection(event)
+    if (!direction) return
+    event.preventDefault()
+    if (direction < 0) window.history.back()
+    else window.history.forward()
+  })
 
   const submit = async (text: string, files: File[]) => {
     if (editingMessage) {
@@ -205,7 +247,7 @@ export function Dashboard({
         open={searchOpen}
         onOpenChange={setSearchOpen}
         onSelectHit={(hit) => {
-          openView('room')
+          navigate({ view: 'room', id: hit.roomId })
           openMessage(hit.roomId, hit.messageId)
         }}
       />
@@ -213,12 +255,11 @@ export function Dashboard({
         rooms={rooms}
         selectedRoomId={room?.id}
         onSelect={(roomId) => {
-          openView('room')
-          select(roomId)
+          navigate({ view: 'room', id: roomId })
         }}
         onCreate={async (name, visibility) => {
           const result = await create(name, visibility)
-          if (result) openView('room')
+          if (result?.room) navigate({ view: 'room', id: result.room.id })
           return result
         }}
         onDelete={remove}
@@ -245,12 +286,12 @@ export function Dashboard({
           {view === 'grills' && selectedGrillId ? (
             <GrillSessionHeader
               grillId={selectedGrillId}
-              onBack={() => setSelectedGrillId(undefined)}
+              onBack={() => navigate({ view: 'grills' })}
             />
           ) : view === 'docs' && selectedDocId ? (
             <DocSessionHeader
               docId={selectedDocId}
-              onBack={() => setSelectedDocId(undefined)}
+              onBack={() => navigate({ view: 'docs' })}
             />
           ) : (
             <>
@@ -361,6 +402,10 @@ export function Dashboard({
             onCreateOpenChange={(open: boolean, status?: IssueStatus) =>
               setIssueCreate(open ? { open: true, status } : { open: false })
             }
+            selectedId={selectedIssueId}
+            onSelectedIdChange={(id) =>
+              navigate({ view: 'issues', ...(id ? { id } : {}) })
+            }
           />
         )}
         {view === 'bulletins' && (
@@ -370,7 +415,9 @@ export function Dashboard({
           <div className="min-h-0 flex-1 overflow-hidden">
             <DocsPage
               selectedId={selectedDocId}
-              onSelectedIdChange={setSelectedDocId}
+              onSelectedIdChange={(id) =>
+                navigate({ view: 'docs', ...(id ? { id } : {}) })
+              }
             />
           </div>
         )}
@@ -380,7 +427,9 @@ export function Dashboard({
               startOpen={grillStartOpen}
               onStartOpenChange={setGrillStartOpen}
               selectedId={selectedGrillId}
-              onSelectedIdChange={setSelectedGrillId}
+              onSelectedIdChange={(id) =>
+                navigate({ view: 'grills', ...(id ? { id } : {}) })
+              }
               onOpenDoc={openDoc}
             />
           </div>

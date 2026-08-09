@@ -692,7 +692,10 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       if (stopping) throw new Error("Run executor is stopping");
       const definitionId = request.agentDefinitionId ?? request.definitionId;
       if (!definitionId) throw new Error("Agent definition ID is required");
-      const definition = dependencies.definitions.resolve(definitionId);
+      const definition = dependencies.definitions.resolve(
+        definitionId,
+        request.grantContext,
+      );
       if (!definition) throw new Error(`Unknown agent definition: ${definitionId}`);
       if (request.capabilityGrant && !dependencies.capabilities) {
         throw new Error("A capability session factory is required for a capability grant");

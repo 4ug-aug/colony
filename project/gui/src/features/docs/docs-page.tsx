@@ -188,10 +188,10 @@ function DocListItem({
 
   return (
     <li>
-      <div className="flex items-stretch gap-1 rounded-lg border transition-colors hover:bg-muted/40">
+      <div className="flex items-stretch gap-1 rounded-lg border transition-colors hover:bg-muted/40 bg-card">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left"
+          className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left cursor-pointer"
           onClick={() => onOpen(doc.id)}
         >
           <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

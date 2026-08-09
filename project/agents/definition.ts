@@ -1,3 +1,5 @@
+import type { AgentGrantContext } from "./grant-context";
+
 export interface ModelRuntimeConfig {
   provider?: "openai" | "custom";
   baseUrl: string;
@@ -52,7 +54,10 @@ export interface AgentDefinition {
 }
 
 export interface AgentDefinitionResolver {
-  resolve(id: string): AgentDefinition | undefined;
+  resolve(
+    id: string,
+    grantContext?: AgentGrantContext,
+  ): AgentDefinition | undefined;
 }
 
 export class InMemoryAgentDefinitionResolver

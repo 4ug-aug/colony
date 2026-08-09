@@ -21,6 +21,7 @@ import {
 } from "../inputs/repository";
 import { createRoutingAgentRuntime } from "../providers/routing-agent-runtime";
 import type { AgentRole } from "../roles/role";
+import { instructionsForInvocation } from "../roles/invocation";
 import type { OpenAICompatibleModel } from "../runtime/openai-agents";
 import { createCapabilitySessionFactory } from "../mcp/session";
 import {
@@ -265,7 +266,7 @@ export function createWorkspaceAgentsExecutor(options: {
 
   const executor = createRunExecutor<WorkspaceInput>({
     definitions: {
-      resolve(id) {
+      resolve(id, grantContext) {
         const person = byId.get(id);
         if (!person) return undefined;
         const image = imagesByKind[person.kind];
@@ -283,7 +284,10 @@ export function createWorkspaceAgentsExecutor(options: {
           if (!options.cursor) return undefined;
           return {
             id: person.id,
-            instructions: person.role.instructions,
+            instructions: instructionsForInvocation(
+              person.role.instructions,
+              grantContext,
+            ),
             requestedCapabilities,
             runtime: {
               kind: "cursor",
@@ -296,7 +300,10 @@ export function createWorkspaceAgentsExecutor(options: {
         if (!options.model) return undefined;
         return {
           id: person.id,
-          instructions: person.role.instructions,
+          instructions: instructionsForInvocation(
+            person.role.instructions,
+            grantContext,
+          ),
           requestedCapabilities,
           runtime: {
             kind: "openai-agents",

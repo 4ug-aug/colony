@@ -27,7 +27,11 @@ function StatusGroup({
   onOpenIssue?: (issueId: string) => void
   onCreateInStatus?: (status: IssueStatus) => void
   selectedIssueIds: ReadonlySet<string>
-  onIssueSelectedChange?: (issueId: string, selected: boolean) => void
+  onIssueSelectedChange?: (
+    issueId: string,
+    selected: boolean,
+    extendSelection: boolean,
+  ) => void
 }) {
   const [open, setOpen] = useStoredBoolean(`issues.group.${status}`, true)
 
@@ -77,8 +81,8 @@ function StatusGroup({
                 depth={depth}
                 onOpen={onOpenIssue}
                 selected={selectedIssueIds.has(issue.id)}
-                onSelectedChange={(selected) =>
-                  onIssueSelectedChange?.(issue.id, selected)
+                onSelectedChange={(selected, extendSelection) =>
+                  onIssueSelectedChange?.(issue.id, selected, extendSelection)
                 }
               />
             ))
@@ -106,7 +110,11 @@ export function IssueList({
   /** When true, skip status groups with no matching issues. */
   hideEmptyGroups?: boolean
   selectedIssueIds?: ReadonlySet<string>
-  onIssueSelectedChange?: (issueId: string, selected: boolean) => void
+  onIssueSelectedChange?: (
+    issueId: string,
+    selected: boolean,
+    extendSelection: boolean,
+  ) => void
 }) {
   const statuses = visibleStatuses ?? ISSUE_STATUSES
 

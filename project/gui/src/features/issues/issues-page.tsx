@@ -1,7 +1,7 @@
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { authClient } from '#/lib/auth-client'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { IssueCreateDialog } from './issue-create-dialog'
 import { IssueDetailPage } from './issue-detail-page'
 import { IssueFiltersBar } from './issue-filters-bar'
@@ -18,19 +18,24 @@ export function IssuesPage({
   createOpen,
   createStatus,
   onCreateOpenChange,
+  selectedId,
+  onSelectedIdChange,
 }: {
   createOpen: boolean
   createStatus?: IssueStatus
   onCreateOpenChange: (open: boolean, status?: IssueStatus) => void
+  selectedId?: string
+  onSelectedIdChange: (id: string | undefined) => void
 }) {
   const { data: session } = authClient.useSession()
   const accountId = session?.user.id
   const { data: issues = [], isPending, isError, error } = useIssues()
-  const [selectedIssueId, setSelectedIssueId] = useState<string>()
   const [createParentId, setCreateParentId] = useState<string>()
   const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(
     () => new Set(),
   )
+  const issueListRef = useRef<HTMLDivElement>(null)
+  const selectionAnchorRef = useRef<string | undefined>(undefined)
   const [filters, setFilters] = useStoredIssueFilters()
 
   const filtersWithAccount: IssueListFilters = {
@@ -63,13 +68,49 @@ export function IssuesPage({
     onCreateOpenChange(true, status)
   }
 
-  if (selectedIssueId) {
+  const changeSelection = (
+    issueId: string,
+    selected: boolean,
+    extendSelection: boolean,
+  ) => {
+    const visibleIds = Array.from(
+      issueListRef.current?.querySelectorAll<HTMLElement>('[data-issue-row]') ??
+        [],
+    )
+      .filter((row) => row.getClientRects().length > 0)
+      .map((row) => row.dataset.issueRow)
+      .filter((id): id is string => Boolean(id))
+    const anchorIndex = selectionAnchorRef.current
+      ? visibleIds.indexOf(selectionAnchorRef.current)
+      : -1
+    const issueIndex = visibleIds.indexOf(issueId)
+    const ids =
+      extendSelection && anchorIndex >= 0 && issueIndex >= 0
+        ? visibleIds.slice(
+            Math.min(anchorIndex, issueIndex),
+            Math.max(anchorIndex, issueIndex) + 1,
+          )
+        : [issueId]
+
+    setSelectedIssueIds((current) => {
+      const next = new Set(current)
+      for (const id of ids) {
+        if (selected) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
+    if (!extendSelection || anchorIndex < 0)
+      selectionAnchorRef.current = issueId
+  }
+
+  if (selectedId) {
     return (
       <>
         <IssueDetailPage
-          issueId={selectedIssueId}
-          onBack={() => setSelectedIssueId(undefined)}
-          onOpenIssue={setSelectedIssueId}
+          issueId={selectedId}
+          onBack={() => onSelectedIdChange(undefined)}
+          onOpenIssue={onSelectedIdChange}
           onAddSubIssue={(parentId) => openCreate(undefined, parentId)}
         />
         <IssueCreateDialog
@@ -111,29 +152,27 @@ export function IssuesPage({
                 No issues match these filters.
               </p>
             ) : (
-              <IssueList
-                issues={visible}
-                visibleStatuses={visibleStatuses}
-                hideEmptyGroups={filtersActive}
-                onOpenIssue={setSelectedIssueId}
-                onCreateInStatus={(status) => openCreate(status)}
-                selectedIssueIds={selectedIssueIds}
-                onIssueSelectedChange={(issueId, selected) =>
-                  setSelectedIssueIds((current) => {
-                    const next = new Set(current)
-                    if (selected) next.add(issueId)
-                    else next.delete(issueId)
-                    return next
-                  })
-                }
-              />
+              <div ref={issueListRef}>
+                <IssueList
+                  issues={visible}
+                  visibleStatuses={visibleStatuses}
+                  hideEmptyGroups={filtersActive}
+                  onOpenIssue={onSelectedIdChange}
+                  onCreateInStatus={(status) => openCreate(status)}
+                  selectedIssueIds={selectedIssueIds}
+                  onIssueSelectedChange={changeSelection}
+                />
+              </div>
             )}
           </>
         )}
       </div>
       <IssueBulkActions
         issues={selectedIssues}
-        onSelectionChange={(ids) => setSelectedIssueIds(new Set(ids))}
+        onSelectionChange={(ids) => {
+          setSelectedIssueIds(new Set(ids))
+          if (ids.length === 0) selectionAnchorRef.current = undefined
+        }}
       />
       <IssueCreateDialog
         open={createOpen}

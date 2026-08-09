@@ -33,9 +33,8 @@ test("the software engineer requests scoped issue and pull request tools", () =>
     "Make at most two repair attempts",
   );
   expect(softwareEngineerRole.instructions).toContain(
-    "Do not use it to deliver your final result",
+    "Do not use workspace.post_message to deliver your final result",
   );
-  expect(softwareEngineerRole.instructions).toContain(
-    "never ask Accounts questions in assistant text",
-  );
+  expect(softwareEngineerRole.instructions).not.toContain("Room");
+  expect(softwareEngineerRole.instructions).not.toContain("Grill");
 });

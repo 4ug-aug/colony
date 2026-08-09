@@ -151,13 +151,14 @@ export function IssueRow({
   depth?: number
   onOpen?: (issueId: string) => void
   selected?: boolean
-  onSelectedChange?: (selected: boolean) => void
+  onSelectedChange?: (selected: boolean, extendSelection: boolean) => void
 }) {
   return (
     <IssueDeleteContextMenu
       issue={issue}
       render={
         <div
+          data-issue-row={issue.id}
           className="group flex h-9 items-center gap-2 border-b border-border/40 px-3 text-sm last:border-b-0 hover:bg-muted/40"
           onClick={
             onOpen
@@ -188,7 +189,12 @@ export function IssueRow({
           checked={selected}
           aria-label={`Select ${formatIssueId(issue.number)}`}
           onClick={(event) => event.stopPropagation()}
-          onCheckedChange={onSelectedChange}
+          onCheckedChange={(checked, { event }) =>
+            onSelectedChange?.(
+              checked,
+              'shiftKey' in event && Boolean(event.shiftKey),
+            )
+          }
         />
       </span>
       {depth > 0 ? (

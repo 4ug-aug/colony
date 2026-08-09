@@ -448,6 +448,8 @@ test("antboy runs in a room while a GitHub adapter is configured", async () => {
   }
   const run = executor.getRun(id)!;
   expect(run.state).toBe("succeeded");
+  expect(run.definition.instructions).toContain("You are working from a Room.");
+  expect(run.definition.instructions).not.toContain("Grill");
   expect(run.capabilityGrant?.tools ?? []).not.toContain(
     "github.create_pull_request",
   );
@@ -716,6 +718,8 @@ test("Grill-linked runs grant Grill tools and read-only workspace Docs", async (
     grantContext: { grillId: "grill-1" },
   });
   const run = executor.getRun(id)!;
+  expect(run.definition.instructions).toContain("You are leading a Grill.");
+  expect(run.definition.instructions).not.toContain("Room");
   expect(run.capabilityGrant?.tools).toEqual([
     "workspace.list_docs",
     "workspace.get_doc",
