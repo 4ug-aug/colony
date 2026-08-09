@@ -26,13 +26,13 @@ test('grill-linked runs start follow-up and dispose the warm spine', async () =>
   const runs = new Map<string, RunSummary>()
   const linked = createGrillLinkedRuns({
     startWarm: ({ grillId, onCreate }) => {
-      const run = summary(`run-${++n}-${grillId}`)
+      const run = summary(`run-${++n}-${grillId}`, { turnActive: true })
       runs.set(run.id, run)
       return onCreate(run)
     },
     followUp: async (runId, task) => {
       followUps.push({ runId, task })
-      const next = summary(runId, { task, exitCode: 0 })
+      const next = summary(runId, { task, turnActive: false, exitCode: 0 })
       runs.set(runId, next)
       return next
     },
@@ -70,7 +70,7 @@ test('grill-linked runs start follow-up and dispose the warm spine', async () =>
     at: 42,
   })
 
-  runs.set(started.id, summary(started.id, { exitCode: 0 }))
+  runs.set(started.id, summary(started.id, { turnActive: false, exitCode: 0 }))
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(false)
 
   await linked.followUp('g1', 'round answers')
@@ -92,11 +92,16 @@ test('follow-up marks turnActive until the warm turn finishes', async () => {
   })
   const linked = createGrillLinkedRuns({
     startWarm: ({ grillId, onCreate }) => {
-      const run = summary(`run-${grillId}`, { exitCode: 0 })
+      const run = summary(`run-${grillId}`, { turnActive: false, exitCode: 0 })
       runs.set(run.id, run)
       return onCreate(run)
     },
-    followUp: async () => followUpPromise,
+    followUp: async (runId) => {
+      // Executor would set turnActive on the record; linked-runs also covers
+      // the gap via followUpInFlight before that patch is visible.
+      runs.set(runId, summary(runId, { turnActive: true, exitCode: 0 }))
+      return followUpPromise
+    },
     cancel: async () => undefined,
     getRun: (runId) => runs.get(runId),
     subscribeSteps: () => () => undefined,
@@ -113,7 +118,35 @@ test('follow-up marks turnActive until the warm turn finishes', async () => {
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(true)
   expect(linked.getLatestStep('g1')).toBeUndefined()
 
-  resolveFollowUp(summary(linked.getRunId('g1')!, { exitCode: 0 }))
+  const done = summary(linked.getRunId('g1')!, { turnActive: false, exitCode: 0 })
+  runs.set(done.id, done)
+  resolveFollowUp(done)
   await pending
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(false)
+})
+
+test('turnActive follows run.turnActive after idle exitCode is set', async () => {
+  const runs = new Map<string, RunSummary>()
+  const linked = createGrillLinkedRuns({
+    startWarm: ({ grillId, onCreate }) => {
+      const run = summary(`run-${grillId}`, { turnActive: false, exitCode: 0 })
+      runs.set(run.id, run)
+      return onCreate(run)
+    },
+    followUp: async () => undefined,
+    cancel: async () => undefined,
+    getRun: (runId) => runs.get(runId),
+    subscribeSteps: () => () => undefined,
+  })
+
+  const started = linked.start({
+    grillId: 'g1',
+    task: 'begin',
+    agentDefinitionId: 'interviewer',
+  })
+  // Sticky exitCode alone must not look active.
+  expect(linked.getLinkedRun('g1')?.turnActive).toBe(false)
+
+  runs.set(started.id, summary(started.id, { turnActive: true, exitCode: 0 }))
+  expect(linked.getLinkedRun('g1')?.turnActive).toBe(true)
 })

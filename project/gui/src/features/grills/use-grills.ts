@@ -123,16 +123,28 @@ function syncGrillIntoListCache(
   )
 }
 
-function grillTurnActive(grill: {
+export function grillTurnActive(grill: {
   linkedRun?: GrillLinkedRun
 }): boolean {
   const linkedRun = grill.linkedRun
   if (!linkedRun) return false
   if (linkedRun.turnActive === true) return true
   const state = linkedRun.state as RunState | undefined
-  if (state === 'preparing') return true
-  // Warm spines stay `running` between turns; no exitCode ⇒ first turn.
-  return state === 'running' && linkedRun.exitCode === undefined
+  return state === 'preparing'
+}
+
+function markGrillFollowUpStarted(
+  queryClient: ReturnType<typeof useQueryClient>,
+  grill: Grill,
+) {
+  const current = queryClient.getQueryData<GrillDetail>(grillQueryKey(grill.id))
+  const prior = current?.linkedRun
+  upsertGrillCache(
+    queryClient,
+    grill,
+    prior ? { ...prior, turnActive: true } : undefined,
+    null,
+  )
 }
 
 function grillListHasActiveRun(grills: GrillListItem[] | undefined) {
@@ -271,9 +283,8 @@ export function useSubmitGrillRound(grillId: string) {
       return data.grill
     },
     onSuccess: (grill) => {
-      // Follow-up starts async; clear the prior turn's step so the wait UI
-      // doesn't keep showing the last frontier tool call.
-      upsertGrillCache(queryClient, grill, undefined, null)
+      // Follow-up starts async; show working immediately and clear prior step.
+      markGrillFollowUpStarted(queryClient, grill)
       void queryClient.invalidateQueries({ queryKey: grillsQueryKey })
       void queryClient.invalidateQueries({
         queryKey: grillQueryKey(grillId),
@@ -296,8 +307,8 @@ export function useReplyToGrill(grillId: string) {
       return data.grill
     },
     onSuccess: (grill) => {
-      // Follow-up starts async; clear prior clarifying text so wait UI resets.
-      upsertGrillCache(queryClient, grill, undefined, null)
+      // Follow-up starts async; show working immediately and clear prior step.
+      markGrillFollowUpStarted(queryClient, grill)
       void queryClient.invalidateQueries({ queryKey: grillsQueryKey })
       void queryClient.invalidateQueries({
         queryKey: grillQueryKey(grillId),

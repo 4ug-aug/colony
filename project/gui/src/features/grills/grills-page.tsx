@@ -78,6 +78,7 @@ import {
   useReplyToGrill,
   useSubmitGrillRound,
   useUpdateGrillDrafts,
+  grillTurnActive,
 } from './use-grills'
 
 function StartGrillDialog({
@@ -360,11 +361,7 @@ function GrillListActivity({ grill }: { grill: GrillListItem }) {
 
   const state = linkedRun?.state as RunState | undefined
   const failed = state === 'failed' || state === 'cancelled'
-  const agentWorking =
-    !failed &&
-    (linkedRun?.turnActive === true ||
-      state === 'preparing' ||
-      (state === 'running' && linkedRun?.exitCode === undefined))
+  const agentWorking = !failed && grillTurnActive({ linkedRun })
 
   if (agentWorking) {
     const status = grill.latestStep
@@ -432,17 +429,16 @@ function FrontierPanel({
     if (grillIsComplete(grill) || grillAwaitingWrapUpReview(grill)) return null
     const runState = linkedRun?.state
     const failed = runState === 'failed' || runState === 'cancelled'
-    // Warm Grill runs stay `running` between turns — use turnActive, not state.
-    const working =
-      !failed &&
-      (linkedRun?.turnActive === true ||
-        runState === 'preparing' ||
-        (runState === 'running' && linkedRun?.exitCode === undefined))
+    const working = !failed && grillTurnActive({ linkedRun })
     const activity = latestStep
       ? grillStepLabel(latestStep)
       : runState === 'preparing'
         ? 'is preparing'
         : 'is working'
+    const messageText =
+      latestStep?.kind === 'message' && latestStep.text.trim()
+        ? latestStep.text
+        : undefined
     const canReply =
       !working && !replyToGrill.isPending && Boolean(reply.trim())
     return (
@@ -459,9 +455,9 @@ function FrontierPanel({
               text={activity}
               className="text-sm [&_span:last-child]:truncate"
             />
-            {latestStep?.kind === 'message' && latestStep.text.trim() ? (
+            {messageText ? (
               <div className="max-h-48 overflow-auto rounded-md border bg-muted/20 px-3 py-2 text-xs whitespace-pre-wrap text-muted-foreground">
-                {latestStep.text}
+                {messageText}
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -471,55 +467,63 @@ function FrontierPanel({
             )}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            {failed
-              ? 'The grilling agent finished without publishing a frontier.'
-              : 'No open frontier right now.'}
-          </p>
+          <div className="space-y-2">
+            {messageText ? (
+              <div className="max-h-48 overflow-auto rounded-md border bg-muted/20 px-3 py-2 text-xs whitespace-pre-wrap text-muted-foreground">
+                {messageText}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {failed
+                  ? 'The grilling agent finished without publishing a frontier.'
+                  : 'No open frontier right now.'}
+              </p>
+            )}
+            {failed && (
+              <p
+                className="truncate text-sm text-destructive"
+                title={
+                  linkedRun?.error?.trim() ||
+                  'Grill-linked run failed before publishing a frontier.'
+                }
+              >
+                {linkedRun?.error?.trim() ||
+                  'Grill-linked run failed before publishing a frontier.'}
+              </p>
+            )}
+            <div className="space-y-2">
+              <Textarea
+                value={reply}
+                onChange={(event) => setReply(event.target.value)}
+                placeholder="Reply to the grilling agent…"
+                rows={3}
+                disabled={replyToGrill.isPending}
+              />
+              <Button
+                type="button"
+                disabled={!canReply}
+                onClick={() => {
+                  const message = reply.trim()
+                  if (!message) return
+                  void replyToGrill
+                    .mutateAsync(message)
+                    .then(() => setReply(''))
+                    .catch((reason) => {
+                      toast.add({
+                        title:
+                          reason instanceof Error
+                            ? reason.message
+                            : 'Unable to reply',
+                        type: 'error',
+                      })
+                    })
+                }}
+              >
+                {replyToGrill.isPending ? 'Sending…' : 'Send reply'}
+              </Button>
+            </div>
+          </div>
         )}
-        {failed && (
-          <p
-            className="truncate text-sm text-destructive"
-            title={
-              linkedRun?.error?.trim() ||
-              'Grill-linked run failed before publishing a frontier.'
-            }
-          >
-            {linkedRun?.error?.trim() ||
-              'Grill-linked run failed before publishing a frontier.'}
-          </p>
-        )}
-        <div className="space-y-2">
-          <Textarea
-            value={reply}
-            onChange={(event) => setReply(event.target.value)}
-            placeholder="Reply to the grilling agent…"
-            rows={3}
-            disabled={working || replyToGrill.isPending}
-          />
-          <Button
-            type="button"
-            disabled={!canReply}
-            onClick={() => {
-              const message = reply.trim()
-              if (!message) return
-              void replyToGrill
-                .mutateAsync(message)
-                .then(() => setReply(''))
-                .catch((reason) => {
-                  toast.add({
-                    title:
-                      reason instanceof Error
-                        ? reason.message
-                        : 'Unable to reply',
-                    type: 'error',
-                  })
-                })
-            }}
-          >
-            {replyToGrill.isPending ? 'Sending…' : 'Send reply'}
-          </Button>
-        </div>
       </div>
     )
   }

@@ -14,6 +14,7 @@ export type RunSummary = Pick<
   | 'startedAt'
   | 'completedAt'
   | 'exitCode'
+  | 'turnActive'
   | 'error'
   | 'stdout'
   | 'stderr'
@@ -75,6 +76,7 @@ export function runSummary<Input extends RunInput>(
     startedAt,
     completedAt,
     exitCode,
+    turnActive,
     error,
     stdout,
     stderr,
@@ -90,6 +92,7 @@ export function runSummary<Input extends RunInput>(
     startedAt,
     completedAt,
     exitCode,
+    turnActive,
     error,
     stdout,
     stderr,

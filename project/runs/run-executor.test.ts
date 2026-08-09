@@ -421,12 +421,14 @@ test("warm run accepts follow-ups without disposing the provider session", async
     idleTtlMs: 60_000,
   });
   await waitFor(() => executor.getRun(id)?.state === "running" && turns.length === 1);
+  expect(executor.getRun(id)?.turnActive).toBe(false);
   expect(sandboxDisposed).toBe(0);
   expect(disposed).toBe(0);
 
   await executor.followUp(id, "round-2");
   expect(turns).toEqual(["round-1", "round-2"]);
   expect(executor.getRun(id)?.state).toBe("running");
+  expect(executor.getRun(id)?.turnActive).toBe(false);
   expect(sandboxDisposed).toBe(0);
   expect(disposed).toBe(0);
 
@@ -434,6 +436,55 @@ test("warm run accepts follow-ups without disposing the provider session", async
   expect(executor.getRun(id)?.state).toBe("cancelled");
   expect(disposed).toBe(1);
   expect(sandboxDisposed).toBe(1);
+});
+
+test("warm follow-up sets turnActive until runTurn resolves", async () => {
+  let resolveTurn!: (value: { exitCode: number; stdout: string; stderr: string }) => void;
+  const turnGate = new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve) => {
+    resolveTurn = resolve;
+  });
+  let turns = 0;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async () => {
+        throw new Error("one-shot run must not be used for warm");
+      },
+      openWarmSession: async () => ({
+        runTurn: async () => {
+          turns++;
+          if (turns === 1) {
+            return { exitCode: 0, stdout: "first", stderr: "" };
+          }
+          return turnGate;
+        },
+        dispose: async () => {},
+      }),
+    },
+    createId: () => "warm-turn-active",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "round-1",
+    warm: true,
+    idleTtlMs: 60_000,
+  });
+  await waitFor(() => executor.getRun(id)?.state === "running" && turns === 1);
+  expect(executor.getRun(id)?.turnActive).toBe(false);
+
+  const pending = executor.followUp(id, "round-2");
+  await waitFor(() => executor.getRun(id)?.turnActive === true);
+  resolveTurn({ exitCode: 0, stdout: "second", stderr: "" });
+  await pending;
+  expect(executor.getRun(id)?.turnActive).toBe(false);
 });
 
 test("warm run idle TTL recycles resources", async () => {

@@ -68,9 +68,7 @@ export function createGrillLinkedRuns(deps: {
   const isTurnActive = (grillId: string, run: RunSummary): boolean => {
     if (followUpInFlight.has(grillId)) return true
     if (run.state === 'preparing') return true
-    // First warm turn: running but exitCode not written until the turn ends.
-    if (run.state === 'running' && run.exitCode === undefined) return true
-    return false
+    return run.turnActive === true
   }
 
   return {

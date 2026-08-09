@@ -44,6 +44,8 @@ export interface RunRecord<Input extends RunInput = RunInput> {
   stdout: string;
   stderr: string;
   exitCode?: number;
+  /** Warm multi-turn: true while await runTurn is in flight. */
+  turnActive?: boolean;
   createdAt: number;
   startedAt?: number;
   completedAt?: number;
@@ -291,6 +293,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     finish(id, {
       state: reason === "idle" ? "succeeded" : "cancelled",
       completedAt: now(),
+      turnActive: false,
     });
   };
 
@@ -384,38 +387,46 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         sandbox,
         baseRequest,
       );
-      const result = await session.runTurn(record.task);
-      store.update(record.id, {
-        stdout: tail(result.stdout, record.effectiveLimits.maxOutputBytes),
-        stderr: tail(result.stderr, record.effectiveLimits.maxOutputBytes),
-        exitCode: result.exitCode,
-      });
-      if (result.exitCode !== 0) {
-        await session.dispose();
-        throw new Error(`Runtime exited with code ${result.exitCode}`);
+      store.update(record.id, { turnActive: true });
+      try {
+        const result = await session.runTurn(record.task);
+        store.update(record.id, {
+          stdout: tail(result.stdout, record.effectiveLimits.maxOutputBytes),
+          stderr: tail(result.stderr, record.effectiveLimits.maxOutputBytes),
+          exitCode: result.exitCode,
+          turnActive: false,
+        });
+        if (result.exitCode !== 0) {
+          await session.dispose();
+          throw new Error(`Runtime exited with code ${result.exitCode}`);
+        }
+        if (cancellation.has(record.id)) {
+          await session.dispose();
+          return;
+        }
+        const entry: WarmEntry = {
+          session,
+          sandbox,
+          workspace,
+          capabilitySession,
+          idleTtlMs,
+          turnGate: Promise.resolve(),
+        };
+        warm.set(record.id, entry);
+        armIdle(record.id, entry);
+        // Keep resources; disposeWarm handles cleanup on idle/cancel.
+        sandbox = undefined;
+        workspace = undefined;
+        capabilitySession = undefined;
+      } finally {
+        const current = store.get(record.id);
+        if (current?.turnActive) store.update(record.id, { turnActive: false });
       }
-      if (cancellation.has(record.id)) {
-        await session.dispose();
-        return;
-      }
-      const entry: WarmEntry = {
-        session,
-        sandbox,
-        workspace,
-        capabilitySession,
-        idleTtlMs,
-        turnGate: Promise.resolve(),
-      };
-      warm.set(record.id, entry);
-      armIdle(record.id, entry);
-      // Keep resources; disposeWarm handles cleanup on idle/cancel.
-      sandbox = undefined;
-      workspace = undefined;
-      capabilitySession = undefined;
     } catch (error) {
       finish(record.id, {
         state: "failed",
         completedAt: now(),
+        turnActive: false,
         error: errorText(error),
       });
     } finally {
@@ -605,55 +616,63 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     const record = store.get(id);
     if (!entry || !record || terminal(record.state)) return record;
     clearIdle(entry);
+    store.update(id, { turnActive: true });
     const turn = (async () => {
-      const result = await entry.session.runTurn(task);
-      const current = store.get(id);
-      if (!current || terminal(current.state)) return;
-      store.update(id, {
-        task,
-        stdout: tail(
-          current.stdout + result.stdout,
-          current.effectiveLimits.maxOutputBytes,
-        ),
-        stderr: tail(
-          current.stderr + result.stderr,
-          current.effectiveLimits.maxOutputBytes,
-        ),
-        exitCode: result.exitCode,
-      });
-      if (result.exitCode !== 0) {
-        warm.delete(id);
-        clearIdle(entry);
-        try {
-          await entry.session.dispose();
-        } catch {
-          // best-effort
-        }
-        sandboxes.delete(id);
-        try {
-          await disposeSandbox(id, entry.sandbox);
-        } catch {
-          // best-effort
-        }
-        if (entry.workspace) {
-          try {
-            await entry.workspace.dispose();
-          } catch {
-            // best-effort
-          }
-        }
-        if (entry.capabilitySession) {
-          try {
-            await entry.capabilitySession.revoke();
-          } catch {
-            // best-effort
-          }
-        }
-        finish(id, {
-          state: "failed",
-          completedAt: now(),
-          error: `Runtime exited with code ${result.exitCode}`,
+      try {
+        const result = await entry.session.runTurn(task);
+        const current = store.get(id);
+        if (!current || terminal(current.state)) return;
+        store.update(id, {
+          task,
+          stdout: tail(
+            current.stdout + result.stdout,
+            current.effectiveLimits.maxOutputBytes,
+          ),
+          stderr: tail(
+            current.stderr + result.stderr,
+            current.effectiveLimits.maxOutputBytes,
+          ),
+          exitCode: result.exitCode,
+          turnActive: false,
         });
+        if (result.exitCode !== 0) {
+          warm.delete(id);
+          clearIdle(entry);
+          try {
+            await entry.session.dispose();
+          } catch {
+            // best-effort
+          }
+          sandboxes.delete(id);
+          try {
+            await disposeSandbox(id, entry.sandbox);
+          } catch {
+            // best-effort
+          }
+          if (entry.workspace) {
+            try {
+              await entry.workspace.dispose();
+            } catch {
+              // best-effort
+            }
+          }
+          if (entry.capabilitySession) {
+            try {
+              await entry.capabilitySession.revoke();
+            } catch {
+              // best-effort
+            }
+          }
+          finish(id, {
+            state: "failed",
+            completedAt: now(),
+            turnActive: false,
+            error: `Runtime exited with code ${result.exitCode}`,
+          });
+        }
+      } finally {
+        const current = store.get(id);
+        if (current?.turnActive) store.update(id, { turnActive: false });
       }
     })();
     entry.turnGate = turn.then(
