@@ -61,6 +61,9 @@ export type GrillLinkedRun = {
   task: string
   state: string
   error?: string
+  /** Warm spines stay `running` between turns; true only while a turn is in flight. */
+  turnActive?: boolean
+  exitCode?: number
   agentId: string
   provider: string
   model: string

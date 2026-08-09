@@ -361,7 +361,10 @@ function GrillListActivity({ grill }: { grill: GrillListItem }) {
   const state = linkedRun?.state as RunState | undefined
   const failed = state === 'failed' || state === 'cancelled'
   const agentWorking =
-    !failed && (state === 'preparing' || state === 'running')
+    !failed &&
+    (linkedRun?.turnActive === true ||
+      state === 'preparing' ||
+      (state === 'running' && linkedRun?.exitCode === undefined))
 
   if (agentWorking) {
     const status = grill.latestStep
@@ -429,8 +432,12 @@ function FrontierPanel({
     if (grillIsComplete(grill) || grillAwaitingWrapUpReview(grill)) return null
     const runState = linkedRun?.state
     const failed = runState === 'failed' || runState === 'cancelled'
+    // Warm Grill runs stay `running` between turns — use turnActive, not state.
     const working =
-      !failed && (runState === 'preparing' || runState === 'running')
+      !failed &&
+      (linkedRun?.turnActive === true ||
+        runState === 'preparing' ||
+        (runState === 'running' && linkedRun?.exitCode === undefined))
     const activity = latestStep
       ? grillStepLabel(latestStep)
       : runState === 'preparing'

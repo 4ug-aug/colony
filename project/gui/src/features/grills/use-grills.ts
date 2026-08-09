@@ -123,13 +123,24 @@ function syncGrillIntoListCache(
   )
 }
 
+function grillTurnActive(grill: {
+  linkedRun?: GrillLinkedRun
+}): boolean {
+  const linkedRun = grill.linkedRun
+  if (!linkedRun) return false
+  if (linkedRun.turnActive === true) return true
+  const state = linkedRun.state as RunState | undefined
+  if (state === 'preparing') return true
+  // Warm spines stay `running` between turns; no exitCode ⇒ first turn.
+  return state === 'running' && linkedRun.exitCode === undefined
+}
+
 function grillListHasActiveRun(grills: GrillListItem[] | undefined) {
   return (
     grills?.some((grill) => {
       if (grill.frontier.questions.length > 0) return false
       if (grillAwaitingWrapUpReview(grill) || grillIsComplete(grill)) return false
-      const state = grill.linkedRun?.state as RunState | undefined
-      return state === 'preparing' || state === 'running'
+      return grillTurnActive(grill)
     }) ?? false
   )
 }
@@ -167,8 +178,8 @@ export function useGrill(id: string | undefined) {
       }
       const state = data.linkedRun?.state
       if (state === 'failed' || state === 'cancelled') return 4_000
-      if (state === 'preparing' || state === 'running') return 1_000
-      // Empty frontier with no active run: idle.
+      if (grillTurnActive(data)) return 1_000
+      // Empty frontier with warm spine idle: Accounts may reply.
       return 4_000
     },
   })

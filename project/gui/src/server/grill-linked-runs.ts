@@ -9,6 +9,9 @@ export type GrillLatestStep = {
   at: number
 }
 
+/** Warm spine stay `running` between turns; `turnActive` means a turn is in flight. */
+export type GrillLinkedRunView = RunSummary & { turnActive: boolean }
+
 export type GrillLinkedRuns = {
   start(input: {
     grillId: string
@@ -18,7 +21,7 @@ export type GrillLinkedRuns = {
   followUp(grillId: string, task: string): Promise<RunSummary | undefined>
   dispose(grillId: string): Promise<void>
   getRunId(grillId: string): string | undefined
-  getLinkedRun(grillId: string): RunSummary | undefined
+  getLinkedRun(grillId: string): GrillLinkedRunView | undefined
   getLatestStep(grillId: string): GrillLatestStep | undefined
 }
 
@@ -42,6 +45,7 @@ export function createGrillLinkedRuns(deps: {
   const byGrill = new Map<string, string>()
   const grillByRun = new Map<string, string>()
   const latestStepByGrill = new Map<string, GrillLatestStep>()
+  const followUpInFlight = new Set<string>()
 
   deps.subscribeSteps((runId, step) => {
     const grillId = grillByRun.get(runId)
@@ -61,10 +65,19 @@ export function createGrillLinkedRuns(deps: {
     grillByRun.set(runId, grillId)
   }
 
+  const isTurnActive = (grillId: string, run: RunSummary): boolean => {
+    if (followUpInFlight.has(grillId)) return true
+    if (run.state === 'preparing') return true
+    // First warm turn: running but exitCode not written until the turn ends.
+    if (run.state === 'running' && run.exitCode === undefined) return true
+    return false
+  }
+
   return {
     start: ({ grillId, task, agentDefinitionId }) => {
       const existing = byGrill.get(grillId)
       if (existing) void deps.cancel(existing)
+      followUpInFlight.delete(grillId)
       latestStepByGrill.delete(grillId)
       const run = deps.startWarm({
         grillId,
@@ -85,12 +98,18 @@ export function createGrillLinkedRuns(deps: {
       // Drop the previous turn's step so the UI shows "working" until new
       // steps stream in for this follow-up.
       latestStepByGrill.delete(grillId)
-      return deps.followUp(runId, task)
+      followUpInFlight.add(grillId)
+      try {
+        return await deps.followUp(runId, task)
+      } finally {
+        followUpInFlight.delete(grillId)
+      }
     },
     dispose: async (grillId) => {
       const runId = byGrill.get(grillId)
       byGrill.delete(grillId)
       latestStepByGrill.delete(grillId)
+      followUpInFlight.delete(grillId)
       if (runId) {
         grillByRun.delete(runId)
         await deps.cancel(runId)
@@ -99,7 +118,10 @@ export function createGrillLinkedRuns(deps: {
     getRunId: (grillId) => byGrill.get(grillId),
     getLinkedRun: (grillId) => {
       const runId = byGrill.get(grillId)
-      return runId ? deps.getRun(runId) : undefined
+      if (!runId) return undefined
+      const run = deps.getRun(runId)
+      if (!run) return undefined
+      return { ...run, turnActive: isTurnActive(grillId, run) }
     },
     getLatestStep: (grillId) => latestStepByGrill.get(grillId),
   }
