@@ -134,10 +134,7 @@ function DocDetail({
     <div className="flex h-full flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <article className="mx-auto max-w-4xl space-y-4">
-          <header className="space-y-1 border-b pb-4">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {doc.title.trim() || 'Untitled Doc'}
-            </h1>
+          <header className="border-b pb-4">
             <p className="text-sm text-muted-foreground">
               {doc.createdBy.name} · {formatDocUpdatedAt(doc.updatedAt)}
             </p>

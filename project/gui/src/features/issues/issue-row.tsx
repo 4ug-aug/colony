@@ -1,4 +1,5 @@
 import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Checkbox } from '#/components/ui/checkbox'
 import {
   Popover,
   PopoverContent,
@@ -143,10 +144,14 @@ export function IssueRow({
   issue,
   depth = 0,
   onOpen,
+  selected = false,
+  onSelectedChange,
 }: {
   issue: Issue
   depth?: number
   onOpen?: (issueId: string) => void
+  selected?: boolean
+  onSelectedChange?: (selected: boolean) => void
 }) {
   return (
     <IssueDeleteContextMenu
@@ -154,7 +159,6 @@ export function IssueRow({
       render={
         <div
           className="group flex h-9 items-center gap-2 border-b border-border/40 px-3 text-sm last:border-b-0 hover:bg-muted/40"
-          style={depth > 0 ? { paddingLeft: 12 + depth * 16 } : undefined}
           onClick={
             onOpen
               ? (event) => {
@@ -172,11 +176,28 @@ export function IssueRow({
         />
       }
     >
-      {depth > 0 ? (
-        <CornerDownRight
-          className="size-3.5 shrink-0 text-muted-foreground"
-          aria-hidden
+      <span
+        className={
+          selected
+            ? 'flex size-4 shrink-0 items-center'
+            : 'flex size-4 shrink-0 items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100'
+        }
+      >
+        <Checkbox
+          className="after:inset-0"
+          checked={selected}
+          aria-label={`Select ${formatIssueId(issue.number)}`}
+          onClick={(event) => event.stopPropagation()}
+          onCheckedChange={onSelectedChange}
         />
+      </span>
+      {depth > 0 ? (
+        <span className="flex shrink-0" style={{ paddingLeft: depth * 16 }}>
+          <CornerDownRight
+            className="size-3.5 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        </span>
       ) : null}
       <PriorityPicker issue={issue} />
       <span className="w-14 shrink-0 tabular-nums text-muted-foreground">

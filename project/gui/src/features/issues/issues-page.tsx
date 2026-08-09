@@ -5,11 +5,9 @@ import { useState } from 'react'
 import { IssueCreateDialog } from './issue-create-dialog'
 import { IssueDetailPage } from './issue-detail-page'
 import { IssueFiltersBar } from './issue-filters-bar'
-import {
-  filterIssues,
-  issueFiltersActive,
-  type IssueListFilters,
-} from './issue-filters'
+import { IssueBulkActions } from './issue-bulk-actions'
+import { filterIssues, issueFiltersActive } from './issue-filters'
+import type { IssueListFilters } from './issue-filters'
 import { IssueList } from './issue-list'
 import type { IssueStatus } from './types'
 import { ISSUE_STATUSES } from './types'
@@ -26,10 +24,13 @@ export function IssuesPage({
   onCreateOpenChange: (open: boolean, status?: IssueStatus) => void
 }) {
   const { data: session } = authClient.useSession()
-  const accountId = session?.user?.id
+  const accountId = session?.user.id
   const { data: issues = [], isPending, isError, error } = useIssues()
   const [selectedIssueId, setSelectedIssueId] = useState<string>()
   const [createParentId, setCreateParentId] = useState<string>()
+  const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const [filters, setFilters] = useStoredIssueFilters()
 
   const filtersWithAccount: IssueListFilters = {
@@ -37,10 +38,13 @@ export function IssuesPage({
     accountId,
   }
   const visible = filterIssues(issues, filtersWithAccount)
+  const selectedIssues = issues.filter((issue) =>
+    selectedIssueIds.has(issue.id),
+  )
   const filtersActive = issueFiltersActive(filtersWithAccount)
-  const knownTags = [
-    ...new Set(issues.flatMap((issue) => issue.tags)),
-  ].sort((a, b) => a.localeCompare(b))
+  const knownTags = [...new Set(issues.flatMap((issue) => issue.tags))].sort(
+    (a, b) => a.localeCompare(b),
+  )
   const visibleStatuses =
     filters.statuses.length > 0
       ? ISSUE_STATUSES.filter((status) => filters.statuses.includes(status))
@@ -82,7 +86,7 @@ export function IssuesPage({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {isPending ? (
           <div
@@ -113,11 +117,24 @@ export function IssuesPage({
                 hideEmptyGroups={filtersActive}
                 onOpenIssue={setSelectedIssueId}
                 onCreateInStatus={(status) => openCreate(status)}
+                selectedIssueIds={selectedIssueIds}
+                onIssueSelectedChange={(issueId, selected) =>
+                  setSelectedIssueIds((current) => {
+                    const next = new Set(current)
+                    if (selected) next.add(issueId)
+                    else next.delete(issueId)
+                    return next
+                  })
+                }
               />
             )}
           </>
         )}
       </div>
+      <IssueBulkActions
+        issues={selectedIssues}
+        onSelectionChange={(ids) => setSelectedIssueIds(new Set(ids))}
+      />
       <IssueCreateDialog
         open={createOpen}
         onOpenChange={(open) => {

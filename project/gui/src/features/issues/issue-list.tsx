@@ -9,7 +9,8 @@ import { cn } from '#/lib/utils'
 import { ChevronDown, Plus } from 'lucide-react'
 import { IssueRow } from './issue-row'
 import { IssueStatusIcon } from './issue-icons'
-import { nestIssuesByParent, type IssueTreeNode } from './issue-tree'
+import { nestIssuesByParent } from './issue-tree'
+import type { IssueTreeNode } from './issue-tree'
 import type { Issue, IssueStatus } from './types'
 import { ISSUE_STATUS_LABEL, ISSUE_STATUSES } from './types'
 
@@ -18,11 +19,15 @@ function StatusGroup({
   rows,
   onOpenIssue,
   onCreateInStatus,
+  selectedIssueIds,
+  onIssueSelectedChange,
 }: {
   status: IssueStatus
   rows: IssueTreeNode[]
   onOpenIssue?: (issueId: string) => void
   onCreateInStatus?: (status: IssueStatus) => void
+  selectedIssueIds: ReadonlySet<string>
+  onIssueSelectedChange?: (issueId: string, selected: boolean) => void
 }) {
   const [open, setOpen] = useStoredBoolean(`issues.group.${status}`, true)
 
@@ -71,6 +76,10 @@ function StatusGroup({
                 issue={issue}
                 depth={depth}
                 onOpen={onOpenIssue}
+                selected={selectedIssueIds.has(issue.id)}
+                onSelectedChange={(selected) =>
+                  onIssueSelectedChange?.(issue.id, selected)
+                }
               />
             ))
           )}
@@ -86,6 +95,8 @@ export function IssueList({
   onCreateInStatus,
   visibleStatuses,
   hideEmptyGroups = false,
+  selectedIssueIds = new Set(),
+  onIssueSelectedChange,
 }: {
   issues: Issue[]
   onOpenIssue?: (issueId: string) => void
@@ -94,6 +105,8 @@ export function IssueList({
   visibleStatuses?: readonly IssueStatus[]
   /** When true, skip status groups with no matching issues. */
   hideEmptyGroups?: boolean
+  selectedIssueIds?: ReadonlySet<string>
+  onIssueSelectedChange?: (issueId: string, selected: boolean) => void
 }) {
   const statuses = visibleStatuses ?? ISSUE_STATUSES
 
@@ -109,6 +122,8 @@ export function IssueList({
             rows={nestIssuesByParent(inStatus)}
             onOpenIssue={onOpenIssue}
             onCreateInStatus={onCreateInStatus}
+            selectedIssueIds={selectedIssueIds}
+            onIssueSelectedChange={onIssueSelectedChange}
           />
         )
       })}
