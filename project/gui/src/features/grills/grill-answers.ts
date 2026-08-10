@@ -25,7 +25,6 @@ export function otherDraftText(answer: string): string {
 }
 
 export function isAnswerComplete(
-  question: GrillQuestion,
   answer: string | undefined,
 ): boolean {
   const value = (answer ?? '').trim()

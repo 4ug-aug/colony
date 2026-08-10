@@ -93,14 +93,8 @@ describe('grillTurnActive', () => {
     expect(
       grillTurnActive({
         linkedRun: {
-          id: 'r1',
-          task: 't',
           state: 'running',
           turnActive: true,
-          agentId: 'a',
-          provider: 'p',
-          model: 'm',
-          createdAt: 0,
         },
       }),
     ).toBe(true)
@@ -110,13 +104,7 @@ describe('grillTurnActive', () => {
     expect(
       grillTurnActive({
         linkedRun: {
-          id: 'r1',
-          task: 't',
           state: 'preparing',
-          agentId: 'a',
-          provider: 'p',
-          model: 'm',
-          createdAt: 0,
         },
       }),
     ).toBe(true)
@@ -126,13 +114,7 @@ describe('grillTurnActive', () => {
     expect(
       grillTurnActive({
         linkedRun: {
-          id: 'r1',
-          task: 't',
           state: 'running',
-          agentId: 'a',
-          provider: 'p',
-          model: 'm',
-          createdAt: 0,
         },
       }),
     ).toBe(false)

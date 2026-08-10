@@ -47,7 +47,6 @@ import type { DashboardLocation } from './dashboard-navigation'
 import type { DashboardView } from './room-sidebar'
 import { RoomSidebar } from './room-sidebar'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
-import { Kbd } from '#/components/ui/kbd'
 
 const bottomScrollThreshold = 150
 const historyTopThreshold = 80

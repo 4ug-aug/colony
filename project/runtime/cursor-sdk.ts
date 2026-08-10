@@ -1,5 +1,6 @@
 import { boundStepText, type Step } from "./step.ts";
 import { readFile, writeFile } from "node:fs/promises";
+import type { SettingSource } from "@cursor/sdk";
 
 export interface CursorCapabilitySession {
   url: string;
@@ -59,7 +60,7 @@ export type CursorAgentFactory = (options: {
   model: { id: string };
   local: {
     cwd: string;
-    settingSources?: readonly string[];
+    settingSources?: SettingSource[];
   };
   mcpServers?: Record<
     string,
@@ -196,7 +197,7 @@ export async function openCursorAgentSession(
     model: { id: request.model },
     local: {
       cwd: request.cwd ?? "/work",
-      settingSources: ["project"] as const,
+      settingSources: ["project" as const],
     },
     ...(mcpServers ? { mcpServers } : {}),
   };
@@ -292,9 +293,7 @@ export async function openCursorAgentSession(
     send: runTurn,
     agentId: agent.agentId,
     dispose: async () => {
-      if (agent[Symbol.asyncDispose]) {
-        await agent[Symbol.asyncDispose]();
-      }
+      await agent[Symbol.asyncDispose]?.();
     },
   };
 }

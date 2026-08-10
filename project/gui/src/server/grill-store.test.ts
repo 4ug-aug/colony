@@ -371,7 +371,13 @@ test('Issue proposal can be revised, confirmed into Issues, or discarded without
 })
 
 test('successful General Grill persists exactly one Doc; abandon creates none', async () => {
-  const docs: Array<{ id: string; title: string; body: string }> = []
+  const docs: Array<{
+    id: string
+    title: string
+    body: string
+    createdBy: string
+    createdAt: number
+  }> = []
   const { store, sqlite } = harness({
     createDoc: (doc) => {
       docs.push(doc)

@@ -186,7 +186,7 @@ export function GrillFrontierPanel({
   }
 
   const missingAnswers = questions.some(
-    (question) => !isAnswerComplete(question, drafts[question.id]),
+    (question) => !isAnswerComplete(drafts[question.id]),
   )
   const activeEditors = realtime.leases.map(
     ({ editor }) => editor.displayName || editor.name,

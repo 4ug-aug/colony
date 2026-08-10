@@ -127,6 +127,7 @@ test:
 	@cd $(GUI) && bun test
 
 check: env test
+	@cd project && bun run typecheck
 	@cd $(GUI) && bun run typecheck
 	@cd $(GUI) && bun $(BUN_ENV) run build
 

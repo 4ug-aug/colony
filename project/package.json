@@ -7,6 +7,7 @@
   "scripts": {
     "agent:build": "container build -t sweat-agent:latest .",
     "agent:build:cursor": "container build -f Dockerfile.cursor -t sweat-agent-cursor:latest .",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "bun test",
     "test:e2e": "RUN_CONTAINER_E2E=1 bun test e2e/light-agent.e2e.test.ts"
   },
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
-    "@types/node": "^26.1.1"
+    "@types/node": "^26.1.1",
+    "typescript": "^6.0.2"
   }
 }
