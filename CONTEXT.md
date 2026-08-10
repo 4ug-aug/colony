@@ -228,7 +228,10 @@ Code Grill commonly writes the same binding onto Issues confirmed from its
 materialized session branch. Publish still uses a platform-assigned run branch;
 the pull request's merge base is the Issue branch when bound (or inherited), so
 child Issues can integrate into the parent's line before that line merges to the
-repository default base.
+repository default base. When an Issue-linked run successfully creates a pull
+request and the Issue has no own Issue branch yet, the platform binds that run
+branch onto the Issue so the work is discoverable from the Issue; an existing
+binding (including a Code Grill session branch) is left unchanged.
 _Avoid_: Run branch, sweat/<runId>, PR branch (as synonyms for this binding)
 
 **Issue tools**: First-party agent tools for reading and writing Sweat Issues.

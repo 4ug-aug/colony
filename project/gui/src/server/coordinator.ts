@@ -1307,6 +1307,16 @@ if (import.meta.main) {
                 repository: githubRepository,
                 base: githubBase,
                 verifyCommand: process.env.SWEAT_VERIFY_COMMAND,
+                bindIssueBranch: (issueId, branch) => {
+                  const issue = issueStore.getIssue(issueId)
+                  if (!issue || issue.branch) return
+                  const updated = issueStore.updateIssue(
+                    issueId,
+                    { branch },
+                    Date.now(),
+                  )
+                  issueNotify.onChanged(updated)
+                },
               }),
             ]
           : []),

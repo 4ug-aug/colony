@@ -212,6 +212,8 @@ export function createGitHubSoftwareEngineerAdapter(options: {
   repository: string;
   base: string;
   verifyCommand?: string;
+  /** After a successful Issue-linked publish, bind the PR head branch on the Issue. */
+  bindIssueBranch?: (issueId: string, branch: string) => void;
 }): WorkspaceAgentAdapter {
   return {
     repository: {
@@ -242,11 +244,13 @@ export function createGitHubSoftwareEngineerAdapter(options: {
                 );
               }
               const base = grantContext?.repositoryBase ?? options.base;
-              return createGitHubMcpUpstream({
+              const branch = workspace.git.branch;
+              const issueId = grantContext?.issueId;
+              const upstream = createGitHubMcpUpstream({
                 octokit: options.octokit,
                 repository: options.repository,
                 workspace: workspace.path,
-                branch: workspace.git.branch,
+                branch,
                 baseCommit: workspace.git.baseCommit,
                 base,
                 verify: async () => {
@@ -266,6 +270,26 @@ export function createGitHubSoftwareEngineerAdapter(options: {
                   );
                 },
               });
+              if (!options.bindIssueBranch || !issueId) return upstream;
+              return {
+                listTools: () => upstream.listTools(),
+                async callTool(name, args) {
+                  const result = await upstream.callTool(name, args);
+                  if (name === "github.create_pull_request") {
+                    try {
+                      options.bindIssueBranch!(issueId, branch);
+                    } catch (error) {
+                      console.error(
+                        "Failed to bind Issue branch after pull request",
+                        issueId,
+                        branch,
+                        error,
+                      );
+                    }
+                  }
+                  return result;
+                },
+              };
             },
           },
         }
