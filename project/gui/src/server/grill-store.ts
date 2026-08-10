@@ -8,9 +8,17 @@ type Statement = {
 export type GrillKind = 'code' | 'general'
 export type GrillVisibility = 'invite-only' | 'workspace-open'
 
+export type GrillChoice = {
+  id: string
+  label: string
+  description?: string
+}
+
 export type GrillQuestion = {
   id: string
   prompt: string
+  choices?: GrillChoice[]
+  recommendedChoiceId?: string
   recommendation?: string
 }
 
@@ -654,7 +662,7 @@ export function createSqliteGrillStore(
       const answers: Record<string, string> = {}
       for (const question of current.frontier.questions) {
         const answer = (mergedDrafts[question.id] ?? '').trim()
-        if (!answer)
+        if (!answer || answer === '__grill_other__')
           throw new Error('Every frontier question needs an answer before submit')
         answers[question.id] = answer
       }

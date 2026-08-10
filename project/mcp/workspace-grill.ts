@@ -1,8 +1,16 @@
 import type { McpUpstream } from "./gateway";
 
+export type GrillChoice = {
+  id: string;
+  label: string;
+  description?: string;
+};
+
 export type GrillQuestion = {
   id: string;
   prompt: string;
+  choices?: GrillChoice[];
+  recommendedChoiceId?: string;
   recommendation?: string;
 };
 
@@ -51,7 +59,9 @@ export interface WorkspaceGrillPort {
 export const GRILL_TURN_CONTRACT = [
   "HARD RULE — Grill questions are tools, never chat:",
   "- Never ask Accounts a question in assistant text, narration, or workspace.post_message.",
-  "- Every question for Accounts MUST go through workspace.set_grill_frontier before you end the turn (leave drafts empty; put suggested answers in recommendation).",
+  "- Every question for Accounts MUST go through workspace.set_grill_frontier before you end the turn (leave drafts empty).",
+  "- One decision per question. Closed decisions use choices (short label + rationale in description) and recommendedChoiceId; never embed A/B/C lists in prompt.",
+  "- Open-ended questions omit choices and may use recommendation for a suggested freeform answer.",
   "- Chat questions are the wrong path: Accounts can reply when the frontier is empty, but structured frontier cards are still required for multiplayer rounds.",
   "- The topic is the task above — do not ask what to grill; publish the first frontier from that topic.",
   "- Granted workspace tools are the three Grill tools plus read-only workspace.list_docs / workspace.get_doc when available — do not look for Issues, GitHub, or room tools.",
@@ -60,20 +70,76 @@ export const GRILL_TURN_CONTRACT = [
 ].join("\n");
 
 const SET_GRILL_FRONTIER_DESCRIPTION =
-  "REQUIRED for asking Accounts anything. Publishes structured frontier cards Accounts answer in the UI. Never ask questions in chat or assistant text — those are invisible and stall the Grill. Put framing in each question prompt; put your suggested answer in recommendation; leave drafts empty. Only ask what is still open; when nothing important remains, call a wrap-up tool instead.";
+  "REQUIRED for asking Accounts anything. Publishes structured frontier cards Accounts answer in the UI. Never ask questions in chat or assistant text — those are invisible and stall the Grill. One decision per question: put framing in prompt (never A/B/C lists); for closed decisions supply choices with short label + rationale in description and optional recommendedChoiceId; for open-ended omit choices and optionally set recommendation. Leave drafts empty. Only ask what is still open; when nothing important remains, call a wrap-up tool instead.";
 
 const textResult = (value: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
 });
+
+const asChoices = (value: unknown): GrillChoice[] | undefined => {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const choices: GrillChoice[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== "object") return undefined;
+    const { id, label, description } = item as Record<string, unknown>;
+    if (typeof id !== "string" || !id.trim()) return undefined;
+    if (typeof label !== "string" || !label.trim()) return undefined;
+    if (description !== undefined && typeof description !== "string")
+      return undefined;
+    const trimmedId = id.trim();
+    if (trimmedId === "__grill_other__") return undefined;
+    if (seen.has(trimmedId)) return undefined;
+    seen.add(trimmedId);
+    choices.push({
+      id: trimmedId,
+      label: label.trim(),
+      ...(description !== undefined && description.trim()
+        ? { description: description.trim() }
+        : {}),
+    });
+  }
+  return choices;
+};
 
 const asQuestions = (value: unknown): GrillQuestion[] | undefined => {
   if (!Array.isArray(value)) return undefined;
   const questions: GrillQuestion[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object") return undefined;
-    const { id, prompt, recommendation } = item as Record<string, unknown>;
+    const { id, prompt, recommendation, choices, recommendedChoiceId } =
+      item as Record<string, unknown>;
     if (typeof id !== "string" || !id.trim()) return undefined;
     if (typeof prompt !== "string" || !prompt.trim()) return undefined;
+
+    const parsedChoices =
+      choices === undefined ? undefined : asChoices(choices);
+    if (choices !== undefined && !parsedChoices) return undefined;
+
+    if (parsedChoices) {
+      if (recommendation !== undefined) return undefined;
+      if (recommendedChoiceId !== undefined) {
+        if (
+          typeof recommendedChoiceId !== "string" ||
+          !recommendedChoiceId.trim()
+        )
+          return undefined;
+        const recommended = recommendedChoiceId.trim();
+        if (!parsedChoices.some((choice) => choice.id === recommended))
+          return undefined;
+      }
+      questions.push({
+        id: id.trim(),
+        prompt: prompt.trim(),
+        choices: parsedChoices,
+        ...(recommendedChoiceId !== undefined
+          ? { recommendedChoiceId: (recommendedChoiceId as string).trim() }
+          : {}),
+      });
+      continue;
+    }
+
+    if (recommendedChoiceId !== undefined) return undefined;
     if (
       recommendation !== undefined &&
       (typeof recommendation !== "string" || !recommendation.trim())
@@ -177,12 +243,31 @@ export function createWorkspaceGrillMcpUpstream(options: {
                     prompt: {
                       type: "string",
                       description:
-                        "Question and framing only — do not embed the recommended answer here",
+                        "Question and framing only — never embed A/B/C option lists or the recommended answer",
+                    },
+                    choices: {
+                      type: "array",
+                      description:
+                        "Closed decision options (≥2). Put short titles in label and background/tradeoffs in description.",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "string" },
+                          label: { type: "string" },
+                          description: { type: "string" },
+                        },
+                        required: ["id", "label"],
+                      },
+                    },
+                    recommendedChoiceId: {
+                      type: "string",
+                      description:
+                        "Optional preferred choice id when choices are present",
                     },
                     recommendation: {
                       type: "string",
                       description:
-                        "Optional suggested answer Accounts can accept with one click",
+                        "Optional suggested freeform answer when choices are omitted",
                     },
                   },
                   required: ["id", "prompt"],

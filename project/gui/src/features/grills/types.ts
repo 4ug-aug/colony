@@ -1,9 +1,17 @@
 export type GrillKind = 'code' | 'general'
 export type GrillVisibility = 'invite-only' | 'workspace-open'
 
+export type GrillChoice = {
+  id: string
+  label: string
+  description?: string
+}
+
 export type GrillQuestion = {
   id: string
   prompt: string
+  choices?: GrillChoice[]
+  recommendedChoiceId?: string
   recommendation?: string
 }
 

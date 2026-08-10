@@ -8,6 +8,7 @@ import {
 import { cn } from '#/lib/utils'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { formatSettledAnswer } from './grill-answers'
 import { grillEnterClassName } from './grill-presentation'
 import type { SettledRound } from './types'
 
@@ -27,8 +28,10 @@ function SettledRoundRow({
 }) {
   const preview =
     round.questions
-      .map((question) => (round.answers[question.id] ?? '').trim())
-      .find(Boolean) ?? 'No answers'
+      .map((question) =>
+        formatSettledAnswer(question, round.answers[question.id]),
+      )
+      .find((answer) => answer !== '—') ?? 'No answers'
 
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
@@ -64,7 +67,7 @@ function SettledRoundRow({
                 <Markdown>{question.prompt}</Markdown>
               </div>
               <p className="border-l-2 border-foreground/25 pl-3 text-foreground">
-                {round.answers[question.id] ?? '—'}
+                {formatSettledAnswer(question, round.answers[question.id])}
               </p>
             </div>
           ))}

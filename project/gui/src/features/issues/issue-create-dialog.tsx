@@ -94,7 +94,7 @@ function CompactPersonAvatar({ author }: { author: Author }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 [&_.mt-0\\.5]:mt-0',
+        'inline-flex shrink-0 [&_img]:mt-0 [&_div]:mt-0',
         '[&_img]:size-5 [&_div.flex]:size-5 [&_div.flex]:text-[10px]',
       )}
     >

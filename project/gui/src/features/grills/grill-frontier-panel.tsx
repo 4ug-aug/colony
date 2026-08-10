@@ -2,20 +2,41 @@ import { Markdown } from '#/components/markdown'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
+import {
+  Questionnaire,
+  QuestionnaireChoice,
+  QuestionnaireChoiceDescription,
+  QuestionnaireChoices,
+  QuestionnaireItem,
+} from '#/components/ui/questionnaire'
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
 import { cn } from '#/lib/utils'
 import { MousePointerClick } from 'lucide-react'
 import { useRef, useState } from 'react'
+import {
+  GRILL_OTHER_VALUE,
+  isAnswerComplete,
+  isOtherAnswer,
+  otherDraftText,
+} from './grill-answers'
 import { grillEnterClassName, grillStepLabel } from './grill-presentation'
 import { grillAwaitingWrapUpReview, grillIsComplete } from './grill-status'
-import type { Grill, GrillLatestStep, GrillLinkedRun } from './types'
+import type { Grill, GrillLatestStep, GrillLinkedRun, GrillQuestion } from './types'
 import type { useGrillRealtime } from './use-grills'
 import {
   grillTurnActive,
   useReplyToGrill,
   useSubmitGrillRound,
 } from './use-grills'
+
+function hasChoices(
+  question: GrillQuestion,
+): question is GrillQuestion & {
+  choices: NonNullable<GrillQuestion['choices']>
+} {
+  return Boolean(question.choices && question.choices.length >= 2)
+}
 
 export function GrillFrontierPanel({
   grill,
@@ -165,11 +186,16 @@ export function GrillFrontierPanel({
   }
 
   const missingAnswers = questions.some(
-    (question) => !(drafts[question.id] ?? '').trim(),
+    (question) => !isAnswerComplete(question, drafts[question.id]),
   )
   const activeEditors = realtime.leases.map(
     ({ editor }) => editor.displayName || editor.name,
   )
+
+  const setAnswer = (questionId: string, value: string) => {
+    setDrafts((current) => ({ ...current, [questionId]: value }))
+    realtime.change(questionId, value)
+  }
 
   return (
     <div key={questionsKey} className="space-y-4">
@@ -183,6 +209,9 @@ export function GrillFrontierPanel({
         const editorName = lease
           ? lease.editor.displayName || lease.editor.name
           : ''
+        const selected = drafts[question.id] ?? ''
+        const choices = hasChoices(question) ? question.choices : undefined
+        const otherActive = choices ? isOtherAnswer(question, selected) : false
         return (
           <div
             key={question.id}
@@ -193,53 +222,147 @@ export function GrillFrontierPanel({
             style={{ animationDelay: `${Math.min(index, 4) * 40}ms` }}
           >
             <Markdown>{question.prompt}</Markdown>
-            {recommendation ? (
-              <button
-                type="button"
-                className="w-full rounded-md border border-dashed px-3 py-2 text-left transition-colors hover:bg-muted/40"
-                disabled={!realtime.connected || Boolean(lease && !mine)}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  textareas.current[question.id]?.focus()
-                  const next = {
-                    ...drafts,
-                    [question.id]: recommendation,
-                  }
-                  setDrafts(next)
-                  realtime.change(question.id, recommendation)
-                }}
-              >
-                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  Recommendation
-                  <MousePointerClick
-                    className="size-3.5 shrink-0"
-                    aria-hidden
+            {choices ? (
+              <div className="space-y-2">
+                <Questionnaire
+                  className={cn(blocked && 'opacity-80')}
+                  items={[
+                    {
+                      name: question.id,
+                      required: true,
+                      choices: [
+                        ...choices.map((choice) => ({ value: choice.id })),
+                        { value: GRILL_OTHER_VALUE },
+                      ],
+                    },
+                  ]}
+                  onSubmit={(event) => event.preventDefault()}
+                >
+                  <QuestionnaireItem name={question.id} required>
+                    <QuestionnaireChoices>
+                      {choices.map((choice) => {
+                        const isRecommended =
+                          question.recommendedChoiceId === choice.id
+                        return (
+                          <QuestionnaireChoice
+                            key={choice.id}
+                            value={choice.id}
+                            checked={selected === choice.id}
+                            recommended={isRecommended}
+                            disabled={!realtime.connected || blocked}
+                            onChange={() => {
+                              if (!realtime.connected || blocked) return
+                              // Claim briefly to write the draft, then release so
+                              // others can change the vote without waiting on blur.
+                              realtime.focus(question.id)
+                              setAnswer(question.id, choice.id)
+                              realtime.blur(question.id)
+                            }}
+                          >
+                            <span className="flex w-full min-w-0 items-baseline justify-between gap-2">
+                              <span className="font-medium">{choice.label}</span>
+                              {isRecommended ? (
+                                <span className="shrink-0 text-[0.625rem] font-medium tracking-wide text-amber-700 uppercase dark:text-amber-400">
+                                  Recommended
+                                </span>
+                              ) : null}
+                            </span>
+                            {choice.description ? (
+                              <QuestionnaireChoiceDescription>
+                                {choice.description}
+                              </QuestionnaireChoiceDescription>
+                            ) : null}
+                          </QuestionnaireChoice>
+                        )
+                      })}
+                      <QuestionnaireChoice
+                        value={GRILL_OTHER_VALUE}
+                        checked={otherActive}
+                        disabled={!realtime.connected || blocked}
+                        onChange={() => {
+                          if (!realtime.connected || blocked) return
+                          realtime.focus(question.id)
+                          if (!otherActive) setAnswer(question.id, GRILL_OTHER_VALUE)
+                          queueMicrotask(() => {
+                            textareas.current[question.id]?.focus()
+                          })
+                        }}
+                      >
+                        <span className="font-medium">Other</span>
+                        <QuestionnaireChoiceDescription>
+                          Write your own answer
+                        </QuestionnaireChoiceDescription>
+                      </QuestionnaireChoice>
+                    </QuestionnaireChoices>
+                  </QuestionnaireItem>
+                </Questionnaire>
+                {otherActive ? (
+                  <Textarea
+                    ref={(node) => {
+                      textareas.current[question.id] = node
+                    }}
+                    value={otherDraftText(selected)}
+                    readOnly={!realtime.connected || !mine}
+                    className={cn(
+                      blocked && 'border-amber-500/70 ring-2 ring-amber-500/25',
+                    )}
+                    onFocus={() => realtime.focus(question.id)}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setAnswer(
+                        question.id,
+                        value.trim() ? value : GRILL_OTHER_VALUE,
+                      )
+                    }}
+                    onBlur={() => realtime.blur(question.id)}
+                    placeholder="Your shared answer"
+                    rows={3}
                   />
-                  <span className="sr-only">Click to use</span>
-                </p>
-                <p className="mt-1 text-sm">{recommendation}</p>
-              </button>
-            ) : null}
-            <Textarea
-              ref={(node) => {
-                textareas.current[question.id] = node
-              }}
-              value={drafts[question.id] ?? ''}
-              readOnly={!realtime.connected || !mine}
-              className={cn(
-                blocked &&
-                  'border-amber-500/70 ring-2 ring-amber-500/25',
-              )}
-              onFocus={() => realtime.focus(question.id)}
-              onChange={(event) => {
-                const value = event.target.value
-                setDrafts((current) => ({ ...current, [question.id]: value }))
-                realtime.change(question.id, value)
-              }}
-              onBlur={() => realtime.blur(question.id)}
-              placeholder="Your shared answer"
-              rows={3}
-            />
+                ) : null}
+              </div>
+            ) : (
+              <>
+                {recommendation ? (
+                  <button
+                    type="button"
+                    className="w-full rounded-md border border-dashed px-3 py-2 text-left transition-colors hover:bg-muted/40"
+                    disabled={!realtime.connected || blocked}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      textareas.current[question.id]?.focus()
+                      setAnswer(question.id, recommendation)
+                    }}
+                  >
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      Recommendation
+                      <MousePointerClick
+                        className="size-3.5 shrink-0"
+                        aria-hidden
+                      />
+                      <span className="sr-only">Click to use</span>
+                    </p>
+                    <p className="mt-1 text-sm">{recommendation}</p>
+                  </button>
+                ) : null}
+                <Textarea
+                  ref={(node) => {
+                    textareas.current[question.id] = node
+                  }}
+                  value={selected}
+                  readOnly={!realtime.connected || !mine}
+                  className={cn(
+                    blocked && 'border-amber-500/70 ring-2 ring-amber-500/25',
+                  )}
+                  onFocus={() => realtime.focus(question.id)}
+                  onChange={(event) => {
+                    setAnswer(question.id, event.target.value)
+                  }}
+                  onBlur={() => realtime.blur(question.id)}
+                  placeholder="Your shared answer"
+                  rows={3}
+                />
+              </>
+            )}
             <div className="flex min-h-6 justify-end">
               {lease ? (
                 <div
