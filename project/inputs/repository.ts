@@ -139,12 +139,12 @@ async function initializeGitWorkspace(
   branch: string,
 ): Promise<string> {
   await git(directory, ["init", "--initial-branch", branch]);
-  await git(directory, ["config", "user.name", "Sweat Agent"]);
-  await git(directory, ["config", "user.email", "agent@sweat.local"]);
+  await git(directory, ["config", "user.name", "Colony Agent"]);
+  await git(directory, ["config", "user.email", "agent@colony.local"]);
   await git(directory, ["config", "commit.gpgsign", "false"]);
   await addWorkspaceExcludes(directory);
   await git(directory, ["add", "--all"]);
-  await git(directory, ["commit", "--quiet", "--message", "Sweat base"]);
+  await git(directory, ["commit", "--quiet", "--message", "Colony base"]);
   return (await git(directory, ["rev-parse", "HEAD"])).trim();
 }
 

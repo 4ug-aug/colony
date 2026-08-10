@@ -1,4 +1,4 @@
-# Sweat server
+# Colony server
 
 This release contains the production server bundle. The agent image is
 published separately to GitHub Container Registry and supports both Docker and
@@ -44,5 +44,5 @@ If the package is private, authenticate the selected container runtime with
 GitHub Container Registry before pulling.
 
 The server listens on port 3001. On first startup, copy the setup token it
-prints and use it in the Sweat desktop app. The database defaults to
+prints and use it in the Colony desktop app. The database defaults to
 `sweat.sqlite`; back it up together with the sibling `attachments/` directory.

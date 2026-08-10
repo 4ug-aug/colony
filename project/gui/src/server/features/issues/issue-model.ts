@@ -71,7 +71,7 @@ export type IssueRun = {
 }
 
 export function formatIssueId(number: number): string {
-  return `SWE-${number}`
+  return `COL-${number}`
 }
 
 export function parseIssueRef(
@@ -79,7 +79,7 @@ export function parseIssueRef(
 ): { kind: 'number'; number: number } | { kind: 'id'; id: string } | undefined {
   const trimmed = raw.trim()
   if (!trimmed) return undefined
-  const match = /^SWE-(\d+)$/i.exec(trimmed)
+  const match = /^(?:COL|SWE)-(\d+)$/i.exec(trimmed)
   if (match) return { kind: 'number', number: Number(match[1]) }
   return { kind: 'id', id: trimmed }
 }

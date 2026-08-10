@@ -191,7 +191,7 @@ test('startRun uses agent owner and moves In review to In progress', () => {
   const result = runner.startRun('issue-1')
   expect(result.issue.status).toBe('in_progress')
   expect(result.run.agentId).toBe('antboy')
-  expect(control.starts[0]?.task).toContain('SWE-1')
+  expect(control.starts[0]?.task).toContain('COL-1')
   expect(control.starts[0]?.task).toContain('<<<issue')
   expect(
     (control.starts[0]?.context as { agentDefinitionId?: string })
@@ -321,7 +321,7 @@ test('startRun includes children in the parent task', () => {
   const runner = createIssueRunner({ store, control })
   runner.startRun('parent', { agentDefinitionId: 'antboy' })
   expect(control.starts[0]?.task).toContain('<<<children')
-  expect(control.starts[0]?.task).toContain('SWE-2')
+  expect(control.starts[0]?.task).toContain('COL-2')
   expect(control.starts[0]?.task).toContain('Child work')
 })
 

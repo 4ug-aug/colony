@@ -43,7 +43,7 @@ const applyMigration = (sqlite: Database) => {
   }
 }
 
-test('issue store allocates SWE numbers and tracks child progress', () => {
+test('issue store allocates COL numbers and accepts legacy SWE references', () => {
   const sqlite = new Database(':memory:')
   applyMigration(sqlite)
   const store = createSqliteIssueStore(sqlite)
@@ -55,7 +55,7 @@ test('issue store allocates SWE numbers and tracks child progress', () => {
     createdAt: 1,
   })
   expect(parent).toMatchObject({ number: 1, status: 'backlog', priority: 'none' })
-  expect(formatIssueId(parent.number)).toBe('SWE-1')
+  expect(formatIssueId(parent.number)).toBe('COL-1')
 
   const childA = store.createIssue({
     id: 'child-a',
@@ -88,14 +88,16 @@ test('issue store allocates SWE numbers and tracks child progress', () => {
     tags: ['gui'],
   })
 
+  expect(resolveIssue(store, 'COL-2')?.id).toBe(childA.id)
   expect(resolveIssue(store, 'SWE-2')?.id).toBe(childA.id)
+  expect(parseIssueRef('col-2')).toEqual({ kind: 'number', number: 2 })
   expect(parseIssueRef('swe-2')).toEqual({ kind: 'number', number: 2 })
 
   const task = buildIssueRunTask(store.getIssue(childA.id)!, parent)
-  expect(task).toContain('SWE-2')
+  expect(task).toContain('COL-2')
   expect(task).toContain('<<<issue')
   expect(task).toContain('untrusted user/agent-authored data')
-  expect(task).toContain('SWE-1')
+  expect(task).toContain('COL-1')
   expect(task).toContain('Parent feature')
 
   const parentTask = buildIssueRunTask(
@@ -104,8 +106,8 @@ test('issue store allocates SWE numbers and tracks child progress', () => {
     store.listChildIssues(parent.id),
   )
   expect(parentTask).toContain('<<<children')
-  expect(parentTask).toContain('SWE-2')
-  expect(parentTask).toContain('SWE-3')
+  expect(parentTask).toContain('COL-2')
+  expect(parentTask).toContain('COL-3')
 
   store.setDeliverable(parent.id, 'Shipped the badge.', 8)
   expect(store.getIssue(parent.id)?.deliverable).toBe('Shipped the badge.')

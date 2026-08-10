@@ -28,12 +28,12 @@ export function createWorkspaceDocsMcpUpstream(options: {
         {
           name: "workspace.list_docs",
           description:
-            "List Sweat workspace Docs with ids, titles, authors, and timestamps. Use workspace.get_doc to read the markdown body.",
+            "List Colony workspace Docs with ids, titles, authors, and timestamps. Use workspace.get_doc to read the markdown body.",
           inputSchema: { type: "object", properties: {} },
         },
         {
           name: "workspace.get_doc",
-          description: "Read one Sweat workspace Doc, including its markdown body.",
+          description: "Read one Colony workspace Doc, including its markdown body.",
           inputSchema: {
             type: "object",
             properties: { id: { type: "string" } },

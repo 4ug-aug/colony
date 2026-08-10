@@ -96,7 +96,7 @@ export function assistantText(message: Extract<CursorSdkMessage, { type: "assist
     .join("");
 }
 
-/** Maps non-assistant/thinking Cursor stream events to Sweat steps
+/** Maps non-assistant/thinking Cursor stream events to Colony steps
  * (thinking + assistant are live-published in runTurn). */
 export function mapCursorEventToSteps(event: CursorSdkMessage): Step[] {
   const at = Date.now();

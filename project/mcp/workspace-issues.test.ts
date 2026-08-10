@@ -11,7 +11,7 @@ function makePort(seed: WorkspaceIssue[] = []): WorkspaceIssuesPort & {
   const issues = [...seed];
   let nextNumber = seed.reduce((max, issue) => Math.max(max, issue.number), 0) + 1;
   const byRef = (ref: string) => {
-    const match = /^SWE-(\d+)$/i.exec(ref.trim());
+    const match = /^(?:COL|SWE)-(\d+)$/i.exec(ref.trim());
     if (match) return issues.find((issue) => issue.number === Number(match[1]));
     return issues.find((issue) => issue.id === ref.trim());
   };
@@ -101,7 +101,7 @@ test("create, assign, and get Issues through MCP tools", async () => {
   expect(issue.number).toBe(1);
 
   await upstream.callTool("workspace.assign_issue", {
-    ref: "SWE-1",
+    ref: "COL-1",
     owner: { kind: "agent", id: "software-engineer" },
   });
   const got = (await upstream.callTool("workspace.get_issue", {
@@ -172,7 +172,7 @@ test("assign_issue rejects unknown agent ids with suggestions", async () => {
 
   await expect(
     upstream.callTool("workspace.assign_issue", {
-      ref: "SWE-1",
+      ref: "COL-1",
       owner: { kind: "agent", id: "software_engineer" },
     }),
   ).rejects.toThrow(

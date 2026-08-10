@@ -1451,7 +1451,7 @@ if (import.meta.main) {
   })
   process.stdout.write(`Coordinator listening on ${coordinator.port}\n`)
   const setupToken = admissionStore.ensureSetupToken()
-  if (setupToken) process.stdout.write(`Sweat setup token: ${setupToken}\n`)
+  if (setupToken) process.stdout.write(`Colony setup token: ${setupToken}\n`)
   let stopping = false
   const stop = async () => {
     if (stopping) return

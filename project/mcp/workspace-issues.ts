@@ -237,7 +237,7 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         {
           name: "workspace.list_issues",
           description:
-            "List Sweat workspace Issues. Optionally filter by status (backlog, todo, in_progress, in_review, done).",
+            "List Colony workspace Issues. Optionally filter by status (backlog, todo, in_progress, in_review, done).",
           inputSchema: {
             type: "object",
             properties: { status: { type: "string" } },
@@ -246,7 +246,7 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         {
           name: "workspace.get_issue",
           description:
-            "Get one Sweat Issue by id or display id (for example SWE-123).",
+            "Get one Colony Issue by id or display id (for example COL-123). Legacy SWE-123 references are also accepted.",
           inputSchema: {
             type: "object",
             properties: { ref: { type: "string" } },
@@ -256,7 +256,7 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         {
           name: "workspace.create_issue",
           description:
-            "Create a Sweat Issue. Optional parentId nests it under a parent Issue.",
+            "Create a Colony Issue. Optional parentId nests it under a parent Issue.",
           inputSchema: {
             type: "object",
             properties: {
@@ -277,7 +277,7 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         {
           name: "workspace.update_issue",
           description:
-            "Update fields on a Sweat Issue (title, description, status, priority, tags, timeSpent, parentId, branch).",
+            "Update fields on a Colony Issue (title, description, status, priority, tags, timeSpent, parentId, branch).",
           inputSchema: {
             type: "object",
             properties: {

@@ -1,23 +1,23 @@
-# Sweat
+# Colony
 
-Sweat is a self-hosted multiplayer workspace where people delegate work to
+Colony is a self-hosted multiplayer workspace where people delegate work to
 isolated AI agents, follow it as it happens, and keep the results with the
 conversation.
 
-[![Watch the Sweat demo](./sweat-demo.png)](./sweat-demo.mov?raw=1)
+[![Watch the Colony demo](./sweat-demo.png)](./sweat-demo.mov?raw=1)
 
 _Click the preview to watch the demo._
 
 ## Vision
 
-Sweat should feel like a shared place where people and agents work together,
+Colony should feel like a shared place where people and agents work together,
 not a dashboard for launching background processes. Teams organize work in
 durable rooms, delegate bounded runs to visible agent roles, and retain tasks,
 progress, results, and decisions as one shared record.
 
 Each deployment owns its accounts, data, model configuration, integrations,
 and sandboxed agent execution. The native Tauri app and browser client connect
-to the same authoritative Sweat server.
+to the same authoritative Colony server.
 
 Read [VISION.md](./VISION.md) for the product direction,
 [CONTEXT.md](./CONTEXT.md) for the domain language, and
@@ -53,7 +53,7 @@ systemctl --user status sweat
 journalctl --user -u sweat -f
 ```
 
-The installer enables user lingering so Sweat starts at boot without an
+The installer enables user lingering so Colony starts at boot without an
 interactive login. Use `systemctl --user start|stop|restart sweat` for normal
 operation and `make service-uninstall` to remove it. The unit points at this
 checkout and the Bun executable used during installation; rerun
@@ -76,18 +76,18 @@ the first release, set `sweat-v2-agent` to Public in the package settings if
 GitHub created it as private.
 
 Choose **Install mac application** on macOS to download and open the latest
-universal DMG. Drag Sweat into Applications, then connect it to the server URL
+universal DMG. Drag Colony into Applications, then connect it to the server URL
 and enter the one-time setup token to create the first administrator.
 
 Windows has no wizard step because it needs none. Open the
 [latest release](https://github.com/4ug-aug/sweat-v2/releases/latest) and run
 `Sweat_<version>_x64_en-US.msi` (or `Sweat_<version>_x64-setup.exe` if you
-prefer the NSIS installer). Both install Sweat and register the `sweat://`
+prefer the NSIS installer). Both install Colony and register the legacy `sweat://`
 invite scheme; then connect to the server URL the same way. A Windows machine
 needs no clone, no `make`, and no container runtime — only the server host does.
 
 The current builds are not signed. If macOS blocks the first launch,
-Control-click Sweat, choose **Open**, then confirm. If Windows SmartScreen warns
+Control-click Colony, choose **Open**, then confirm. If Windows SmartScreen warns
 about an unrecognized publisher, choose **More info**, then **Run anyway**.
 
 Installed builds carry no web inspector, so they write a log you can ask a user
@@ -95,8 +95,8 @@ to send back. The first line names the version and platform.
 
 | Platform | Path                                              |
 | -------- | ------------------------------------------------- |
-| Windows  | `%LOCALAPPDATA%\com.sweat.desktop\logs\Sweat.log` |
-| macOS    | `~/Library/Logs/com.sweat.desktop/Sweat.log`      |
+| Windows  | `%LOCALAPPDATA%\com.sweat.desktop\logs\Colony.log` |
+| macOS    | `~/Library/Logs/com.sweat.desktop/Colony.log`      |
 
 ## Development
 

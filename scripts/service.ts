@@ -44,7 +44,7 @@ export function renderSystemdUnit(options: SystemdUnitOptions): string {
     : "";
 
   return `[Unit]
-Description=Sweat server
+Description=Colony server
 
 [Service]
 WorkingDirectory=${unitPathValue(options.workingDirectory)}
@@ -145,7 +145,7 @@ async function install(): Promise<void> {
   await run(systemctl, ["--user", "enable", "sweat.service"]);
   await run(systemctl, ["--user", "restart", "sweat.service"]);
   console.log(
-    "Sweat is running. Check it with `systemctl --user status sweat`.",
+    "Colony is running. Check it with `systemctl --user status sweat`.",
   );
 }
 
@@ -156,7 +156,7 @@ async function uninstall(): Promise<void> {
   await rm(unitPath, { force: true });
   await run(systemctl, ["--user", "daemon-reload"]);
   console.log(
-    "Removed the Sweat background server. User lingering was left unchanged.",
+    "Removed the Colony background server. User lingering was left unchanged.",
   );
 }
 

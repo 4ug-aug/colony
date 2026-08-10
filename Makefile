@@ -10,7 +10,7 @@ export SWEAT_DATABASE_PATH
 .PHONY: help env dev dev-seeded server service-install service-upgrade service-uninstall migrate setup seed rotate-setup-token reset-admin-password agent gui coordinator test build check reset
 
 help:
-	@echo "Sweat development commands"
+	@echo "Colony development commands"
 	@echo "  make dev                   Start the full stack with first-user setup"
 	@echo "  make dev-seeded            Start the full stack with reusable local accounts"
 	@echo "  make server                Start the complete backend for a separate client"
