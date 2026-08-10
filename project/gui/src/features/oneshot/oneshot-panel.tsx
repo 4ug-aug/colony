@@ -113,10 +113,13 @@ export function OneshotPanel({
   const [runId, setRunId] = useState<string>()
   const [copied, setCopied] = useState(false)
   const taskRef = useRef<HTMLTextAreaElement>(null)
+  const runIdRef = useRef<string | undefined>(undefined)
+  const submittingRef = useRef(false)
   const start = useStartOneshot()
   const discard = useDiscardOneshot()
   const { data: activeRun } = useActiveOneshot(open && !runId)
   if (open && !runId && activeRun?.id) setRunId(activeRun.id)
+  runIdRef.current = runId
   const { data, isError, error } = useOneshot(runId)
 
   const selectedAgent =
@@ -144,9 +147,11 @@ export function OneshotPanel({
   }
 
   const close = async () => {
-    if (runId) {
+    const id = runIdRef.current
+    if (id) {
       try {
-        await discard.mutateAsync(runId)
+        await discard.mutateAsync(id)
+        runIdRef.current = undefined
       } catch (reason) {
         toast.add({
           type: 'error',
@@ -162,7 +167,16 @@ export function OneshotPanel({
 
   const submit = async () => {
     const trimmed = task.trim()
-    if (!trimmed || !selectedAgent || active || start.isPending) return
+    if (
+      !trimmed ||
+      !selectedAgent ||
+      active ||
+      start.isPending ||
+      submittingRef.current
+    ) {
+      return
+    }
+    submittingRef.current = true
     try {
       setAgentId(selectedAgent.id)
       setCopied(false)
@@ -173,6 +187,7 @@ export function OneshotPanel({
           ? { repositoryBase: revision.trim() }
           : {}),
       })
+      runIdRef.current = created.id
       setRunId(created.id)
     } catch (reason) {
       toast.add({
@@ -181,6 +196,8 @@ export function OneshotPanel({
         description:
           reason instanceof Error ? reason.message : 'Please try again.',
       })
+    } finally {
+      submittingRef.current = false
     }
   }
 
@@ -204,15 +221,35 @@ export function OneshotPanel({
       return
     }
     if (key === 'enter' && open && !active) {
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')
+      ) {
+        return
+      }
       event.preventDefault()
       void submit()
     }
   })
 
   const [present, setPresent] = useState(open)
-  if (open && !present) setPresent(true)
-  if (!open && present && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  const [shown, setShown] = useState(false)
+  const enterArmedRef = useRef(false)
+  const reducedMotion = window.matchMedia(
+    '(prefers-reduced-motion: reduce)',
+  ).matches
+
+  if (open && !present) {
+    setPresent(true)
+    setShown(false)
+    enterArmedRef.current = false
+  }
+  if (present && !open && shown) setShown(false)
+  if (present && open && !shown && reducedMotion) setShown(true)
+  if (present && !open && !shown && reducedMotion) {
     setPresent(false)
+    runIdRef.current = undefined
     setRunId(undefined)
     setTask('')
     setCopied(false)
@@ -222,23 +259,39 @@ export function OneshotPanel({
 
   return (
     <div
-      role="dialog"
-      aria-label="Oneshot"
-      data-state={open ? 'open' : 'closed'}
-      onAnimationEnd={(event) => {
+      className="oneshot-panel-shell fixed right-3 bottom-3 z-50 w-[min(100vw-1.5rem,24rem)]"
+      data-open={shown ? 'true' : 'false'}
+      ref={(node) => {
+        if (!node || !open || shown || enterArmedRef.current || reducedMotion)
+          return
+        enterArmedRef.current = true
+        // WKWebView skips transform transitions applied on the mount frame.
+        requestAnimationFrame(() => {
+          void node.getBoundingClientRect()
+          requestAnimationFrame(() => {
+            setShown(true)
+          })
+        })
+      }}
+      onTransitionEnd={(event) => {
         if (event.target !== event.currentTarget) return
-        if (open || event.animationName !== 'oneshot-panel-out') return
+        if (event.propertyName !== 'transform') return
+        if (open || shown) return
         setPresent(false)
+        runIdRef.current = undefined
         setRunId(undefined)
         setTask('')
         setCopied(false)
       }}
-      className={cn(
-        'oneshot-panel dark:bg-muted fixed right-3 bottom-3 z-50 flex w-[min(100vw-1.5rem,24rem)] flex-col overflow-hidden rounded-xl border bg-background shadow-lg transition-[height] duration-150 ease-out motion-reduce:transition-none',
-        active ? 'h-[min(70vh,28rem)]' : 'h-[min(50vh,20rem)]',
-        open ? 'oneshot-panel--in' : 'oneshot-panel--out',
-      )}
     >
+      <div
+        role="dialog"
+        aria-label="Oneshot"
+        className={cn(
+          'dark:bg-muted flex w-full flex-col overflow-hidden rounded-xl border bg-background shadow-lg transition-[height] duration-150 ease-out motion-reduce:transition-none',
+          active ? 'h-[min(70vh,28rem)]' : 'h-[min(50vh,20rem)]',
+        )}
+      >
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
         <div className="flex shrink-0 items-center gap-1.5">
           <Button
@@ -391,12 +444,14 @@ export function OneshotPanel({
                   if (!(event.metaKey || event.ctrlKey)) return
                   if (event.key !== 'Enter' && event.code !== 'Enter') return
                   event.preventDefault()
+                  event.stopPropagation()
                   void submit()
                 }}
               />
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   )

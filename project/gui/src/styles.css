@@ -328,32 +328,26 @@ pre code {
   }
 }
 
-@keyframes oneshot-panel-in {
-  from {
-    opacity: 0;
-    transform: translate3d(1rem, 0, 0);
-  }
+/* Plain transitions (not @keyframes / @property) — WKWebView/Tauri skips
+   mount-time keyframe slide on the same node as height transitions. */
+.oneshot-panel-shell {
+  opacity: 0;
+  transform: translate3d(1rem, 0, 0);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+  will-change: opacity, transform;
 }
 
-@keyframes oneshot-panel-out {
-  to {
-    opacity: 0;
-    transform: translate3d(1rem, 0, 0);
-  }
-}
-
-.oneshot-panel--in {
-  animation: oneshot-panel-in 150ms ease-out both;
-}
-
-.oneshot-panel--out {
-  animation: oneshot-panel-out 150ms ease-out forwards;
+.oneshot-panel-shell[data-open='true'] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oneshot-panel--in,
-  .oneshot-panel--out {
-    animation: none;
+  .oneshot-panel-shell {
+    transition: none;
+    will-change: auto;
   }
 }
 

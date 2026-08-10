@@ -44,6 +44,7 @@ export function createOneshotSession(options: {
 }): OneshotSession {
   const runs = new Map<string, OneshotRun>()
   const steps = new Map<string, OneshotRunStep[]>()
+  const startingAccounts = new Set<string>()
 
   const getForAccount = (runId: string, accountId: string) => {
     const run = runs.get(runId)
@@ -83,27 +84,37 @@ export function createOneshotSession(options: {
 
   return {
     start(input) {
-      if (activeForAccount(input.accountId)) throw new OneshotActiveRunError()
-      const oneshotId = crypto.randomUUID()
-      const repositoryBase = input.repositoryBase?.trim() || undefined
-      return options.control.start(input.task.trim(), {
-        oneshotId,
-        agentDefinitionId: input.agentDefinitionId,
-        ...(repositoryBase ? { repositoryBase } : {}),
-        onCreate: (summary) => {
-          if (activeForAccount(input.accountId))
-            throw new OneshotActiveRunError()
-          const created: OneshotRun = {
-            ...summary,
-            oneshotId,
-            accountId: input.accountId,
-            ...(repositoryBase ? { repositoryBase } : {}),
-          }
-          runs.set(created.id, created)
-          steps.set(created.id, [])
-          return created
-        },
-      })
+      if (
+        startingAccounts.has(input.accountId) ||
+        activeForAccount(input.accountId)
+      ) {
+        throw new OneshotActiveRunError()
+      }
+      startingAccounts.add(input.accountId)
+      try {
+        const oneshotId = crypto.randomUUID()
+        const repositoryBase = input.repositoryBase?.trim() || undefined
+        return options.control.start(input.task.trim(), {
+          oneshotId,
+          agentDefinitionId: input.agentDefinitionId,
+          ...(repositoryBase ? { repositoryBase } : {}),
+          onCreate: (summary) => {
+            if (activeForAccount(input.accountId))
+              throw new OneshotActiveRunError()
+            const created: OneshotRun = {
+              ...summary,
+              oneshotId,
+              accountId: input.accountId,
+              ...(repositoryBase ? { repositoryBase } : {}),
+            }
+            runs.set(created.id, created)
+            steps.set(created.id, [])
+            return created
+          },
+        })
+      } finally {
+        startingAccounts.delete(input.accountId)
+      }
     },
     async cancel(runId, accountId) {
       const existing = getForAccount(runId, accountId)
