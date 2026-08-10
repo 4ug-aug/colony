@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-query'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import type { Issue, IssueRun } from './types'
-import type { IssueRunStep } from '#/server/issue-store'
+import type { IssueRunStep } from '#/server/features/issues/issue-store'
 import { upsertIssueInCache } from './use-issues'
 
 export type { IssueRunStep }

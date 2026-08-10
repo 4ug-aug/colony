@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { createAdmissionStore } from './admission'
+import { createAdmissionStore } from './features/accounts/admission'
 import { migrateDatabase, sqlite } from '#/lib/database'
 
 await migrateDatabase(fileURLToPath(new URL('../../drizzle', import.meta.url)))

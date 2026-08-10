@@ -4,7 +4,7 @@ import {
   createRunControl,
   type RunControl,
   type RunSummary,
-} from './run-control'
+} from './features/runs/run-control'
 import {
   createSqliteRoomStore,
   type RoomMessage,
@@ -14,23 +14,23 @@ import {
   type RoomStore,
   type RoomUser,
   type StoredStep,
-} from './room-store'
-import { createRoomMessageHub, type RoomMessageHub } from './room-hub'
+} from './features/rooms/room-store'
+import { createRoomMessageHub, type RoomMessageHub } from './features/rooms/room-hub'
 import {
   createAdmissionHttpHandler,
   type AdmissionOptions,
-} from './admission-http'
-import { mentionedAccounts } from './attention'
+} from './features/accounts/admission-http'
+import { mentionedAccounts } from './features/rooms/attention'
 import { rosterDefinitionSummaries, rosterPerson } from '../../../agents/roster'
 import {
   attachmentDirectory,
   createRoomAttachmentSource,
-} from './attachments'
+} from './features/rooms/attachments'
 import {
   createWorkspaceSkillStore,
   skillDirectory,
-} from './workspace-skills'
-import { createWorkspaceConnections } from './workspace-connections'
+} from './features/workspace/workspace-skills'
+import { createWorkspaceConnections } from './features/workspace/workspace-connections'
 import { capabilityPresentation } from '../../../agents/roster-people'
 import { getConnectionKind } from '../../../connections/registry'
 import {
@@ -39,7 +39,7 @@ import {
   type ScheduleRun,
   type ScheduleRunStep,
   type ScheduleStore,
-} from './schedule-store'
+} from './features/schedules/schedule-store'
 import {
   createSqliteIssueStore,
   resolveIssue,
@@ -48,42 +48,42 @@ import {
   type IssueRun,
   type IssueRunStep,
   type IssueStore,
-} from './issue-store'
+} from './features/issues/issue-store'
 import {
   createSqliteBulletinStore,
   type Bulletin,
   type BulletinStore,
-} from './bulletin-store'
+} from './features/bulletins/bulletin-store'
 import {
   createSqliteDocStore,
   type Doc,
   type DocStore,
-} from './doc-store'
+} from './features/docs/doc-store'
 import {
   createSqliteGrillStore,
   type Grill,
   type GrillStore,
-} from './grill-store'
-import { createIssueRunner, type IssueRunner } from './issue-runner'
+} from './features/grills/grill-store'
+import { createIssueRunner, type IssueRunner } from './features/issues/issue-runner'
 import {
   createScheduleRunner,
   type ScheduleRunner,
-} from './schedule-runner'
+} from './features/schedules/schedule-runner'
 import {
   allowedOrigin,
   json,
   withCors,
 } from './http/respond'
-import { createIssuesHttp } from './issues-http'
-import { createSchedulesHttp } from './schedules-http'
-import { createBulletinsHttp } from './bulletins-http'
-import { createDocsHttp } from './docs-http'
-import { createGrillsHttp } from './grills-http'
-import { createGrillLinkedRuns } from './grill-linked-runs'
-import { createRoomsHttp } from './rooms-http'
-import { createMembersHttp } from './members-http'
-import { createOneshotsHttp } from './oneshots-http'
-import { createOneshotSession } from './oneshot-session'
+import { createIssuesHttp } from './features/issues/issues-http'
+import { createSchedulesHttp } from './features/schedules/schedules-http'
+import { createBulletinsHttp } from './features/bulletins/bulletins-http'
+import { createDocsHttp } from './features/docs/docs-http'
+import { createGrillsHttp } from './features/grills/grills-http'
+import { createGrillLinkedRuns } from './features/grills/grill-linked-runs'
+import { createRoomsHttp } from './features/rooms/rooms-http'
+import { createMembersHttp } from './features/rooms/members-http'
+import { createOneshotsHttp } from './features/oneshots/oneshots-http'
+import { createOneshotSession } from './features/oneshots/oneshot-session'
 
 export { allowedOrigin }
 
@@ -1025,10 +1025,10 @@ if (import.meta.main) {
     { createDockerSandboxProvider },
   ] = await Promise.all([
     import('../lib/auth'),
-    import('./session-auth'),
-    import('./admission'),
-    import('./llm-config'),
-    import('./cursor-runtime-config'),
+    import('./features/accounts/session-auth'),
+    import('./features/accounts/admission'),
+    import('./features/workspace/llm-config'),
+    import('./features/workspace/cursor-runtime-config'),
     import('../../../agents/roster'),
     import('../../../agents/software-engineer-adapters'),
     import('../../../mcp/github'),

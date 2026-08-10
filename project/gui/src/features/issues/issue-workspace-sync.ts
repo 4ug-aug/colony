@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { connectWorkspaceStream } from '#/lib/api-transport'
 import { terminal } from '#/features/runs/run-helpers'
 import type { Issue, IssueRun } from './types'
-import type { IssueRunStep } from '#/server/issue-store'
+import type { IssueRunStep } from '#/server/features/issues/issue-store'
 import {
   appendIssueRunStepInCache,
   upsertIssueRunInCache,

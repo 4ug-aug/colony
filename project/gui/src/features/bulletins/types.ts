@@ -4,7 +4,7 @@ export type BulletinActor = {
   image?: string
 }
 
-// Mirrors Poll in src/server/bulletin-store.ts — keep both in sync.
+// Mirrors Poll in src/server/features/bulletins/bulletin-store.ts — keep both in sync.
 export type Poll = {
   multi?: boolean
   options: string[]

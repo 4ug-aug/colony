@@ -5,14 +5,17 @@ import { fileURLToPath } from 'node:url'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
-import { attachmentBytes, attachmentDirectory } from '../src/server/attachments'
+import {
+  attachmentBytes,
+  attachmentDirectory,
+} from '../src/server/features/rooms/attachments'
 import {
   createSqliteRoomStore,
   GENERAL_ROOM_ID,
   type RoomAttachment,
   type RoomMessage,
   type RoomStore,
-} from '../src/server/room-store'
+} from '../src/server/features/rooms/room-store'
 
 const messageCount = 10_000
 const imageCount = 1_000

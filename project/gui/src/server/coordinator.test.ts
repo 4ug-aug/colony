@@ -17,7 +17,7 @@ import {
   type RunControl,
   type RunSummary,
   type Step,
-} from './run-control'
+} from './features/runs/run-control'
 import type { AttachmentInput } from '../../../inputs/repository'
 import { createWorkspaceAgentsExecutor } from '../../../agents/roster'
 import { createAppleContainerClient } from '../../../sdk/src'
@@ -34,10 +34,10 @@ import {
   type RoomStore,
   type RoomUser,
   type StoredStep,
-} from './room-store'
-import { createRoomMessageHub } from './room-hub'
-import { createRoomAttachmentSource } from './attachments'
-import { createSqliteGrillStore } from './grill-store'
+} from './features/rooms/room-store'
+import { createRoomMessageHub } from './features/rooms/room-hub'
+import { createRoomAttachmentSource } from './features/rooms/attachments'
+import { createSqliteGrillStore } from './features/grills/grill-store'
 
 class FakeRunControl implements RunControl {
   private listeners = new Set<(run: RunSummary) => void>()
