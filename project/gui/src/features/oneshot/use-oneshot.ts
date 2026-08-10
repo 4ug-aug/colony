@@ -14,6 +14,8 @@ export function oneshotQueryKey(runId: string) {
   return ['oneshot', runId] as const
 }
 
+export const activeOneshotQueryKey = ['oneshot', 'active'] as const
+
 export function useLastOneshotAgent(fallback: string) {
   const [value, setValue] = useState(() => {
     return localStorage.getItem(LAST_AGENT_KEY) ?? fallback
@@ -36,6 +38,22 @@ async function fetchOneshot(runId: string): Promise<{
   )
   if (!data.run) throw new Error('Unable to load Oneshot')
   return { run: data.run, steps: data.steps ?? [] }
+}
+
+export function useActiveOneshot(enabled: boolean) {
+  return useQuery({
+    queryKey: activeOneshotQueryKey,
+    queryFn: async (): Promise<OneshotRun | null> => {
+      const data = await apiJson<{ run?: OneshotRun | null }>(
+        '/api/oneshots/active',
+        undefined,
+        'Unable to load active Oneshot',
+      )
+      return data.run ?? null
+    },
+    enabled,
+    staleTime: 0,
+  })
 }
 
 export function useOneshot(runId: string | undefined) {
@@ -79,6 +97,7 @@ export function useStartOneshot() {
         run,
         steps: [] as OneshotRunStep[],
       })
+      queryClient.setQueryData(activeOneshotQueryKey, run)
     },
   })
 }
@@ -96,6 +115,7 @@ export function useDiscardOneshot() {
     },
     onSuccess: (_void, runId) => {
       queryClient.removeQueries({ queryKey: oneshotQueryKey(runId) })
+      queryClient.setQueryData(activeOneshotQueryKey, null)
     },
   })
 }

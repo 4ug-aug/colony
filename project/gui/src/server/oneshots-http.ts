@@ -3,11 +3,11 @@ import type { RoomUser } from './room-store'
 import { json, readBody } from './http/respond'
 import {
   OneshotActiveRunError,
-  type OneshotRunner,
-} from './oneshot-runner'
+  type OneshotSession,
+} from './oneshot-session'
 
 export function createOneshotsHttp(deps: {
-  oneshotRunner: OneshotRunner
+  oneshotSession: OneshotSession
   agentDefinitions: () => AgentDefinitionSummary[]
 }): (
   request: Request,
@@ -20,7 +20,9 @@ export function createOneshotsHttp(deps: {
 
   return async (request, url, user) => {
     if (url.pathname === '/api/oneshots/active' && request.method === 'GET')
-      return json({ run: deps.oneshotRunner.activeForAccount(user.id) ?? null })
+      return json({
+        run: deps.oneshotSession.activeForAccount(user.id) ?? null,
+      })
 
     if (url.pathname === '/api/oneshots' && request.method === 'POST') {
       const body = await readBody(request)
@@ -44,13 +46,13 @@ export function createOneshotsHttp(deps: {
       const agent = deps
         .agentDefinitions()
         .find((definition) => definition.id === agentDefinitionId)
-      if (repositoryBase && agent?.includeRepository === false)
+      if (repositoryBase && !agent!.includeRepository)
         return json(
           { error: 'Revision is only valid for repository agents' },
           400,
         )
       try {
-        const run = deps.oneshotRunner.start({
+        const run = deps.oneshotSession.start({
           accountId: user.id,
           task,
           agentDefinitionId,
@@ -76,13 +78,13 @@ export function createOneshotsHttp(deps: {
     if (runMatch) {
       const runId = decodeURIComponent(runMatch[1]!)
       if (request.method === 'GET') {
-        const run = deps.oneshotRunner.get(runId, user.id)
+        const run = deps.oneshotSession.get(runId, user.id)
         if (!run) return json({ error: 'Oneshot not found' }, 404)
-        const steps = deps.oneshotRunner.listSteps(runId, user.id) ?? []
+        const steps = deps.oneshotSession.listSteps(runId, user.id) ?? []
         return json({ run, steps })
       }
       if (request.method === 'DELETE') {
-        const discarded = await deps.oneshotRunner.discard(runId, user.id)
+        const discarded = await deps.oneshotSession.discard(runId, user.id)
         if (!discarded) return json({ error: 'Oneshot not found' }, 404)
         return json({ ok: true })
       }
@@ -93,7 +95,7 @@ export function createOneshotsHttp(deps: {
     )
     if (cancelMatch && request.method === 'POST') {
       const runId = decodeURIComponent(cancelMatch[1]!)
-      const run = await deps.oneshotRunner.cancel(runId, user.id)
+      const run = await deps.oneshotSession.cancel(runId, user.id)
       if (!run) return json({ error: 'Oneshot not found' }, 404)
       return json({ run })
     }

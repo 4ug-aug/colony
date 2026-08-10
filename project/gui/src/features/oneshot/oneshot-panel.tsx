@@ -16,16 +16,17 @@ import {
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
-import { formatStepText, isFailedToolResult, pairSteps } from '#/features/runs/run-activity'
+import { pairSteps } from '#/features/runs/run-activity'
 import { terminal } from '#/features/runs/run-helpers'
-import { ToolIcon } from '#/features/runs/run-tool-icon'
-import { stepLabel, type Step } from '#/features/runs/step-label'
+import { stepLabel } from '#/features/runs/step-label'
+import { ToolCallDetailsList } from '#/features/runs/tool-call-details-list'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { cn } from '#/lib/utils'
 import { Check, Copy, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import type { OneshotRun, OneshotRunStep } from './types'
 import {
+  useActiveOneshot,
   useDiscardOneshot,
   useLastOneshotAgent,
   useOneshot,
@@ -37,52 +38,9 @@ const DEFAULT_AGENT_ID = 'software-engineer'
 const isApplePlatform = (): boolean =>
   /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
 
-function asStep(step: OneshotRunStep): Step {
-  return {
-    id: step.id,
-    runId: step.runId,
-    roomId: '',
-    idx: step.idx,
-    kind: step.kind,
-    ...(step.tool === undefined ? {} : { tool: step.tool }),
-    ...(step.callId === undefined ? {} : { callId: step.callId }),
-    text: step.text,
-    createdAt: step.createdAt,
-  }
-}
-
-function toolDisplay(step: OneshotRunStep): {
-  name: string
-  argsText: string
-} {
-  const fallback = step.tool ?? 'Tool call'
-  if (!step.text.trim()) return { name: fallback, argsText: '' }
-  try {
-    const parsed = JSON.parse(step.text) as {
-      toolName?: unknown
-      args?: unknown
-    }
-    if (typeof parsed.toolName === 'string' && parsed.toolName.trim()) {
-      return {
-        name: parsed.toolName,
-        argsText: formatStepText(JSON.stringify(parsed.args ?? {})),
-      }
-    }
-  } catch {
-    // plain / non-MCP tool args
-  }
-  return { name: fallback, argsText: formatStepText(step.text) }
-}
-
 function workingLabel(run: OneshotRun, steps: OneshotRunStep[]): string {
   const latest = steps.at(-1)
-  if (latest) {
-    if (latest.kind === 'tool_call') {
-      const { name } = toolDisplay(latest)
-      return stepLabel({ ...asStep(latest), tool: name })
-    }
-    return stepLabel(asStep(latest))
-  }
+  if (latest) return stepLabel(latest)
   return run.state === 'preparing' ? 'is preparing' : 'is working'
 }
 
@@ -97,7 +55,7 @@ function OneshotStream({
 }) {
   const done = terminal(run.state)
   const finalOutput = run.stdout.trim() || run.error?.trim()
-  const toolItems = pairSteps(steps.map(asStep)).filter(
+  const toolItems = pairSteps(steps).filter(
     (item) => item.step.kind === 'tool_call',
   )
 
@@ -109,73 +67,15 @@ function OneshotStream({
       className="min-h-0 flex-1 space-y-2 overflow-y-auto text-sm border rounded-md p-2 dark:bg-background"
     >
       {error ? <p className="text-destructive">{error}</p> : null}
-      {toolItems.length > 0 ? (
-        <div className="overflow-hidden rounded-sm border divide-y">
-          {toolItems.map(({ step, result }) => {
-            const { name, argsText } = toolDisplay({
-              id: step.id,
-              runId: step.runId,
-              idx: step.idx,
-              kind: 'tool_call',
-              tool: step.tool,
-              callId: step.callId,
-              text: step.text,
-              createdAt: step.createdAt,
-              at: step.createdAt,
-            })
-            const failed = result ? isFailedToolResult(result.text) : false
-            return (
-              <details
-                key={step.id}
-                className="group px-2.5 py-2 text-xs animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none"
-              >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <ToolIcon tool={name} />
-                    <span className="truncate font-mono text-xs">{name}</span>
-                  </span>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2 py-0.5 text-[11px]',
-                      failed
-                        ? 'bg-destructive/15 text-destructive'
-                        : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {result ? (failed ? 'Failed' : 'Completed') : 'Pending'}
-                  </span>
-                </summary>
-                <div className="mt-2 space-y-2 text-xs">
-                  {argsText && argsText !== '{}' ? (
-                    <div>
-                      <p className="mb-1 font-semibold text-muted-foreground">
-                        Arguments
-                      </p>
-                      <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted px-2 py-1.5 font-mono text-[0.7rem] leading-4">
-                        {argsText}
-                      </pre>
-                    </div>
-                  ) : null}
-                  {result ? (
-                    <div>
-                      <p className="mb-1 font-semibold text-muted-foreground">
-                        Result
-                      </p>
-                      <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted px-2 py-1.5 font-mono text-[0.7rem] leading-4">
-                        {formatStepText(result.text).slice(0, 800)}
-                      </pre>
-                    </div>
-                  ) : null}
-                </div>
-              </details>
-            )
-          })}
-        </div>
-      ) : null}
+      <ToolCallDetailsList
+        items={toolItems}
+        compact
+        resultMaxLength={800}
+      />
       {done && finalOutput ? (
         <div
           className={cn(
-            'text-sm leading-5 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none',
+            'text-sm leading-5',
             run.state === 'failed' || run.state === 'cancelled'
               ? 'rounded-md border border-destructive/40 px-2 py-1.5 text-destructive'
               : null,
@@ -215,11 +115,13 @@ export function OneshotPanel({
   const taskRef = useRef<HTMLTextAreaElement>(null)
   const start = useStartOneshot()
   const discard = useDiscardOneshot()
+  const { data: activeRun } = useActiveOneshot(open && !runId)
+  if (open && !runId && activeRun?.id) setRunId(activeRun.id)
   const { data, isError, error } = useOneshot(runId)
 
   const selectedAgent =
     agents.find((agent) => agent.id === agentId) ?? agents[0]
-  const showRevision = selectedAgent?.includeRepository === true
+  const showRevision = Boolean(selectedAgent?.includeRepository)
   const run = data?.run
   const steps = data?.steps ?? []
   const active = Boolean(runId)
@@ -236,7 +138,6 @@ export function OneshotPanel({
       await navigator.clipboard.writeText(finalOutput)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
-      toast.add({ title: 'Copied', type: 'success' })
     } catch {
       toast.add({ title: 'Copy failed', type: 'error' })
     }
@@ -256,8 +157,6 @@ export function OneshotPanel({
         return
       }
     }
-    setRunId(undefined)
-    setTask('')
     onOpenChange(false)
   }
 
@@ -316,14 +215,19 @@ export function OneshotPanel({
       data-state={open ? 'open' : 'closed'}
       onAnimationEnd={(event) => {
         if (event.target !== event.currentTarget) return
-        if (!open) setPresent(false)
+        // Switching animate-in → animate-out can fire a cancel end for `enter`.
+        if (open || event.animationName !== 'exit') return
+        setPresent(false)
+        setRunId(undefined)
+        setTask('')
+        setCopied(false)
       }}
       className={cn(
-        'dark:bg-muted fixed right-3 bottom-3 z-50 flex w-[min(100vw-1.5rem,24rem)] flex-col overflow-hidden rounded-xl border bg-background shadow-lg transition-[height] duration-300 ease-out fill-mode-both motion-reduce:animate-none',
+        'dark:bg-muted fixed right-3 bottom-3 z-50 flex w-[min(100vw-1.5rem,24rem)] flex-col overflow-hidden rounded-xl border bg-background shadow-lg transition-[height] duration-150 ease-out fill-mode-both motion-reduce:animate-none motion-reduce:transition-none',
         active ? 'h-[min(70vh,28rem)]' : 'h-[min(50vh,20rem)]',
         open
-          ? 'animate-in fade-in-0 slide-in-from-bottom-4 duration-200'
-          : 'animate-out fade-out-0 slide-out-to-bottom-4 duration-200',
+          ? 'animate-in fade-in-0 slide-in-from-right-4 duration-150 ease-out'
+          : 'animate-out fade-out-0 slide-out-to-right-4 duration-150 ease-out',
       )}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
@@ -360,7 +264,16 @@ export function OneshotPanel({
           ) : active && run ? (
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground flex items-center gap-2">
               <span className="font-medium text-foreground/80">{agentName}</span>
-              <Badge className="capitalize" variant={run.state === 'succeeded' ? 'default' : run.state === 'failed' ? 'destructive' : 'outline'}>
+              <Badge
+                className="capitalize"
+                variant={
+                  run.state === 'succeeded'
+                    ? 'default'
+                    : run.state === 'failed'
+                      ? 'destructive'
+                      : 'outline'
+                }
+              >
                 {run.state === 'succeeded' ? 'Done' : run.state}
               </Badge>
             </span>
@@ -440,51 +353,40 @@ export function OneshotPanel({
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          <div
-            className={cn(
-              'absolute inset-0 flex flex-col transition-all duration-300 ease-out',
-              active
-                ? 'translate-y-0 opacity-100'
-                : 'pointer-events-none translate-y-2 opacity-0',
-            )}
-          >
-            {run ? (
-              <OneshotStream
-                run={run}
-                steps={steps}
-                error={
-                  isError
-                    ? error instanceof Error
-                      ? error.message
-                      : 'Could not load Oneshot'
-                    : undefined
-                }
+          {active ? (
+            <div className="absolute inset-0 flex flex-col">
+              {run ? (
+                <OneshotStream
+                  run={run}
+                  steps={steps}
+                  error={
+                    isError
+                      ? error instanceof Error
+                        ? error.message
+                        : 'Could not load Oneshot'
+                      : undefined
+                  }
+                />
+              ) : null}
+            </div>
+          ) : (
+            <div className="absolute inset-0">
+              <Textarea
+                ref={taskRef}
+                value={task}
+                onChange={(event) => setTask(event.target.value)}
+                placeholder="What should the agent do?"
+                className="h-full min-h-0 resize-none [field-sizing:fixed]"
+                autoFocus
+                onKeyDown={(event) => {
+                  if (!(event.metaKey || event.ctrlKey)) return
+                  if (event.key !== 'Enter' && event.code !== 'Enter') return
+                  event.preventDefault()
+                  void submit()
+                }}
               />
-            ) : null}
-          </div>
-          <div
-            className={cn(
-              'absolute inset-0 transition-all duration-300 ease-out',
-              active
-                ? 'pointer-events-none translate-y-[110%] opacity-0'
-                : 'translate-y-0 opacity-100',
-            )}
-          >
-            <Textarea
-              ref={taskRef}
-              value={task}
-              onChange={(event) => setTask(event.target.value)}
-              placeholder="What should the agent do?"
-              className="h-full min-h-0 resize-none [field-sizing:fixed]"
-              autoFocus
-              onKeyDown={(event) => {
-                if (!(event.metaKey || event.ctrlKey)) return
-                if (event.key !== 'Enter' && event.code !== 'Enter') return
-                event.preventDefault()
-                void submit()
-              }}
-            />
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

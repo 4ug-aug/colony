@@ -1,3 +1,4 @@
+import type { AgentGrantContext } from '../../../agents/grant-context'
 import type { RunInput, RunRecord, Step } from '../../../runs'
 import type { WorkspaceAgentExecutor } from '../../../agents/roster'
 import { SOFTWARE_ENGINEER_ID } from '../../../agents/roster'
@@ -129,6 +130,31 @@ type RunControlExecutor = Pick<
   | 'stop'
 >
 
+function grantContextFrom<Output>(
+  context: RunStartContext<Output>,
+  agentDefinitionId: string,
+): AgentGrantContext {
+  if ('roomId' in context) return { roomId: context.roomId, agentDefinitionId }
+  if ('scheduleId' in context)
+    return { scheduleId: context.scheduleId, agentDefinitionId }
+  if ('grillId' in context) return { grillId: context.grillId, agentDefinitionId }
+  if ('oneshotId' in context)
+    return {
+      oneshotId: context.oneshotId,
+      agentDefinitionId,
+      ...(context.repositoryBase
+        ? { repositoryBase: context.repositoryBase }
+        : {}),
+    }
+  return {
+    issueId: context.issueId,
+    agentDefinitionId,
+    ...(context.repositoryBase
+      ? { repositoryBase: context.repositoryBase }
+      : {}),
+  }
+}
+
 export function createRunControl(executor: RunControlExecutor): RunControl {
   return {
     subscribe: (listener) =>
@@ -145,28 +171,7 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
       let created: NonNullable<Output> | undefined
       const agentDefinitionId =
         context.agentDefinitionId ?? SOFTWARE_ENGINEER_ID
-      const grantContext =
-        'roomId' in context
-          ? { roomId: context.roomId, agentDefinitionId }
-          : 'scheduleId' in context
-            ? { scheduleId: context.scheduleId, agentDefinitionId }
-            : 'grillId' in context
-              ? { grillId: context.grillId, agentDefinitionId }
-              : 'oneshotId' in context
-                ? {
-                    oneshotId: context.oneshotId,
-                    agentDefinitionId,
-                    ...(context.repositoryBase
-                      ? { repositoryBase: context.repositoryBase }
-                      : {}),
-                  }
-                : {
-                    issueId: context.issueId,
-                    agentDefinitionId,
-                    ...('repositoryBase' in context && context.repositoryBase
-                      ? { repositoryBase: context.repositoryBase }
-                      : {}),
-                  }
+      const grantContext = grantContextFrom(context, agentDefinitionId)
       executor.startRun({
         task,
         agentDefinitionId,

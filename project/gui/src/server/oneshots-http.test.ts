@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
-import { createOneshotStore } from './oneshot-store'
-import { createOneshotRunner, OneshotActiveRunError } from './oneshot-runner'
+import {
+  createOneshotSession,
+  OneshotActiveRunError,
+} from './oneshot-session'
 import { createOneshotsHttp } from './oneshots-http'
 import type { RunControl, RunSummary } from './run-control'
 import type { WorkspaceAgentStartRunRequest } from '../../../agents/roster'
@@ -58,51 +60,14 @@ function fakeControl(
   }
 }
 
-test('oneshot store enforces one active run per account', () => {
-  const store = createOneshotStore()
-  const first = store.createRun({
-    ...baseSummary(),
-    oneshotId: 'o1',
-    accountId: 'user-1',
-  })
-  expect(first).toBeDefined()
-  expect(
-    store.createRun({
-      ...baseSummary({ id: 'run-2' }),
-      oneshotId: 'o2',
-      accountId: 'user-1',
-    }),
-  ).toBeUndefined()
-  expect(
-    store.createRun({
-      ...baseSummary({ id: 'run-3' }),
-      oneshotId: 'o3',
-      accountId: 'user-2',
-    }),
-  ).toBeDefined()
-})
-
-test('oneshot store discard is private to account', () => {
-  const store = createOneshotStore()
-  store.createRun({
-    ...baseSummary(),
-    oneshotId: 'o1',
-    accountId: 'user-1',
-  })
-  expect(store.discard('run-1', 'user-2')).toBeUndefined()
-  expect(store.getRun('run-1')).toBeDefined()
-  expect(store.discard('run-1', 'user-1')?.id).toBe('run-1')
-  expect(store.getRun('run-1')).toBeUndefined()
-})
-
-test('oneshot runner starts with oneshot grant context', () => {
+test('oneshot session starts with oneshot grant context', () => {
   let request: WorkspaceAgentStartRunRequest | undefined
-  const runner = createOneshotRunner({
+  const session = createOneshotSession({
     control: fakeControl((value) => {
       request = value
     }),
   })
-  const run = runner.start({
+  const run = session.start({
     accountId: 'user-1',
     task: 'create an Issue',
     agentDefinitionId: 'antboy',
@@ -117,15 +82,15 @@ test('oneshot runner starts with oneshot grant context', () => {
   })
 })
 
-test('oneshot runner rejects second active run', () => {
-  const runner = createOneshotRunner({ control: fakeControl() })
-  runner.start({
+test('oneshot session rejects second active run', () => {
+  const session = createOneshotSession({ control: fakeControl() })
+  session.start({
     accountId: 'user-1',
     task: 'first',
     agentDefinitionId: 'antboy',
   })
   expect(() =>
-    runner.start({
+    session.start({
       accountId: 'user-1',
       task: 'second',
       agentDefinitionId: 'antboy',
@@ -133,10 +98,24 @@ test('oneshot runner rejects second active run', () => {
   ).toThrow(OneshotActiveRunError)
 })
 
-test('oneshots HTTP starts, reads privately, and discards', async () => {
-  const runner = createOneshotRunner({ control: fakeControl() })
+test('oneshot session activeForAccount and discard clear the slot', async () => {
+  const session = createOneshotSession({ control: fakeControl() })
+  const run = session.start({
+    accountId: 'user-1',
+    task: 'first',
+    agentDefinitionId: 'antboy',
+  })
+  expect(session.activeForAccount('user-1')?.id).toBe(run.id)
+  expect(session.activeForAccount('user-2')).toBeUndefined()
+  await session.discard(run.id, 'user-1')
+  expect(session.activeForAccount('user-1')).toBeUndefined()
+  expect(session.get(run.id, 'user-1')).toBeUndefined()
+})
+
+test('oneshots HTTP starts, reads privately, exposes active, and discards', async () => {
+  const session = createOneshotSession({ control: fakeControl() })
   const http = createOneshotsHttp({
-    oneshotRunner: runner,
+    oneshotSession: session,
     agentDefinitions: () => [
       {
         id: 'antboy',
@@ -177,6 +156,16 @@ test('oneshots HTTP starts, reads privately, and discards', async () => {
   const body = (await started!.json()) as { run: { id: string } }
   const runId = body.run.id
 
+  const active = await http(
+    new Request('http://localhost/api/oneshots/active'),
+    new URL('http://localhost/api/oneshots/active'),
+    user,
+  )
+  expect(active?.status).toBe(200)
+  expect(((await active!.json()) as { run: { id: string } }).run.id).toBe(
+    runId,
+  )
+
   const denied = await http(
     new Request(`http://localhost/api/oneshots/${runId}`),
     new URL(`http://localhost/api/oneshots/${runId}`),
@@ -199,13 +188,14 @@ test('oneshots HTTP starts, reads privately, and discards', async () => {
     user,
   )
   expect(discarded?.status).toBe(200)
-  expect(runner.get(runId, user.id)).toBeUndefined()
+  expect(session.get(runId, user.id)).toBeUndefined()
+  expect(session.activeForAccount(user.id)).toBeUndefined()
 })
 
 test('oneshots HTTP rejects revision for non-repository agents', async () => {
-  const runner = createOneshotRunner({ control: fakeControl() })
+  const session = createOneshotSession({ control: fakeControl() })
   const http = createOneshotsHttp({
-    oneshotRunner: runner,
+    oneshotSession: session,
     agentDefinitions: () => [
       {
         id: 'antboy',
@@ -232,4 +222,49 @@ test('oneshots HTTP rejects revision for non-repository agents', async () => {
     { id: 'user-1', name: 'Ada' },
   )
   expect(response?.status).toBe(400)
+})
+
+test('oneshots HTTP returns 409 while an active run exists', async () => {
+  const session = createOneshotSession({ control: fakeControl() })
+  const http = createOneshotsHttp({
+    oneshotSession: session,
+    agentDefinitions: () => [
+      {
+        id: 'antboy',
+        name: 'Antboy',
+        description: '',
+        icon: 'bot',
+        includeRepository: false,
+        capabilities: [],
+        skills: [],
+      },
+    ],
+  })
+  const user = { id: 'user-1', name: 'Ada' }
+  const first = await http(
+    new Request('http://localhost/api/oneshots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        task: 'first',
+        agentDefinitionId: 'antboy',
+      }),
+    }),
+    new URL('http://localhost/api/oneshots'),
+    user,
+  )
+  expect(first?.status).toBe(202)
+  const second = await http(
+    new Request('http://localhost/api/oneshots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        task: 'second',
+        agentDefinitionId: 'antboy',
+      }),
+    }),
+    new URL('http://localhost/api/oneshots'),
+    user,
+  )
+  expect(second?.status).toBe(409)
 })
