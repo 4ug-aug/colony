@@ -16,6 +16,7 @@
     "auth:generate": "bunx auth@latest generate --config src/lib/auth.ts --output src/lib/auth-schema.ts --adapter drizzle --dialect sqlite --yes",
     "db:generate": "bunx drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "bun run src/server/migrate.ts",
+    "benchmark:room": "bun run benchmarks/room-load.ts",
     "seed:admin": "bun run src/server/seed-admin.ts",
     "coordinator": "bun --watch run src/server/coordinator.ts",
     "tauri": "tauri",
