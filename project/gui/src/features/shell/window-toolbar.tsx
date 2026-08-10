@@ -55,6 +55,31 @@ function SearchShortcutButton({ onOpenSearch }: { onOpenSearch: () => void }) {
   )
 }
 
+function OneshotShortcutButton({
+  onOpenOneshot,
+}: {
+  onOpenOneshot: () => void
+}) {
+  const modifier = isApplePlatform() ? '⌘' : 'Ctrl'
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="pointer-events-auto h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+      aria-label="Open Oneshot"
+      title="Open Oneshot"
+      onClick={onOpenOneshot}
+    >
+      <span className="hidden sm:inline">Oneshot</span>
+      <KbdGroup className="pointer-events-none">
+        <Kbd>{modifier}</Kbd>
+        <Kbd>O</Kbd>
+      </KbdGroup>
+    </Button>
+  )
+}
+
 // Spread onto the layout root so the sidebar and main panel reserve space for
 // the bar. Resolves to 0 outside Tauri, leaving the web layout unchanged.
 export function titleBarVars(): CSSProperties {
@@ -82,14 +107,20 @@ export function WindowDragRegion() {
 export function WindowToolbar({
   accountId,
   onOpenSearch,
+  onOpenOneshot,
 }: {
   accountId: string
   onOpenSearch?: () => void
+  onOpenOneshot?: () => void
 }) {
   const tauri = isTauriRuntime()
   const search =
     onOpenSearch != null ? (
       <SearchShortcutButton onOpenSearch={onOpenSearch} />
+    ) : null
+  const oneshot =
+    onOpenOneshot != null ? (
+      <OneshotShortcutButton onOpenOneshot={onOpenOneshot} />
     ) : null
   const timing = <ActiveIssueTiming accountId={accountId} />
 
@@ -97,6 +128,7 @@ export function WindowToolbar({
     return (
       <div className="pointer-events-auto fixed top-2 right-2 z-30 flex items-center gap-1">
         {timing}
+        {oneshot}
         {search}
         <ModeToggle />
       </div>
@@ -142,6 +174,7 @@ export function WindowToolbar({
       </div>
       <div className="pointer-events-auto flex items-center gap-1 pr-2">
         {timing}
+        {oneshot}
         {search}
         <ModeToggle />
       </div>

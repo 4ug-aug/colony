@@ -84,3 +84,25 @@ test('passes room context and attachment descriptors without assembling inputs',
   })
   expect(request?.attachments).toEqual(attachments)
 })
+
+test('passes oneshot context and optional repositoryBase', () => {
+  let request: WorkspaceAgentStartRunRequest | undefined
+  const control = createRunControl(
+    captureExecutor((value) => {
+      request = value
+    }),
+  )
+
+  control.start('create an Issue for the login bug', {
+    oneshotId: 'oneshot-1',
+    agentDefinitionId: 'antboy',
+    repositoryBase: 'feat/login',
+    onCreate: () => true,
+  })
+
+  expect(request?.grantContext).toEqual({
+    oneshotId: 'oneshot-1',
+    agentDefinitionId: 'antboy',
+    repositoryBase: 'feat/login',
+  })
+})

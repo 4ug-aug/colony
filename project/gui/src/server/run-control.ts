@@ -51,6 +51,12 @@ export type RunStartContext<Output> =
       idleTtlMs?: number
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
+  | {
+      oneshotId: string
+      agentDefinitionId?: string
+      repositoryBase?: string
+      onCreate: (run: RunSummary) => NonNullable<Output>
+    }
 
 export interface RunControl {
   subscribe(listener: (run: RunSummary) => void): () => void
@@ -146,13 +152,21 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
             ? { scheduleId: context.scheduleId, agentDefinitionId }
             : 'grillId' in context
               ? { grillId: context.grillId, agentDefinitionId }
-              : {
-                  issueId: context.issueId,
-                  agentDefinitionId,
-                  ...('repositoryBase' in context && context.repositoryBase
-                    ? { repositoryBase: context.repositoryBase }
-                    : {}),
-                }
+              : 'oneshotId' in context
+                ? {
+                    oneshotId: context.oneshotId,
+                    agentDefinitionId,
+                    ...(context.repositoryBase
+                      ? { repositoryBase: context.repositoryBase }
+                      : {}),
+                  }
+                : {
+                    issueId: context.issueId,
+                    agentDefinitionId,
+                    ...('repositoryBase' in context && context.repositoryBase
+                      ? { repositoryBase: context.repositoryBase }
+                      : {}),
+                  }
       executor.startRun({
         task,
         agentDefinitionId,

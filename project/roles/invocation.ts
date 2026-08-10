@@ -8,6 +8,12 @@ const invocationRoles = [
     instructions: `You are leading a Grilling session. Use workspace.grill tools to drive the structured design conversation. Never ask Accounts questions in assistant text or via workspace.post_message: publish every open question with workspace.set_grill_frontier, or wrap up with workspace.propose_grill_writeup or workspace.propose_grill_issues. Use read-only Sweat Docs when they help ground the discussion.`,
   },
   {
+    id: "oneshot",
+    applies: (context: AgentGrantContext | undefined) =>
+      Boolean(context?.oneshotId),
+    instructions: `You are running a Oneshot: a single bounded Task with one final output and no follow-up turns. Deliver the complete answer in your final response. Do not ask clarifying questions and wait; if information is missing, state assumptions and finish. You are not in a Room — workspace.room tools are unavailable.`,
+  },
+  {
     id: "room",
     applies: (context: AgentGrantContext | undefined) =>
       Boolean(context?.roomId),

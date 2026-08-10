@@ -46,6 +46,7 @@ export type RosterDefinitionSummary = {
   description: string;
   kind: AgentRuntimeKind;
   icon: string;
+  includeRepository: boolean;
   capabilities: { id: string; name: string; tools: string[] }[];
   skills: { id: string; name: string; description: string }[];
 };
@@ -87,6 +88,7 @@ export function rosterDefinitionSummaries(
       description: person.description,
       kind: person.kind,
       icon: person.icon,
+      includeRepository: person.includeRepository,
       capabilities,
       skills: [...(skillsByAgent.get(person.id) ?? [])],
     };

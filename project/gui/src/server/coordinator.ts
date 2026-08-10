@@ -82,6 +82,13 @@ import { createGrillsHttp } from './grills-http'
 import { createGrillLinkedRuns } from './grill-linked-runs'
 import { createRoomsHttp } from './rooms-http'
 import { createMembersHttp } from './members-http'
+import { createOneshotRunner, type OneshotRunner } from './oneshot-runner'
+import { createOneshotsHttp } from './oneshots-http'
+import {
+  createOneshotStore,
+  type OneshotRun,
+  type OneshotRunStep,
+} from './oneshot-store'
 
 export { allowedOrigin }
 
@@ -182,6 +189,10 @@ export type WorkspaceServerMessage =
   | { type: 'doc.created'; doc: Doc }
   | { type: 'doc.changed'; doc: Doc }
   | { type: 'doc.deleted'; docId: string }
+  | { type: 'oneshot_run.created'; run: OneshotRun }
+  | { type: 'oneshot_run.changed'; run: OneshotRun }
+  | { type: 'oneshot_run.step'; runId: string; step: OneshotRunStep }
+  | { type: 'oneshot_run.discarded'; runId: string }
 type GrillLeaseMessage = {
   questionId: string
   presenceId: string
@@ -227,6 +238,7 @@ export type AgentDefinitionSummary = {
   description: string
   kind?: 'cursor' | 'openai-agents'
   icon: string
+  includeRepository?: boolean
   capabilities: { id: string; name: string; tools: string[] }[]
   skills: { id: string; name: string; description: string }[]
 }
@@ -481,6 +493,35 @@ export function createCoordinator(options: {
         issueRunner!.maybeStartForOwner(issueId)
     }
   }
+  const oneshotStore = createOneshotStore()
+  const oneshotRunner: OneshotRunner = createOneshotRunner({
+    store: oneshotStore,
+    control: options.control,
+    onRunCreated: (run) =>
+      broadcastWorkspaceToUsers(new Set([run.accountId]), {
+        type: 'oneshot_run.created',
+        run,
+      }),
+    onRunChange: (run) =>
+      broadcastWorkspaceToUsers(new Set([run.accountId]), {
+        type: 'oneshot_run.changed',
+        run,
+      }),
+    onStep: (step) => {
+      const run = oneshotStore.getRun(step.runId)
+      if (!run) return
+      broadcastWorkspaceToUsers(new Set([run.accountId]), {
+        type: 'oneshot_run.step',
+        runId: step.runId,
+        step,
+      })
+    },
+    onDiscarded: (run) =>
+      broadcastWorkspaceToUsers(new Set([run.accountId]), {
+        type: 'oneshot_run.discarded',
+        runId: run.id,
+      }),
+  })
   const broadcastAttention = (
     userId: string,
     roomId: string,
@@ -828,6 +869,10 @@ export function createCoordinator(options: {
         }),
       })
     : undefined
+  const oneshotsHttp = createOneshotsHttp({
+    oneshotRunner,
+    agentDefinitions,
+  })
   const roomsHttp = createRoomsHttp({
     store: options.store,
     messages: options.messages,
@@ -941,6 +986,7 @@ export function createCoordinator(options: {
           : undefined) ??
         (docsHttp ? await docsHttp(request, url, user) : undefined) ??
         (grillsHttp ? await grillsHttp(request, url, user) : undefined) ??
+        (await oneshotsHttp(request, url, user)) ??
         (await roomsHttp(request, url, user)) ??
         (await membersHttp(request, url, user))
       if (handled) return cors(handled)
@@ -978,6 +1024,7 @@ export function createCoordinator(options: {
         if (grillLeaseInterval) clearInterval(grillLeaseInterval)
         scheduleRunner?.stop()
         issueRunner?.stop()
+        oneshotRunner.stop()
         await Promise.all([server.stop(true), options.control.stop()])
       })()),
   }

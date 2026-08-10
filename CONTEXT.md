@@ -47,6 +47,19 @@ due or when a person chooses **Run now**. It is retained in the schedule's
 shared history rather than a room timeline.
 _Avoid_: Scheduled run, schedule occurrence, background task
 
+**Oneshot run**: A bounded run started by an Account from anywhere in the
+workspace without a Room, Issue, Schedule, or Grill link. It is private to the
+dispatcher. Its Task, steps, and final output appear only in that Account's
+Oneshot panel for the life of that dispatch; closing the panel cancels an
+active run and discards the result. The agent is instructed that it has a
+single final output and no follow-up. Capability grants resolve from the agent
+definition with Oneshot grant context (no room tools). Repository preparation
+follows the definition as usual; an optional revision may be chosen before
+start when the definition includes a repository. It is not a Room, not a Chat,
+and not a Schedule run.
+_Avoid_: Chat, personal run, direct run, ephemeral Grill, one-shot (ADR 0020
+non-warm Grill submit)
+
 **Workspace membership**: A Sweat server's authorization for an account to
 participate in its workspace. Authentication proves control of the account;
 membership determines whether that person may enter.
