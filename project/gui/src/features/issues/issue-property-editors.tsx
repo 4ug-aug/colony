@@ -21,7 +21,8 @@ import {
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
 import { Check, CircleDashed, Plus, UserRound } from 'lucide-react'
-import { useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useState } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { cn } from '#/lib/utils'
 import { formatIssueId } from './format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
@@ -105,7 +106,7 @@ export function OwnerDisplay({
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
+    .map((part) => part[0].toUpperCase())
     .join('')
 
   return (
@@ -137,6 +138,7 @@ export function PriorityPicker({
       labelOf={(priority) => ISSUE_PRIORITY_LABEL[priority]}
       ariaName="Priority"
       iconOf={(priority) => <IssuePriorityIcon priority={priority} />}
+      countOf={(candidate, priority) => candidate.priority === priority}
       onSelect={(priority) => ({ id: issue.id, priority })}
     />
   )
@@ -158,6 +160,7 @@ export function StatusPicker({
       labelOf={(status) => ISSUE_STATUS_LABEL[status]}
       ariaName="Status"
       iconOf={(status) => <IssueStatusIcon status={status} />}
+      countOf={(candidate, status) => candidate.status === status}
       onSelect={(status) => ({ id: issue.id, status })}
     />
   )
@@ -171,6 +174,7 @@ function PropertyPicker<T extends string>({
   labelOf,
   ariaName,
   iconOf,
+  countOf,
   onSelect,
 }: {
   issue: Issue
@@ -180,10 +184,16 @@ function PropertyPicker<T extends string>({
   labelOf: (value: T) => string
   ariaName: string
   iconOf: (value: T) => ReactNode
-  onSelect: (value: T) => { id: string; status?: IssueStatus; priority?: IssuePriority }
+  countOf: (issue: Issue, value: T) => boolean
+  onSelect: (value: T) => {
+    id: string
+    status?: IssueStatus
+    priority?: IssuePriority
+  }
 }) {
   const [open, setOpen] = useState(false)
   const updateIssue = useUpdateIssue()
+  const { data: issues = [] } = useIssues()
 
   const select = async (value: T) => {
     if (value === current) {
@@ -226,22 +236,43 @@ function PropertyPicker<T extends string>({
           <span className="truncate">{labelOf(current)}</span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="start" side="bottom" className="w-44 p-1">
-        {options.map((value) => (
-          <button
-            key={value}
-            type="button"
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
-            onClick={() => void select(value)}
-            disabled={updateIssue.isPending}
-          >
-            {iconOf(value)}
-            <span className="flex-1">{labelOf(value)}</span>
-            {value === current && (
-              <Check className="size-3.5 text-muted-foreground" />
-            )}
-          </button>
-        ))}
+      <PopoverContent
+        align="start"
+        side="bottom"
+        className="w-60 p-0"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Command shouldFilter>
+          <CommandInput placeholder={`Set ${ariaName.toLowerCase()}…`} />
+          <CommandList>
+            <CommandEmpty>No {ariaName.toLowerCase()} found.</CommandEmpty>
+            <CommandGroup>
+              {options.map((value) => (
+                <CommandItem
+                  key={value}
+                  value={labelOf(value)}
+                  className="text-sm [&>svg:last-child]:hidden"
+                  onSelect={() => void select(value)}
+                  disabled={updateIssue.isPending}
+                >
+                  {iconOf(value)}
+                  <span className="flex-1">{labelOf(value)}</span>
+                  <span className="flex size-4 items-center justify-center">
+                    {value === current && (
+                      <Check className="size-3.5 text-muted-foreground" />
+                    )}
+                  </span>
+                  <span className="w-6 text-right tabular-nums text-muted-foreground">
+                    {
+                      issues.filter((candidate) => countOf(candidate, value))
+                        .length
+                    }
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
   )

@@ -1,10 +1,12 @@
 import { BrailleLoader } from '#/components/ui/braille-loader'
+import { cn } from '#/lib/utils'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { authClient } from '#/lib/auth-client'
 import { useRef, useState } from 'react'
 import { IssueCreateDialog } from './issue-create-dialog'
 import { IssueDetailPage } from './issue-detail-page'
 import { IssueFiltersBar } from './issue-filters-bar'
+import { IssueInsights } from './issue-insights'
 import { IssueBulkActions } from './issue-bulk-actions'
 import { filterIssues, issueFiltersActive } from './issue-filters'
 import type { IssueListFilters } from './issue-filters'
@@ -37,6 +39,7 @@ export function IssuesPage({
   const issueListRef = useRef<HTMLDivElement>(null)
   const selectionAnchorRef = useRef<string | undefined>(undefined)
   const [filters, setFilters] = useStoredIssueFilters()
+  const [insightsOpen, setInsightsOpen] = useState(false)
 
   const filtersWithAccount: IssueListFilters = {
     ...filters,
@@ -128,43 +131,82 @@ export function IssuesPage({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {isPending ? (
-          <div
-            className="flex justify-center py-12 text-sm text-muted-foreground"
-            role="status"
-          >
-            <BrailleLoader text="Loading issues…" />
-          </div>
-        ) : isError ? (
-          <p className="text-sm text-destructive" role="alert">
-            {error instanceof Error ? error.message : 'Unable to load issues'}
-          </p>
-        ) : (
-          <>
-            <IssueFiltersBar
-              filters={filtersWithAccount}
-              knownTags={knownTags}
-              onChange={setFilters}
-            />
-            {visible.length === 0 && filtersActive ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No issues match these filters.
-              </p>
-            ) : (
-              <div ref={issueListRef}>
-                <IssueList
-                  issues={visible}
-                  visibleStatuses={visibleStatuses}
-                  hideEmptyGroups={filtersActive}
-                  onOpenIssue={onSelectedIdChange}
-                  onCreateInStatus={(status) => openCreate(status)}
-                  selectedIssueIds={selectedIssueIds}
-                  onIssueSelectedChange={changeSelection}
-                />
-              </div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4">
+          {isPending ? (
+            <div
+              className="flex justify-center py-12 text-sm text-muted-foreground"
+              role="status"
+            >
+              <BrailleLoader text="Loading issues…" />
+            </div>
+          ) : isError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error instanceof Error ? error.message : 'Unable to load issues'}
+            </p>
+          ) : (
+            <>
+              <IssueFiltersBar
+                filters={filtersWithAccount}
+                knownTags={knownTags}
+                insightsOpen={insightsOpen}
+                onInsightsOpenChange={setInsightsOpen}
+                onChange={setFilters}
+              />
+              {visible.length === 0 && filtersActive ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No issues match these filters.
+                </p>
+              ) : (
+                <div ref={issueListRef}>
+                  <IssueList
+                    issues={visible}
+                    visibleStatuses={visibleStatuses}
+                    hideEmptyGroups={filtersActive}
+                    onOpenIssue={onSelectedIdChange}
+                    onCreateInStatus={(status) => openCreate(status)}
+                    selectedIssueIds={selectedIssueIds}
+                    onIssueSelectedChange={changeSelection}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {!isPending && !isError && (
+          <aside
+            className={cn(
+              'hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none lg:flex',
+              insightsOpen ? 'w-[420px] border-l' : 'w-0',
             )}
-          </>
+            aria-hidden={!insightsOpen}
+            inert={!insightsOpen}
+          >
+            <div
+              className={cn(
+                'w-[420px] shrink-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
+                insightsOpen
+                  ? 'translate-x-0 opacity-100'
+                  : 'translate-x-2 opacity-0',
+              )}
+            >
+              <IssueInsights
+                issues={visible}
+                selectedStatuses={filters.statuses}
+                onStatusSelect={(status) =>
+                  setFilters({
+                    ...filters,
+                    statuses:
+                      filters.statuses.length === 1 &&
+                      filters.statuses[0] === status
+                        ? []
+                        : [status],
+                  })
+                }
+                onClose={() => setInsightsOpen(false)}
+              />
+            </div>
+          </aside>
         )}
       </div>
       <IssueBulkActions
