@@ -3,7 +3,7 @@ import {
   grillIsComplete,
 } from '#/features/grills/grill-status'
 import { GRILL_TURN_CONTRACT } from '../../../mcp/workspace-grill'
-import type { GrillStore, GrillKind, GrillVisibility } from './grill-store'
+import type { Grill, GrillStore, GrillKind, GrillVisibility } from './grill-store'
 import type { RoomUser } from './room-store'
 import { json, readBody } from './http/respond'
 
@@ -13,6 +13,7 @@ const visibilities = new Set<GrillVisibility>(['invite-only', 'workspace-open'])
 export function createGrillsHttp(deps: {
   grillStore: GrillStore
   broadcastGrillAttention?: (userId: string, grillId: string) => void
+  broadcastGrillChanged?: (grillId: string, grill: Grill) => void
   hasActiveEditLeases?: (grillId: string) => boolean
   linkedRuns?: {
     start(input: {
@@ -164,6 +165,7 @@ export function createGrillsHttp(deps: {
       try {
         const grill = deps.grillStore.submitRound(id, Date.now(), drafts)
         if (!grill) return json({ error: 'Grill not found' }, 404)
+        deps.broadcastGrillChanged?.(id, grill)
         const latest = grill.settledAnswers.at(-1)
         if (latest && deps.linkedRuns) {
           const qa = latest.questions
@@ -243,6 +245,7 @@ export function createGrillsHttp(deps: {
           console.error('Grill follow-up after reply failed', error)
         })
       }
+      deps.broadcastGrillChanged?.(id, grill)
       return json({ grill })
     }
 
@@ -262,6 +265,7 @@ export function createGrillsHttp(deps: {
           Date.now(),
         )
         if (!grill) return json({ error: 'No Issue proposal to revise' }, 400)
+        deps.broadcastGrillChanged?.(id, grill)
         if (deps.linkedRuns) {
           void deps.linkedRuns
             .followUp(
@@ -301,6 +305,7 @@ export function createGrillsHttp(deps: {
         const confirmed = deps.grillStore.confirmIssueProposal(id, Date.now())
         if (!confirmed)
           return json({ error: 'No Issue proposal to confirm' }, 400)
+        deps.broadcastGrillChanged?.(id, confirmed.grill)
         if (deps.linkedRuns) {
           void deps.linkedRuns
             .followUp(
@@ -333,6 +338,7 @@ export function createGrillsHttp(deps: {
         const grill = deps.grillStore.dismissIssueProposal(id, Date.now())
         if (!grill)
           return json({ error: 'No Issue proposal to dismiss' }, 400)
+        deps.broadcastGrillChanged?.(id, grill)
         if (deps.linkedRuns) {
           void deps.linkedRuns
             .followUp(
@@ -391,6 +397,7 @@ export function createGrillsHttp(deps: {
           Date.now(),
         )
         if (!completed) return json({ error: 'Grill not found' }, 404)
+        deps.broadcastGrillChanged?.(id, completed)
         return json({ grill: completed })
       } catch (error) {
         const message =

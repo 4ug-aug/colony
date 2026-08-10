@@ -34,6 +34,10 @@ export type GrillStreamMessage =
       participants: GrillParticipant[]
     }
   | {
+      type: 'grill.changed'
+      grill: Grill
+    }
+  | {
       type: 'grill.presence.changed'
       participants: GrillParticipant[]
     }

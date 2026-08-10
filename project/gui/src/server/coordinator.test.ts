@@ -2742,6 +2742,119 @@ test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edi
   sqlite.close()
 })
 
+test('Grill submit broadcasts grill.changed to other Accounts on the stream', async () => {
+  const sqlite = new Database(':memory:')
+  sqlite.exec(`
+    CREATE TABLE grill (
+      id TEXT PRIMARY KEY NOT NULL,
+      kind TEXT NOT NULL,
+      visibility TEXT NOT NULL,
+      agent_definition_id TEXT NOT NULL,
+      repository TEXT,
+      base_ref TEXT,
+      frontier TEXT NOT NULL,
+      settled_answers TEXT NOT NULL,
+      draft_artifacts TEXT,
+      created_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE grill_participant (
+      grill_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      PRIMARY KEY (grill_id, user_id)
+    );
+    CREATE TABLE grill_attention (
+      id TEXT PRIMARY KEY NOT NULL,
+      grill_id TEXT NOT NULL,
+      recipient_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      acknowledged_at INTEGER
+    );
+  `)
+  const grillStore = createSqliteGrillStore(sqlite, {
+    hasGuidanceSkill: () => true,
+  })
+  grillStore.createGrill({
+    id: 'g-submit',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'user-1',
+    createdAt: 1,
+  })
+  grillStore.setFrontier(
+    'g-submit',
+    { questions: [{ id: 'q1', prompt: 'Ship it?' }], drafts: { q1: 'Yes' } },
+    2,
+  )
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [
+    { id: 'user-1', name: 'Ada' },
+    { id: 'user-2', name: 'Grace' },
+  ]
+  const { coordinator, base } = await makeCoordinator({ store, grillStore })
+  const wsBase = base.replace(/^http/, 'ws')
+  const ada = await open(
+    `${wsBase}/api/grills/g-submit/stream?ticket=${mintRealtimeTicket('user-1')}`,
+  )
+  const grace = await open(
+    `${wsBase}/api/grills/g-submit/stream?ticket=${mintRealtimeTicket('user-2')}`,
+  )
+  expect((await ada.next()).type).toBe('grill.snapshot')
+  expect((await grace.next()).type).toBe('grill.snapshot')
+  await ada.next()
+  expect((await ada.next()).type).toBe('grill.presence.changed')
+  expect((await grace.next()).type).toBe('grill.presence.changed')
+
+  ada.socket.send(JSON.stringify({ type: 'grill.focus', questionId: 'q1' }))
+  expect((await ada.next()).type).toBe('grill.lease.changed')
+  expect((await grace.next()).type).toBe('grill.lease.changed')
+
+  ada.socket.send(JSON.stringify({ type: 'grill.blur', questionId: 'q1' }))
+  expect((await ada.next()).type).toBe('grill.lease.changed')
+  expect((await grace.next()).type).toBe('grill.lease.changed')
+
+  const changedAda = ada.next()
+  const changedGrace = grace.next()
+  const submit = await fetch(`${base}/api/grills/g-submit/submit`, {
+    method: 'POST',
+    headers: {
+      origin: 'http://gui.test',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ drafts: { q1: 'Yes' } }),
+  })
+  expect(submit.status).toBe(200)
+  expect(await changedAda).toMatchObject({
+    type: 'grill.changed',
+    grill: {
+      id: 'g-submit',
+      frontier: { questions: [], drafts: {} },
+      settledAnswers: [
+        {
+          questions: [{ id: 'q1', prompt: 'Ship it?' }],
+          answers: { q1: 'Yes' },
+        },
+      ],
+    },
+  })
+  expect(await changedGrace).toMatchObject({
+    type: 'grill.changed',
+    grill: {
+      id: 'g-submit',
+      frontier: { questions: [], drafts: {} },
+    },
+  })
+
+  ada.socket.close()
+  grace.socket.close()
+  await coordinator.stop()
+  sqlite.close()
+})
+
 test('sandbox provider configuration accepts only the supported providers', () => {
   expect(parseSandboxProvider('apple-container')).toBe('apple-container')
   expect(parseSandboxProvider('docker')).toBe('docker')

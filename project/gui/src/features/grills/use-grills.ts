@@ -275,6 +275,32 @@ export function useGrillRealtime(grillId: string) {
               })
             return
           }
+          if (event.type === 'grill.changed') {
+            const previous = queryClient.getQueryData<GrillDetail>(
+              grillQueryKey(grillId),
+            )
+            const hadFrontier =
+              (previous?.grill.frontier.questions.length ?? 0) > 0
+            const nowEmpty = event.grill.frontier.questions.length === 0
+            if (hadFrontier && nowEmpty) {
+              markGrillFollowUpStarted(queryClient, event.grill)
+            } else {
+              upsertGrillCache(queryClient, event.grill)
+            }
+            const questionIds = new Set(
+              event.grill.frontier.questions.map((question) => question.id),
+            )
+            setLeases((current) =>
+              current.filter(({ questionId }) => questionIds.has(questionId)),
+            )
+            if (
+              focusedQuestionRef.current &&
+              !questionIds.has(focusedQuestionRef.current)
+            ) {
+              focusedQuestionRef.current = undefined
+            }
+            return
+          }
           if (event.type === 'grill.presence.changed') {
             setParticipants(event.participants)
             return

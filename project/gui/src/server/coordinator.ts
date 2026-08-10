@@ -199,6 +199,7 @@ export type GrillServerMessage =
       leases: GrillLeaseMessage[]
       participants: GrillParticipantMessage[]
     }
+  | { type: 'grill.changed'; grill: Grill }
   | { type: 'grill.presence.changed'; participants: GrillParticipantMessage[] }
   | {
       type: 'grill.lease.changed'
@@ -278,6 +279,9 @@ export function createCoordinator(options: {
   bulletinStore?: BulletinStore
   docStore?: DocStore
   grillStore?: GrillStore
+  grillNotify?: {
+    onChanged: (grill: Grill) => void
+  }
   issueNotify?: {
     onCreated: (issue: Issue) => void
     onChanged: (issue: Issue) => void
@@ -352,6 +356,12 @@ export function createCoordinator(options: {
     for (const socket of sockets)
       if (socket.data.scope === 'grill' && socket.data.grillId === grillId)
         send(socket, message)
+  }
+  const broadcastGrillChanged = (grillId: string, grill: Grill): void =>
+    broadcastGrill(grillId, { type: 'grill.changed', grill })
+  if (options.grillNotify) {
+    options.grillNotify.onChanged = (grill) =>
+      broadcastGrillChanged(grill.id, grill)
   }
   const grillParticipants = (grillId: string): GrillParticipantMessage[] => {
     const participants = new Map<string, GrillParticipantMessage>()
@@ -794,6 +804,7 @@ export function createCoordinator(options: {
     ? createGrillsHttp({
         grillStore: options.grillStore,
         broadcastGrillAttention,
+        broadcastGrillChanged,
         hasActiveEditLeases: hasActiveGrillLeases,
         linkedRuns: createGrillLinkedRuns({
           startWarm: ({
@@ -1088,6 +1099,9 @@ if (import.meta.main) {
       return { issue }
     },
   }
+  const grillNotify = {
+    onChanged: (_grill: Grill) => {},
+  }
   const messages = createRoomMessageHub(store)
   const attachmentsDirectory = attachmentDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
@@ -1257,12 +1271,26 @@ if (import.meta.main) {
         }),
         createWorkspaceGrillAdapter({
           port: {
-            setFrontier: (grillId, frontier, now) =>
-              grillStore.setFrontier(grillId, frontier, now),
-            setIssueProposal: (grillId, issues, now, files) =>
-              grillStore.setIssueProposal(grillId, issues, now, files),
-            setWriteup: (grillId, writeup, now) =>
-              grillStore.setWriteup(grillId, writeup, now),
+            setFrontier: (grillId, frontier, now) => {
+              const grill = grillStore.setFrontier(grillId, frontier, now)
+              if (grill) grillNotify.onChanged(grill)
+              return grill
+            },
+            setIssueProposal: (grillId, issues, now, files) => {
+              const grill = grillStore.setIssueProposal(
+                grillId,
+                issues,
+                now,
+                files,
+              )
+              if (grill) grillNotify.onChanged(grill)
+              return grill
+            },
+            setWriteup: (grillId, writeup, now) => {
+              const grill = grillStore.setWriteup(grillId, writeup, now)
+              if (grill) grillNotify.onChanged(grill)
+              return grill
+            },
           },
         }),
         ...(linearAccessToken
@@ -1306,6 +1334,7 @@ if (import.meta.main) {
     bulletinStore,
     docStore,
     grillStore,
+    grillNotify,
     issueNotify,
     agentDefinitions: () => {
       const attachments = skills.listAttachments()
