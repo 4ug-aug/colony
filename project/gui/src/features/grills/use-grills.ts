@@ -1,12 +1,16 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiJson, apiJsonBody, connectGrillStream } from '#/lib/api-transport'
 import type { RealtimeStreamHandle } from '#/lib/api-transport'
 import { docsQueryKey } from '#/features/docs/use-docs'
-import type { RunState } from '#/features/runs/run-helpers'
+import {
+  type GrillListQueryParams,
+  toGrillListSearchParams,
+} from './grill-filters'
 import {
   grillAwaitingWrapUpReview,
   grillIsComplete,
+  grillTurnActive,
 } from './grill-status'
 import type {
   Grill,
@@ -21,8 +25,21 @@ import type {
   GrillVisibility,
 } from './types'
 
+export { grillTurnActive } from './grill-status'
+
 export const grillsQueryKey = ['grills'] as const
 export const grillQueryKey = (id: string) => ['grills', id] as const
+export const grillsPageQueryKey = (params: GrillListQueryParams) =>
+  [
+    'grills',
+    'page',
+    params.page,
+    params.pageSize,
+    params.search.trim(),
+    params.filters.statuses.slice().sort().join(','),
+    params.filters.kinds.slice().sort().join(','),
+    params.filters.visibilities.slice().sort().join(','),
+  ] as const
 
 export type GrillDetail = {
   grill: Grill
@@ -30,13 +47,23 @@ export type GrillDetail = {
   latestStep?: GrillLatestStep
 }
 
-async function fetchGrills(): Promise<GrillListItem[]> {
-  const data = await apiJson<{ grills: GrillListItem[] }>(
-    '/api/grills',
+export type GrillListPageResult = {
+  grills: GrillListItem[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+async function fetchGrillsPage(
+  params: GrillListQueryParams,
+): Promise<GrillListPageResult> {
+  const search = toGrillListSearchParams(params)
+  const data = await apiJson<GrillListPageResult>(
+    `/api/grills?${search.toString()}`,
     undefined,
     'Unable to load Grills',
   )
-  return data.grills
+  return data
 }
 
 async function fetchGrill(id: string): Promise<GrillDetail> {
@@ -46,6 +73,12 @@ async function fetchGrill(id: string): Promise<GrillDetail> {
     'Unable to load Grill',
   )
   return data
+}
+
+function invalidateGrillList(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  void queryClient.invalidateQueries({ queryKey: grillsQueryKey })
 }
 
 function upsertGrillCache(
@@ -65,77 +98,14 @@ function upsertGrillCache(
           : (latestStep ?? current?.latestStep),
     }),
   )
-  queryClient.setQueryData(
-    grillsQueryKey,
-    (current: GrillListItem[] | undefined) => {
-      if (!current) {
-        return [
-          {
-            ...grill,
-            ...(linkedRun ? { linkedRun } : {}),
-            ...(latestStep ? { latestStep } : {}),
-          },
-        ]
-      }
-      const index = current.findIndex((item) => item.id === grill.id)
-      const prior = index >= 0 ? current[index] : undefined
-      const next: GrillListItem = {
-        ...grill,
-        ...(linkedRun !== undefined
-          ? { linkedRun }
-          : prior?.linkedRun
-            ? { linkedRun: prior.linkedRun }
-            : {}),
-        ...(latestStep === null
-          ? {}
-          : latestStep !== undefined
-            ? { latestStep }
-            : prior?.latestStep
-              ? { latestStep: prior.latestStep }
-              : {}),
-      }
-      if (index < 0) return [...current, next]
-      return current.map((item) => (item.id === grill.id ? next : item))
-    },
-  )
+  invalidateGrillList(queryClient)
 }
 
 function syncGrillIntoListCache(
   queryClient: ReturnType<typeof useQueryClient>,
-  detail: GrillDetail,
+  _detail: GrillDetail,
 ) {
-  queryClient.setQueryData(
-    grillsQueryKey,
-    (current: GrillListItem[] | undefined) => {
-      const next: GrillListItem = {
-        ...detail.grill,
-        ...(detail.linkedRun ? { linkedRun: detail.linkedRun } : {}),
-        ...(detail.latestStep ? { latestStep: detail.latestStep } : {}),
-      }
-      if (!current) return [next]
-      const index = current.findIndex((item) => item.id === detail.grill.id)
-      if (index < 0) return [...current, next]
-      return current.map((item, i) => {
-        if (i !== index) return item
-        return {
-          ...next,
-          linkedRun: detail.linkedRun ?? item.linkedRun,
-          // Server omission means no live step (e.g. follow-up just cleared it).
-          ...(detail.latestStep ? { latestStep: detail.latestStep } : {}),
-        }
-      })
-    },
-  )
-}
-
-export function grillTurnActive(grill: {
-  linkedRun?: GrillLinkedRun
-}): boolean {
-  const linkedRun = grill.linkedRun
-  if (!linkedRun) return false
-  if (linkedRun.turnActive === true) return true
-  const state = linkedRun.state as RunState | undefined
-  return state === 'preparing'
+  invalidateGrillList(queryClient)
 }
 
 function markGrillFollowUpStarted(
@@ -162,13 +132,17 @@ function grillListHasActiveRun(grills: GrillListItem[] | undefined) {
   )
 }
 
-export function useGrills(options?: { enabled?: boolean }) {
+export function useGrills(
+  params: GrillListQueryParams,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
-    queryKey: grillsQueryKey,
-    queryFn: fetchGrills,
+    queryKey: grillsPageQueryKey(params),
+    queryFn: () => fetchGrillsPage(params),
     enabled: options?.enabled ?? true,
+    placeholderData: keepPreviousData,
     refetchInterval: (query) =>
-      grillListHasActiveRun(query.state.data) ? 1_000 : 4_000,
+      grillListHasActiveRun(query.state.data?.grills) ? 1_000 : 4_000,
   })
 }
 
@@ -644,11 +618,7 @@ export function useDiscardGrill() {
     },
     onSuccess: (_void, id) => {
       queryClient.removeQueries({ queryKey: grillQueryKey(id) })
-      queryClient.setQueryData(
-        grillsQueryKey,
-        (current: GrillListItem[] | undefined) =>
-          current?.filter((grill) => grill.id !== id),
-      )
+      invalidateGrillList(queryClient)
     },
   })
 }

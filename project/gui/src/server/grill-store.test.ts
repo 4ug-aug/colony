@@ -638,3 +638,86 @@ test('General Grill can propose a writeup for Account complete', () => {
   ).toThrow('Writeup is only for General Grill')
   sqlite.close()
 })
+
+test('listGrillsPageForUser paginates newest-first with search and filters', () => {
+  const { store, sqlite } = harness()
+  store.createGrill({
+    id: 'g-old',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'Plan the launch',
+    createdBy: 'ada',
+    createdAt: 10,
+  })
+  store.createGrill({
+    id: 'g-mid',
+    kind: 'code',
+    visibility: 'invite-only',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'Fix auth bug',
+    createdBy: 'ada',
+    createdAt: 20,
+  })
+  store.createGrill({
+    id: 'g-new',
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'Fix login flow',
+    createdBy: 'ada',
+    createdAt: 30,
+  })
+
+  const page1 = store.listGrillsPageForUser('ada', { page: 1, pageSize: 2 })
+  expect(page1.total).toBe(3)
+  expect(page1.grills.map((g) => g.id)).toEqual(['g-new', 'g-mid'])
+
+  const page2 = store.listGrillsPageForUser('ada', { page: 2, pageSize: 2 })
+  expect(page2.grills.map((g) => g.id)).toEqual(['g-old'])
+
+  const searched = store.listGrillsPageForUser('ada', {
+    page: 1,
+    pageSize: 10,
+    search: 'fix',
+  })
+  expect(searched.total).toBe(2)
+  expect(searched.grills.map((g) => g.id)).toEqual(['g-new', 'g-mid'])
+
+  const kinds = store.listGrillsPageForUser('ada', {
+    page: 1,
+    pageSize: 10,
+    kinds: ['general'],
+  })
+  expect(kinds.grills.map((g) => g.id)).toEqual(['g-old'])
+
+  const visibility = store.listGrillsPageForUser('ada', {
+    page: 1,
+    pageSize: 10,
+    visibilities: ['invite-only'],
+  })
+  expect(visibility.grills.map((g) => g.id)).toEqual(['g-mid'])
+
+  const fallback = store.listGrillsPageForUser('ada', {
+    page: 1,
+    pageSize: 10,
+    search: 'code grill',
+  })
+  expect(fallback.total).toBe(0)
+
+  store.createGrill({
+    id: 'g-untitled',
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    createdBy: 'ada',
+    createdAt: 40,
+  })
+  const untitled = store.listGrillsPageForUser('ada', {
+    page: 1,
+    pageSize: 10,
+    search: 'code grill',
+  })
+  expect(untitled.grills.map((g) => g.id)).toEqual(['g-untitled'])
+  sqlite.close()
+})

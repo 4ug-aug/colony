@@ -1,14 +1,63 @@
 import {
+  GRILL_LIST_STATUSES,
+  grillListStatus,
   grillAwaitingWrapUpReview,
   grillIsComplete,
+  type GrillListStatus,
 } from '#/features/grills/grill-status'
 import { GRILL_TURN_CONTRACT } from '../../../mcp/workspace-grill'
-import type { Grill, GrillStore, GrillKind, GrillVisibility } from './grill-store'
+import type {
+  Grill,
+  GrillKind,
+  GrillListPageQuery,
+  GrillStore,
+  GrillVisibility,
+} from './grill-store'
+import { normalizeGrillListPageQuery } from './grill-store'
 import type { RoomUser } from './room-store'
 import { json, readBody } from './http/respond'
 
 const kinds = new Set<GrillKind>(['code', 'general'])
 const visibilities = new Set<GrillVisibility>(['invite-only', 'workspace-open'])
+const listStatuses = new Set<string>(GRILL_LIST_STATUSES)
+
+function parseCsvParam(raw: string | null): string[] {
+  if (!raw?.trim()) return []
+  return raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function parseGrillListQuery(url: URL): {
+  query: GrillListPageQuery
+  statuses: GrillListStatus[]
+} {
+  const page = Number(url.searchParams.get('page') ?? '1')
+  const pageSize = Number(url.searchParams.get('pageSize') ?? '10')
+  const search = url.searchParams.get('search') ?? undefined
+  const kindValues = parseCsvParam(url.searchParams.get('kinds')).filter(
+    (value): value is GrillKind => kinds.has(value as GrillKind),
+  )
+  const visibilityValues = parseCsvParam(
+    url.searchParams.get('visibilities'),
+  ).filter((value): value is GrillVisibility =>
+    visibilities.has(value as GrillVisibility),
+  )
+  const statuses = parseCsvParam(url.searchParams.get('statuses')).filter(
+    (value): value is GrillListStatus => listStatuses.has(value),
+  )
+  return {
+    query: normalizeGrillListPageQuery({
+      page,
+      pageSize,
+      search,
+      kinds: kindValues,
+      visibilities: visibilityValues,
+    }),
+    statuses,
+  }
+}
 
 export function createGrillsHttp(deps: {
   grillStore: GrillStore
@@ -33,7 +82,8 @@ export function createGrillsHttp(deps: {
 ) => Promise<Response | undefined> {
   return async (request, url, user) => {
     if (url.pathname === '/api/grills' && request.method === 'GET') {
-      const grills = deps.grillStore.listGrillsForUser(user.id).map((grill) => {
+      const { query, statuses } = parseGrillListQuery(url)
+      const enrich = (grill: Grill) => {
         const linkedRun = deps.linkedRuns?.getLinkedRun?.(grill.id)
         const latestStep = deps.linkedRuns?.getLatestStep?.(grill.id)
         return {
@@ -41,8 +91,53 @@ export function createGrillsHttp(deps: {
           ...(linkedRun !== undefined ? { linkedRun } : {}),
           ...(latestStep !== undefined ? { latestStep } : {}),
         }
+      }
+
+      if (statuses.length > 0) {
+        const statusSet = new Set(statuses)
+        const matching = deps.grillStore
+          .listGrillsMatchingForUser(user.id, query)
+          .map(enrich)
+          .filter((grill) =>
+            statusSet.has(
+              grillListStatus({
+                frontier: grill.frontier,
+                writeup: grill.writeup,
+                docId: grill.docId,
+                issueProposal: grill.issueProposal,
+                sessionBranch: grill.sessionBranch,
+                ...(grill.linkedRun &&
+                typeof grill.linkedRun === 'object' &&
+                !Array.isArray(grill.linkedRun)
+                  ? {
+                      linkedRun: grill.linkedRun as {
+                        state?: string
+                        turnActive?: boolean
+                        error?: string
+                      },
+                    }
+                  : {}),
+              }),
+            ),
+          )
+        const total = matching.length
+        const start = (query.page - 1) * query.pageSize
+        const grills = matching.slice(start, start + query.pageSize)
+        return json({
+          grills,
+          total,
+          page: query.page,
+          pageSize: query.pageSize,
+        })
+      }
+
+      const page = deps.grillStore.listGrillsPageForUser(user.id, query)
+      return json({
+        grills: page.grills.map(enrich),
+        total: page.total,
+        page: query.page,
+        pageSize: query.pageSize,
       })
-      return json({ grills })
     }
 
     if (url.pathname === '/api/grills' && request.method === 'POST') {

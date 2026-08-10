@@ -346,6 +346,9 @@ test('GET /api/grills includes linked-run activity when present', async () => {
   expect(response?.status).toBe(200)
   const body = (await response!.json()) as {
     grills: Array<Record<string, unknown>>
+    total: number
+    page: number
+    pageSize: number
   }
   expect(body.grills).toHaveLength(1)
   expect(body.grills[0]).toMatchObject({
@@ -353,6 +356,7 @@ test('GET /api/grills includes linked-run activity when present', async () => {
     linkedRun: { id: 'run-1', state: 'running' },
     latestStep: { text: 'asking a question' },
   })
+  expect(body).toMatchObject({ total: 1, page: 1, pageSize: 10 })
   sqlite.close()
 })
 
@@ -538,5 +542,66 @@ test('POST /run appends the Grill turn contract so questions must use tools', as
   expect(starts[0]!.task).toContain(
     'The only granted MCP tools are workspace.set_grill_frontier',
   )
+  sqlite.close()
+})
+
+test('GET /api/grills paginates and filters by query params', async () => {
+  const { call, grillStore, sqlite } = harness()
+  grillStore.createGrill({
+    id: 'g1',
+    kind: 'general',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'Alpha plan',
+    createdBy: 'ada',
+    createdAt: 1,
+  })
+  grillStore.createGrill({
+    id: 'g2',
+    kind: 'code',
+    visibility: 'workspace-open',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'Beta fix',
+    createdBy: 'ada',
+    createdAt: 2,
+  })
+  grillStore.createGrill({
+    id: 'g3',
+    kind: 'code',
+    visibility: 'invite-only',
+    agentDefinitionId: 'interviewer',
+    initialRequest: 'Gamma fix',
+    createdBy: 'ada',
+    createdAt: 3,
+  })
+  grillStore.setFrontier(
+    'g3',
+    { questions: [{ id: 'q1', prompt: 'Scope?' }], drafts: {} },
+    4,
+  )
+
+  const page1 = await call(ada, 'GET', '/api/grills?page=1&pageSize=2')
+  expect(page1.status).toBe(200)
+  expect(page1.body.total).toBe(3)
+  expect(page1.body.page).toBe(1)
+  expect(page1.body.pageSize).toBe(2)
+  expect(page1.body.grills.map((g: { id: string }) => g.id)).toEqual([
+    'g3',
+    'g2',
+  ])
+
+  const searched = await call(ada, 'GET', '/api/grills?search=fix&pageSize=10')
+  expect(searched.body.total).toBe(2)
+  expect(searched.body.grills.map((g: { id: string }) => g.id)).toEqual([
+    'g3',
+    'g2',
+  ])
+
+  const kinds = await call(ada, 'GET', '/api/grills?kinds=general')
+  expect(kinds.body.grills.map((g: { id: string }) => g.id)).toEqual(['g1'])
+
+  const status = await call(ada, 'GET', '/api/grills?statuses=your_turn')
+  expect(status.body.total).toBe(1)
+  expect(status.body.grills.map((g: { id: string }) => g.id)).toEqual(['g3'])
   sqlite.close()
 })

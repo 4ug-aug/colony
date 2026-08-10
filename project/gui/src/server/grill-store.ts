@@ -125,6 +125,14 @@ export interface GrillStore {
   getGrill(id: string): Grill | undefined
   getGrillForUser(id: string, userId: string): Grill | undefined
   listGrillsForUser(userId: string): Grill[]
+  listGrillsMatchingForUser(
+    userId: string,
+    query: Pick<GrillListPageQuery, 'search' | 'kinds' | 'visibilities'>,
+  ): Grill[]
+  listGrillsPageForUser(
+    userId: string,
+    query: GrillListPageQuery,
+  ): GrillListPage
   addParticipant(grillId: string, userId: string): void
   invite(grillId: string, userId: string, now: number): void
   listGrillAttentionCounts(userId: string): Map<string, number>
@@ -167,6 +175,20 @@ export interface GrillStore {
     now: number,
   ): Promise<Grill | undefined>
   discardGrill(grillId: string): boolean
+}
+
+export type GrillListPageQuery = {
+  search?: string
+  kinds?: GrillKind[]
+  visibilities?: GrillVisibility[]
+  /** 1-based page index */
+  page: number
+  pageSize: number
+}
+
+export type GrillListPage = {
+  grills: Grill[]
+  total: number
 }
 
 type GrillRow = {
@@ -384,6 +406,76 @@ const canAccess = (sqlite: Sqlite, grillId: string, userId: string): boolean => 
   return row.member === 1
 }
 
+const ACCESS_FROM = `FROM grill g
+           LEFT JOIN grill_participant gp
+             ON gp.grill_id = g.id AND gp.user_id = ?
+           WHERE (g.visibility = 'workspace-open'
+              OR g.created_by = ?
+              OR gp.user_id IS NOT NULL)`
+
+function buildGrillListFilter(
+  userId: string,
+  query: Pick<GrillListPageQuery, 'search' | 'kinds' | 'visibilities'>,
+): { whereSql: string; params: unknown[] } {
+  const params: unknown[] = [userId, userId]
+  const clauses: string[] = []
+
+  if (query.kinds && query.kinds.length > 0) {
+    clauses.push(
+      `g.kind IN (${query.kinds.map(() => '?').join(', ')})`,
+    )
+    params.push(...query.kinds)
+  }
+
+  if (query.visibilities && query.visibilities.length > 0) {
+    clauses.push(
+      `g.visibility IN (${query.visibilities.map(() => '?').join(', ')})`,
+    )
+    params.push(...query.visibilities)
+  }
+
+  const search = query.search?.trim().toLowerCase() ?? ''
+  if (search) {
+    const like = `%${search}%`
+    const matchCodeFallback = 'code grill'.includes(search)
+    const matchGeneralFallback = 'general grill'.includes(search)
+    clauses.push(`(
+      lower(coalesce(json_extract(g.draft_artifacts, '$.initialRequest'), '')) LIKE ?
+      OR (
+        length(trim(coalesce(json_extract(g.draft_artifacts, '$.initialRequest'), ''))) = 0
+        AND (
+          (g.kind = 'code' AND ? = 1)
+          OR (g.kind = 'general' AND ? = 1)
+        )
+      )
+    )`)
+    params.push(like, matchCodeFallback ? 1 : 0, matchGeneralFallback ? 1 : 0)
+  }
+
+  const whereSql =
+    clauses.length === 0
+      ? ACCESS_FROM
+      : `${ACCESS_FROM} AND ${clauses.join(' AND ')}`
+  return { whereSql, params }
+}
+
+export function normalizeGrillListPageQuery(
+  input: Partial<GrillListPageQuery> &
+    Pick<GrillListPageQuery, 'page' | 'pageSize'>,
+): GrillListPageQuery {
+  const page = Math.max(1, Math.floor(input.page) || 1)
+  const pageSize = Math.max(1, Math.min(100, Math.floor(input.pageSize) || 10))
+  return {
+    page,
+    pageSize,
+    ...(input.search?.trim() ? { search: input.search.trim() } : {}),
+    ...(input.kinds && input.kinds.length > 0 ? { kinds: input.kinds } : {}),
+    ...(input.visibilities && input.visibilities.length > 0
+      ? { visibilities: input.visibilities }
+      : {}),
+  }
+}
+
 export function createSqliteGrillStore(
   sqlite: Sqlite,
   deps: GrillStoreDeps,
@@ -452,6 +544,33 @@ export function createSqliteGrillStore(
         )
         .all(userId, userId) as GrillRow[]
       return rows.map(mapGrill)
+    },
+    listGrillsMatchingForUser: (userId, query) => {
+      const { whereSql, params } = buildGrillListFilter(userId, query)
+      const rows = sqlite
+        .prepare(
+          `SELECT g.* ${whereSql}
+           ORDER BY g.updated_at DESC, g.id DESC`,
+        )
+        .all(...params) as GrillRow[]
+      return rows.map(mapGrill)
+    },
+    listGrillsPageForUser: (userId, rawQuery) => {
+      const query = normalizeGrillListPageQuery(rawQuery)
+      const { whereSql, params } = buildGrillListFilter(userId, query)
+      const totalRow = sqlite
+        .prepare(`SELECT COUNT(*) AS total ${whereSql}`)
+        .get(...params) as { total: number }
+      const total = Number(totalRow.total) || 0
+      const offset = (query.page - 1) * query.pageSize
+      const rows = sqlite
+        .prepare(
+          `SELECT g.* ${whereSql}
+           ORDER BY g.updated_at DESC, g.id DESC
+           LIMIT ? OFFSET ?`,
+        )
+        .all(...params, query.pageSize, offset) as GrillRow[]
+      return { grills: rows.map(mapGrill), total }
     },
     addParticipant: (grillId, userId) => {
       sqlite
