@@ -35,7 +35,7 @@ export function SignIn({ onChangeServer }: { onChangeServer: () => void }) {
       .then((status) => {
         if (status.setupRequired && !pathToken) setMode('setup')
       })
-      .catch(() => setError('Unable to reach the Sweat server.'))
+      .catch(() => setError('Unable to reach the Colony server.'))
       .finally(() => setChecking(false))
   }, [pathToken])
 
@@ -78,7 +78,7 @@ export function SignIn({ onChangeServer }: { onChangeServer: () => void }) {
       if (result.error) setError(result.error.message)
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : 'Unable to reach Sweat',
+        reason instanceof Error ? reason.message : 'Unable to reach Colony',
       )
     } finally {
       setPending(false)
@@ -89,7 +89,7 @@ export function SignIn({ onChangeServer }: { onChangeServer: () => void }) {
   if (checking)
     return (
       <p className="entry-form text-sm text-muted-foreground">
-        <BrailleLoader text="Connecting to Sweat" />
+        <BrailleLoader text="Connecting to Colony" />
       </p>
     )
   return (
@@ -104,12 +104,12 @@ export function SignIn({ onChangeServer }: { onChangeServer: () => void }) {
           alt=""
           className="size-7 rounded-md bg-white p-1"
         />
-        Sweat
+        Colony
       </div>
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">
           {mode === 'setup'
-            ? 'Set up Sweat'
+            ? 'Set up Colony'
             : mode === 'invite'
               ? 'Join workspace'
               : 'Welcome back'}
@@ -119,7 +119,7 @@ export function SignIn({ onChangeServer }: { onChangeServer: () => void }) {
             ? 'Create the first administrator for this workspace.'
             : mode === 'invite'
               ? 'Create your account to join this workspace.'
-              : 'Sign in to your Sweat workspace.'}
+              : 'Sign in to your Colony workspace.'}
         </p>
       </div>
       {mode === 'setup' && (

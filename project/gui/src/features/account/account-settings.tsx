@@ -135,7 +135,7 @@ export function AccountSettingsPage({
                 <AlertDialogTitle>Change server?</AlertDialogTitle>
                 <AlertDialogDescription>
                   You will be signed out and disconnected from this workspace.
-                  Sweat will return to the server connection screen.
+                  Colony will return to the server connection screen.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

@@ -527,7 +527,7 @@ export function RoomSidebar({
                                 className="size-4 shrink-0 dark:invert"
                               />
                               <p className="text-xs font-medium">
-                                Sweat Native
+                                Colony Native
                               </p>
                             </div>
                             <div className="ml-6 flex flex-col gap-2">
