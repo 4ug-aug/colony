@@ -6,7 +6,7 @@ import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
 import { cn } from '#/lib/utils'
 import { MousePointerClick } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { grillEnterClassName, grillStepLabel } from './grill-presentation'
 import { grillAwaitingWrapUpReview, grillIsComplete } from './grill-status'
 import type { Grill, GrillLatestStep, GrillLinkedRun } from './types'
@@ -16,6 +16,65 @@ import {
   useReplyToGrill,
   useSubmitGrillRound,
 } from './use-grills'
+
+function AgentNotes({ steps }: { steps: GrillLatestStep[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const followLatest = useRef(true)
+  const [fade, setFade] = useState({ top: false, bottom: false })
+
+  const updateFade = useCallback(() => {
+    const element = scrollRef.current
+    if (!element) return
+    const top = element.scrollTop > 1
+    const bottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight > 1
+    setFade((current) =>
+      current.top === top && current.bottom === bottom
+        ? current
+        : { top, bottom },
+    )
+  }, [])
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+    if (followLatest.current) element.scrollTop = element.scrollHeight
+    updateFade()
+    const observer = new ResizeObserver(updateFade)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [steps, updateFade])
+
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold">Agent notes</h2>
+      <div className="relative">
+        <div
+          ref={scrollRef}
+          className="h-32 space-y-3 overflow-y-auto pr-2"
+          onScroll={() => {
+            const element = scrollRef.current
+            if (!element) return
+            followLatest.current =
+              element.scrollHeight - element.scrollTop - element.clientHeight <
+              8
+            updateFade()
+          }}
+        >
+          {steps.map((step, index) => (
+            <Markdown key={`${step.at}:${index}`}>{step.text}</Markdown>
+          ))}
+        </div>
+        {fade.top ? (
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-background/80 to-transparent backdrop-blur-[2px]" />
+        ) : null}
+        {fade.bottom ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background/80 to-transparent backdrop-blur-[2px]" />
+        ) : null}
+      </div>
+    </section>
+  )
+}
 
 export function GrillFrontierPanel({
   grill,
@@ -68,14 +127,7 @@ export function GrillFrontierPanel({
       : latestStep?.kind === 'message' && latestStep.text.trim()
         ? [latestStep]
         : []
-  const agentNotes = noteSteps.length ? (
-    <section className="space-y-3 rounded-lg border bg-muted/20 p-4">
-      <h2 className="text-sm font-semibold">Agent notes</h2>
-      {noteSteps.map((step, index) => (
-        <Markdown key={`${step.at}:${index}`}>{step.text}</Markdown>
-      ))}
-    </section>
-  ) : null
+  const agentNotes = noteSteps.length ? <AgentNotes steps={noteSteps} /> : null
 
   const questions = grill.frontier.questions
   if (questions.length === 0) {
