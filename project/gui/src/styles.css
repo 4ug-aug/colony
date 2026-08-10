@@ -328,6 +328,35 @@ pre code {
   }
 }
 
+@keyframes oneshot-panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(1rem, 0, 0);
+  }
+}
+
+@keyframes oneshot-panel-out {
+  to {
+    opacity: 0;
+    transform: translate3d(1rem, 0, 0);
+  }
+}
+
+.oneshot-panel--in {
+  animation: oneshot-panel-in 150ms ease-out both;
+}
+
+.oneshot-panel--out {
+  animation: oneshot-panel-out 150ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oneshot-panel--in,
+  .oneshot-panel--out {
+    animation: none;
+  }
+}
+
 .message-search-hit {
   border-radius: 0.5rem;
   animation: message-search-hit 1.6s ease-out;

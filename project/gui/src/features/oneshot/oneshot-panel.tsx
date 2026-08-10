@@ -185,6 +185,12 @@ export function OneshotPanel({
   }
 
   useWindowKeydown((event) => {
+    if (event.key === 'Escape' && open) {
+      if (event.defaultPrevented) return
+      event.preventDefault()
+      void close()
+      return
+    }
     if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey)
       return
     const key = event.key.toLowerCase()
@@ -205,6 +211,12 @@ export function OneshotPanel({
 
   const [present, setPresent] = useState(open)
   if (open && !present) setPresent(true)
+  if (!open && present && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    setPresent(false)
+    setRunId(undefined)
+    setTask('')
+    setCopied(false)
+  }
 
   if (!present) return null
 
@@ -215,19 +227,16 @@ export function OneshotPanel({
       data-state={open ? 'open' : 'closed'}
       onAnimationEnd={(event) => {
         if (event.target !== event.currentTarget) return
-        // Switching animate-in → animate-out can fire a cancel end for `enter`.
-        if (open || event.animationName !== 'exit') return
+        if (open || event.animationName !== 'oneshot-panel-out') return
         setPresent(false)
         setRunId(undefined)
         setTask('')
         setCopied(false)
       }}
       className={cn(
-        'dark:bg-muted fixed right-3 bottom-3 z-50 flex w-[min(100vw-1.5rem,24rem)] flex-col overflow-hidden rounded-xl border bg-background shadow-lg transition-[height] duration-150 ease-out fill-mode-both motion-reduce:animate-none motion-reduce:transition-none',
+        'oneshot-panel dark:bg-muted fixed right-3 bottom-3 z-50 flex w-[min(100vw-1.5rem,24rem)] flex-col overflow-hidden rounded-xl border bg-background shadow-lg transition-[height] duration-150 ease-out motion-reduce:transition-none',
         active ? 'h-[min(70vh,28rem)]' : 'h-[min(50vh,20rem)]',
-        open
-          ? 'animate-in fade-in-0 slide-in-from-right-4 duration-150 ease-out'
-          : 'animate-out fade-out-0 slide-out-to-right-4 duration-150 ease-out',
+        open ? 'oneshot-panel--in' : 'oneshot-panel--out',
       )}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
