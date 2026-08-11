@@ -737,15 +737,15 @@ export function createCoordinator(options: {
     }
 
     if (input.type !== 'grill.draft' || typeof input.value !== 'string') return
-    if (current?.socket !== socket) {
+    if (current && current.socket !== socket) {
       send(socket, {
         type: 'grill.edit.rejected',
         questionId,
-        reason: current ? 'lease-held' : 'lease-required',
+        reason: 'lease-held',
       })
       return
     }
-    current.lastSeen = Date.now()
+    if (current) current.lastSeen = Date.now()
     const updated = options.grillStore.updateDrafts(
       grillId,
       { [questionId]: input.value },

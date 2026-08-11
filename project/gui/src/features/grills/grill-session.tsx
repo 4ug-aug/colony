@@ -16,6 +16,7 @@ import {
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { cn } from '#/lib/utils'
 import { ArrowLeft, CheckCircle2, Flame } from 'lucide-react'
+import { useState } from 'react'
 import { DiscardGrillButton } from './discard-grill-button'
 import { GrillFrontierPanel } from './grill-frontier-panel'
 import {
@@ -62,52 +63,56 @@ export function GrillSession({
   const complete = grillIsComplete(grill)
   const awaitingWrapUp = grillAwaitingWrapUpReview(grill)
   const focusWrapUp = complete || awaitingWrapUp
+  const [toolbarEnd, setToolbarEnd] = useState<HTMLDivElement | null>(null)
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex min-h-12 shrink-0 items-center -mb-4 gap-3 px-4">
-        <span className="text-xs font-medium text-muted-foreground">
-          Participating
-        </span>
-        <AvatarGroup>
-          {realtime.participants.map((participant) => {
-            const name = participant.displayName || participant.name
-            const label =
-              participant.displayName &&
-              participant.displayName !== participant.name
-                ? `${name} (${participant.name})`
-                : name
-            return (
-              <Tooltip key={participant.id}>
-                <TooltipTrigger
-                  render={
-                    <Avatar size="sm">
-                      {participant.image ? (
-                        <AvatarImage
-                          src={participant.image}
-                          alt=""
-                          className="border-1 hover:border-foreground"
-                        />
-                      ) : null}
-                      <AvatarFallback className="border-1 hover:border-foreground">
-                        {name.slice(0, 1).toUpperCase()}
-                      </AvatarFallback>
-                      <AvatarBadge className="bg-emerald-500" />
-                    </Avatar>
-                  }
-                />
-                <TooltipContent side="bottom">{label}</TooltipContent>
-              </Tooltip>
-            )
-          })}
-        </AvatarGroup>
+      <div className="flex min-h-12 shrink-0 items-center justify-between gap-3 px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="text-xs font-medium text-muted-foreground">
+            Participating
+          </span>
+          <AvatarGroup>
+            {realtime.participants.map((participant) => {
+              const name = participant.displayName || participant.name
+              const label =
+                participant.displayName &&
+                participant.displayName !== participant.name
+                  ? `${name} (${participant.name})`
+                  : name
+              return (
+                <Tooltip key={participant.id}>
+                  <TooltipTrigger
+                    render={
+                      <Avatar size="sm">
+                        {participant.image ? (
+                          <AvatarImage
+                            src={participant.image}
+                            alt=""
+                            className="border-1 hover:border-foreground"
+                          />
+                        ) : null}
+                        <AvatarFallback className="border-1 hover:border-foreground">
+                          {name.slice(0, 1).toUpperCase()}
+                        </AvatarFallback>
+                        <AvatarBadge className="bg-emerald-500" />
+                      </Avatar>
+                    }
+                  />
+                  <TooltipContent side="bottom">{label}</TooltipContent>
+                </Tooltip>
+              )
+            })}
+          </AvatarGroup>
+        </div>
+        {!focusWrapUp ? <div ref={setToolbarEnd} className="shrink-0" /> : null}
       </div>
       <div
         className={cn(
-          'grid flex-1 content-start gap-6 overflow-auto p-4 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none',
+          'grid min-h-0 flex-1 gap-6 p-4 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none',
           focusWrapUp
-            ? 'grid-cols-1'
-            : 'lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]',
+            ? 'content-start overflow-auto grid-cols-1'
+            : 'overflow-hidden lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]',
         )}
       >
         {complete ? (
@@ -142,7 +147,7 @@ export function GrillSession({
         ) : (
           <section
             key="frontier"
-            className={cn('space-y-3', grillEnterClassName)}
+            className={cn('min-h-0', grillEnterClassName)}
           >
             <GrillFrontierPanel
               grill={grill}
@@ -150,10 +155,16 @@ export function GrillSession({
               latestStep={latestStep}
               narration={narration}
               realtime={realtime}
+              toolbarEnd={toolbarEnd}
             />
           </section>
         )}
-        <div className="min-w-0 space-y-6">
+        <div
+          className={cn(
+            'min-w-0 space-y-6',
+            !focusWrapUp && 'min-h-0 overflow-auto',
+          )}
+        >
           <section className="space-y-3">
             <h2 className="text-sm font-semibold">Wrap-up</h2>
             {grill.kind === 'general' && (grill.writeup || grill.docId) ? (
