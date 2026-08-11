@@ -86,10 +86,10 @@ function AgentNotes({
           ))}
         </div>
         {fade.top ? (
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-background/80 to-transparent backdrop-blur-[2px]" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-background to-transparent" />
         ) : null}
         {fade.bottom ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background/80 to-transparent backdrop-blur-[2px]" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent" />
         ) : null}
       </div>
     </section>
@@ -324,7 +324,7 @@ export function GrillFrontierPanel({
     <div key={questionsKey} className="flex h-full min-h-0 flex-col gap-3">
       {submitPortal}
       {agentNotes ?? <div className="min-h-0 flex-1" />}
-      <div className="max-h-[55%] shrink-0 space-y-4 overflow-y-auto bg-background pt-3">
+      <div className="max-h-[55%] shrink-0 space-y-4 overflow-y-auto bg-background pt-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
         {questions.map((question, index) => {
           const recommendation = question.recommendation?.trim()
           const lease = realtime.leases.find(
