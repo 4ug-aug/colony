@@ -30,6 +30,10 @@ export type { Step }
 export type RunStartContext<Output> =
   | {
       roomId: string
+      /** Write destination: the trigger message id for a top-level mention, or the existing thread root for a reply mention. */
+      rootId?: string
+      /** Set only for a reply mention: scopes workspace.read_messages to this thread root instead of the flat Room. */
+      threadReadRootId?: string
       agentDefinitionId?: string
       attachments?: readonly AttachmentInput[]
       onCreate: (run: RunSummary) => NonNullable<Output>
@@ -134,10 +138,19 @@ function grantContextFrom<Output>(
   context: RunStartContext<Output>,
   agentDefinitionId: string,
 ): AgentGrantContext {
-  if ('roomId' in context) return { roomId: context.roomId, agentDefinitionId }
+  if ('roomId' in context)
+    return {
+      roomId: context.roomId,
+      agentDefinitionId,
+      ...(context.rootId ? { rootId: context.rootId } : {}),
+      ...(context.threadReadRootId
+        ? { threadReadRootId: context.threadReadRootId }
+        : {}),
+    }
   if ('scheduleId' in context)
     return { scheduleId: context.scheduleId, agentDefinitionId }
-  if ('grillId' in context) return { grillId: context.grillId, agentDefinitionId }
+  if ('grillId' in context)
+    return { grillId: context.grillId, agentDefinitionId }
   if ('oneshotId' in context)
     return {
       oneshotId: context.oneshotId,

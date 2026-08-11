@@ -190,6 +190,20 @@
       "when": 1795000000000,
       "tag": "0026_grill_attention",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1796000000000,
+      "tag": "0027_room_message_root",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1797000000000,
+      "tag": "0028_room_attention_thread",
+      "breakpoints": true
     }
   ]
 }

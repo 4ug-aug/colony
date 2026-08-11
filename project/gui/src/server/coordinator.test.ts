@@ -46,6 +46,8 @@ class FakeRunControl implements RunControl {
   requests: Array<{
     task: string
     roomId: string
+    rootId?: string
+    threadReadRootId?: string
     agentDefinitionId?: string
     attachments?: readonly AttachmentInput[]
   }> = []
@@ -68,6 +70,8 @@ class FakeRunControl implements RunControl {
     task: string,
     context: {
       roomId: string
+      rootId?: string
+      threadReadRootId?: string
       agentDefinitionId?: string
       attachments?: readonly AttachmentInput[]
       onCreate: (run: RunSummary) => Output
@@ -88,6 +92,10 @@ class FakeRunControl implements RunControl {
     this.requests.push({
       task,
       roomId: context.roomId,
+      ...(context.rootId ? { rootId: context.rootId } : {}),
+      ...(context.threadReadRootId
+        ? { threadReadRootId: context.threadReadRootId }
+        : {}),
       ...(context.agentDefinitionId
         ? { agentDefinitionId: context.agentDefinitionId }
         : {}),
@@ -119,10 +127,15 @@ class FakeRunControl implements RunControl {
   emitStep(runId: string, step: Step) {
     for (const listener of this.stepListeners) listener(runId, step)
   }
-  finish(id: string, state: 'succeeded' | 'failed') {
+  finish(id: string, state: 'succeeded' | 'failed', stdout?: string) {
     const run = this.runs.find((item) => item.id === id)
     if (!run) throw new Error('run not found')
-    const changed = { ...run, state, completedAt: Date.now() }
+    const changed = {
+      ...run,
+      state,
+      completedAt: Date.now(),
+      ...(stdout != null ? { stdout } : {}),
+    }
     this.runs = this.runs.map((item) => (item.id === id ? changed : item))
     this.publish(changed)
   }
@@ -251,8 +264,103 @@ class MemoryRoomStore implements RoomStore {
           )),
     )
   }
+  // A run's trigger may itself be a reply (an in-thread invocation), so its
+  // result belongs to that reply's thread root, not its own trigger id.
+  effectiveRootFor(triggerMessageId: string): string {
+    const trigger = this.messages.find(
+      (message) => message.id === triggerMessageId,
+    )
+    return trigger?.rootId ?? triggerMessageId
+  }
+  decorateRoots(list: RoomMessage[]): RoomMessage[] {
+    return list.map((message) => {
+      if (message.rootId != null) return message
+      const replies: { author: { id: string }; createdAt: number }[] = [
+        ...this.messages.filter((reply) => reply.rootId === message.id),
+        ...this.runs
+          .filter(
+            (run) =>
+              this.effectiveRootFor(run.triggerMessageId) === message.id &&
+              run.state === 'succeeded',
+          )
+          .map((run) => ({
+            author: { id: run.agentId },
+            createdAt: run.completedAt ?? run.createdAt,
+          })),
+      ].sort((a, b) => b.createdAt - a.createdAt)
+      if (!replies.length) return message
+      const participantIds: string[] = []
+      for (const reply of replies) {
+        if (!participantIds.includes(reply.author.id))
+          participantIds.push(reply.author.id)
+        if (participantIds.length >= 3) break
+      }
+      return {
+        ...message,
+        replySummary: {
+          replyCount: replies.length,
+          participantIds,
+          latestReplyAt: replies[0]!.createdAt,
+        },
+      }
+    })
+  }
   listMessages(roomId: string) {
-    return this.messages.filter((message) => message.roomId === roomId)
+    return this.decorateRoots(
+      this.messages.filter(
+        (message) => message.roomId === roomId && message.rootId == null,
+      ),
+    )
+  }
+  canReplyTo(roomId: string, rootId: string) {
+    return this.messages.some(
+      (message) =>
+        message.roomId === roomId &&
+        message.id === rootId &&
+        message.rootId == null,
+    )
+  }
+  getThread(roomId: string, rootId: string) {
+    const root = this.messages.find(
+      (message) =>
+        message.roomId === roomId &&
+        message.id === rootId &&
+        message.rootId == null,
+    )
+    if (!root) return undefined
+    const replies = this.messages
+      .filter(
+        (message) => message.roomId === roomId && message.rootId === rootId,
+      )
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    const results = this.runs
+      .filter(
+        (run) =>
+          run.roomId === roomId &&
+          this.effectiveRootFor(run.triggerMessageId) === rootId &&
+          run.state === 'succeeded',
+      )
+      .map((run) => ({
+        id: run.id,
+        agentId: run.agentId,
+        text: run.stdout,
+        createdAt: run.completedAt ?? run.createdAt,
+      }))
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    return { root: this.decorateRoots([root])[0]!, replies, results }
+  }
+  listThreadParticipantIds(roomId: string, rootId: string) {
+    const ids = new Set(
+      this.messages
+        .filter(
+          (message) =>
+            message.roomId === roomId &&
+            message.author.kind === 'user' &&
+            (message.id === rootId || message.rootId === rootId),
+        )
+        .map((message) => message.author.id),
+    )
+    return [...ids].sort()
   }
   latestMessageFromOther(roomId: string, userId: string) {
     const message = this.listMessages(roomId)
@@ -315,7 +423,9 @@ class MemoryRoomStore implements RoomStore {
     const messages = this.listMessages(roomId).sort(
       (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
     )
-    const index = messages.findIndex((message) => message.id === options.messageId)
+    const index = messages.findIndex(
+      (message) => message.id === options.messageId,
+    )
     if (index < 0) throw new Error('Message not found')
     const limit = Math.max(1, Math.min(100, Math.floor(options.limit)))
     let start = Math.max(0, index - Math.floor((limit - 1) / 2))
@@ -368,6 +478,7 @@ class MemoryRoomStore implements RoomStore {
         author: message.author,
         text: message.text,
         createdAt: message.createdAt,
+        ...(message.rootId != null ? { rootId: message.rootId } : {}),
       }))
   }
   listRuns(roomId: string) {
@@ -449,7 +560,24 @@ class MemoryRoomStore implements RoomStore {
     this.attentions = this.attentions.map((attention) =>
       attention.roomId === roomId &&
       attention.recipientId === userId &&
-      attention.acknowledgedAt === undefined
+      attention.acknowledgedAt === undefined &&
+      attention.kind !== 'thread_reply'
+        ? { ...attention, acknowledgedAt: at }
+        : attention,
+    )
+  }
+  acknowledgeThreadAttention(
+    roomId: string,
+    rootId: string,
+    userId: string,
+    at: number,
+  ) {
+    this.attentions = this.attentions.map((attention) =>
+      attention.roomId === roomId &&
+      attention.rootId === rootId &&
+      attention.recipientId === userId &&
+      attention.acknowledgedAt === undefined &&
+      attention.kind === 'thread_reply'
         ? { ...attention, acknowledgedAt: at }
         : attention,
     )
@@ -548,9 +676,7 @@ const open = (url: string) =>
 
 type CoordinatorOptions = Parameters<typeof createCoordinator>[0]
 
-async function makeCoordinator(
-  overrides: Partial<CoordinatorOptions> = {},
-) {
+async function makeCoordinator(overrides: Partial<CoordinatorOptions> = {}) {
   const store = overrides.store ?? new MemoryRoomStore()
   const control = overrides.control ?? new FakeRunControl()
   const messages = overrides.messages ?? createRoomMessageHub(store)
@@ -577,7 +703,11 @@ test('two clients receive durable room messages and agent runs', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const { coordinator, base } = await makeCoordinator({ store, control, messages })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    messages,
+  })
   try {
     expect(
       (
@@ -728,6 +858,7 @@ test('agentReady gates software-engineer on Cursor and antboy on LLM', async () 
       {
         task: 'Help with the task',
         roomId: GENERAL_ROOM_ID,
+        rootId: store.messages[0]!.id,
         agentDefinitionId: 'antboy',
         attachments: [],
       },
@@ -872,6 +1003,92 @@ test('message search and around-history are available over HTTP', async () => {
   }
 })
 
+test('message search over HTTP tags threaded hits with their root id and still excludes inaccessible private rooms', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
+  try {
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Secret', visibility: 'private' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Launch checklist' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: 'Rocket boosters staged',
+        rootId: root.id,
+      }),
+    })
+    const { message: reply } = (await replyResponse.json()) as {
+      message: RoomMessage
+    }
+    expect(reply.rootId).toBe(root.id)
+
+    await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Secret rocket boosters plan' }),
+    })
+
+    const asMember = await fetch(`${base}/api/search/messages?q=boosters`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    expect(asMember.status).toBe(200)
+    const memberBody = (await asMember.json()) as {
+      hits: { messageId: string; roomId: string; rootId?: string }[]
+    }
+    expect(memberBody.hits).toHaveLength(2)
+    const generalHit = memberBody.hits.find(
+      (hit) => hit.roomId === GENERAL_ROOM_ID,
+    )
+    expect(generalHit).toMatchObject({ messageId: reply.id, rootId: root.id })
+    const privateHit = memberBody.hits.find((hit) => hit.roomId === room.id)
+    expect(privateHit).toBeDefined()
+    expect(privateHit?.rootId).toBeUndefined()
+
+    currentUser = 'user-2'
+    const asOutsider = await fetch(`${base}/api/search/messages?q=boosters`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    const outsiderBody = (await asOutsider.json()) as {
+      hits: { messageId: string }[]
+    }
+    expect(outsiderBody.hits.map((hit) => hit.messageId)).toEqual([reply.id])
+  } finally {
+    coordinator.stop()
+  }
+})
+
 test('multipart messages persist attachment metadata and serve authorized bytes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sweat-attachments-'))
   const store = new MemoryRoomStore()
@@ -997,6 +1214,7 @@ test('a multipart software-engineer message is durable and forwards only its des
       {
         task: 'Review this brief',
         roomId: GENERAL_ROOM_ID,
+        rootId: store.messages[0]!.id,
         agentDefinitionId: 'software-engineer',
         attachments: [
           {
@@ -1178,6 +1396,13 @@ test('mentions and terminal runs create durable directed attention', async () =>
       attentionCount: 1,
       kind: 'run_terminal',
     })
+    // Successful results are Thread replies: the root author gets Thread Attention.
+    expect(await requester.next()).toMatchObject({
+      type: 'attention.changed',
+      attentionCount: 2,
+      kind: 'thread_reply',
+      rootId: run.triggerMessageId,
+    })
     expect(await reviewer.next()).toMatchObject({
       type: 'attention.changed',
       attentionCount: 2,
@@ -1210,6 +1435,344 @@ test('mentions and terminal runs create durable directed attention', async () =>
 
     requester.socket.close()
     reviewer.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('a reply creates Thread Attention for the root author and prior participants, excluding the reply author and agents', async () => {
+  let currentUser = 'user-1'
+  const users: RoomUser[] = [
+    { id: 'user-1', name: 'ada', username: 'ada' },
+    { id: 'user-2', name: 'bob', username: 'bob' },
+    { id: 'user-3', name: 'cara', username: 'cara' },
+  ]
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = users
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: {
+      authenticate: async () => users.find(({ id }) => id === currentUser),
+    },
+  })
+  const post = async (body: Record<string, unknown>) =>
+    fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+  try {
+    const wsBase = base.replace('http', 'ws')
+    currentUser = 'user-1'
+    const rootResponse = await post({ text: 'Root question' })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+    const rootAuthorSocket = await open(`${wsBase}/api/workspace/stream`)
+    expect((await rootAuthorSocket.next()).type).toBe('workspace.snapshot')
+
+    currentUser = 'user-2'
+    const firstReply = await post({ text: 'First reply', rootId: root.id })
+    expect(firstReply.status).toBe(201)
+    expect(await rootAuthorSocket.next()).toMatchObject({
+      type: 'attention.changed',
+      roomId: GENERAL_ROOM_ID,
+      attentionCount: 1,
+      kind: 'thread_reply',
+      rootId: root.id,
+    })
+    rootAuthorSocket.socket.close()
+
+    // user-3 replies next; user-1 (root) and user-2 (prior reply author) should
+    // both receive Thread Attention, but not user-3 (the reply author).
+    currentUser = 'user-1'
+    const rootAuthorAgain = await open(`${wsBase}/api/workspace/stream`)
+    expect((await rootAuthorAgain.next()).type).toBe('workspace.snapshot')
+    currentUser = 'user-2'
+    const priorReplier = await open(`${wsBase}/api/workspace/stream`)
+    expect((await priorReplier.next()).type).toBe('workspace.snapshot')
+    currentUser = 'user-3'
+    const secondReplyAuthor = await open(`${wsBase}/api/workspace/stream`)
+    expect((await secondReplyAuthor.next()).type).toBe('workspace.snapshot')
+
+    const secondReply = await post({ text: 'Second reply', rootId: root.id })
+    expect(secondReply.status).toBe(201)
+    expect(await rootAuthorAgain.next()).toMatchObject({
+      type: 'attention.changed',
+      kind: 'thread_reply',
+      rootId: root.id,
+    })
+    expect(await priorReplier.next()).toMatchObject({
+      type: 'attention.changed',
+      kind: 'thread_reply',
+      rootId: root.id,
+    })
+    await expectNoEvent(secondReplyAuthor)
+
+    expect(
+      store.listAttentionCounts('user-1', 'thread_reply').get(GENERAL_ROOM_ID),
+    ).toBe(2)
+    expect(
+      store.listAttentionCounts('user-2', 'thread_reply').get(GENERAL_ROOM_ID),
+    ).toBe(1)
+    expect(
+      store.listAttentionCounts('user-3', 'thread_reply').get(GENERAL_ROOM_ID),
+    ).toBeUndefined()
+
+    // An agent reply must never receive Thread Attention.
+    store.messages.push({
+      id: 'agent-reply',
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'agent', id: 'software-engineer', name: 'SWE' },
+      text: 'Agent reply',
+      createdAt: Date.now(),
+      attachments: [],
+      rootId: root.id,
+    })
+    expect(
+      store.listThreadParticipantIds(GENERAL_ROOM_ID, root.id),
+    ).not.toContain('software-engineer')
+
+    rootAuthorAgain.socket.close()
+    priorReplier.socket.close()
+    secondReplyAuthor.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('opening the target thread acknowledges only its Thread Attention, leaving other threads and room-level attention untouched', async () => {
+  let currentUser = 'user-1'
+  const users: RoomUser[] = [
+    { id: 'user-1', name: 'ada', username: 'ada' },
+    { id: 'user-2', name: 'bob', username: 'bob' },
+  ]
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = users
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: {
+      authenticate: async () => users.find(({ id }) => id === currentUser),
+    },
+  })
+  const post = async (body: Record<string, unknown>) =>
+    fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+  try {
+    currentUser = 'user-1'
+    const rootA = (
+      (await (await post({ text: 'Root A' })).json()) as {
+        message: RoomMessage
+      }
+    ).message
+    const rootB = (
+      (await (await post({ text: 'Root B' })).json()) as {
+        message: RoomMessage
+      }
+    ).message
+
+    currentUser = 'user-2'
+    await post({ text: 'Reply to A', rootId: rootA.id })
+    await post({ text: 'Reply to B', rootId: rootB.id })
+    await post({ text: '@ada also mentioning' })
+
+    expect(store.listAttentionCounts('user-1').get(GENERAL_ROOM_ID)).toBe(3)
+
+    currentUser = 'user-1'
+    const ackA = await fetch(
+      `${base}/api/rooms/general/threads/${rootA.id}/attention/acknowledge`,
+      { method: 'POST', headers: { origin: 'http://gui.test' } },
+    )
+    expect(ackA.status).toBe(200)
+
+    expect(
+      store.listAttentionCounts('user-1', 'thread_reply').get(GENERAL_ROOM_ID),
+    ).toBe(1)
+    expect(store.listAttentionCounts('user-1').get(GENERAL_ROOM_ID)).toBe(2)
+
+    const roomAck = await fetch(
+      `${base}/api/rooms/general/attention/acknowledge`,
+      { method: 'POST', headers: { origin: 'http://gui.test' } },
+    )
+    const roomAckBody = (await roomAck.json()) as {
+      attentionCount: number
+      mentionCount: number
+    }
+    expect(roomAckBody.attentionCount).toBe(1)
+    expect(roomAckBody.mentionCount).toBe(0)
+    expect(store.listAttentionCounts('user-1').get(GENERAL_ROOM_ID)).toBe(1)
+
+    const ackAAgain = await fetch(
+      `${base}/api/rooms/general/threads/${rootA.id}/attention/acknowledge`,
+      { method: 'POST', headers: { origin: 'http://gui.test' } },
+    )
+    expect(ackAAgain.status).toBe(200)
+    expect(store.listAttentionCounts('user-1').get(GENERAL_ROOM_ID)).toBe(1)
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('a failed run triggered from within a thread reply carries the thread rootId on its terminal Attention', async () => {
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+
+    const wsBase = base.replace('http', 'ws')
+    const requester = await open(`${wsBase}/api/workspace/stream`)
+    expect((await requester.next()).type).toBe('workspace.snapshot')
+
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: 'fix it in-thread',
+        rootId: root.id,
+      }),
+    })
+    const { message: reply } = (await replyResponse.json()) as {
+      message: RoomMessage
+    }
+
+    const run = control.start('fix it in-thread', {
+      roomId: GENERAL_ROOM_ID,
+      rootId: root.id,
+      threadReadRootId: root.id,
+      onCreate: (source) => {
+        const created: RoomRun = {
+          ...source,
+          roomId: GENERAL_ROOM_ID,
+          triggerMessageId: reply.id,
+          requestedBy: { id: 'user-1', name: 'ada' },
+        }
+        store.createRun(created)
+        return created
+      },
+    })
+
+    control.finish(run.id, 'failed')
+    expect(await requester.next()).toMatchObject({
+      type: 'attention.changed',
+      kind: 'run_terminal',
+      rootId: root.id,
+    })
+    requester.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('a successful Room-linked run creates Thread Attention for Account participants without counting failure paths', async () => {
+  let currentUser = 'user-1'
+  const users: RoomUser[] = [
+    { id: 'user-1', name: 'ada', username: 'ada' },
+    { id: 'user-2', name: 'bob', username: 'bob' },
+  ]
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = users
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    authenticator: {
+      authenticate: async () => users.find(({ id }) => id === currentUser),
+    },
+  })
+  const post = async (body: Record<string, unknown>) =>
+    fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+  try {
+    currentUser = 'user-1'
+    const rootResponse = await post({ text: 'Root question' })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+
+    currentUser = 'user-2'
+    await post({ text: 'Prior reply', rootId: root.id })
+
+    currentUser = 'user-1'
+    const invoke = await post({
+      text: '@software-engineer finish this',
+      rootId: root.id,
+    })
+    const { run } = (await invoke.json()) as { run: RoomRun }
+
+    // Clear prior reply attention so we can assert the success-path increment.
+    store.acknowledgeThreadAttention(
+      GENERAL_ROOM_ID,
+      root.id,
+      'user-1',
+      Date.now(),
+    )
+    store.acknowledgeThreadAttention(
+      GENERAL_ROOM_ID,
+      root.id,
+      'user-2',
+      Date.now(),
+    )
+
+    control.finish(run.id, 'succeeded', 'Done.')
+
+    expect(
+      store.listAttentionCounts('user-2', 'thread_reply').get(GENERAL_ROOM_ID),
+    ).toBe(1)
+    expect(
+      store.listAttentionCounts('user-1', 'thread_reply').get(GENERAL_ROOM_ID),
+    ).toBe(1)
+
+    const failedInvoke = await post({
+      text: '@software-engineer will fail',
+      rootId: root.id,
+    })
+    const { run: failedRun } = (await failedInvoke.json()) as { run: RoomRun }
+    store.acknowledgeThreadAttention(
+      GENERAL_ROOM_ID,
+      root.id,
+      'user-2',
+      Date.now(),
+    )
+    const beforeFail =
+      store
+        .listAttentionCounts('user-2', 'thread_reply')
+        .get(GENERAL_ROOM_ID) ?? 0
+    control.finish(failedRun.id, 'failed', 'boom')
+    expect(
+      store
+        .listAttentionCounts('user-2', 'thread_reply')
+        .get(GENERAL_ROOM_ID) ?? 0,
+    ).toBe(beforeFail)
   } finally {
     coordinator.stop()
   }
@@ -1473,7 +2036,11 @@ test('hub post by non-HTTP caller broadcasts message.created to subscribed socke
   store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const { coordinator, base } = await makeCoordinator({ store, control, messages })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    messages,
+  })
   try {
     const socket = await open(
       `${base.replace('http', 'ws')}/api/rooms/general/stream`,
@@ -1517,7 +2084,11 @@ test('agent-authored hub post does NOT create a run', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const { coordinator, base } = await makeCoordinator({ store, control, messages })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    messages,
+  })
   try {
     const socket = await open(
       `${base.replace('http', 'ws')}/api/rooms/general/stream`,
@@ -1549,7 +2120,11 @@ test('step events are persisted and broadcast as run.step to room sockets', asyn
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const { coordinator, base } = await makeCoordinator({ store, control, messages })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    messages,
+  })
   try {
     // Start a run
     const response = await fetch(`${base}/api/rooms/general/messages`, {
@@ -1640,7 +2215,11 @@ test('room.snapshot includes latestSteps for active runs', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const { coordinator, base } = await makeCoordinator({ store, control, messages })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    messages,
+  })
   try {
     // Start a run and emit a step
     const response = await fetch(`${base}/api/rooms/general/messages`, {
@@ -1684,7 +2263,11 @@ test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched ru
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const { coordinator, base } = await makeCoordinator({ store, control, messages })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    messages,
+  })
   try {
     // Start a run in general
     const response = await fetch(`${base}/api/rooms/general/messages`, {
@@ -1765,7 +2348,12 @@ test('non-member gets 404 on all private room endpoints', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const { coordinator, base } = await makeCoordinator({ store, control, messages, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    messages,
+    authenticator: swappable,
+  })
   try {
     // user-1 creates a private room (becomes creator/member)
     const created = await fetch(`${base}/api/rooms`, {
@@ -1844,7 +2432,12 @@ test('member of private room can access its endpoints', async () => {
   const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
-  const { coordinator, base } = await makeCoordinator({ store, control, messages, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    messages,
+    authenticator: swappable,
+  })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-1 creates the private room
@@ -1893,7 +2486,10 @@ test('GET /api/rooms omits private rooms the user is not in but includes public 
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
   const store = new MemoryRoomStore()
-  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
   try {
     // user-1 creates a public room and a private room
     await fetch(`${base}/api/rooms`, {
@@ -1944,7 +2540,10 @@ test('POST /api/rooms with private visibility does not emit room.created globall
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
   const store = new MemoryRoomStore()
-  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-2's workspace stream receives room discovery changes.
@@ -2049,7 +2648,10 @@ test('GET /api/rooms/:id/members returns members for an accessible room', async 
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
@@ -2093,7 +2695,10 @@ test('non-member POST /api/rooms/:id/members returns 404', async () => {
     { id: 'user-1', name: 'Alice' },
     { id: 'user-3', name: 'Carol' },
   ]
-  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
   try {
     const created = await fetch(`${base}/api/rooms`, {
       method: 'POST',
@@ -2196,7 +2801,10 @@ test('member adds a workspace user; added user socket gets room.created; room so
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-1 creates the private room and opens a stream inside it
@@ -2268,7 +2876,10 @@ test('owner removes another member; removed user gets room.removed; room socket 
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-1 creates private room
@@ -2345,7 +2956,10 @@ test('non-owner removing another member returns 403', async () => {
     { id: 'user-2', name: 'Bob' },
     { id: 'user-3', name: 'Carol' },
   ]
-  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
   try {
     // user-1 owns the room; user-2 and user-3 are members
     currentUser = 'user-1'
@@ -2385,7 +2999,10 @@ test('member removing themselves (leave) is allowed and gets room.removed', asyn
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
   ]
-  const { coordinator, base } = await makeCoordinator({ store, authenticator: swappable })
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
   const wsBase = base.replace('http', 'ws')
   try {
     // user-1 creates the room; add user-2 as member
@@ -2485,7 +3102,9 @@ test('PATCH edits own message text without starting runs or creating attention',
     )
     expect((await room.next()).type).toBe('room.snapshot')
     currentUser = 'user-2'
-    const reviewer = await open(`${base.replace('http', 'ws')}/api/workspace/stream`)
+    const reviewer = await open(
+      `${base.replace('http', 'ws')}/api/workspace/stream`,
+    )
     expect((await reviewer.next()).type).toBe('workspace.snapshot')
 
     currentUser = 'user-1'
@@ -2565,17 +3184,14 @@ test('PATCH rejects empty text, other authors, and missing messages', async () =
   })
   const base = `http://localhost:${coordinator.port}`
   try {
-    const empty = await fetch(
-      `${base}/api/rooms/general/messages/${mine.id}`,
-      {
-        method: 'PATCH',
-        headers: {
-          origin: 'http://gui.test',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ text: '   ' }),
+    const empty = await fetch(`${base}/api/rooms/general/messages/${mine.id}`, {
+      method: 'PATCH',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
       },
-    )
+      body: JSON.stringify({ text: '   ' }),
+    })
     expect(empty.status).toBe(400)
 
     const forbidden = await fetch(
@@ -2603,6 +3219,574 @@ test('PATCH rejects empty text, other authors, and missing messages', async () =
       },
     )
     expect(missing.status).toBe(404)
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('POST reply is linked to its root, excluded from flat history, and returned by GET thread with a derived summary', async () => {
+  const store = new MemoryRoomStore()
+  const { coordinator, base } = await makeCoordinator({ store })
+  try {
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    expect(rootResponse.status).toBe(201)
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    expect((await socket.next()).type).toBe('room.snapshot')
+    const nextEvent = socket.next()
+
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Reply text', rootId: root.id }),
+    })
+    expect(replyResponse.status).toBe(201)
+    const { message: reply } = (await replyResponse.json()) as {
+      message: RoomMessage
+    }
+    expect(reply.rootId).toBe(root.id)
+
+    const event = await nextEvent
+    expect(event.type).toBe('message.created')
+    expect((event.message as RoomMessage).rootId).toBe(root.id)
+    socket.socket.close()
+
+    const flat = await fetch(`${base}/api/rooms/general/messages`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    const flatBody = (await flat.json()) as { messages: RoomMessage[] }
+    expect(flatBody.messages.map(({ id }) => id)).toEqual([root.id])
+    expect(flatBody.messages[0]?.replySummary).toEqual({
+      replyCount: 1,
+      participantIds: ['user-1'],
+      latestReplyAt: reply.createdAt,
+    })
+
+    const thread = await fetch(
+      `${base}/api/rooms/general/messages/${root.id}/thread`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    expect(thread.status).toBe(200)
+    const threadBody = (await thread.json()) as {
+      root: RoomMessage
+      replies: RoomMessage[]
+    }
+    expect(threadBody.root.id).toBe(root.id)
+    expect(threadBody.replies.map(({ id }) => id)).toEqual([reply.id])
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('a top-level mention run is bound to its trigger as the invocation root, and its successful result is routed into the thread without duplicating as a Room message', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@software-engineer fix the flaky test' }),
+    })
+    expect(response.status).toBe(202)
+    const { message: trigger, run } = (await response.json()) as {
+      message: RoomMessage
+      run: RoomRun
+    }
+
+    // The invocation root bound to the grant context is the trigger message,
+    // not a caller-selected destination.
+    expect(control.requests).toEqual([
+      {
+        task: 'fix the flaky test',
+        roomId: GENERAL_ROOM_ID,
+        rootId: trigger.id,
+        agentDefinitionId: 'software-engineer',
+        attachments: [],
+      },
+    ])
+
+    control.finish(run.id, 'succeeded', 'Fixed it, tests are green.')
+    await Bun.sleep(5)
+
+    // The flat Room feed keeps only the trigger message; the run's capsule
+    // and result never appear there as a second Room message.
+    const flat = await fetch(`${base}/api/rooms/general/messages`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    const flatBody = (await flat.json()) as { messages: RoomMessage[] }
+    expect(flatBody.messages.map(({ id }) => id)).toEqual([trigger.id])
+    const completedAt = store.getRun(run.id)!.completedAt!
+    expect(flatBody.messages[0]?.replySummary).toEqual({
+      replyCount: 1,
+      participantIds: ['software-engineer'],
+      latestReplyAt: completedAt,
+    })
+
+    const thread = await fetch(
+      `${base}/api/rooms/general/messages/${trigger.id}/thread`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    expect(thread.status).toBe(200)
+    const threadBody = (await thread.json()) as {
+      replies: RoomMessage[]
+      results: Array<{
+        id: string
+        agentId: string
+        text: string
+        createdAt: number
+      }>
+    }
+    expect(threadBody.replies).toEqual([])
+    expect(threadBody.results).toEqual([
+      {
+        id: run.id,
+        agentId: 'software-engineer',
+        text: 'Fixed it, tests are green.',
+        createdAt: completedAt,
+      },
+    ])
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('failed and cancelled runs create no thread reply or count increment, keeping their inspectable capsule off the reply count', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const failedResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@software-engineer will fail' }),
+    })
+    const { message: failedTrigger, run: failedRun } =
+      (await failedResponse.json()) as { message: RoomMessage; run: RoomRun }
+    control.finish(failedRun.id, 'failed', 'boom')
+
+    const cancelledResponse = await fetch(
+      `${base}/api/rooms/general/messages`,
+      {
+        method: 'POST',
+        headers: {
+          origin: 'http://gui.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ text: '@software-engineer will cancel' }),
+      },
+    )
+    const { message: cancelledTrigger, run: cancelledRun } =
+      (await cancelledResponse.json()) as {
+        message: RoomMessage
+        run: RoomRun
+      }
+    await fetch(`${base}/api/rooms/general/runs/${cancelledRun.id}/cancel`, {
+      method: 'POST',
+      headers: { origin: 'http://gui.test' },
+    })
+
+    for (const trigger of [failedTrigger, cancelledTrigger]) {
+      const flat = await fetch(`${base}/api/rooms/general/messages`, {
+        headers: { origin: 'http://gui.test' },
+      })
+      const flatBody = (await flat.json()) as { messages: RoomMessage[] }
+      expect(
+        flatBody.messages.find(({ id }) => id === trigger.id)?.replySummary,
+      ).toBeUndefined()
+
+      const thread = await fetch(
+        `${base}/api/rooms/general/messages/${trigger.id}/thread`,
+        { headers: { origin: 'http://gui.test' } },
+      )
+      const threadBody = (await thread.json()) as {
+        replies: RoomMessage[]
+        results: unknown[]
+      }
+      expect(threadBody.replies).toEqual([])
+      expect(threadBody.results).toEqual([])
+    }
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('an agent mention in a Thread reply starts one fresh run bound to the thread root, with the capsule attached to the reply', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: '@software-engineer fix it in-thread',
+        rootId: root.id,
+      }),
+    })
+    expect(replyResponse.status).toBe(202)
+    const { message: reply, run } = (await replyResponse.json()) as {
+      message: RoomMessage
+      run: RoomRun
+    }
+    expect(reply.rootId).toBe(root.id)
+
+    // The invocation root bound to the grant context is the existing thread
+    // root, never the reply itself — nesting is structurally impossible.
+    expect(control.requests).toEqual([
+      {
+        task: 'fix it in-thread',
+        roomId: GENERAL_ROOM_ID,
+        rootId: root.id,
+        threadReadRootId: root.id,
+        agentDefinitionId: 'software-engineer',
+        attachments: [],
+      },
+    ])
+    expect(run.triggerMessageId).toBe(reply.id)
+    expect(store.getRun(run.id)?.triggerMessageId).toBe(reply.id)
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('a reply without a recognized agent mention posts normally and starts no run', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Thanks for the update', rootId: root.id }),
+    })
+    expect(replyResponse.status).toBe(201)
+    const body = (await replyResponse.json()) as { run?: RoomRun }
+    expect(body.run).toBeUndefined()
+    expect(control.requests).toEqual([])
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test("a successful run from a reply mention counts as a thread reply and is included in the root's summary, without duplicating as a Room message", async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: '@software-engineer fix it in-thread',
+        rootId: root.id,
+      }),
+    })
+    const { run } = (await replyResponse.json()) as { run: RoomRun }
+
+    control.finish(run.id, 'succeeded', 'Done, from the thread.')
+    await Bun.sleep(5)
+
+    const thread = await fetch(
+      `${base}/api/rooms/general/messages/${root.id}/thread`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    const threadBody = (await thread.json()) as {
+      replies: RoomMessage[]
+      results: Array<{
+        id: string
+        agentId: string
+        text: string
+        createdAt: number
+      }>
+    }
+    expect(threadBody.replies).toHaveLength(1)
+    expect(threadBody.results).toEqual([
+      {
+        id: run.id,
+        agentId: 'software-engineer',
+        text: 'Done, from the thread.',
+        createdAt: store.getRun(run.id)!.completedAt!,
+      },
+    ])
+
+    const flat = await fetch(`${base}/api/rooms/general/messages`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    const flatBody = (await flat.json()) as { messages: RoomMessage[] }
+    expect(flatBody.messages.map(({ id }) => id)).toEqual([root.id])
+    expect(flatBody.messages[0]?.replySummary?.replyCount).toBe(2)
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('a failed run from a reply mention creates no thread reply and does not inflate the reply count', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: '@software-engineer will fail in-thread',
+        rootId: root.id,
+      }),
+    })
+    const { run } = (await replyResponse.json()) as { run: RoomRun }
+
+    control.finish(run.id, 'failed', 'boom')
+
+    const thread = await fetch(
+      `${base}/api/rooms/general/messages/${root.id}/thread`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    const threadBody = (await thread.json()) as {
+      replies: RoomMessage[]
+      results: unknown[]
+    }
+    expect(threadBody.replies).toHaveLength(1)
+    expect(threadBody.results).toEqual([])
+
+    const flat = await fetch(`${base}/api/rooms/general/messages`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    const flatBody = (await flat.json()) as { messages: RoomMessage[] }
+    expect(flatBody.messages[0]?.replySummary?.replyCount).toBe(1)
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('two separate reply mentions on the same thread run concurrently — no per-thread or per-agent lock', async () => {
+  const store = new MemoryRoomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      fetch(`${base}/api/rooms/general/messages`, {
+        method: 'POST',
+        headers: {
+          origin: 'http://gui.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: '@software-engineer first task',
+          rootId: root.id,
+        }),
+      }),
+      fetch(`${base}/api/rooms/general/messages`, {
+        method: 'POST',
+        headers: {
+          origin: 'http://gui.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: '@antboy second task',
+          rootId: root.id,
+        }),
+      }),
+    ])
+    expect(firstResponse.status).toBe(202)
+    expect(secondResponse.status).toBe(202)
+    const { run: firstRun } = (await firstResponse.json()) as { run: RoomRun }
+    const { run: secondRun } = (await secondResponse.json()) as {
+      run: RoomRun
+    }
+
+    expect(firstRun.id).not.toBe(secondRun.id)
+    expect(firstRun.state).toBe('preparing')
+    expect(secondRun.state).toBe('preparing')
+    expect(
+      control.requests.every(
+        (request) =>
+          request.rootId === root.id && request.threadReadRootId === root.id,
+      ),
+    ).toBe(true)
+    expect(control.requests).toHaveLength(2)
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('POST reply rejects an invalid, cross-room, or nested rootId; GET thread 404s for unknown roots and private-room non-members', async () => {
+  let currentUser = 'user-1'
+  const swappable: SessionAuthenticator = {
+    authenticate: async () => ({ id: currentUser, name: currentUser }),
+  }
+  const store = new MemoryRoomStore()
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: swappable,
+  })
+  try {
+    const created = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Secret', visibility: 'private' }),
+    })
+    const { room } = (await created.json()) as { room: RoomSummary }
+
+    const rootResponse = await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+    const replyResponse = await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Reply text', rootId: root.id }),
+    })
+    const { message: reply } = (await replyResponse.json()) as {
+      message: RoomMessage
+    }
+
+    const missingRoot = await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Nope', rootId: 'missing' }),
+    })
+    expect(missingRoot.status).toBe(400)
+
+    const nestedRoot = await fetch(`${base}/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Nope', rootId: reply.id }),
+    })
+    expect(nestedRoot.status).toBe(400)
+
+    const crossRoomRoot = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Nope', rootId: root.id }),
+    })
+    expect(crossRoomRoot.status).toBe(400)
+
+    const unknownThread = await fetch(
+      `${base}/api/rooms/${room.id}/messages/missing/thread`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    expect(unknownThread.status).toBe(404)
+
+    currentUser = 'user-2'
+    const nonMemberThread = await fetch(
+      `${base}/api/rooms/${room.id}/messages/${root.id}/thread`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    expect(nonMemberThread.status).toBe(404)
   } finally {
     coordinator.stop()
   }

@@ -48,11 +48,31 @@ export function createMembersHttp(deps: {
         return json({ error: 'Room not found' }, 404)
       deps.store.acknowledgeRoomAttention(roomId, user.id, Date.now())
       deps.broadcastAttention(user.id, roomId)
-      return json({ attentionCount: 0 })
+      return json({
+        attentionCount:
+          deps.store.listAttentionCounts(user.id).get(roomId) ?? 0,
+        mentionCount:
+          deps.store.listAttentionCounts(user.id, 'mention').get(roomId) ?? 0,
+      })
     }
-    const membersRoute = url.pathname.match(
-      /^\/api\/rooms\/([^/]+)\/members$/,
+    const threadAcknowledgeRoute = url.pathname.match(
+      /^\/api\/rooms\/([^/]+)\/threads\/([^/]+)\/attention\/acknowledge$/,
     )
+    if (threadAcknowledgeRoute && request.method === 'POST') {
+      const roomId = threadAcknowledgeRoute[1]!
+      const rootId = threadAcknowledgeRoute[2]!
+      if (!deps.store.canAccessRoom(roomId, user.id))
+        return json({ error: 'Room not found' }, 404)
+      deps.store.acknowledgeThreadAttention(roomId, rootId, user.id, Date.now())
+      deps.broadcastAttention(user.id, roomId)
+      return json({
+        attentionCount:
+          deps.store.listAttentionCounts(user.id).get(roomId) ?? 0,
+        mentionCount:
+          deps.store.listAttentionCounts(user.id, 'mention').get(roomId) ?? 0,
+      })
+    }
+    const membersRoute = url.pathname.match(/^\/api\/rooms\/([^/]+)\/members$/)
     if (membersRoute && request.method === 'GET') {
       const roomId = membersRoute[1]!
       if (!deps.store.canAccessRoom(roomId, user.id))
@@ -102,10 +122,7 @@ export function createMembersHttp(deps: {
       if (room.visibility !== 'private')
         return json({ error: 'Room is not private' }, 400)
       if (targetUserId !== user.id && !deps.store.isOwner(roomId, user.id))
-        return json(
-          { error: 'Only the room owner can remove members' },
-          403,
-        )
+        return json({ error: 'Only the room owner can remove members' }, 403)
       deps.store.removeMember(roomId, targetUserId)
       deps.broadcastWorkspaceToUsers(new Set([targetUserId]), {
         type: 'room.removed',

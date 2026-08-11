@@ -85,6 +85,69 @@ test('passes room context and attachment descriptors without assembling inputs',
   expect(request?.attachments).toEqual(attachments)
 })
 
+test('passes the invocation rootId for a top-level Room-linked run into the grant context', () => {
+  let request: WorkspaceAgentStartRunRequest | undefined
+  const control = createRunControl(
+    captureExecutor((value) => {
+      request = value
+    }),
+  )
+
+  control.start('fix the flaky test', {
+    roomId: 'room-1',
+    rootId: 'trigger-message-1',
+    onCreate: () => true,
+  })
+
+  expect(request?.grantContext).toEqual({
+    roomId: 'room-1',
+    rootId: 'trigger-message-1',
+    agentDefinitionId: 'software-engineer',
+  })
+})
+
+test('passes threadReadRootId for an in-thread Room-linked run into the grant context', () => {
+  let request: WorkspaceAgentStartRunRequest | undefined
+  const control = createRunControl(
+    captureExecutor((value) => {
+      request = value
+    }),
+  )
+
+  control.start('fix it in-thread', {
+    roomId: 'room-1',
+    rootId: 'thread-root-1',
+    threadReadRootId: 'thread-root-1',
+    onCreate: () => true,
+  })
+
+  expect(request?.grantContext).toEqual({
+    roomId: 'room-1',
+    rootId: 'thread-root-1',
+    threadReadRootId: 'thread-root-1',
+    agentDefinitionId: 'software-engineer',
+  })
+})
+
+test('omits rootId from the grant context when the room-linked run has none', () => {
+  let request: WorkspaceAgentStartRunRequest | undefined
+  const control = createRunControl(
+    captureExecutor((value) => {
+      request = value
+    }),
+  )
+
+  control.start('summarize the room', {
+    roomId: 'room-1',
+    onCreate: () => true,
+  })
+
+  expect(request?.grantContext).toEqual({
+    roomId: 'room-1',
+    agentDefinitionId: 'software-engineer',
+  })
+})
+
 test('passes oneshot context and optional repositoryBase', () => {
   let request: WorkspaceAgentStartRunRequest | undefined
   const control = createRunControl(

@@ -31,6 +31,12 @@ export type MentionableAccount = {
   displayName?: string
   image?: string
 }
+export type ThreadSummary = {
+  replyCount: number
+  /** Distinct reply-author ids, most-recent-first, capped at 3. */
+  participantIds: string[]
+  latestReplyAt: number
+}
 export type RoomMessage = {
   id: string
   roomId: string
@@ -39,6 +45,23 @@ export type RoomMessage = {
   createdAt: number
   editedAt?: number
   attachments: RoomAttachment[]
+  /** Set only on thread replies: the id of the top-level message they reply to. */
+  rootId?: string
+  /** Set only on top-level messages that have durable replies. */
+  replySummary?: ThreadSummary
+}
+/** A successful Room-linked run's final output, presented as a thread reply. */
+export type RunResultReply = {
+  id: string
+  agentId: string
+  text: string
+  createdAt: number
+}
+export type RoomThread = {
+  root: RoomMessage
+  replies: RoomMessage[]
+  /** Successful run results rooted at this thread, chronological, counted as replies. */
+  results: RunResultReply[]
 }
 export type RoomAttachment = {
   id: string
@@ -75,6 +98,8 @@ export type MessageSearchHit = {
   author: Author
   text: string
   createdAt: number
+  /** Set only when the hit is a thread reply: the id of its top-level root message. */
+  rootId?: string
 }
 export type RoomStreamMessage =
   | {
@@ -100,7 +125,9 @@ export type WorkspaceStreamMessage =
       roomName: string
       attentionCount: number
       mentionCount: number
-      kind?: 'mention' | 'run_terminal'
+      kind?: 'mention' | 'run_terminal' | 'thread_reply'
+      /** Root message id, present for Thread Attention so clients can open the right rail. */
+      rootId?: string
     }
   | {
       type: 'message.created'

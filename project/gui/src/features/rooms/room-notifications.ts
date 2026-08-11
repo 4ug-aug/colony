@@ -15,10 +15,13 @@ export function compareMessageMarkers(
 
 export function roomNotification(
   mentionCount: number,
+  /** Total open Attention for the room, aggregating mentions, terminal runs, and Thread Attention. */
+  attentionCount: number,
   latestOtherMessage: RoomMessageMarker | undefined,
   seenMessage: RoomMessageMarker | undefined,
 ): RoomNotification | undefined {
   if (mentionCount > 0) return 'mention'
+  if (attentionCount > 0) return 'unread'
   if (
     latestOtherMessage &&
     (!seenMessage || compareMessageMarkers(latestOtherMessage, seenMessage) > 0)

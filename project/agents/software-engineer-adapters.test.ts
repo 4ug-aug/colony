@@ -6,7 +6,96 @@ import { Octokit } from "octokit";
 import {
   createGitHubSoftwareEngineerAdapter,
   createWorkspaceGrillAdapter,
+  createWorkspaceSoftwareEngineerAdapter,
 } from "./software-engineer-adapters";
+
+test("workspace.room binds workspace.post_message to the invocation root from grantContext.rootId", async () => {
+  const calls: unknown[] = [];
+  const adapter = createWorkspaceSoftwareEngineerAdapter({
+    port: {
+      listMessages: () => [],
+      listThreadMessages: () => [],
+      postMessage: (input) => {
+        calls.push(input);
+      },
+    },
+  });
+  const upstream = adapter.capability!.createUpstream({
+    grantContext: { roomId: "room-1", rootId: "root-1" },
+  });
+  await upstream.callTool("workspace.post_message", { text: "progress" });
+  expect(calls).toEqual([
+    {
+      roomId: "room-1",
+      author: {
+        kind: "agent",
+        id: "software-engineer",
+        name: "Software engineer",
+      },
+      text: "progress",
+      rootId: "root-1",
+    },
+  ]);
+});
+
+test("workspace.room omits rootId for a top-level invocation without a bound root", async () => {
+  const calls: unknown[] = [];
+  const adapter = createWorkspaceSoftwareEngineerAdapter({
+    port: {
+      listMessages: () => [],
+      listThreadMessages: () => [],
+      postMessage: (input) => {
+        calls.push(input);
+      },
+    },
+  });
+  const upstream = adapter.capability!.createUpstream({
+    grantContext: { roomId: "room-1" },
+  });
+  await upstream.callTool("workspace.post_message", { text: "hello" });
+  expect(calls).toEqual([
+    {
+      roomId: "room-1",
+      author: {
+        kind: "agent",
+        id: "software-engineer",
+        name: "Software engineer",
+      },
+      text: "hello",
+    },
+  ]);
+});
+
+test("workspace.room reads the thread transcript when grantContext.threadReadRootId is set", async () => {
+  const adapter = createWorkspaceSoftwareEngineerAdapter({
+    port: {
+      listMessages: () => {
+        throw new Error(
+          "must not read flat Room scope for a thread invocation",
+        );
+      },
+      listThreadMessages: (roomId, rootId) => [
+        {
+          author: { kind: "user", id: "u1", name: "Ada" },
+          text: `root of ${roomId}/${rootId}`,
+          createdAt: 0,
+        },
+      ],
+      postMessage: () => {},
+    },
+  });
+  const upstream = adapter.capability!.createUpstream({
+    grantContext: {
+      roomId: "room-1",
+      rootId: "root-1",
+      threadReadRootId: "root-1",
+    },
+  });
+  const result = (await upstream.callTool("workspace.read_messages", {})) as {
+    content: { text: string }[];
+  };
+  expect(result.content[0].text).toContain("root of room-1/root-1");
+});
 
 test("workspace.grill applies only when grantContext.grillId is set", () => {
   const adapter = createWorkspaceGrillAdapter({
@@ -137,12 +226,11 @@ test("GitHub PR merge base uses grantContext.repositoryBase when set", async () 
         request.url.includes("heads%2Ffeat%2Finitiative"),
       ),
     ).toBe(true);
-    expect(requests.some((request) => request.url.includes("heads%2Fmain"))).toBe(
-      false,
-    );
+    expect(
+      requests.some((request) => request.url.includes("heads%2Fmain")),
+    ).toBe(false);
     const createPull = requests.find(
-      (request) =>
-        request.url.endsWith("/pulls") && request.body !== undefined,
+      (request) => request.url.endsWith("/pulls") && request.body !== undefined,
     );
     expect(JSON.parse(createPull!.body!)).toMatchObject({
       base: "feat/initiative",

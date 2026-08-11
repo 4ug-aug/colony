@@ -15,7 +15,10 @@ import {
   type RoomUser,
   type StoredStep,
 } from './features/rooms/room-store'
-import { createRoomMessageHub, type RoomMessageHub } from './features/rooms/room-hub'
+import {
+  createRoomMessageHub,
+  type RoomMessageHub,
+} from './features/rooms/room-hub'
 import {
   createAdmissionHttpHandler,
   type AdmissionOptions,
@@ -64,16 +67,15 @@ import {
   type Grill,
   type GrillStore,
 } from './features/grills/grill-store'
-import { createIssueRunner, type IssueRunner } from './features/issues/issue-runner'
+import {
+  createIssueRunner,
+  type IssueRunner,
+} from './features/issues/issue-runner'
 import {
   createScheduleRunner,
   type ScheduleRunner,
 } from './features/schedules/schedule-runner'
-import {
-  allowedOrigin,
-  json,
-  withCors,
-} from './http/respond'
+import { allowedOrigin, json, withCors } from './http/respond'
 import { createIssuesHttp } from './features/issues/issues-http'
 import { createSchedulesHttp } from './features/schedules/schedules-http'
 import { createBulletinsHttp } from './features/bulletins/bulletins-http'
@@ -154,7 +156,9 @@ export type WorkspaceServerMessage =
       roomName: string
       attentionCount: number
       mentionCount: number
-      kind?: 'mention' | 'run_terminal'
+      kind?: 'mention' | 'run_terminal' | 'thread_reply'
+      /** Root message id, present when kind is 'thread_reply' or a run_terminal fired from a thread. */
+      rootId?: string
     }
   | {
       type: 'grill_attention.changed'
@@ -336,9 +340,7 @@ export function createCoordinator(options: {
       issueId: string,
       owner: IssueOwner | undefined,
     ) => { issue: Issue; run?: IssueRun }
-    maybeStartForOwner: (
-      issueId: string,
-    ) => { issue: Issue; run?: IssueRun }
+    maybeStartForOwner: (issueId: string) => { issue: Issue; run?: IssueRun }
   }
   agentDefinitions?: () => AgentDefinitionSummary[]
 }) {
@@ -562,7 +564,8 @@ export function createCoordinator(options: {
   const broadcastAttention = (
     userId: string,
     roomId: string,
-    kind?: 'mention' | 'run_terminal',
+    kind?: 'mention' | 'run_terminal' | 'thread_reply',
+    rootId?: string,
   ): void => {
     const attentionCount =
       options.store.listAttentionCounts(userId).get(roomId) ?? 0
@@ -575,6 +578,7 @@ export function createCoordinator(options: {
       attentionCount,
       mentionCount,
       ...(kind ? { kind } : {}),
+      ...(rootId ? { rootId } : {}),
     })
   }
   const broadcastGrillAttention = (userId: string, grillId: string): void => {
@@ -591,9 +595,10 @@ export function createCoordinator(options: {
   const createAttention = (
     roomId: string,
     recipientId: string,
-    kind: 'mention' | 'run_terminal',
+    kind: 'mention' | 'run_terminal' | 'thread_reply',
     sourceId: string,
     createdAt: number,
+    rootId?: string,
   ): void => {
     if (
       options.store.createAttention({
@@ -602,10 +607,11 @@ export function createCoordinator(options: {
         recipientId,
         kind,
         sourceId,
+        ...(rootId ? { rootId } : {}),
         createdAt,
       })
     )
-      broadcastAttention(recipientId, roomId, kind)
+      broadcastAttention(recipientId, roomId, kind, rootId)
   }
   const sendSnapshot = (socket: ServerWebSocket<SocketData>): void => {
     if (socket.data.scope === 'workspace') {
@@ -760,6 +766,11 @@ export function createCoordinator(options: {
       updatedAt: updated.updatedAt,
     })
   }
+  const threadRootIdForRun = (run: RoomRun): string | undefined => {
+    const trigger = options.store.getMessage(run.roomId, run.triggerMessageId)
+    if (!trigger) return undefined
+    return trigger.rootId ?? trigger.id
+  }
   const notifyRunTerminal = (run: RoomRun): void => {
     const eligible = new Set(
       options.store.listMentionableAccounts(run.roomId).map(({ id }) => id),
@@ -768,6 +779,8 @@ export function createCoordinator(options: {
       run.requestedBy.id,
       ...options.store.listMentionRecipientIds(run.triggerMessageId),
     ])
+    const trigger = options.store.getMessage(run.roomId, run.triggerMessageId)
+    const rootId = trigger?.rootId
     for (const recipientId of recipients)
       if (eligible.has(recipientId))
         createAttention(
@@ -776,7 +789,27 @@ export function createCoordinator(options: {
           'run_terminal',
           run.id,
           run.completedAt ?? Date.now(),
+          rootId,
         )
+  }
+  /** Successful results are Thread replies: Attention goes to Account participants. */
+  const notifySuccessfulRunThreadAttention = (run: RoomRun): void => {
+    const rootId = threadRootIdForRun(run)
+    if (!rootId) return
+    const at = run.completedAt ?? Date.now()
+    for (const participantId of options.store.listThreadParticipantIds(
+      run.roomId,
+      rootId,
+    )) {
+      createAttention(
+        run.roomId,
+        participantId,
+        'thread_reply',
+        run.id,
+        at,
+        rootId,
+      )
+    }
   }
   const project = (run: RunSummary): void => {
     const saved = options.store.getRun(run.id)
@@ -790,6 +823,8 @@ export function createCoordinator(options: {
       changed.state === 'cancelled'
     )
       notifyRunTerminal(changed)
+    if (changed.state === 'succeeded')
+      notifySuccessfulRunThreadAttention(changed)
   }
   const unsubscribe = options.control.subscribe(project)
   const unsubscribeMessages = options.messages.subscribe((event) => {
@@ -811,6 +846,27 @@ export function createCoordinator(options: {
         event.message.id,
         event.message.createdAt,
       )
+    }
+    if (event.message.rootId) {
+      const rootId = event.message.rootId
+      for (const participantId of options.store.listThreadParticipantIds(
+        event.message.roomId,
+        rootId,
+      )) {
+        if (
+          event.message.author.kind === 'user' &&
+          event.message.author.id === participantId
+        )
+          continue
+        createAttention(
+          event.message.roomId,
+          participantId,
+          'thread_reply',
+          event.message.id,
+          event.message.createdAt,
+          rootId,
+        )
+      }
     }
     broadcastWorkspaceMessage({
       roomId: event.message.roomId,
@@ -910,8 +966,7 @@ export function createCoordinator(options: {
     store: options.store,
     broadcastWorkspaceToUsers,
     broadcastRoom,
-    broadcastAttention: (userId, roomId) =>
-      broadcastAttention(userId, roomId),
+    broadcastAttention: (userId, roomId) => broadcastAttention(userId, roomId),
   })
   const server = Bun.serve<SocketData>({
     port: options.port ?? 3001,
@@ -998,13 +1053,9 @@ export function createCoordinator(options: {
       if (url.pathname === '/api/agent-definitions' && request.method === 'GET')
         return cors(json({ agents: agentDefinitions() }))
       const handled =
-        (schedulesHttp
-          ? await schedulesHttp(request, url, user)
-          : undefined) ??
+        (schedulesHttp ? await schedulesHttp(request, url, user) : undefined) ??
         (issuesHttp ? await issuesHttp(request, url) : undefined) ??
-        (bulletinsHttp
-          ? await bulletinsHttp(request, url, user)
-          : undefined) ??
+        (bulletinsHttp ? await bulletinsHttp(request, url, user) : undefined) ??
         (docsHttp ? await docsHttp(request, url, user) : undefined) ??
         (grillsHttp ? await grillsHttp(request, url, user) : undefined) ??
         (await oneshotsHttp(request, url, user)) ??
@@ -1220,6 +1271,10 @@ if (import.meta.main) {
               messages
                 .listMessages(id)
                 .map(({ attachments: _, ...message }) => message),
+            listThreadMessages: (id, rootId) =>
+              messages
+                .listThreadMessages(id, rootId)
+                .map(({ attachments: _, ...message }) => message),
             postMessage: (input) => {
               messages.postMessage(input)
             },
@@ -1320,8 +1375,7 @@ if (import.meta.main) {
                   .some((user) => user.id === owner.id)
                 if (!known) throw new Error('Unknown account')
               }
-              return issueNotify.assignOwner(issue.id, owner ?? undefined)
-                .issue
+              return issueNotify.assignOwner(issue.id, owner ?? undefined).issue
             },
           },
           listAssignableOwners: () => [

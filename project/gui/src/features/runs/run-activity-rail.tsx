@@ -11,11 +11,7 @@ import {
 import { apiFetch } from '#/lib/api-transport'
 import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  groupActivity,
-  mergeSteps,
-  pairSteps,
-} from './run-activity'
+import { groupActivity, mergeSteps, pairSteps } from './run-activity'
 import { RunActivitySplitHeader } from './run-activity-dither'
 import { terminal } from './run-helpers'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
@@ -140,7 +136,11 @@ export function RunActivityContent({
             <p className="mb-1 text-sm font-semibold">
               {(triggerMessage?.author ?? run.requestedBy).name}
             </p>
-            {attribution && <p className="mb-1 text-xs text-muted-foreground">{attribution}</p>}
+            {attribution && (
+              <p className="mb-1 text-xs text-muted-foreground">
+                {attribution}
+              </p>
+            )}
             <div className="text-sm leading-6">
               <Markdown>{triggerMessage?.text ?? run.task}</Markdown>
             </div>
@@ -194,7 +194,10 @@ export function RunActivityContent({
                   </p>
                 </article>
               ) : (
-                <ToolCallDetailsList key={`tools-${index}`} items={group.items} />
+                <ToolCallDetailsList
+                  key={`tools-${index}`}
+                  items={group.items}
+                />
               ),
             )}
           </div>
@@ -239,6 +242,8 @@ export function RunActivityRail({
   onCancel,
   stepsPath,
   variant = 'rail',
+  exiting = false,
+  onExited,
 }: {
   run: ActivityRun
   triggerMessage?: TriggerMessage
@@ -247,6 +252,9 @@ export function RunActivityRail({
   onCancel: () => void
   stepsPath?: string
   variant?: 'rail' | 'inline'
+  /** Playing the exit transition before the next surface enters (never stacked). */
+  exiting?: boolean
+  onExited?: () => void
 }) {
   const inline = useInlineRail()
   const [persistedSteps, setPersistedSteps] = useState<Step[]>([])
@@ -263,9 +271,12 @@ export function RunActivityRail({
     setPersistedSteps([])
     setLoading(true)
     setError(undefined)
-    void apiFetch(stepsPath ?? `/api/rooms/${run.roomId}/runs/${run.id}/steps`, {
-      signal: controller.signal,
-    })
+    void apiFetch(
+      stepsPath ?? `/api/rooms/${run.roomId}/runs/${run.id}/steps`,
+      {
+        signal: controller.signal,
+      },
+    )
       .then(async (response) => {
         if (!response.ok) throw new Error('Could not load run activity')
         const data = (await response.json()) as { steps: Step[] }
@@ -309,15 +320,35 @@ export function RunActivityRail({
   if (inline)
     return (
       <aside
-        className="flex w-[26rem] shrink-0 flex-col border-l bg-background animate-in fade-in-0 slide-in-from-right-2 duration-200"
+        className={`flex w-[26rem] shrink-0 flex-col border-l bg-background duration-200 ${
+          exiting
+            ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards'
+            : 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards'
+        }`}
         aria-label="Run activity"
+        onAnimationEnd={
+          exiting
+            ? (event) => {
+                if (event.target !== event.currentTarget) return
+                onExited?.()
+              }
+            : undefined
+        }
       >
         {content}
       </aside>
     )
 
   return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
+    <Sheet
+      open={!exiting}
+      onOpenChange={(open) => {
+        if (!open && !exiting) onClose()
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open && exiting) onExited?.()
+      }}
+    >
       <SheetContent
         side="right"
         showCloseButton={false}

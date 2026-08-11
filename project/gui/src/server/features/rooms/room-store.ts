@@ -23,6 +23,12 @@ export type RoomSummary = {
   visibility: 'public' | 'private'
   createdBy?: string
 }
+export type ThreadSummary = {
+  replyCount: number
+  /** Distinct reply-author ids, most-recent-first, capped at 3. */
+  participantIds: string[]
+  latestReplyAt: number
+}
 export type RoomMessage = {
   id: string
   roomId: string
@@ -31,6 +37,23 @@ export type RoomMessage = {
   createdAt: number
   editedAt?: number
   attachments: RoomAttachment[]
+  /** Set only on thread replies: the id of the top-level message they reply to. */
+  rootId?: string
+  /** Set only on top-level messages that have durable replies. */
+  replySummary?: ThreadSummary
+}
+/** A successful Room-linked run's final output, presented as a thread reply. */
+export type RunResultReply = {
+  id: string
+  agentId: string
+  text: string
+  createdAt: number
+}
+export type RoomThread = {
+  root: RoomMessage
+  replies: RoomMessage[]
+  /** Successful run results rooted at this thread, chronological, counted as replies. */
+  results: RunResultReply[]
 }
 export type RoomMessageMarker = {
   id: string
@@ -49,7 +72,10 @@ export type NewRoomAttachment = RoomAttachment & {
   createdAt: number
 }
 export type StoredRoomAttachment = NewRoomAttachment & { roomId: string }
-export type RoomMessageInput = Omit<RoomMessage, 'attachments'> & {
+export type RoomMessageInput = Omit<
+  RoomMessage,
+  'attachments' | 'replySummary'
+> & {
   attachments?: RoomAttachment[]
 }
 export type RoomHistoryPage = {
@@ -64,6 +90,8 @@ export type MessageSearchHit = {
   author: MessageAuthor
   text: string
   createdAt: number
+  /** Set only when the hit is a thread reply: the id of its top-level root message. */
+  rootId?: string
 }
 
 export const MESSAGE_SEARCH_MIN_QUERY_LENGTH = 2
@@ -82,13 +110,15 @@ export function buildFtsMatchQuery(raw: string): string | undefined {
   if (!tokens.length) return undefined
   return tokens.join(' AND ')
 }
-export type AttentionKind = 'mention' | 'run_terminal'
+export type AttentionKind = 'mention' | 'run_terminal' | 'thread_reply'
 export type RoomAttention = {
   id: string
   roomId: string
   recipientId: string
   kind: AttentionKind
   sourceId: string
+  /** Root message id of the thread this attention belongs to, when applicable. */
+  rootId?: string
   createdAt: number
 }
 
@@ -133,6 +163,11 @@ export interface RoomStore {
   listMentionableAccounts(roomId: string): RoomUser[]
   listMessages(roomId: string): RoomMessage[]
   getMessage(roomId: string, messageId: string): RoomMessage | undefined
+  /** True when rootId is a top-level message in the same room (not itself a reply). */
+  canReplyTo(roomId: string, rootId: string): boolean
+  getThread(roomId: string, rootId: string): RoomThread | undefined
+  /** Distinct non-agent author ids across a thread's root and replies. */
+  listThreadParticipantIds(roomId: string, rootId: string): string[]
   latestMessageFromOther(
     roomId: string,
     userId: string,
@@ -164,7 +199,15 @@ export interface RoomStore {
   createAttention(attention: RoomAttention): boolean
   listMentionRecipientIds(messageId: string): string[]
   listAttentionCounts(userId: string, kind?: AttentionKind): Map<string, number>
+  /** Clears all open attention for a room except thread_reply, which requires opening the thread itself. */
   acknowledgeRoomAttention(roomId: string, userId: string, at: number): void
+  /** Clears only the open thread_reply attention for one root, leaving other threads and room-level attention untouched. */
+  acknowledgeThreadAttention(
+    roomId: string,
+    rootId: string,
+    userId: string,
+    at: number,
+  ): void
   createRun(run: RoomRun): void
   updateRun(run: RoomRun): void
   failStaleRuns(): RoomRun[]
@@ -206,6 +249,7 @@ type MessageRow = {
   text: string
   created_at: number
   edited_at?: number | null
+  root_id?: string | null
 }
 type AttachmentRow = {
   id: string
@@ -297,6 +341,7 @@ const messageFrom = (
   text: row.text,
   createdAt: row.created_at,
   ...(row.edited_at != null ? { editedAt: row.edited_at } : {}),
+  ...(row.root_id != null ? { rootId: row.root_id } : {}),
   attachments,
 })
 const stepFrom = (row: StepRow): StoredStep => ({
@@ -378,6 +423,15 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     (column) => column.name === 'edited_at',
   )
   const editedAtSelect = hasEditedAt ? ', m.edited_at' : ''
+  const hasRootId = messageColumns.some((column) => column.name === 'root_id')
+  const rootIdSelect = hasRootId ? ', m.root_id' : ''
+  const attentionColumns = sqlite
+    .prepare('PRAGMA table_info(room_attention)')
+    .all() as { name?: string }[]
+  const hasAttentionRootId = attentionColumns.some(
+    (column) => column.name === 'root_id',
+  )
+  const topLevelOnly = hasRootId ? 'm.root_id IS NULL' : '1 = 1'
   const userColumns = sqlite.prepare('PRAGMA table_info(user)').all() as {
     name?: string
   }[]
@@ -413,16 +467,86 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     }
     return rows.map((row) => messageFrom(row, byMessage.get(row.id) ?? []))
   }
-  const messageSelect = `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${editedAtSelect}${messageProfile}
+  const messageSelect = `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${editedAtSelect}${rootIdSelect}${messageProfile}
            FROM room_message m${messageProfileJoin}`
+  const replySummaries = (rootIds: string[]): Map<string, ThreadSummary> => {
+    const map = new Map<string, ThreadSummary>()
+    if (!hasRootId || !rootIds.length) return map
+    const placeholders = rootIds.map(() => '?').join(', ')
+    const messageRows = sqlite
+      .prepare(
+        `SELECT root_id, author_id, created_at, id FROM room_message
+         WHERE root_id IN (${placeholders})`,
+      )
+      .all(...rootIds) as {
+      root_id: string
+      author_id: string
+      created_at: number
+      id: string
+    }[]
+    // Successful run results count as thread replies without a room_message
+    // row. A run's trigger may itself be a reply (an in-thread invocation),
+    // so its result is attributed to that reply's thread root, not its own id.
+    const runRows = sqlite
+      .prepare(
+        `SELECT COALESCE(trig.root_id, room_run.trigger_message_id) AS root_id,
+                room_run.agent_id AS author_id, room_run.completed_at AS created_at, room_run.id
+         FROM room_run
+         LEFT JOIN room_message trig ON trig.id = room_run.trigger_message_id
+         WHERE COALESCE(trig.root_id, room_run.trigger_message_id) IN (${placeholders})
+           AND room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL`,
+      )
+      .all(...rootIds) as {
+      root_id: string
+      author_id: string
+      created_at: number
+      id: string
+    }[]
+    const rows = [...messageRows, ...runRows].sort(
+      (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id),
+    )
+    const grouped = new Map<string, typeof rows>()
+    for (const row of rows) {
+      const list = grouped.get(row.root_id) ?? []
+      list.push(row)
+      grouped.set(row.root_id, list)
+    }
+    for (const [rootId, list] of grouped) {
+      const participantIds: string[] = []
+      for (const row of list) {
+        if (!participantIds.includes(row.author_id))
+          participantIds.push(row.author_id)
+        if (participantIds.length >= 3) break
+      }
+      map.set(rootId, {
+        replyCount: list.length,
+        participantIds,
+        latestReplyAt: list[0]!.created_at,
+      })
+    }
+    return map
+  }
+  const attachReplySummaries = (list: RoomMessage[]): RoomMessage[] => {
+    const topLevelIds = list
+      .filter((message) => message.rootId == null)
+      .map((message) => message.id)
+    if (!topLevelIds.length) return list
+    const summaries = replySummaries(topLevelIds)
+    if (!summaries.size) return list
+    return list.map((message) =>
+      message.rootId == null && summaries.has(message.id)
+        ? { ...message, replySummary: summaries.get(message.id)! }
+        : message,
+    )
+  }
   const messages = (roomId: string): RoomMessage[] => {
     const rows = sqlite
       .prepare(
         `${messageSelect}
-           WHERE m.room_id = ? ORDER BY m.created_at, m.id`,
+           WHERE m.room_id = ? AND ${topLevelOnly} ORDER BY m.created_at, m.id`,
       )
       .all(roomId) as MessageRow[]
-    return hydrateMessages(roomId, rows)
+    return attachReplySummaries(hydrateMessages(roomId, rows))
   }
   const getMessage = (
     roomId: string,
@@ -438,11 +562,12 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     roomId: string,
     userId: string,
   ): RoomMessageMarker | undefined => {
+    const topLevel = hasRootId ? 'root_id IS NULL' : '1 = 1'
     const row = sqlite
       .prepare(
         `SELECT id, created_at, author_id
          FROM room_message
-         WHERE room_id = ? AND author_id <> ?
+         WHERE room_id = ? AND author_id <> ? AND ${topLevel}
          ORDER BY created_at DESC, id DESC
          LIMIT 1`,
       )
@@ -458,8 +583,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     limit: number,
   ): MessageRow[] => {
     const where = before
-      ? 'WHERE m.room_id = ? AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))'
-      : 'WHERE m.room_id = ?'
+      ? `WHERE m.room_id = ? AND ${topLevelOnly} AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))`
+      : `WHERE m.room_id = ? AND ${topLevelOnly}`
     const values = before
       ? [roomId, before.createdAt, before.createdAt, before.id, limit + 1]
       : [roomId, limit + 1]
@@ -511,7 +636,9 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         : undefined
     const rows = messageRows(roomId, before, limit)
     const pageRows = rows.slice(0, limit)
-    const messages = hydrateMessages(roomId, [...pageRows].reverse())
+    const messages = attachReplySummaries(
+      hydrateMessages(roomId, [...pageRows].reverse()),
+    )
     const messageIds = pageRows.map(({ id }) => id)
     const runWhere = messageIds.length
       ? `WHERE room_id = ? AND (trigger_message_id IN (${messageIds.map(() => '?').join(', ')}) OR state IN ('preparing', 'running'))`
@@ -535,7 +662,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     pageRows: MessageRow[],
     hasOlder: boolean,
   ): RoomHistoryPage => {
-    const messages = hydrateMessages(roomId, pageRows)
+    const messages = attachReplySummaries(hydrateMessages(roomId, pageRows))
     const messageIds = pageRows.map(({ id }) => id)
     const runWhere = messageIds.length
       ? `WHERE room_id = ? AND (trigger_message_id IN (${messageIds.map(() => '?').join(', ')}) OR state IN ('preparing', 'running'))`
@@ -561,13 +688,15 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
   ): RoomHistoryPage => {
     const limit = Math.max(1, Math.min(100, Math.floor(options.limit)))
     const target = sqlite
-      .prepare(`${messageSelect} WHERE m.room_id = ? AND m.id = ?`)
+      .prepare(
+        `${messageSelect} WHERE m.room_id = ? AND ${topLevelOnly} AND m.id = ?`,
+      )
       .get(roomId, options.messageId) as MessageRow | undefined
     if (!target) throw new Error('Message not found')
     const olderDesc = sqlite
       .prepare(
         `${messageSelect}
-           WHERE m.room_id = ? AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))
+           WHERE m.room_id = ? AND ${topLevelOnly} AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))
            ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
       )
       .all(
@@ -580,7 +709,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     const newerAsc = sqlite
       .prepare(
         `${messageSelect}
-           WHERE m.room_id = ? AND (m.created_at > ? OR (m.created_at = ? AND m.id > ?))
+           WHERE m.room_id = ? AND ${topLevelOnly} AND (m.created_at > ? OR (m.created_at = ? AND m.id > ?))
            ORDER BY m.created_at ASC, m.id ASC LIMIT ?`,
       )
       .all(
@@ -618,7 +747,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     try {
       rows = sqlite
         .prepare(
-          `SELECT m.id, m.room_id, r.name AS room_name, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${editedAtSelect}${messageProfile}
+          `SELECT m.id, m.room_id, r.name AS room_name, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${editedAtSelect}${rootIdSelect}${messageProfile}
            FROM room_message_fts
            JOIN room_message m ON m.rowid = room_message_fts.rowid
            JOIN room r ON r.id = m.room_id
@@ -642,6 +771,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         author: message.author,
         text: message.text,
         createdAt: message.createdAt,
+        ...(message.rootId != null ? { rootId: message.rootId } : {}),
       }
     })
   }
@@ -797,6 +927,70 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       ).map(userFrom),
     listMessages: messages,
     getMessage,
+    canReplyTo: (roomId, rootId) => {
+      if (!hasRootId) return false
+      const row = sqlite
+        .prepare(
+          'SELECT 1 FROM room_message WHERE id = ? AND room_id = ? AND root_id IS NULL',
+        )
+        .get(rootId, roomId)
+      return Boolean(row)
+    },
+    getThread: (roomId, rootId) => {
+      if (!hasRootId) return undefined
+      const rootRow = sqlite
+        .prepare(
+          `${messageSelect} WHERE m.room_id = ? AND m.id = ? AND ${topLevelOnly}`,
+        )
+        .get(roomId, rootId) as MessageRow | undefined
+      if (!rootRow) return undefined
+      const replyRows = sqlite
+        .prepare(
+          `${messageSelect}
+           WHERE m.room_id = ? AND m.root_id = ? ORDER BY m.created_at, m.id`,
+        )
+        .all(roomId, rootId) as MessageRow[]
+      const resultRows = sqlite
+        .prepare(
+          `SELECT room_run.id, room_run.agent_id, room_run.stdout, room_run.completed_at
+           FROM room_run
+           LEFT JOIN room_message trig
+             ON trig.id = room_run.trigger_message_id AND trig.room_id = room_run.room_id
+           WHERE room_run.room_id = ?
+             AND (room_run.trigger_message_id = ? OR trig.root_id = ?)
+             AND room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL
+           ORDER BY room_run.completed_at, room_run.id`,
+        )
+        .all(roomId, rootId, rootId) as {
+        id: string
+        agent_id: string
+        stdout: string
+        completed_at: number
+      }[]
+      const [root] = attachReplySummaries(hydrateMessages(roomId, [rootRow]))
+      return {
+        root: root!,
+        replies: hydrateMessages(roomId, replyRows),
+        results: resultRows.map((row) => ({
+          id: row.id,
+          agentId: row.agent_id,
+          text: row.stdout,
+          createdAt: row.completed_at,
+        })),
+      }
+    },
+    listThreadParticipantIds: (roomId, rootId) => {
+      if (!hasRootId) return []
+      return (
+        sqlite
+          .prepare(
+            `SELECT DISTINCT author_id FROM room_message
+             WHERE room_id = ? AND author_kind = 'user' AND (id = ? OR root_id = ?)
+             ORDER BY author_id`,
+          )
+          .all(roomId, rootId, rootId) as { author_id: string }[]
+      ).map(({ author_id }) => author_id)
+    },
     latestMessageFromOther,
     listRoomHistoryPage,
     listRoomHistoryAround,
@@ -804,20 +998,38 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
     createMessage: (message, attachments = []) => {
       const run = () => {
-        sqlite
-          .prepare(
-            'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, author_kind, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          )
-          .run(
-            message.id,
-            message.roomId,
-            message.author.id,
-            message.author.name,
-            message.author.image ?? null,
-            message.author.kind,
-            message.text,
-            message.createdAt,
-          )
+        if (hasRootId) {
+          sqlite
+            .prepare(
+              'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, author_kind, text, created_at, root_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            )
+            .run(
+              message.id,
+              message.roomId,
+              message.author.id,
+              message.author.name,
+              message.author.image ?? null,
+              message.author.kind,
+              message.text,
+              message.createdAt,
+              message.rootId ?? null,
+            )
+        } else {
+          sqlite
+            .prepare(
+              'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, author_kind, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            )
+            .run(
+              message.id,
+              message.roomId,
+              message.author.id,
+              message.author.name,
+              message.author.image ?? null,
+              message.author.kind,
+              message.text,
+              message.createdAt,
+            )
+        }
         if (!attachments.length) return
         const insert = sqlite.prepare(
           'INSERT INTO room_attachment (id, message_id, filename, content_type, byte_size, sha256, storage_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -856,21 +1068,37 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       if ((result.changes ?? 0) < 1) return undefined
       return getMessage(roomId, id)
     },
-    createAttention: (attention) =>
-      ((
-        sqlite
-          .prepare(
-            'INSERT OR IGNORE INTO room_attention (id, room_id, recipient_id, kind, source_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          )
-          .run(
-            attention.id,
-            attention.roomId,
-            attention.recipientId,
-            attention.kind,
-            attention.sourceId,
-            attention.createdAt,
-          ) as { changes?: number }
-      ).changes ?? 0) === 1,
+    createAttention: (attention) => {
+      const result = (
+        hasAttentionRootId
+          ? sqlite
+              .prepare(
+                'INSERT OR IGNORE INTO room_attention (id, room_id, recipient_id, kind, source_id, root_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              )
+              .run(
+                attention.id,
+                attention.roomId,
+                attention.recipientId,
+                attention.kind,
+                attention.sourceId,
+                attention.rootId ?? null,
+                attention.createdAt,
+              )
+          : sqlite
+              .prepare(
+                'INSERT OR IGNORE INTO room_attention (id, room_id, recipient_id, kind, source_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+              )
+              .run(
+                attention.id,
+                attention.roomId,
+                attention.recipientId,
+                attention.kind,
+                attention.sourceId,
+                attention.createdAt,
+              )
+      ) as { changes?: number }
+      return (result.changes ?? 0) === 1
+    },
     listMentionRecipientIds: (messageId) =>
       (
         sqlite
@@ -903,9 +1131,17 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     acknowledgeRoomAttention: (roomId, userId, at) => {
       sqlite
         .prepare(
-          'UPDATE room_attention SET acknowledged_at = ? WHERE room_id = ? AND recipient_id = ? AND acknowledged_at IS NULL',
+          "UPDATE room_attention SET acknowledged_at = ? WHERE room_id = ? AND recipient_id = ? AND acknowledged_at IS NULL AND kind != 'thread_reply'",
         )
         .run(at, roomId, userId)
+    },
+    acknowledgeThreadAttention: (roomId, rootId, userId, at) => {
+      if (!hasAttentionRootId) return
+      sqlite
+        .prepare(
+          "UPDATE room_attention SET acknowledged_at = ? WHERE room_id = ? AND root_id = ? AND recipient_id = ? AND acknowledged_at IS NULL AND kind = 'thread_reply'",
+        )
+        .run(at, roomId, rootId, userId)
     },
     createRun: (run) => {
       sqlite

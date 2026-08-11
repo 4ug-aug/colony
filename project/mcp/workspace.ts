@@ -1,6 +1,11 @@
 import type { McpUpstream } from "./gateway";
 
-export interface WorkspaceAuthor { kind: "agent"; id: string; name: string; image?: string }
+export interface WorkspaceAuthor {
+  kind: "agent";
+  id: string;
+  name: string;
+  image?: string;
+}
 export interface WorkspaceMessage {
   author: { kind: "user" | "agent"; id: string; name: string; image?: string };
   text: string;
@@ -8,7 +13,17 @@ export interface WorkspaceMessage {
 }
 export interface WorkspaceRoomPort {
   listMessages(roomId: string): readonly WorkspaceMessage[];
-  postMessage(input: { roomId: string; author: WorkspaceAuthor; text: string }): void;
+  /** Complete root plus chronological replies for a thread-scoped read. */
+  listThreadMessages(
+    roomId: string,
+    rootId: string,
+  ): readonly WorkspaceMessage[];
+  postMessage(input: {
+    roomId: string;
+    author: WorkspaceAuthor;
+    text: string;
+    rootId?: string;
+  }): void;
 }
 
 const relativeDivisions: [ms: number, unit: Intl.RelativeTimeFormatUnit][] = [
@@ -20,7 +35,9 @@ const relativeDivisions: [ms: number, unit: Intl.RelativeTimeFormatUnit][] = [
   [1000 * 60, "minute"],
   [1000, "second"],
 ];
-const relativeTimeFormat = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
+const relativeTimeFormat = new Intl.RelativeTimeFormat("en-US", {
+  numeric: "auto",
+});
 
 /** Human-friendly relative timestamp, e.g. "5 minutes ago" or "yesterday". */
 export function formatRelativeTime(createdAt: number, now: number): string {
@@ -34,17 +51,27 @@ export function formatRelativeTime(createdAt: number, now: number): string {
   return relativeTimeFormat.format(0, "second");
 }
 
-export function formatWorkspaceTranscript(messages: readonly WorkspaceMessage[], now: number): string {
+export function formatWorkspaceTranscript(
+  messages: readonly WorkspaceMessage[],
+  now: number,
+): string {
   if (!messages.length) return "No workspace messages.";
-  return messages.map(({ author, text, createdAt }) =>
-    `[${author.name} · ${author.kind} · ${formatRelativeTime(createdAt, now)}]\n${text}`,
-  ).join("\n\n");
+  return messages
+    .map(
+      ({ author, text, createdAt }) =>
+        `[${author.name} · ${author.kind} · ${formatRelativeTime(createdAt, now)}]\n${text}`,
+    )
+    .join("\n\n");
 }
 
 export function createWorkspaceMcpUpstream(options: {
   port: WorkspaceRoomPort;
   roomId: string;
   agent: { id: string; name: string; image?: string };
+  /** Invocation root for a thread-scoped run: binds posts as replies to this root. */
+  rootId?: string;
+  /** Set only for an in-thread invocation: read_messages returns this root's thread instead of the flat Room. */
+  threadReadRootId?: string;
   now?: () => number;
 }): McpUpstream {
   const now = options.now ?? (() => Date.now());
@@ -55,7 +82,10 @@ export function createWorkspaceMcpUpstream(options: {
           name: "workspace.read_messages",
           description:
             "Read recent messages in the current room as a chronological, human-readable transcript. Each entry is headed by author, role, and relative time.",
-          inputSchema: { type: "object", properties: { limit: { type: "number" } } },
+          inputSchema: {
+            type: "object",
+            properties: { limit: { type: "number" } },
+          },
         },
         {
           name: "workspace.post_message",
@@ -72,13 +102,27 @@ export function createWorkspaceMcpUpstream(options: {
 
     async callTool(name, args) {
       if (name === "workspace.read_messages") {
-        const limit = typeof args.limit === "number" && args.limit > 0 ? args.limit : 50;
         const at = now();
+        if (options.threadReadRootId) {
+          const messages = options.port.listThreadMessages(
+            options.roomId,
+            options.threadReadRootId,
+          );
+          return {
+            content: [
+              { type: "text", text: formatWorkspaceTranscript(messages, at) },
+            ],
+          };
+        }
+        const limit =
+          typeof args.limit === "number" && args.limit > 0 ? args.limit : 50;
         const messages = options.port
           .listMessages(options.roomId)
-          .slice(-limit)
+          .slice(-limit);
         return {
-          content: [{ type: "text", text: formatWorkspaceTranscript(messages, at) }],
+          content: [
+            { type: "text", text: formatWorkspaceTranscript(messages, at) },
+          ],
         };
       }
       if (name === "workspace.post_message") {
@@ -88,6 +132,7 @@ export function createWorkspaceMcpUpstream(options: {
           roomId: options.roomId,
           author: { kind: "agent", ...options.agent },
           text,
+          ...(options.rootId ? { rootId: options.rootId } : {}),
         });
         return { posted: true };
       }

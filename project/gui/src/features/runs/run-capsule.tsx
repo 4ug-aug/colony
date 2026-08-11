@@ -5,14 +5,17 @@ import { useAgentName } from '#/features/agents/use-agent-definitions'
 import { RunAvatar } from './run-avatar'
 import { ProviderIcon } from '#/components/provider-icon'
 import { llmProviderName } from '#/lib/llm-provider'
+import { cn } from '#/lib/utils'
 import type { RoomRun } from '#/features/rooms/types'
 
 export function RunCapsule({
   run,
   openRun,
+  className,
 }: {
   run: RoomRun
   openRun: (runId: string) => void
+  className?: string
 }) {
   const name = useAgentName(run.agentId)
   const state =
@@ -26,7 +29,10 @@ export function RunCapsule({
   return (
     <button
       type="button"
-      className="mt-2 inline-flex items-center gap-1.5 rounded-md border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
+      className={cn(
+        'mt-2 inline-flex items-center gap-1.5 rounded-md border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer',
+        className,
+      )}
       aria-label={`View ${name} activity using ${llmProviderName(run.provider)}, ${state}`}
       onClick={() => openRun(run.id)}
     >

@@ -20,13 +20,28 @@ export class EditMessageError extends Error {
   }
 }
 
+export type PostMessageFailure = 'invalid_root'
+
+export class PostMessageError extends Error {
+  readonly code: PostMessageFailure
+  constructor(code: PostMessageFailure) {
+    super(code)
+    this.name = 'PostMessageError'
+    this.code = code
+  }
+}
+
 export interface RoomMessageHub {
   listMessages(roomId: string): RoomMessage[]
+  /** Complete root plus chronological replies for a thread-scoped read. */
+  listThreadMessages(roomId: string, rootId: string): RoomMessage[]
   postMessage(input: {
     roomId: string
     author: MessageAuthor
     text: string
     attachments?: NewRoomAttachment[]
+    /** Links this message to a top-level root as a thread reply. */
+    rootId?: string
   }): RoomMessage
   editMessage(input: {
     roomId: string
@@ -40,7 +55,12 @@ export interface RoomMessageHub {
 export function createRoomMessageHub(
   store: Pick<
     RoomStore,
-    'listMessages' | 'createMessage' | 'getMessage' | 'updateMessageText'
+    | 'listMessages'
+    | 'createMessage'
+    | 'getMessage'
+    | 'updateMessageText'
+    | 'canReplyTo'
+    | 'getThread'
   >,
   options?: { createId?: () => string; now?: () => number },
 ): RoomMessageHub {
@@ -55,7 +75,14 @@ export function createRoomMessageHub(
     listMessages(roomId) {
       return store.listMessages(roomId)
     },
-    postMessage({ roomId, author, text, attachments = [] }) {
+    listThreadMessages(roomId, rootId) {
+      const thread = store.getThread(roomId, rootId)
+      if (!thread) return []
+      return [thread.root, ...thread.replies]
+    },
+    postMessage({ roomId, author, text, attachments = [], rootId }) {
+      if (rootId != null && !store.canReplyTo(roomId, rootId))
+        throw new PostMessageError('invalid_root')
       const message: RoomMessage = {
         id: createId(),
         roomId,
@@ -65,6 +92,7 @@ export function createRoomMessageHub(
         attachments: attachments.map(
           ({ sha256, storageKey, createdAt, ...attachment }) => attachment,
         ),
+        ...(rootId != null ? { rootId } : {}),
       }
       store.createMessage(message, attachments)
       emit({ type: 'message.created', message })

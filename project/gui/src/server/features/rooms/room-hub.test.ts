@@ -2,23 +2,41 @@ import { expect, test } from 'bun:test'
 import {
   createRoomMessageHub,
   EditMessageError,
+  PostMessageError,
   type RoomEvent,
 } from './room-hub'
 import type { RoomMessage, RoomMessageInput, RoomStore } from './room-store'
 
-class FakeStore
-  implements
-    Pick<
-      RoomStore,
-      'listMessages' | 'createMessage' | 'getMessage' | 'updateMessageText'
-    >
-{
+class FakeStore implements Pick<
+  RoomStore,
+  | 'listMessages'
+  | 'createMessage'
+  | 'getMessage'
+  | 'updateMessageText'
+  | 'canReplyTo'
+  | 'getThread'
+> {
   messages: RoomMessage[] = []
   listMessages(roomId: string) {
-    return this.messages.filter((m) => m.roomId === roomId)
+    return this.messages.filter((m) => m.roomId === roomId && m.rootId == null)
   }
   getMessage(roomId: string, messageId: string) {
     return this.messages.find((m) => m.roomId === roomId && m.id === messageId)
+  }
+  canReplyTo(roomId: string, rootId: string) {
+    return this.messages.some(
+      (m) => m.roomId === roomId && m.id === rootId && m.rootId == null,
+    )
+  }
+  getThread(roomId: string, rootId: string) {
+    const root = this.messages.find(
+      (m) => m.roomId === roomId && m.id === rootId && m.rootId == null,
+    )
+    if (!root) return undefined
+    const replies = this.messages
+      .filter((m) => m.roomId === roomId && m.rootId === rootId)
+      .sort((a, b) => a.createdAt - b.createdAt)
+    return { root, replies, results: [] }
   }
   createMessage(message: RoomMessageInput) {
     this.messages.push({ ...message, attachments: message.attachments ?? [] })
@@ -63,6 +81,40 @@ test('postMessage persists via the store and returns a message with generated id
   expect(message.text).toBe('Hello')
   expect(store.messages).toHaveLength(1)
   expect(store.messages[0]).toEqual(message)
+})
+
+test('listThreadMessages returns the root plus chronological replies, and an empty list for an unknown root', () => {
+  const store = new FakeStore()
+  let idCounter = 0
+  let timeCounter = 1000
+  const hub = createRoomMessageHub(store, {
+    createId: () => `id-${++idCounter}`,
+    now: () => timeCounter++,
+  })
+  const root = hub.postMessage({
+    roomId: 'general',
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+  })
+  const replyOne = hub.postMessage({
+    roomId: 'general',
+    author: { kind: 'user', id: 'user-2', name: 'Bo' },
+    text: 'First reply',
+    rootId: root.id,
+  })
+  const replyTwo = hub.postMessage({
+    roomId: 'general',
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Second reply',
+    rootId: root.id,
+  })
+
+  expect(hub.listThreadMessages('general', root.id)).toEqual([
+    root,
+    replyOne,
+    replyTwo,
+  ])
+  expect(hub.listThreadMessages('general', 'unknown-root')).toEqual([])
 })
 
 test('subscribers receive the message.created event', () => {
@@ -253,5 +305,80 @@ test('editMessage rejects empty text, missing messages, and wrong authors', () =
   } catch (error) {
     expect(error).toBeInstanceOf(EditMessageError)
     expect((error as EditMessageError).code).toBe('forbidden')
+  }
+})
+
+test('postMessage accepts a valid rootId and emits a message.created event carrying it', () => {
+  const store = new FakeStore()
+  let id = 0
+  const hub = createRoomMessageHub(store, { createId: () => `msg-${++id}` })
+  const received: RoomEvent[] = []
+  hub.subscribe((event) => received.push(event))
+  const root = hub.postMessage({
+    roomId: 'general',
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+  })
+  const reply = hub.postMessage({
+    roomId: 'general',
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Reply text',
+    rootId: root.id,
+  })
+  expect(reply.rootId).toBe(root.id)
+  expect(hub.listMessages('general')).toEqual([root])
+  expect(received[1]).toEqual({ type: 'message.created', message: reply })
+})
+
+test('postMessage rejects an invalid, cross-room, or nested rootId', () => {
+  const store = new FakeStore()
+  let id = 0
+  const hub = createRoomMessageHub(store, { createId: () => `msg-${++id}` })
+  const root = hub.postMessage({
+    roomId: 'general',
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+  })
+  const reply = hub.postMessage({
+    roomId: 'general',
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Reply text',
+    rootId: root.id,
+  })
+  try {
+    hub.postMessage({
+      roomId: 'general',
+      author: { kind: 'user', id: 'user-2', name: 'Bob' },
+      text: 'Nope',
+      rootId: 'missing',
+    })
+    expect.unreachable()
+  } catch (error) {
+    expect(error).toBeInstanceOf(PostMessageError)
+    expect((error as PostMessageError).code).toBe('invalid_root')
+  }
+  try {
+    hub.postMessage({
+      roomId: 'other',
+      author: { kind: 'user', id: 'user-2', name: 'Bob' },
+      text: 'Nope',
+      rootId: root.id,
+    })
+    expect.unreachable()
+  } catch (error) {
+    expect(error).toBeInstanceOf(PostMessageError)
+    expect((error as PostMessageError).code).toBe('invalid_root')
+  }
+  try {
+    hub.postMessage({
+      roomId: 'general',
+      author: { kind: 'user', id: 'user-2', name: 'Bob' },
+      text: 'Nope',
+      rootId: reply.id,
+    })
+    expect.unreachable()
+  } catch (error) {
+    expect(error).toBeInstanceOf(PostMessageError)
+    expect((error as PostMessageError).code).toBe('invalid_root')
   }
 })

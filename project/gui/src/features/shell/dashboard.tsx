@@ -13,7 +13,9 @@ import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
 import { MessageSearchCommand } from '#/features/rooms/message-search-command'
 import { OneshotPanel } from '#/features/oneshot/oneshot-panel'
+import { navigationForSearchHit } from '#/features/rooms/message-search-navigation'
 import { Timeline } from '#/features/rooms/room-timeline'
+import { RoomThreadRail } from '#/features/rooms/room-thread-rail'
 import type { Author, RoomMessage } from '#/features/rooms/types'
 import { useRooms } from '#/features/rooms/use-rooms'
 import { ActiveAgents } from '#/features/runs/active-agents'
@@ -39,13 +41,32 @@ import {
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
+  closeSurface,
   historyDirection,
+  openActivitySurface,
+  openThreadSurface,
   readDashboardLocation,
   writeDashboardLocation,
 } from './dashboard-navigation'
 import type { DashboardLocation } from './dashboard-navigation'
 import type { DashboardView } from './room-sidebar'
 import { RoomSidebar } from './room-sidebar'
+import {
+  emptyThreadDrafts,
+  threadDraft,
+  withThreadDraft,
+  withoutThreadDraft,
+} from '#/features/rooms/thread-drafts'
+import type { ThreadDrafts } from '#/features/rooms/thread-drafts'
+import {
+  finishThreadExit,
+  requestThreadSurface,
+  sameThreadSurface,
+} from '#/features/rooms/thread-transition'
+import type {
+  ThreadTransitionState,
+  ThreadTransitionSurface,
+} from '#/features/rooms/thread-transition'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
 
 const bottomScrollThreshold = 150
@@ -76,7 +97,9 @@ export function Dashboard({
     create,
     remove,
     send,
+    sendReply,
     edit,
+    threadReplies,
     cancel,
     draft,
     setDraft,
@@ -108,6 +131,42 @@ export function Dashboard({
     writeDashboardLocation(user.id, next)
     applyLocation(next)
   }
+  const openThread = (rootId: string, threadFocusReplyId?: string) => {
+    if (
+      location.surface?.kind === 'thread' &&
+      location.surface.rootId === rootId &&
+      location.surface.focusReplyId === threadFocusReplyId
+    )
+      return
+    const next = openThreadSurface(location, rootId, threadFocusReplyId)
+    writeDashboardLocation(user.id, next)
+    applyLocation(next)
+  }
+  const openActivity = (runId: string) => {
+    if (
+      location.surface?.kind === 'activity' &&
+      location.surface.runId === runId
+    )
+      return
+    const next = openActivitySurface(location, runId)
+    writeDashboardLocation(user.id, next)
+    applyLocation(next)
+  }
+  const closeSideSurface = () => {
+    const next = closeSurface(location)
+    writeDashboardLocation(user.id, next)
+    applyLocation(next)
+  }
+  const clearThreadFocus = () => {
+    if (location.surface?.kind !== 'thread' || !location.surface.focusReplyId)
+      return
+    const next: DashboardLocation = {
+      ...location,
+      surface: { kind: 'thread', rootId: location.surface.rootId },
+    }
+    writeDashboardLocation(user.id, next, true)
+    applyLocation(next)
+  }
   const [issueCreate, setIssueCreate] = useState<{
     open: boolean
     status?: IssueStatus
@@ -124,7 +183,17 @@ export function Dashboard({
   }
   const [searchOpen, setSearchOpen] = useState(false)
   const [oneshotOpen, setOneshotOpen] = useState(false)
-  const [selectedRunId, setSelectedRunId] = useState<string>()
+  const pendingThreadFocusRef = useRef<
+    { rootId: string; focusReplyId: string } | undefined
+  >(undefined)
+  // Session-only, kept per root; never serialized or sent to the server.
+  const threadDraftsRef = useRef<ThreadDrafts>(emptyThreadDrafts)
+  const [transition, setTransition] = useState<ThreadTransitionState>({
+    phase: 'closed',
+  })
+  const [lastSurfaceTarget, setLastSurfaceTarget] = useState<
+    ThreadTransitionSurface | undefined
+  >(undefined)
   const [editingMessage, setEditingMessage] = useState<RoomMessage>()
   const composer = useRef<MessageComposerHandle>(null)
   const bulletinsRef = useRef<BulletinsPageHandle>(null)
@@ -214,9 +283,15 @@ export function Dashboard({
 
   useLayoutEffect(() => {
     historyAnchorRef.current = undefined
-    setSelectedRunId(undefined)
     setEditingMessage(undefined)
   }, [room?.id])
+
+  useLayoutEffect(() => {
+    const pending = pendingThreadFocusRef.current
+    if (!pending || focusMessageId !== pending.rootId) return
+    pendingThreadFocusRef.current = undefined
+    openThread(pending.rootId, pending.focusReplyId)
+  }, [focusMessageId])
 
   useLayoutEffect(() => {
     if (!focusMessageId || loading) return
@@ -229,9 +304,31 @@ export function Dashboard({
     el?.scrollIntoView({ block: 'center', behavior: 'instant' })
   }, [focusMessageId, loading, messages])
 
-  const selectedRun = runs.find(({ id }) => id === selectedRunId)
-  const triggerMessage = selectedRun
-    ? messages.find(({ id }) => id === selectedRun.triggerMessageId)
+  // The thread rail and Run Activity rail are one side surface: opening one
+  // always exits the other first (see thread-transition.ts), and the target
+  // it should show comes from history-backed `location.surface` so app-level
+  // Back/Forward restores or closes it without ever stacking both rails.
+  const surfaceTarget: ThreadTransitionSurface | undefined =
+    location.surface?.kind === 'thread'
+      ? { kind: 'thread', rootId: location.surface.rootId }
+      : location.surface?.kind === 'activity'
+        ? { kind: 'activity', runId: location.surface.runId }
+        : undefined
+  if (!sameThreadSurface(lastSurfaceTarget, surfaceTarget)) {
+    setLastSurfaceTarget(surfaceTarget)
+    setTransition((current) => requestThreadSurface(current, surfaceTarget))
+  }
+  const activeSurface =
+    transition.phase === 'closed' ? undefined : transition.surface
+  const surfaceExiting = transition.phase === 'exiting'
+  const activeRun =
+    activeSurface?.kind === 'activity'
+      ? runs.find(({ id }) => id === activeSurface.runId)
+      : undefined
+  const activeRootId =
+    activeSurface?.kind === 'thread' ? activeSurface.rootId : undefined
+  const activityTriggerMessage = activeRun
+    ? messages.find(({ id }) => id === activeRun.triggerMessageId)
     : undefined
 
   return (
@@ -249,8 +346,17 @@ export function Dashboard({
         open={searchOpen}
         onOpenChange={setSearchOpen}
         onSelectHit={(hit) => {
-          navigate({ view: 'room', id: hit.roomId })
-          openMessage(hit.roomId, hit.messageId)
+          const target = navigationForSearchHit(hit)
+          navigate({ view: 'room', id: target.roomId })
+          if (target.kind === 'thread') {
+            pendingThreadFocusRef.current = {
+              rootId: target.rootId,
+              focusReplyId: target.focusReplyId,
+            }
+            openMessage(target.roomId, target.rootId)
+          } else {
+            openMessage(target.roomId, target.messageId)
+          }
         }}
       />
       <OneshotPanel open={oneshotOpen} onOpenChange={setOneshotOpen} />
@@ -497,7 +603,7 @@ export function Dashboard({
                       <Timeline
                         messages={messages}
                         runs={runs}
-                        openRun={setSelectedRunId}
+                        openRun={openActivity}
                         currentUserId={user.id}
                         focusMessageId={focusMessageId}
                         onFocusHandled={clearFocusMessage}
@@ -505,6 +611,7 @@ export function Dashboard({
                           setEditingMessage(message)
                           setDraft(message.text)
                         }}
+                        onOpenThread={(nextRootId) => openThread(nextRootId)}
                         mentionHandles={[
                           user.name,
                           ...mentionableAccounts.map(
@@ -554,7 +661,7 @@ export function Dashboard({
                     runs={runs}
                     latestStepByRun={latestStepByRun}
                     cancel={(runId) => void cancel(runId)}
-                    openRun={setSelectedRunId}
+                    openRun={openActivity}
                   />
                 </div>
                 {error && (
@@ -567,14 +674,60 @@ export function Dashboard({
                 )}
               </div>
             </div>
-            {selectedRun && (
+            {activeSurface?.kind === 'activity' && activeRun && (
               <RunActivityRail
-                key={selectedRun.id}
-                run={selectedRun}
-                triggerMessage={triggerMessage}
-                liveSteps={liveStepsByRun.get(selectedRun.id) ?? []}
-                onClose={() => setSelectedRunId(undefined)}
-                onCancel={() => void cancel(selectedRun.id)}
+                key={activeRun.id}
+                run={activeRun}
+                triggerMessage={activityTriggerMessage}
+                liveSteps={liveStepsByRun.get(activeRun.id) ?? []}
+                onClose={closeSideSurface}
+                onCancel={() => void cancel(activeRun.id)}
+                exiting={surfaceExiting}
+                onExited={() => setTransition(finishThreadExit)}
+              />
+            )}
+            {activeRootId && room && (
+              <RoomThreadRail
+                key={activeRootId}
+                roomId={room.id}
+                roomName={`${room.name} thread`}
+                rootId={activeRootId}
+                liveReplies={threadReplies[activeRootId] ?? []}
+                runs={runs}
+                openRun={openActivity}
+                mentionHandles={[
+                  user.name,
+                  ...mentionableAccounts.map(
+                    (account) => account.username ?? account.name,
+                  ),
+                ]}
+                mentionableAccounts={mentionableAccounts}
+                currentUserId={user.id}
+                onClose={closeSideSurface}
+                sendReply={sendReply}
+                editMessage={edit}
+                focusReplyId={
+                  location.surface?.kind === 'thread'
+                    ? location.surface.focusReplyId
+                    : undefined
+                }
+                onFocusReplyHandled={clearThreadFocus}
+                draftText={threadDraft(threadDraftsRef.current, activeRootId)}
+                onDraftChange={(text) => {
+                  threadDraftsRef.current = withThreadDraft(
+                    threadDraftsRef.current,
+                    activeRootId,
+                    text,
+                  )
+                }}
+                onDraftSubmitted={() => {
+                  threadDraftsRef.current = withoutThreadDraft(
+                    threadDraftsRef.current,
+                    activeRootId,
+                  )
+                }}
+                exiting={surfaceExiting}
+                onExited={() => setTransition(finishThreadExit)}
               />
             )}
           </div>

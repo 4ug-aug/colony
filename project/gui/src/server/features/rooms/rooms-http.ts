@@ -24,7 +24,11 @@ import {
   type RoomStore,
   type RoomUser,
 } from './room-store'
-import { EditMessageError, type RoomMessageHub } from './room-hub'
+import {
+  EditMessageError,
+  PostMessageError,
+  type RoomMessageHub,
+} from './room-hub'
 import { json } from '#/server/http/respond'
 
 async function textFrom(request: Request): Promise<string | undefined> {
@@ -44,10 +48,31 @@ async function textFrom(request: Request): Promise<string | undefined> {
 
 async function messageInputFrom(
   request: Request,
-): Promise<{ text: string; files: File[] } | { error: string }> {
+): Promise<
+  { text: string; files: File[]; rootId?: string } | { error: string }
+> {
   if (!request.headers.get('content-type')?.startsWith('multipart/form-data')) {
-    const text = await textFrom(request)
-    return text ? { text, files: [] } : { error: 'Invalid message' }
+    try {
+      const body: unknown = await request.json()
+      const raw =
+        body && typeof body === 'object'
+          ? (body as Record<string, unknown>)
+          : undefined
+      const rawText = raw?.text
+      const text =
+        typeof rawText === 'string' &&
+        rawText.trim() &&
+        rawText.length <= 10_000
+          ? rawText.trim()
+          : undefined
+      if (!text) return { error: 'Invalid message' }
+      const rawRootId = raw?.rootId
+      const rootId =
+        typeof rawRootId === 'string' && rawRootId ? rawRootId : undefined
+      return { text, files: [], ...(rootId ? { rootId } : {}) }
+    } catch {
+      return { error: 'Invalid message' }
+    }
   }
   const length = Number(request.headers.get('content-length') ?? 0)
   if (length > MAX_REQUEST_BYTES)
@@ -69,7 +94,12 @@ async function messageInputFrom(
       .filter((entry): entry is File => entry instanceof File)
     if (form.getAll('attachments').length !== files.length)
       return { error: 'Invalid attachment' }
-    return text || files.length ? { text, files } : { error: 'Invalid message' }
+    const rawRootId = form.get('rootId')
+    const rootId =
+      typeof rawRootId === 'string' && rawRootId ? rawRootId : undefined
+    return text || files.length
+      ? { text, files, ...(rootId ? { rootId } : {}) }
+      : { error: 'Invalid message' }
   } catch {
     return { error: 'Invalid message' }
   }
@@ -189,8 +219,7 @@ export function createRoomsHttp(deps: {
     if (roomRoute && request.method === 'DELETE') {
       const room = deps.store.getRoom(roomRoute[1]!)
       if (!room) return json({ error: 'Room not found' }, 404)
-      if (!canDeleteRoom(user, room))
-        return json({ error: 'Forbidden' }, 403)
+      if (!canDeleteRoom(user, room)) return json({ error: 'Forbidden' }, 403)
       const recipients =
         room.visibility === 'private'
           ? new Set(deps.store.listMembers(room.id).map(({ id }) => id))
@@ -220,10 +249,7 @@ export function createRoomsHttp(deps: {
       const around = url.searchParams.get('around') ?? undefined
       const cursor = url.searchParams.get('cursor') ?? undefined
       if (around != null && cursor != null)
-        return json(
-          { error: 'Use either around or cursor, not both' },
-          400,
-        )
+        return json({ error: 'Use either around or cursor, not both' }, 400)
       try {
         const page =
           around != null
@@ -242,6 +268,18 @@ export function createRoomsHttp(deps: {
         const status = message === 'Message not found' ? 404 : 400
         return json({ error: message }, status)
       }
+    }
+    const thread = url.pathname.match(
+      /^\/api\/rooms\/([^/]+)\/messages\/([^/]+)\/thread$/,
+    )
+    if (thread && request.method === 'GET') {
+      const roomId = thread[1]!
+      const rootId = thread[2]!
+      if (!deps.store.canAccessRoom(roomId, user.id))
+        return json({ error: 'Room not found' }, 404)
+      const found = deps.store.getThread(roomId, rootId)
+      if (!found) return json({ error: 'Thread not found' }, 404)
+      return json(found)
     }
     const messageEdit = url.pathname.match(
       /^\/api\/rooms\/([^/]+)\/messages\/([^/]+)$/,
@@ -278,7 +316,7 @@ export function createRoomsHttp(deps: {
         return json({ error: 'Room not found' }, 404)
       const input = await messageInputFrom(request)
       if ('error' in input) return json({ error: input.error }, 400)
-      const { text, files } = input
+      const { text, files, rootId } = input
       const mention = rosterMentionPattern()
       const mentionMatch = text.match(mention)
       const agentDefinitionId = mentionMatch?.[2]
@@ -325,8 +363,9 @@ export function createRoomsHttp(deps: {
           author: { kind: 'user', ...user },
           text,
           attachments,
+          ...(rootId ? { rootId } : {}),
         })
-      } catch {
+      } catch (error) {
         try {
           await removeAttachmentFiles(
             deps.attachmentsDirectory,
@@ -335,12 +374,21 @@ export function createRoomsHttp(deps: {
         } catch (cleanupError) {
           console.error('Attachment cleanup orphaned files:', cleanupError)
         }
+        if (error instanceof PostMessageError)
+          return json({ error: 'Invalid thread root' }, 400)
         return json({ error: 'Unable to save message' }, 500)
       }
       if (!task) return json({ message }, 201)
       try {
         const run = deps.control.start(task, {
           roomId,
+          // Write binding: a top-level mention roots writes at its own
+          // trigger message; a reply mention writes into the existing
+          // thread root it already belongs to (never a nested root).
+          rootId: rootId ?? message.id,
+          // Read scope: only a reply mention gets a thread-scoped read;
+          // top-level mentions keep the flat Room scope.
+          ...(rootId ? { threadReadRootId: rootId } : {}),
           agentDefinitionId,
           attachments: attachments.map((attachment) => ({
             type: 'attachment' as const,
@@ -366,24 +414,17 @@ export function createRoomsHttp(deps: {
         return json(
           {
             error:
-              error instanceof Error
-                ? error.message
-                : 'Unable to start agent',
+              error instanceof Error ? error.message : 'Unable to start agent',
             message,
           },
           502,
         )
       }
     }
-    const attachmentRoute = url.pathname.match(
-      /^\/api\/attachments\/([^/]+)$/,
-    )
+    const attachmentRoute = url.pathname.match(/^\/api\/attachments\/([^/]+)$/)
     if (attachmentRoute && request.method === 'GET') {
       const attachment = deps.store.getAttachment(attachmentRoute[1]!)
-      if (
-        !attachment ||
-        !deps.store.canAccessRoom(attachment.roomId, user.id)
-      )
+      if (!attachment || !deps.store.canAccessRoom(attachment.roomId, user.id))
         return json({ error: 'Attachment not found' }, 404)
       const bytes = await attachmentBytes(
         deps.attachmentsDirectory,

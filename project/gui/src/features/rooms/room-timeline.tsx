@@ -1,6 +1,6 @@
 import { useMemo, useState, type AnimationEvent } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
-import { Check, Copy, Download, X } from 'lucide-react'
+import { Check, Copy, Download, MessageCircle, X } from 'lucide-react'
 import { Avatar, timestamp } from '#/components/avatar'
 import { Markdown } from '#/components/markdown'
 import { Button } from '#/components/ui/button'
@@ -10,7 +10,9 @@ import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
+import { useMediaQuery } from '#/hooks/use-media-query'
 import { messagesAreGrouped } from './message-grouping'
+import { ThreadSummaryChip } from './thread-summary-chip'
 import type { RoomAttachment, RoomMessage, RoomRun } from './types'
 import {
   useAttachmentBlob,
@@ -55,7 +57,9 @@ function AgentMessageBody({
         </Button>
         <div className="relative">
           <div
-            className={long && !expanded ? 'max-h-48 overflow-hidden' : undefined}
+            className={
+              long && !expanded ? 'max-h-48 overflow-hidden' : undefined
+            }
           >
             <Markdown mentions={mentions}>{text}</Markdown>
           </div>
@@ -89,7 +93,7 @@ const previewTypes = new Set([
   'image/webp',
 ])
 
-function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
+export function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
   const [open, setOpen] = useState(false)
   const preview = previewTypes.has(attachment.contentType)
   const { url } = useAttachmentBlob(attachment.id, preview)
@@ -196,6 +200,7 @@ export function Timeline({
   mentionHandles,
   currentUserId,
   onEdit,
+  onOpenThread,
   focusMessageId,
   onFocusHandled,
 }: {
@@ -205,10 +210,17 @@ export function Timeline({
   mentionHandles: string[]
   currentUserId?: string
   onEdit?: (message: RoomMessage) => void
+  onOpenThread?: (rootId: string) => void
   focusMessageId?: string
   onFocusHandled?: () => void
 }) {
   const { data: agents = [] } = useAgentDefinitions()
+  // Hover can't reveal the action on touch layouts, so keep it visible there
+  // (matching the tap-accessible message action requirement).
+  const touchAccessible = useMediaQuery('(pointer: coarse)')
+  const replyActionVisibility = touchAccessible
+    ? 'opacity-100'
+    : 'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100'
   const items = useMemo(() => {
     const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
     const results = runs
@@ -271,6 +283,8 @@ export function Timeline({
           Boolean(onEdit) &&
           item.message.author.kind !== 'agent' &&
           item.message.author.id === currentUserId
+        const showEditedLabel = !isResult && item.message.editedAt != null
+        const canReplyInThread = !isResult && Boolean(onOpenThread)
         return (
           <article
             className={`group flex gap-3 ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}${
@@ -305,40 +319,77 @@ export function Timeline({
                   <time className="text-xs text-muted-foreground">
                     {timestamp(item.createdAt)}
                   </time>
-                  {!isResult && item.message.editedAt != null && (
-                    <span className="text-xs text-muted-foreground">Edited</span>
+                  {showEditedLabel && (
+                    <span className="text-xs text-muted-foreground">
+                      Edited
+                    </span>
                   )}
-                  {canEdit && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                      onClick={() => onEdit?.(item.message)}
-                    >
-                      Edit
-                    </Button>
+                  {(canReplyInThread || canEdit) && (
+                    <span className="ml-auto flex items-center gap-1">
+                      {canReplyInThread && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className={replyActionVisibility}
+                          onClick={() => onOpenThread?.(item.message.id)}
+                        >
+                          <MessageCircle />
+                          Reply in thread
+                        </Button>
+                      )}
+                      {canEdit && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                          onClick={() => onEdit?.(item.message)}
+                        >
+                          Edit
+                        </Button>
+                      )}
+                    </span>
                   )}
                 </div>
               )}
-              {item.grouped && (canEdit || (!isResult && item.message.editedAt != null)) && (
-                <div className="mb-0.5 flex items-center gap-2">
-                  {!isResult && item.message.editedAt != null && (
-                    <span className="text-xs text-muted-foreground">Edited</span>
-                  )}
-                  {canEdit && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                      onClick={() => onEdit?.(item.message)}
-                    >
-                      Edit
-                    </Button>
-                  )}
-                </div>
-              )}
+              {item.grouped &&
+                (canEdit || showEditedLabel || canReplyInThread) && (
+                  <div className="mb-0.5 flex items-center gap-2">
+                    {showEditedLabel && (
+                      <span className="text-xs text-muted-foreground">
+                        Edited
+                      </span>
+                    )}
+                    {(canReplyInThread || canEdit) && (
+                      <span className="ml-auto flex items-center gap-1">
+                        {canReplyInThread && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            className={replyActionVisibility}
+                            onClick={() => onOpenThread?.(item.message.id)}
+                          >
+                            <MessageCircle />
+                            Reply in thread
+                          </Button>
+                        )}
+                        {canEdit && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                            onClick={() => onEdit?.(item.message)}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                )}
               <div
                 className={`${item.grouped ? '' : 'mt-0.5'} text-sm leading-6`}
               >
@@ -358,9 +409,26 @@ export function Timeline({
                   ))}
                 </div>
               )}
-              {!isResult && item.run && (
-                <RunCapsule run={item.run} openRun={openRun} />
-              )}
+              {!isResult &&
+                (item.run || (item.message.replySummary && onOpenThread)) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {item.run && (
+                      <RunCapsule
+                        run={item.run}
+                        openRun={openRun}
+                        className="mt-0"
+                      />
+                    )}
+                    {item.message.replySummary && onOpenThread && (
+                      <ThreadSummaryChip
+                        replyCount={item.message.replySummary.replyCount}
+                        participantIds={item.message.replySummary.participantIds}
+                        latestReplyAt={item.message.replySummary.latestReplyAt}
+                        onOpen={() => onOpenThread(item.message.id)}
+                      />
+                    )}
+                  </div>
+                )}
               {isResult && (
                 <Button
                   type="button"

@@ -33,10 +33,10 @@ const SCHEMA_DDL = `
   CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, username TEXT, banned INTEGER);
   INSERT INTO user (id, name, email, image, username) VALUES ('user-1', 'Ada Lovelace', 'ada@example.com', NULL, 'ada');
   INSERT INTO user (id, name, email, image, username) VALUES ('user-2', 'Bob Builder', 'bob@example.com', 'https://example.com/bob.png', 'bob');
-  CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER, edited_at INTEGER);
+  CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER, edited_at INTEGER, root_id TEXT REFERENCES room_message(id));
   CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, room_id TEXT NOT NULL, idx INTEGER NOT NULL, kind TEXT NOT NULL, tool TEXT, call_id TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL);
-  CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE cascade, kind TEXT NOT NULL, source_id TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
+  CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE cascade, kind TEXT NOT NULL, source_id TEXT NOT NULL, root_id TEXT, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
   ${FTS_DDL}
 `
 
@@ -822,6 +822,109 @@ test('attention is idempotent, countable, and acknowledged per room', () => {
   sqlite.close()
 })
 
+test('thread_reply attention is idempotent per (recipient, root, source) and does not pollute mention lookups', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  const attention = {
+    id: 'attention-thread-1',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-1',
+    kind: 'thread_reply' as const,
+    sourceId: 'reply-1',
+    rootId: 'root-1',
+    createdAt: 1,
+  }
+
+  expect(store.createAttention(attention)).toBe(true)
+  expect(
+    store.createAttention({ ...attention, id: 'attention-thread-dup' }),
+  ).toBe(false)
+  expect(
+    store.listAttentionCounts('user-1', 'thread_reply').get(GENERAL_ROOM_ID),
+  ).toBe(1)
+  expect(store.listMentionRecipientIds('reply-1')).toEqual([])
+
+  sqlite.close()
+})
+
+test('acknowledgeRoomAttention leaves thread_reply attention untouched while clearing mention and run_terminal', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createAttention({
+    id: 'attention-mention',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'mention',
+    sourceId: 'message-1',
+    createdAt: 1,
+  })
+  store.createAttention({
+    id: 'attention-thread',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'thread_reply',
+    sourceId: 'reply-1',
+    rootId: 'root-1',
+    createdAt: 2,
+  })
+
+  store.acknowledgeRoomAttention(GENERAL_ROOM_ID, 'user-2', 3)
+
+  expect(store.listAttentionCounts('user-2', 'mention').size).toBe(0)
+  expect(
+    store.listAttentionCounts('user-2', 'thread_reply').get(GENERAL_ROOM_ID),
+  ).toBe(1)
+  expect(store.listAttentionCounts('user-2').get(GENERAL_ROOM_ID)).toBe(1)
+
+  sqlite.close()
+})
+
+test('acknowledgeThreadAttention clears only the matching root, not other threads or room-level attention', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createAttention({
+    id: 'attention-mention',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'mention',
+    sourceId: 'message-1',
+    createdAt: 1,
+  })
+  store.createAttention({
+    id: 'attention-thread-a',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'thread_reply',
+    sourceId: 'reply-a',
+    rootId: 'root-a',
+    createdAt: 2,
+  })
+  store.createAttention({
+    id: 'attention-thread-b',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'thread_reply',
+    sourceId: 'reply-b',
+    rootId: 'root-b',
+    createdAt: 3,
+  })
+
+  store.acknowledgeThreadAttention(GENERAL_ROOM_ID, 'root-a', 'user-2', 4)
+
+  expect(
+    store.listAttentionCounts('user-2', 'mention').get(GENERAL_ROOM_ID),
+  ).toBe(1)
+  expect(
+    store.listAttentionCounts('user-2', 'thread_reply').get(GENERAL_ROOM_ID),
+  ).toBe(1)
+  expect(store.listAttentionCounts('user-2').get(GENERAL_ROOM_ID)).toBe(2)
+
+  sqlite.close()
+})
+
 test('room store updates message text and editedAt in place', () => {
   const sqlite = new Database(':memory:')
   sqlite.run(SCHEMA_DDL)
@@ -912,6 +1015,40 @@ test('searchMessages matches across accessible rooms only', () => {
   sqlite.close()
 })
 
+test('searchMessages tags thread-reply hits with their root id, flat hits without one', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Deploy checklist',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Rocket boosters are staged',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+
+  const flatHit = store.searchMessages({ userId: 'user-1', query: 'checklist' })
+  expect(flatHit).toHaveLength(1)
+  expect(flatHit[0]?.rootId).toBeUndefined()
+
+  const threadHit = store.searchMessages({
+    userId: 'user-1',
+    query: 'boosters',
+  })
+  expect(threadHit).toHaveLength(1)
+  expect(threadHit[0]).toMatchObject({ messageId: 'reply-1', rootId: 'root-1' })
+
+  sqlite.close()
+})
+
 test('searchMessages stays in sync after edit and delete', () => {
   const sqlite = new Database(':memory:')
   sqlite.run(SCHEMA_DDL)
@@ -924,7 +1061,9 @@ test('searchMessages stays in sync after edit and delete', () => {
     createdAt: 1,
   })
   expect(
-    store.searchMessages({ userId: 'user-1', query: 'alpha' }).map((h) => h.messageId),
+    store
+      .searchMessages({ userId: 'user-1', query: 'alpha' })
+      .map((h) => h.messageId),
   ).toEqual(['msg-1'])
 
   store.updateMessageText({
@@ -935,11 +1074,450 @@ test('searchMessages stays in sync after edit and delete', () => {
   })
   expect(store.searchMessages({ userId: 'user-1', query: 'alpha' })).toEqual([])
   expect(
-    store.searchMessages({ userId: 'user-1', query: 'beta' }).map((h) => h.messageId),
+    store
+      .searchMessages({ userId: 'user-1', query: 'beta' })
+      .map((h) => h.messageId),
   ).toEqual(['msg-1'])
 
   store.deleteRoom(GENERAL_ROOM_ID)
   expect(store.searchMessages({ userId: 'user-1', query: 'beta' })).toEqual([])
+  sqlite.close()
+})
+
+test('searchMessages stays in sync after a reply is edited, keeping its root id', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root topic',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Original reply alpha',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+  expect(
+    store
+      .searchMessages({ userId: 'user-1', query: 'alpha' })
+      .map((h) => h.messageId),
+  ).toEqual(['reply-1'])
+
+  store.updateMessageText({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    text: 'Edited reply beta',
+    editedAt: 5,
+  })
+
+  expect(store.searchMessages({ userId: 'user-1', query: 'alpha' })).toEqual([])
+  const updated = store.searchMessages({ userId: 'user-1', query: 'beta' })
+  expect(updated).toHaveLength(1)
+  expect(updated[0]).toMatchObject({ messageId: 'reply-1', rootId: 'root-1' })
+
+  sqlite.close()
+})
+
+test('flat listMessages excludes replies while a reply is created against its root', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Reply text',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+
+  expect(store.listMessages(GENERAL_ROOM_ID).map(({ id }) => id)).toEqual([
+    'root-1',
+  ])
+  expect(store.getMessage(GENERAL_ROOM_ID, 'reply-1')).toMatchObject({
+    id: 'reply-1',
+    rootId: 'root-1',
+  })
+
+  sqlite.close()
+})
+
+test('getThread returns the complete root and chronological replies, excluded from flat history', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-2',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Second reply',
+    createdAt: 3,
+    rootId: 'root-1',
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'First reply',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+
+  const thread = store.getThread(GENERAL_ROOM_ID, 'root-1')
+  expect(thread?.root.id).toBe('root-1')
+  expect(thread?.replies.map(({ id }) => id)).toEqual(['reply-1', 'reply-2'])
+
+  const page = store.listRoomHistoryPage(GENERAL_ROOM_ID, { limit: 10 })
+  expect(page.messages.map(({ id }) => id)).toEqual(['root-1'])
+
+  expect(store.getThread(GENERAL_ROOM_ID, 'missing')).toBeUndefined()
+  expect(store.getThread(GENERAL_ROOM_ID, 'reply-1')).toBeUndefined()
+
+  sqlite.close()
+})
+
+test('getThread includes a succeeded run result as a chronological, non-message reply and excludes failed/cancelled runs and Run Activity', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: '@software-engineer fix the bug',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Any update?',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+  store.createRun(
+    makeRun({
+      id: 'run-succeeded',
+      triggerMessageId: 'root-1',
+      state: 'succeeded',
+      completedAt: 5,
+      stdout: 'Fixed it, tests pass.',
+    }),
+  )
+  store.createRun(
+    makeRun({ id: 'run-failed', triggerMessageId: 'root-1', state: 'failed' }),
+  )
+  store.createRun(
+    makeRun({
+      id: 'run-cancelled',
+      triggerMessageId: 'root-1',
+      state: 'cancelled',
+    }),
+  )
+  store.createRun(
+    makeRun({
+      id: 'run-running',
+      triggerMessageId: 'root-1',
+      state: 'running',
+    }),
+  )
+
+  const thread = store.getThread(GENERAL_ROOM_ID, 'root-1')
+  expect(thread?.replies.map(({ id }) => id)).toEqual(['reply-1'])
+  expect(thread?.results).toEqual([
+    {
+      id: 'run-succeeded',
+      agentId: 'software-engineer',
+      text: 'Fixed it, tests pass.',
+      createdAt: 5,
+    },
+  ])
+
+  sqlite.close()
+})
+
+test('listThreadParticipantIds returns the root author and distinct reply authors, excluding agents', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'First reply',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+  store.createMessage({
+    id: 'reply-agent',
+    roomId: GENERAL_ROOM_ID,
+    author: {
+      kind: 'agent',
+      id: 'software-engineer',
+      name: 'Software Engineer',
+    },
+    text: 'Agent reply',
+    createdAt: 3,
+    rootId: 'root-1',
+  })
+  store.createMessage({
+    id: 'reply-2',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Second reply, same author as root',
+    createdAt: 4,
+    rootId: 'root-1',
+  })
+
+  expect(store.listThreadParticipantIds(GENERAL_ROOM_ID, 'root-1')).toEqual([
+    'user-1',
+    'user-2',
+  ])
+  expect(store.listThreadParticipantIds(GENERAL_ROOM_ID, 'missing')).toEqual([])
+
+  sqlite.close()
+})
+
+test('canReplyTo accepts a same-room top-level message and rejects invalid, cross-room, and nested roots', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createRoom({ id: 'other', name: 'Other', visibility: 'public' })
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Reply text',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+  store.createMessage({
+    id: 'other-root',
+    roomId: 'other',
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Other room root',
+    createdAt: 1,
+  })
+
+  expect(store.canReplyTo(GENERAL_ROOM_ID, 'root-1')).toBe(true)
+  expect(store.canReplyTo(GENERAL_ROOM_ID, 'missing')).toBe(false)
+  expect(store.canReplyTo(GENERAL_ROOM_ID, 'other-root')).toBe(false)
+  expect(store.canReplyTo(GENERAL_ROOM_ID, 'reply-1')).toBe(false)
+
+  sqlite.close()
+})
+
+test('root summary derives reply count, recent participants, and latest-reply time; excludes the root itself', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+    createdAt: 1,
+  })
+  expect(store.listMessages(GENERAL_ROOM_ID)[0]?.replySummary).toBeUndefined()
+
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'First reply',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+  store.createMessage({
+    id: 'reply-2',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Second reply',
+    createdAt: 3,
+    rootId: 'root-1',
+  })
+
+  const [root] = store.listMessages(GENERAL_ROOM_ID)
+  expect(root?.replySummary).toEqual({
+    replyCount: 2,
+    participantIds: ['user-1', 'user-2'],
+    latestReplyAt: 3,
+  })
+
+  sqlite.close()
+})
+
+test('root summary counts a succeeded run result as a reply and orders participants by recency; failed/cancelled/active runs are excluded', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: '@software-engineer fix the bug',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Any update?',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+  store.createRun(
+    makeRun({
+      id: 'run-succeeded',
+      triggerMessageId: 'root-1',
+      state: 'succeeded',
+      completedAt: 5,
+      stdout: 'Fixed it.',
+    }),
+  )
+  store.createRun(
+    makeRun({ id: 'run-failed', triggerMessageId: 'root-1', state: 'failed' }),
+  )
+  store.createRun(
+    makeRun({
+      id: 'run-cancelled',
+      triggerMessageId: 'root-1',
+      state: 'cancelled',
+    }),
+  )
+
+  const [root] = store.listMessages(GENERAL_ROOM_ID)
+  expect(root?.replySummary).toEqual({
+    replyCount: 2,
+    participantIds: ['software-engineer', 'user-2'],
+    latestReplyAt: 5,
+  })
+
+  sqlite.close()
+})
+
+test('a run triggered by a reply (an in-thread invocation) is attributed to the thread root in getThread results and the root summary', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: '@software-engineer fix it in-thread',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+  store.createRun(
+    makeRun({
+      id: 'run-from-reply',
+      triggerMessageId: 'reply-1',
+      state: 'succeeded',
+      completedAt: 5,
+      stdout: 'Done, from the thread.',
+    }),
+  )
+
+  const thread = store.getThread(GENERAL_ROOM_ID, 'root-1')
+  expect(thread?.replies.map(({ id }) => id)).toEqual(['reply-1'])
+  expect(thread?.results).toEqual([
+    {
+      id: 'run-from-reply',
+      agentId: 'software-engineer',
+      text: 'Done, from the thread.',
+      createdAt: 5,
+    },
+  ])
+
+  const [root] = store.listMessages(GENERAL_ROOM_ID)
+  expect(root?.replySummary).toEqual({
+    replyCount: 2,
+    participantIds: ['software-engineer', 'user-2'],
+    latestReplyAt: 5,
+  })
+
+  sqlite.close()
+})
+
+test('latestMessageFromOther excludes thread replies from the flat unread marker', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Reply text',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+
+  // Only "other" message is the thread reply, which must not count as unread.
+  expect(
+    store.latestMessageFromOther(GENERAL_ROOM_ID, 'user-1'),
+  ).toBeUndefined()
+
+  store.createMessage({
+    id: 'flat-2',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'Flat follow-up',
+    createdAt: 3,
+  })
+  expect(store.latestMessageFromOther(GENERAL_ROOM_ID, 'user-1')).toEqual({
+    id: 'flat-2',
+    createdAt: 3,
+    authorId: 'user-2',
+  })
+
   sqlite.close()
 })
 

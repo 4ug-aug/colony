@@ -16,9 +16,14 @@ import type {
 } from './types'
 import type { Step } from '#/features/runs/step-label'
 import { toast } from '#/components/ui/toast'
-import { compareMessageMarkers, hasAnyRoomNotification, roomNotification } from './room-notifications'
+import {
+  compareMessageMarkers,
+  hasAnyRoomNotification,
+  roomNotification,
+} from './room-notifications'
 import type { RoomNotification } from './room-notifications'
 import { setAppDockBadge } from '#/lib/dock-badge'
+import { applyLiveReply } from './thread-helpers'
 
 function upsert<T extends { id: string }>(items: T[], item: T) {
   const index = items.findIndex(({ id }) => id === item.id)
@@ -93,6 +98,10 @@ export function useRooms(userId: string) {
   const [rooms, setRooms] = useState<Room[]>([])
   const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
+  const [threadReplies, setThreadReplies] = useState<
+    Record<string, RoomMessage[]>
+  >({})
+  const appliedReplyIdsRef = useRef<Record<string, Set<string>>>({})
   const [runs, setRuns] = useState<RoomRun[]>([])
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)
   const [loadingOlder, setLoadingOlder] = useState(false)
@@ -131,6 +140,35 @@ export function useRooms(userId: string) {
 
   messagesRef.current = messages
 
+  const recordThreadReply = useCallback((reply: RoomMessage) => {
+    const rootId = reply.rootId
+    if (!rootId) return
+    setThreadReplies((current) => ({
+      ...current,
+      [rootId]: mergeMessages(current[rootId] ?? [], [reply]),
+    }))
+    const applied = appliedReplyIdsRef.current[rootId] ?? new Set<string>()
+    appliedReplyIdsRef.current[rootId] = applied
+    setMessages((current) =>
+      current.map((message) => {
+        if (message.id !== rootId) return message
+        const result = applyLiveReply(message, reply, applied)
+        if (result.applied) applied.add(reply.id)
+        return result.message
+      }),
+    )
+  }, [])
+
+  const recordThreadReplyEdit = useCallback((reply: RoomMessage) => {
+    const rootId = reply.rootId
+    if (!rootId) return
+    setThreadReplies((current) => {
+      const list = current[rootId]
+      if (!list) return current
+      return { ...current, [rootId]: mergeMessages(list, [reply]) }
+    })
+  }, [])
+
   const applyHistoryPage = useCallback((page: RoomHistoryPage) => {
     setMessages(page.messages)
     messagesRef.current = page.messages
@@ -149,7 +187,8 @@ export function useRooms(userId: string) {
         const page = (await response.json()) as RoomHistoryPage & {
           error?: string
         }
-        if (!response.ok) throw new Error(page.error ?? 'Unable to load message')
+        if (!response.ok)
+          throw new Error(page.error ?? 'Unable to load message')
         if (selectedRoomRef.current !== roomId) return
         if (pendingFocusRef.current !== messageId) return
         applyHistoryPage(page)
@@ -246,10 +285,18 @@ export function useRooms(userId: string) {
       { method: 'POST' },
     )
     if (!response.ok) return
+    const result = (await response.json()) as {
+      attentionCount: number
+      mentionCount: number
+    }
     setRooms((current) =>
       current.map((room) =>
         room.id === roomId
-          ? { ...room, attentionCount: 0, mentionCount: 0 }
+          ? {
+              ...room,
+              attentionCount: result.attentionCount,
+              mentionCount: result.mentionCount,
+            }
           : room,
       ),
     )
@@ -440,7 +487,13 @@ export function useRooms(userId: string) {
               event.type === 'message.updated') &&
             event.message.roomId === selectedRoomId
           ) {
-            setMessages((current) => mergeMessages(current, [event.message]))
+            if (event.message.rootId) {
+              if (event.type === 'message.created')
+                recordThreadReply(event.message)
+              else recordThreadReplyEdit(event.message)
+            } else {
+              setMessages((current) => mergeMessages(current, [event.message]))
+            }
             if (event.type === 'message.created')
               recordMessageActivity({
                 roomId: event.message.roomId,
@@ -504,7 +557,15 @@ export function useRooms(userId: string) {
       if (retry) clearTimeout(retry)
       roomSocket.current?.close()
     }
-  }, [acknowledge, loadAroundFocus, markRoomSeen, recordMessageActivity, selectedRoomId])
+  }, [
+    acknowledge,
+    loadAroundFocus,
+    markRoomSeen,
+    recordMessageActivity,
+    recordThreadReply,
+    recordThreadReplyEdit,
+    selectedRoomId,
+  ])
 
   const notificationByRoom = useMemo<Record<string, RoomNotification>>(
     () =>
@@ -512,6 +573,7 @@ export function useRooms(userId: string) {
         rooms.flatMap((room) => {
           const notification = roomNotification(
             room.mentionCount,
+            room.attentionCount,
             room.latestOtherMessage,
             seenRoomMessagesRef.current[room.id],
           )
@@ -631,6 +693,8 @@ export function useRooms(userId: string) {
       nextCursorRef.current = undefined
       loadingOlderRef.current = false
       setMessages([])
+      setThreadReplies({})
+      appliedReplyIdsRef.current = {}
       setRuns([])
       setNextCursor(undefined)
       setLoadingOlder(false)
@@ -658,6 +722,8 @@ export function useRooms(userId: string) {
       nextCursorRef.current = undefined
       loadingOlderRef.current = false
       setMessages([])
+      setThreadReplies({})
+      appliedReplyIdsRef.current = {}
       setRuns([])
       setNextCursor(undefined)
       setLoadingOlder(false)
@@ -698,6 +764,8 @@ export function useRooms(userId: string) {
         nextCursorRef.current = undefined
         loadingOlderRef.current = false
         setMessages([])
+        setThreadReplies({})
+        appliedReplyIdsRef.current = {}
         setRuns([])
         setNextCursor(undefined)
         setLoadingOlder(false)
@@ -722,6 +790,44 @@ export function useRooms(userId: string) {
       return result
     },
     createError,
+    threadReplies,
+    sendReply: async (rootId: string, text: string, files: File[] = []) => {
+      if (!selectedRoomId) return
+      let result: RoomMessage | undefined
+      try {
+        const body = files.length
+          ? (() => {
+              const form = new FormData()
+              form.set('text', text)
+              form.set('rootId', rootId)
+              files.forEach((file) => form.append('attachments', file))
+              return form
+            })()
+          : JSON.stringify({ text, rootId })
+        const response = await apiFetch(
+          `/api/rooms/${selectedRoomId}/messages`,
+          {
+            method: 'POST',
+            headers: files.length
+              ? undefined
+              : { 'content-type': 'application/json' },
+            body,
+          },
+        )
+        const responseBody = (await response.json()) as {
+          message?: RoomMessage
+          error?: string
+        }
+        if (!response.ok || !responseBody.message)
+          throw new Error(responseBody.error ?? 'Request failed')
+        result = responseBody.message
+        setError(undefined)
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Request failed')
+      }
+      if (result) recordThreadReply(result)
+      return result
+    },
     send: async (text: string, files: File[] = []) => {
       if (!selectedRoomId) return
       let result: { message: RoomMessage; run?: RoomRun } | undefined
@@ -788,8 +894,10 @@ export function useRooms(userId: string) {
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'Request failed')
       }
-      if (result)
-        setMessages((current) => mergeMessages(current, [result]))
+      if (result) {
+        if (result.rootId) recordThreadReplyEdit(result)
+        else setMessages((current) => mergeMessages(current, [result]))
+      }
       return result
     },
     loadOlder,

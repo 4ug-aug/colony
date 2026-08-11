@@ -55,6 +55,10 @@ export function createWorkspaceSoftwareEngineerAdapter(options: {
           agent: rosterParticipant(
             grantContext?.agentDefinitionId ?? "software-engineer",
           ),
+          ...(grantContext?.rootId ? { rootId: grantContext.rootId } : {}),
+          ...(grantContext?.threadReadRootId
+            ? { threadReadRootId: grantContext.threadReadRootId }
+            : {}),
         });
       },
     },
@@ -119,7 +123,9 @@ export function createWorkspaceGrillAdapter(options: {
       createUpstream({ grantContext }) {
         const grillId = grantContext?.grillId;
         if (!grillId) {
-          throw new Error("A grill id is required for the workspace grill capability");
+          throw new Error(
+            "A grill id is required for the workspace grill capability",
+          );
         }
         return createWorkspaceGrillMcpUpstream({
           port: {
