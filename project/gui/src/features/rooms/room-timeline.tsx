@@ -120,14 +120,14 @@ function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
         <div className="relative w-fit max-w-full rounded-lg bg-muted p-2">
           <button
             type="button"
-            className="block"
+            className="block max-w-full"
             aria-label={`Preview ${attachment.filename}`}
             onClick={() => setOpen(true)}
           >
             <img
               src={url}
               alt={attachment.filename}
-              className="max-h-72 max-w-96 rounded-md border object-contain bg-muted"
+              className="h-auto max-h-[min(36rem,70vh)] w-auto max-w-full rounded-md border object-contain bg-muted"
             />
           </button>
           <Button
@@ -144,14 +144,14 @@ function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
         <Dialog.Root open={open} onOpenChange={setOpen}>
           <Dialog.Portal>
             <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/80 transition-opacity duration-200 data-starting-style:opacity-0 data-ending-style:opacity-0" />
-            <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 max-h-[90vh] max-w-[95vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl bg-muted p-3 outline-none transition-opacity duration-200 ease-out data-starting-style:opacity-0 data-ending-style:opacity-0">
+            <Dialog.Popup className="fixed inset-0 z-50 m-auto h-fit w-fit max-h-[100dvh] max-w-[100vw] overflow-hidden rounded-xl bg-muted p-3 outline-none transition-opacity duration-200 ease-out data-starting-style:opacity-0 data-ending-style:opacity-0">
               <Dialog.Title className="sr-only">
                 {attachment.filename}
               </Dialog.Title>
               <img
                 src={url}
                 alt={attachment.filename}
-                className="max-h-[calc(90vh-1.5rem)] max-w-[calc(95vw-1.5rem)] rounded-lg object-contain"
+                className="block h-auto max-h-[calc(100dvh-1.5rem)] w-auto max-w-[calc(100vw-1.5rem)] object-contain"
               />
               <div className="absolute top-3 right-3 flex gap-2">
                 <Button
