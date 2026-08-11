@@ -66,6 +66,11 @@ export type GrillStreamMessage =
       questionId: string
       reason: 'lease-held' | 'lease-required' | 'question-not-found'
     }
+  | {
+      type: 'grill.run.activity'
+      linkedRun: GrillLinkedRun
+      latestStep?: GrillLatestStep
+    }
 
 export type SettledRound = {
   questions: GrillQuestion[]

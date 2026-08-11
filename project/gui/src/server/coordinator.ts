@@ -220,6 +220,29 @@ export type GrillServerMessage =
       questionId: string
       reason: 'lease-held' | 'lease-required' | 'question-not-found'
     }
+  | {
+      type: 'grill.run.activity'
+      linkedRun: {
+        id: string
+        task: string
+        state: string
+        error?: string
+        turnActive?: boolean
+        exitCode?: number
+        agentId: string
+        provider: string
+        model: string
+        createdAt: number
+        startedAt?: number
+        completedAt?: number
+      }
+      latestStep?: {
+        kind: string
+        tool?: string
+        text: string
+        at: number
+      }
+    }
 export type ServerMessage =
   RoomServerMessage | WorkspaceServerMessage | GrillServerMessage
 
@@ -828,7 +851,16 @@ export function createCoordinator(options: {
           followUp: (runId, task) => options.control.followUp(runId, task),
           cancel: (runId) => options.control.cancel(runId),
           getRun: (runId) => options.control.getRun(runId),
+          subscribe: (listener) => options.control.subscribe(listener),
           subscribeSteps: (listener) => options.control.subscribeSteps(listener),
+          onActivity: (grillId, activity) =>
+            broadcastGrill(grillId, {
+              type: 'grill.run.activity',
+              linkedRun: activity.linkedRun,
+              ...(activity.latestStep
+                ? { latestStep: activity.latestStep }
+                : {}),
+            }),
         }),
       })
     : undefined

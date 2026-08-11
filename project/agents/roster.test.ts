@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
+import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import {
   createAppleContainerClient,
   type CommandOptions,
   type CommandResult,
   type CommandRunner,
 } from "../sdk/src";
-import { createAppleContainerSandboxProvider } from "../providers/apple-container-sandbox";
 import {
   ANTBOY_ID,
   SOFTWARE_ENGINEER_ID,

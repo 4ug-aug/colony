@@ -40,6 +40,7 @@ test('grill-linked runs start follow-up and dispose the warm spine', async () =>
       cancelled.push(runId)
     },
     getRun: (runId) => runs.get(runId),
+    subscribe: () => () => undefined,
     subscribeSteps: (listener) => {
       stepListener = listener
       return () => {
@@ -104,6 +105,7 @@ test('follow-up marks turnActive until the warm turn finishes', async () => {
     },
     cancel: async () => undefined,
     getRun: (runId) => runs.get(runId),
+    subscribe: () => () => undefined,
     subscribeSteps: () => () => undefined,
   })
 
@@ -142,6 +144,7 @@ test('follow-up keeps its final answer when no message step was published', asyn
     },
     cancel: async () => undefined,
     getRun: (runId) => runs.get(runId),
+    subscribe: () => () => undefined,
     subscribeSteps: () => () => undefined,
   })
 
@@ -169,6 +172,7 @@ test('turnActive follows run.turnActive after idle exitCode is set', async () =>
     followUp: async () => undefined,
     cancel: async () => undefined,
     getRun: (runId) => runs.get(runId),
+    subscribe: () => () => undefined,
     subscribeSteps: () => () => undefined,
   })
 
@@ -182,4 +186,60 @@ test('turnActive follows run.turnActive after idle exitCode is set', async () =>
 
   runs.set(started.id, summary(started.id, { turnActive: true, exitCode: 0 }))
   expect(linked.getLinkedRun('g1')?.turnActive).toBe(true)
+})
+
+test('onActivity publishes linked-run steps to the Grill stream', () => {
+  const activities: Array<{
+    grillId: string
+    linkedRunId: string
+    stepText?: string
+  }> = []
+  const runs = new Map<string, RunSummary>()
+  let stepListener: ((runId: string, step: import('../../../runs').Step) => void) | undefined
+  const linked = createGrillLinkedRuns({
+    startWarm: ({ grillId, onCreate }) => {
+      const run = summary(`run-${grillId}`, { turnActive: true })
+      runs.set(run.id, run)
+      return onCreate(run)
+    },
+    followUp: async () => undefined,
+    cancel: async () => undefined,
+    getRun: (runId) => runs.get(runId),
+    subscribe: () => () => undefined,
+    subscribeSteps: (listener) => {
+      stepListener = listener
+      return () => {
+        stepListener = undefined
+      }
+    },
+    onActivity: (grillId, activity) => {
+      activities.push({
+        grillId,
+        linkedRunId: activity.linkedRun.id,
+        ...(activity.latestStep
+          ? { stepText: activity.latestStep.text }
+          : {}),
+      })
+    },
+  })
+
+  const started = linked.start({
+    grillId: 'g1',
+    task: 'begin',
+    agentDefinitionId: 'interviewer',
+  })
+  expect(activities).toEqual([
+    { grillId: 'g1', linkedRunId: started.id },
+  ])
+
+  stepListener?.(started.id, {
+    kind: 'message',
+    text: 'thinking aloud',
+    at: 9,
+  })
+  expect(activities.at(-1)).toEqual({
+    grillId: 'g1',
+    linkedRunId: started.id,
+    stepText: 'thinking aloud',
+  })
 })

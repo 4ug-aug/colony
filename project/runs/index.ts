@@ -1,15 +1,15 @@
-import type {
-  ExecutionResult,
-  ExecRequest,
-  Sandbox,
-  SandboxProvider,
-  SandboxSpec,
-} from "../sandboxes";
-import type { CapabilitySessionBinding, CapabilitySessionFactory } from "../mcp/session";
-import type { McpGrant } from "../mcp/gateway";
 import type { AgentDefinition, AgentDefinitionResolver } from "../agents/definition";
 import type { AgentGrantContext } from "../agents/grant-context";
+import type { McpGrant } from "../mcp/gateway";
+import type { CapabilitySessionBinding, CapabilitySessionFactory } from "../mcp/session";
 import type { Step } from "../runtime/step";
+import type {
+    ExecRequest,
+    ExecutionResult,
+    Sandbox,
+    SandboxProvider,
+    SandboxSpec,
+} from "../sandboxes";
 
 const snapshot = <T>(value: T): T => structuredClone(value);
 

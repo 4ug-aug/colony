@@ -24,9 +24,9 @@ import { Check, CircleDashed, Plus, UserRound } from 'lucide-react'
 import { useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { cn } from '#/lib/utils'
-import { formatIssueId } from './format'
+import { formatIssueId, formatTimeSpentMinutes } from './format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
-import { LabelDot } from './issue-labels'
+import { LabelDot, IssueLabelChip } from './issue-labels'
 import type { Issue, IssueOwner, IssuePriority, IssueStatus } from './types'
 import {
   ISSUE_PRIORITIES,
@@ -559,13 +559,7 @@ export function TagsEditor({ issue }: { issue: Issue }) {
       {selectedTags.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           {selectedTags.map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-border/70 px-2 text-xs text-muted-foreground"
-            >
-              <LabelDot tag={tag} />
-              <span className="truncate">{tag}</span>
-            </span>
+            <IssueLabelChip key={tag} tag={tag} className="max-w-full" />
           ))}
         </div>
       )}
@@ -647,7 +641,7 @@ export function TimeSpentEditor({ issue }: { issue: Issue }) {
       onClick={beginEdit}
       aria-label="Edit time spent"
     >
-      {total > 0 ? `${total}m` : '—'}
+      {total > 0 ? formatTimeSpentMinutes(total) : '—'}
     </button>
   )
 }

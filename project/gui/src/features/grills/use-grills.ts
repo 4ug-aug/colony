@@ -325,6 +325,19 @@ export function useGrillRealtime(grillId: string) {
             }
             return
           }
+          if (event.type === 'grill.run.activity') {
+            const current = queryClient.getQueryData<GrillDetail>(
+              grillQueryKey(grillId),
+            )
+            if (!current) return
+            upsertGrillCache(
+              queryClient,
+              current.grill,
+              event.linkedRun,
+              event.latestStep ?? null,
+            )
+            return
+          }
           const pending = pendingRef.current.get(event.questionId)
           if (pending) {
             setRecoveries((current) => ({

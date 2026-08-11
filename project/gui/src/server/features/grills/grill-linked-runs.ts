@@ -40,12 +40,46 @@ export function createGrillLinkedRuns(deps: {
   followUp: (runId: string, task: string) => Promise<RunSummary | undefined>
   cancel: (runId: string) => Promise<unknown>
   getRun: (runId: string) => RunSummary | undefined
+  subscribe: (listener: (run: RunSummary) => void) => () => void
   subscribeSteps: (listener: (runId: string, step: Step) => void) => () => void
+  onActivity?: (
+    grillId: string,
+    activity: {
+      linkedRun: GrillLinkedRunView
+      latestStep?: GrillLatestStep
+    },
+  ) => void
 }): GrillLinkedRuns {
   const byGrill = new Map<string, string>()
   const grillByRun = new Map<string, string>()
   const latestStepByGrill = new Map<string, GrillLatestStep>()
   const followUpInFlight = new Set<string>()
+
+  const publishActivity = (grillId: string) => {
+    if (!deps.onActivity) return
+    const linkedRun = getLinkedRunView(grillId)
+    if (!linkedRun) return
+    deps.onActivity(grillId, {
+      linkedRun,
+      ...(latestStepByGrill.has(grillId)
+        ? { latestStep: latestStepByGrill.get(grillId) }
+        : {}),
+    })
+  }
+
+  const isTurnActive = (grillId: string, run: RunSummary): boolean => {
+    if (followUpInFlight.has(grillId)) return true
+    if (run.state === 'preparing') return true
+    return run.turnActive === true
+  }
+
+  const getLinkedRunView = (grillId: string): GrillLinkedRunView | undefined => {
+    const runId = byGrill.get(grillId)
+    if (!runId) return undefined
+    const run = deps.getRun(runId)
+    if (!run) return undefined
+    return { ...run, turnActive: isTurnActive(grillId, run) }
+  }
 
   deps.subscribeSteps((runId, step) => {
     const grillId = grillByRun.get(runId)
@@ -56,6 +90,13 @@ export function createGrillLinkedRuns(deps: {
       text: step.text,
       at: step.at,
     })
+    publishActivity(grillId)
+  })
+
+  deps.subscribe((run) => {
+    const grillId = grillByRun.get(run.id)
+    if (!grillId) return
+    publishActivity(grillId)
   })
 
   const remember = (grillId: string, runId: string) => {
@@ -63,12 +104,6 @@ export function createGrillLinkedRuns(deps: {
     if (previous) grillByRun.delete(previous)
     byGrill.set(grillId, runId)
     grillByRun.set(runId, grillId)
-  }
-
-  const isTurnActive = (grillId: string, run: RunSummary): boolean => {
-    if (followUpInFlight.has(grillId)) return true
-    if (run.state === 'preparing') return true
-    return run.turnActive === true
   }
 
   return {
@@ -88,6 +123,7 @@ export function createGrillLinkedRuns(deps: {
         },
       })
       remember(grillId, run.id)
+      publishActivity(grillId)
       return run
     },
     followUp: async (grillId, task) => {
@@ -98,6 +134,7 @@ export function createGrillLinkedRuns(deps: {
       // steps stream in for this follow-up.
       latestStepByGrill.delete(grillId)
       followUpInFlight.add(grillId)
+      publishActivity(grillId)
       try {
         const run = await deps.followUp(runId, task)
         const output = run?.stdout ?? ''
@@ -119,6 +156,7 @@ export function createGrillLinkedRuns(deps: {
         return run
       } finally {
         followUpInFlight.delete(grillId)
+        publishActivity(grillId)
       }
     },
     dispose: async (grillId) => {
@@ -132,13 +170,7 @@ export function createGrillLinkedRuns(deps: {
       }
     },
     getRunId: (grillId) => byGrill.get(grillId),
-    getLinkedRun: (grillId) => {
-      const runId = byGrill.get(grillId)
-      if (!runId) return undefined
-      const run = deps.getRun(runId)
-      if (!run) return undefined
-      return { ...run, turnActive: isTurnActive(grillId, run) }
-    },
+    getLinkedRun: (grillId) => getLinkedRunView(grillId),
     getLatestStep: (grillId) => latestStepByGrill.get(grillId),
   }
 }
