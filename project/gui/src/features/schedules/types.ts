@@ -4,6 +4,7 @@ export type AgentDefinition = {
   description: string
   kind?: 'cursor' | 'openai-agents'
   icon: string
+  includeRepository: boolean
   capabilities: { id: string; name: string; tools: string[] }[]
   skills: { id: string; name: string; description: string }[]
 }

@@ -1,7 +1,7 @@
 export type Step = {
   id: string
   runId: string
-  roomId: string
+  roomId?: string
   idx: number
   kind: 'message' | 'tool_call' | 'tool_result'
   tool?: string

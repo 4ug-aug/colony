@@ -8,8 +8,10 @@ import {
 export type Sqlite = {
   prepare(sql: string): {
     get(...values: unknown[]): unknown
+    all(...values: unknown[]): unknown
     run(...values: unknown[]): unknown
   }
+  transaction<T>(fn: () => T): () => T
 }
 
 export type EncryptedSecretColumns = {

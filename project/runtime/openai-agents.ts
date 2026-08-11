@@ -1,32 +1,31 @@
 import {
-  MCPServers,
-  MCPServerStreamableHttp,
-  MemorySession,
-  type AgentInputItem,
-  type Model,
+    type AgentInputItem,
+    MCPServers,
+    MCPServerStreamableHttp,
+    MemorySession,
+    type Model,
   type ModelProvider,
   type ModelRequest,
   type ModelResponse,
-  OpenAIProvider,
   OpenAIResponsesModel,
-  type ResponseStreamEvent,
-  Runner,
-  type Session,
+    type ResponseStreamEvent,
+    Runner,
+    type Session,
 } from "@openai/agents";
-import { readFile, writeFile } from "node:fs/promises";
 import {
-  Capabilities,
-  localBindMountStrategy,
-  mount,
-  SandboxAgent,
+    Capabilities,
+    localBindMountStrategy,
+    mount,
+    SandboxAgent,
 } from "@openai/agents/sandbox";
 import { UnixLocalSandboxClient } from "@openai/agents/sandbox/local";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import OpenAI from "openai";
 
-import type { Step } from "./step";
 import type { CapabilitySessionBinding } from "../mcp/session";
 import { openaiSkillsCapability } from "./openai-skills";
+import type { Step } from "./step";
 
 export interface OpenAICompatibleModel {
   provider?: "openai" | "custom";
@@ -188,6 +187,27 @@ export function stripMcpProtocolInput(
 }
 
 /**
+ * Match `@openai/agents` `toFunctionToolName`: MCP tools such as
+ * `workspace.set_grill_frontier` are registered as `workspace_set_grill_frontier`.
+ * Models (and Grill instructions) often still emit the dotted MCP name.
+ */
+export function toAgentsFunctionToolName(name: string): string {
+  const sanitized = name.replace(/\s/g, "_").replace(/[^a-zA-Z0-9]/g, "_");
+  if (!sanitized) throw new Error("Tool name cannot be empty");
+  return sanitized;
+}
+
+/** Normalize function_call names onto the Agents SDK registry form. */
+export function normalizeFunctionCallToolNames(output: unknown[]): void {
+  for (const value of output) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const item = value as Record<string, unknown>;
+    if (item.type !== "function_call" || typeof item.name !== "string") continue;
+    item.name = toAgentsFunctionToolName(item.name);
+  }
+}
+
+/**
  * vLLM often classifies ordinary tool calls as `mcp_call` when the Harmony
  * recipient is not `functions.<name>`. Rewrite those into function_call items
  * so the Agents SDK can execute local tools and the next turn stays on
@@ -237,7 +257,7 @@ export function rewriteVllmMcpCalls(output: unknown[]): void {
       type: "function_call",
       id: typeof item.id === "string" ? item.id : undefined,
       callId,
-      name: toolName,
+      name: toAgentsFunctionToolName(toolName),
       arguments:
         typeof providerData.arguments === "string"
           ? providerData.arguments
@@ -255,6 +275,7 @@ function sanitizeCompatibleInput(
 
 function sanitizeCompatibleOutput(output: unknown[]): void {
   rewriteVllmMcpCalls(output);
+  normalizeFunctionCallToolNames(output);
   sanitizeOutputStatuses(output);
 }
 
@@ -293,18 +314,13 @@ export function createModelProvider(
   model: OpenAICompatibleModel,
 ): ModelProvider {
   const baseURL = normalizeModelBaseUrl(model.baseUrl);
-  if (model.provider === "custom") {
-    const client = new OpenAI({ apiKey: model.apiKey, baseURL });
-    return {
-      getModel: (name) =>
-        new CompatibleResponsesModel(client, name ?? model.model),
-    };
-  }
-  return new OpenAIProvider({
-    apiKey: model.apiKey,
-    baseURL,
-    useResponses: true,
-  });
+  // Always use CompatibleResponsesModel so dotted MCP tool names from
+  // instructions/skills are normalized onto the Agents SDK registry form.
+  const client = new OpenAI({ apiKey: model.apiKey, baseURL });
+  return {
+    getModel: (name) =>
+      new CompatibleResponsesModel(client, name ?? model.model),
+  };
 }
 
 export async function runAgent(

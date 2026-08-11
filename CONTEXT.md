@@ -47,6 +47,19 @@ due or when a person chooses **Run now**. It is retained in the schedule's
 shared history rather than a room timeline.
 _Avoid_: Scheduled run, schedule occurrence, background task
 
+**Oneshot run**: A bounded run started by an Account from anywhere in the
+workspace without a Room, Issue, Schedule, or Grill link. It is private to the
+dispatcher. Its Task, steps, and final output appear only in that Account's
+Oneshot panel for the life of that dispatch; closing the panel cancels an
+active run and discards the result. The agent is instructed that it has a
+single final output and no follow-up. Capability grants resolve from the agent
+definition with Oneshot grant context (no room tools). Repository preparation
+follows the definition as usual; an optional revision may be chosen before
+start when the definition includes a repository. It is not a Room, not a Chat,
+and not a Schedule run.
+_Avoid_: Chat, personal run, direct run, ephemeral Grill, one-shot (ADR 0020
+non-warm Grill submit)
+
 **Workspace membership**: A Sweat server's authorization for an account to
 participate in its workspace. Authentication proves control of the account;
 membership determines whether that person may enter.
@@ -241,7 +254,10 @@ Code Grill commonly writes the same binding onto Issues confirmed from its
 materialized session branch. Publish still uses a platform-assigned run branch;
 the pull request's merge base is the Issue branch when bound (or inherited), so
 child Issues can integrate into the parent's line before that line merges to the
-repository default base.
+repository default base. When an Issue-linked run successfully creates a pull
+request and the Issue has no own Issue branch yet, the platform binds that run
+branch onto the Issue so the work is discoverable from the Issue; an existing
+binding (including a Code Grill session branch) is left unchanged.
 _Avoid_: Run branch, sweat/<runId>, PR branch (as synonyms for this binding)
 
 **Issue tools**: First-party agent tools for reading and writing Sweat Issues.

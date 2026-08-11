@@ -5,13 +5,17 @@ export type {
   IssuePriority,
   IssueRun,
   IssueStatus,
-} from '#/server/issue-model'
+} from '#/server/features/issues/issue-model'
 export {
   ISSUE_PRIORITIES,
   ISSUE_STATUSES,
-} from '#/server/issue-model'
+} from '#/server/features/issues/issue-model'
 
-import type { IssuePriority, IssueRun, IssueStatus } from '#/server/issue-model'
+import type {
+  IssuePriority,
+  IssueRun,
+  IssueStatus,
+} from '#/server/features/issues/issue-model'
 
 export type IssueRunState = IssueRun['state']
 

@@ -12,16 +12,14 @@ import { apiFetch } from '#/lib/api-transport'
 import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  formatStepText,
   groupActivity,
-  isFailedToolResult,
   mergeSteps,
   pairSteps,
 } from './run-activity'
 import { RunActivitySplitHeader } from './run-activity-dither'
 import { terminal } from './run-helpers'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
-import { ToolIcon } from './run-tool-icon'
+import { ToolCallDetailsList } from './tool-call-details-list'
 import type { Step } from './step-label'
 import { stepLabel } from './step-label'
 
@@ -196,59 +194,7 @@ export function RunActivityContent({
                   </p>
                 </article>
               ) : (
-                <div
-                  key={`tools-${index}`}
-                  className="overflow-hidden rounded-sm border divide-y"
-                >
-                  {group.items.map(({ step, result }) => (
-                    <details
-                      key={step.id}
-                      className="group px-3 py-2 text-xs animate-in fade-in-0 slide-in-from-bottom-1 duration-300"
-                    >
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <ToolIcon tool={step.tool} />
-                          <span className="truncate font-mono text-xs">
-                            {step.tool ?? 'Tool call'}
-                          </span>
-                        </span>
-                        <span
-                          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
-                            result && isFailedToolResult(result.text)
-                              ? 'bg-destructive/15 text-destructive'
-                              : 'bg-muted text-muted-foreground'
-                          }`}
-                        >
-                          {result
-                            ? isFailedToolResult(result.text)
-                              ? 'Failed'
-                              : 'Completed'
-                            : 'Pending'}
-                        </span>
-                      </summary>
-                      <div className="mt-3 space-y-3 text-xs group-open:animate-in group-open:fade-in-0 group-open:slide-in-from-top-1 group-open:duration-200">
-                        <div>
-                          <p className="mb-1 font-semibold text-muted-foreground">
-                            Arguments
-                          </p>
-                          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 font-mono text-xs leading-5">
-                            {formatStepText(step.text)}
-                          </pre>
-                        </div>
-                        {result && (
-                          <div>
-                            <p className="mb-1 font-semibold text-muted-foreground">
-                              Result
-                            </p>
-                            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 font-mono text-xs leading-5">
-                              {formatStepText(result.text)}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                    </details>
-                  ))}
-                </div>
+                <ToolCallDetailsList key={`tools-${index}`} items={group.items} />
               ),
             )}
           </div>

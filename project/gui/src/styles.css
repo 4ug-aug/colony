@@ -328,6 +328,29 @@ pre code {
   }
 }
 
+/* Plain transitions (not @keyframes / @property) — WKWebView/Tauri skips
+   mount-time keyframe slide on the same node as height transitions. */
+.oneshot-panel-shell {
+  opacity: 0;
+  transform: translate3d(1rem, 0, 0);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+  will-change: opacity, transform;
+}
+
+.oneshot-panel-shell[data-open='true'] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oneshot-panel-shell {
+    transition: none;
+    will-change: auto;
+  }
+}
+
 .message-search-hit {
   border-radius: 0.5rem;
   animation: message-search-hit 1.6s ease-out;

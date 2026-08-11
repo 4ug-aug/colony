@@ -88,13 +88,14 @@ const capabilityIcons: Record<
   { icon?: string; invertOnDark?: boolean; github?: boolean }
 > = {
   'linear.issues': { icon: '/icons/linear.svg' },
-  'workspace.issues': { icon: '/app-icon.png' },
   'github.pull-requests': { github: true },
   'asana.tasks': { icon: '/icons/asana.svg' },
   'outline.documents': { icon: '/icons/outline.svg', invertOnDark: true },
   'grafana.observability': { icon: '/icons/grafana.svg' },
-  'workspace.room': {},
 }
+
+const isSweatNativeCapability = (capability: { id: string }) =>
+  capability.id.startsWith('workspace.')
 
 const panelClassName =
   "h-(--collapsible-panel-height) overflow-hidden transition-[height,opacity] duration-200 ease-out motion-reduce:transition-none data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 [&[hidden]:not([hidden='until-found'])]:hidden"
@@ -517,45 +518,81 @@ export function RoomSidebar({
                         </p>
                       </div>
                       <div className="mt-3 flex flex-col gap-3">
-                        {agent.capabilities.map((capability) => {
-                          const presentation =
-                            capabilityIcons[capability.id] ?? {}
-                          return (
-                            <div
-                              key={capability.id}
-                              className="flex flex-col gap-1"
-                            >
-                              <div className="flex items-center gap-2">
-                                {presentation.github ? (
-                                  <GitHubIcon className="size-4 shrink-0 text-muted-foreground" />
-                                ) : presentation.icon ? (
-                                  <img
-                                    src={presentation.icon}
-                                    alt=""
-                                    className={cn(
-                                      'size-4 shrink-0',
-                                      presentation.invertOnDark &&
-                                        'dark:invert',
-                                    )}
-                                  />
-                                ) : null}
-                                <p className="text-xs font-medium">
-                                  {capability.name}
-                                </p>
-                              </div>
-                              <p className="text-xs text-muted-foreground">
-                                {capability.tools.join(' · ')}
+                        {agent.capabilities.some(isSweatNativeCapability) && (
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <img
+                                src="/app-icon.png"
+                                alt=""
+                                className="size-4 shrink-0 dark:invert"
+                              />
+                              <p className="text-xs font-medium">
+                                Colony Native
                               </p>
                             </div>
+                            <div className="ml-6 flex flex-col gap-2">
+                              {agent.capabilities
+                                .filter(isSweatNativeCapability)
+                                .map((capability) => (
+                                  <div
+                                    key={capability.id}
+                                    className="flex flex-col gap-1"
+                                  >
+                                    <p className="text-xs font-medium">
+                                      {capability.name}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {capability.tools.join(' · ')}
+                                    </p>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                        {agent.capabilities
+                          .filter(
+                            (capability) =>
+                              !isSweatNativeCapability(capability),
                           )
-                        })}
-                        {(agent.skills ?? []).length > 0 && (
+                          .map((capability) => {
+                            const presentation =
+                              capabilityIcons[capability.id] ?? {}
+                            return (
+                              <div
+                                key={capability.id}
+                                className="flex flex-col gap-1"
+                              >
+                                <div className="flex items-center gap-2">
+                                  {presentation.github ? (
+                                    <GitHubIcon className="size-4 shrink-0 text-muted-foreground" />
+                                  ) : presentation.icon ? (
+                                    <img
+                                      src={presentation.icon}
+                                      alt=""
+                                      className={cn(
+                                        'size-4 shrink-0',
+                                        presentation.invertOnDark &&
+                                          'dark:invert',
+                                      )}
+                                    />
+                                  ) : null}
+                                  <p className="text-xs font-medium">
+                                    {capability.name}
+                                  </p>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {capability.tools.join(' · ')}
+                                </p>
+                              </div>
+                            )
+                          })}
+                        {agent.skills.length > 0 && (
                           <div className="flex flex-col gap-1.5 border-t pt-3">
                             <p className="text-xs font-medium text-muted-foreground">
                               Skills
                             </p>
                             <ul className="flex flex-col gap-1">
-                              {(agent.skills ?? []).map((skill) => (
+                              {agent.skills.map((skill) => (
                                 <li key={skill.id}>
                                   <HoverCard>
                                     <HoverCardTrigger

@@ -1,5 +1,6 @@
 import { boundStepText, type Step } from "./step.ts";
 import { readFile, writeFile } from "node:fs/promises";
+import type { SettingSource } from "@cursor/sdk";
 
 export interface CursorCapabilitySession {
   url: string;
@@ -59,7 +60,7 @@ export type CursorAgentFactory = (options: {
   model: { id: string };
   local: {
     cwd: string;
-    settingSources?: readonly string[];
+    settingSources?: SettingSource[];
   };
   mcpServers?: Record<
     string,
@@ -95,7 +96,7 @@ export function assistantText(message: Extract<CursorSdkMessage, { type: "assist
     .join("");
 }
 
-/** Maps non-assistant/thinking Cursor stream events to Sweat steps
+/** Maps non-assistant/thinking Cursor stream events to Colony steps
  * (thinking + assistant are live-published in runTurn). */
 export function mapCursorEventToSteps(event: CursorSdkMessage): Step[] {
   const at = Date.now();
@@ -196,7 +197,7 @@ export async function openCursorAgentSession(
     model: { id: request.model },
     local: {
       cwd: request.cwd ?? "/work",
-      settingSources: ["project"] as const,
+      settingSources: ["project" as const],
     },
     ...(mcpServers ? { mcpServers } : {}),
   };
@@ -292,9 +293,7 @@ export async function openCursorAgentSession(
     send: runTurn,
     agentId: agent.agentId,
     dispose: async () => {
-      if (agent[Symbol.asyncDispose]) {
-        await agent[Symbol.asyncDispose]();
-      }
+      await agent[Symbol.asyncDispose]?.();
     },
   };
 }

@@ -31,7 +31,7 @@ export function ServerSelection({ onConnected }: { onConnected: () => void }) {
       onConnected()
     } catch (err) {
       setError(
-        `Couldn't reach a Sweat server at that address — ${
+        `Couldn't reach a Colony server at that address — ${
           err instanceof Error ? err.message : String(err)
         }`,
       )
@@ -51,12 +51,12 @@ export function ServerSelection({ onConnected }: { onConnected: () => void }) {
           alt=""
           className="size-7 rounded-md bg-white p-1"
         />
-        Sweat
+        Colony
       </div>
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">Connect to Sweat</h1>
+        <h1 className="text-2xl font-semibold">Connect to Colony</h1>
         <p className="text-sm text-muted-foreground">
-          Enter the address of your Sweat server.
+          Enter the address of your Colony server.
         </p>
       </div>
       <Input

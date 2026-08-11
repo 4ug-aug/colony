@@ -19,13 +19,10 @@ import {
   PopoverTrigger,
 } from '#/components/ui/popover'
 import { cn } from '#/lib/utils'
-import { Check, ChevronDown, UserRound, X } from 'lucide-react'
+import { BarChart3, Check, ChevronDown, UserRound, X } from 'lucide-react'
 import { useState } from 'react'
-import {
-  EMPTY_ISSUE_FILTERS,
-  issueFiltersActive,
-  type IssueListFilters,
-} from './issue-filters'
+import { EMPTY_ISSUE_FILTERS, issueFiltersActive } from './issue-filters'
+import type { IssueListFilters } from './issue-filters'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
 import { LabelDot } from './issue-labels'
 import type { IssuePriority, IssueStatus } from './types'
@@ -77,7 +74,7 @@ function PriorityFilter({
     selected.length === 0
       ? 'Priority'
       : selected.length === 1
-        ? ISSUE_PRIORITY_LABEL[selected[0]!]
+        ? ISSUE_PRIORITY_LABEL[selected[0]]
         : `Priority  ${selected.length}`
 
   return (
@@ -123,7 +120,7 @@ function StatusFilter({
     selected.length === 0
       ? 'Status'
       : selected.length === 1
-        ? ISSUE_STATUS_LABEL[selected[0]!]
+        ? ISSUE_STATUS_LABEL[selected[0]]
         : `Status  ${selected.length}`
 
   return (
@@ -174,7 +171,7 @@ function TagsFilter({
     selected.length === 0
       ? 'Tags'
       : selected.length === 1
-        ? selected[0]!
+        ? selected[0]
         : `Tags  ${selected.length}`
 
   return (
@@ -233,10 +230,14 @@ function TagsFilter({
 export function IssueFiltersBar({
   filters,
   knownTags,
+  insightsOpen,
+  onInsightsOpenChange,
   onChange,
 }: {
   filters: IssueListFilters
   knownTags: string[]
+  insightsOpen: boolean
+  onInsightsOpenChange: (open: boolean) => void
   onChange: (filters: IssueListFilters) => void
 }) {
   const active = issueFiltersActive(filters)
@@ -286,6 +287,17 @@ export function IssueFiltersBar({
           Clear
         </Button>
       )}
+      <Button
+        type="button"
+        variant={insightsOpen ? 'secondary' : 'ghost'}
+        size="icon-sm"
+        className="ml-auto size-7 text-muted-foreground"
+        aria-label="Toggle insights panel"
+        aria-expanded={insightsOpen}
+        onClick={() => onInsightsOpenChange(!insightsOpen)}
+      >
+        <BarChart3 className="size-4" />
+      </Button>
     </div>
   )
 }

@@ -7,7 +7,7 @@ use tauri_plugin_opener::OpenerExt;
 // navigation on Windows: white window, "not responding", no page ever loads.
 fn should_open_externally(target: &Url) -> bool {
   match target.scheme() {
-    // Sweat serves itself from `tauri://localhost` on macOS and Linux and from
+    // Colony serves itself from `tauri://localhost` on macOS and Linux and from
     // `http://tauri.localhost` on Windows; in development it is the Vite server
     // on localhost. Every other web address belongs in the user's browser.
     "http" | "https" => !matches!(
@@ -74,7 +74,7 @@ pub fn run() {
           .build(),
       )?;
       log::info!(
-        "sweat {} starting on {}",
+        "colony {} starting on {}",
         app.package_info().version,
         std::env::consts::OS
       );
@@ -90,7 +90,7 @@ mod tests {
 
   #[test]
   fn only_safe_external_links_leave_the_webview() {
-    // Every origin Sweat serves itself from has to stay in the webview. The
+    // Every origin Colony serves itself from has to stay in the webview. The
     // Windows one is what the first navigation uses, so missing it bounces the
     // whole app out to a browser on launch.
     assert!(!should_open_externally(

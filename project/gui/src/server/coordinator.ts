@@ -4,7 +4,7 @@ import {
   createRunControl,
   type RunControl,
   type RunSummary,
-} from './run-control'
+} from './features/runs/run-control'
 import {
   createSqliteRoomStore,
   type RoomMessage,
@@ -14,23 +14,23 @@ import {
   type RoomStore,
   type RoomUser,
   type StoredStep,
-} from './room-store'
-import { createRoomMessageHub, type RoomMessageHub } from './room-hub'
+} from './features/rooms/room-store'
+import { createRoomMessageHub, type RoomMessageHub } from './features/rooms/room-hub'
 import {
   createAdmissionHttpHandler,
   type AdmissionOptions,
-} from './admission-http'
-import { mentionedAccounts } from './attention'
+} from './features/accounts/admission-http'
+import { mentionedAccounts } from './features/rooms/attention'
 import { rosterDefinitionSummaries, rosterPerson } from '../../../agents/roster'
 import {
   attachmentDirectory,
   createRoomAttachmentSource,
-} from './attachments'
+} from './features/rooms/attachments'
 import {
   createWorkspaceSkillStore,
   skillDirectory,
-} from './workspace-skills'
-import { createWorkspaceConnections } from './workspace-connections'
+} from './features/workspace/workspace-skills'
+import { createWorkspaceConnections } from './features/workspace/workspace-connections'
 import { capabilityPresentation } from '../../../agents/roster-people'
 import { getConnectionKind } from '../../../connections/registry'
 import {
@@ -39,7 +39,7 @@ import {
   type ScheduleRun,
   type ScheduleRunStep,
   type ScheduleStore,
-} from './schedule-store'
+} from './features/schedules/schedule-store'
 import {
   createSqliteIssueStore,
   resolveIssue,
@@ -48,43 +48,45 @@ import {
   type IssueRun,
   type IssueRunStep,
   type IssueStore,
-} from './issue-store'
+} from './features/issues/issue-store'
 import {
   createSqliteBulletinStore,
   type Bulletin,
   type BulletinStore,
-} from './bulletin-store'
+} from './features/bulletins/bulletin-store'
 import {
   createSqliteDocStore,
   type Doc,
   type DocStore,
-} from './doc-store'
+} from './features/docs/doc-store'
 import {
   createSqliteGrillStore,
   type Grill,
   type GrillStore,
-} from './grill-store'
-import { createIssueRunner, type IssueRunner } from './issue-runner'
+} from './features/grills/grill-store'
+import { createIssueRunner, type IssueRunner } from './features/issues/issue-runner'
 import {
   createScheduleRunner,
   type ScheduleRunner,
-} from './schedule-runner'
+} from './features/schedules/schedule-runner'
 import {
   allowedOrigin,
   json,
   withCors,
 } from './http/respond'
-import { createIssuesHttp } from './issues-http'
-import { createSchedulesHttp } from './schedules-http'
-import { createBulletinsHttp } from './bulletins-http'
-import { createDocsHttp } from './docs-http'
-import { createGrillsHttp } from './grills-http'
+import { createIssuesHttp } from './features/issues/issues-http'
+import { createSchedulesHttp } from './features/schedules/schedules-http'
+import { createBulletinsHttp } from './features/bulletins/bulletins-http'
+import { createDocsHttp } from './features/docs/docs-http'
+import { createGrillsHttp } from './features/grills/grills-http'
 import {
   createGrillLinkedRuns,
   type GrillLatestStep,
-} from './grill-linked-runs'
-import { createRoomsHttp } from './rooms-http'
-import { createMembersHttp } from './members-http'
+} from './features/grills/grill-linked-runs'
+import { createRoomsHttp } from './features/rooms/rooms-http'
+import { createMembersHttp } from './features/rooms/members-http'
+import { createOneshotsHttp } from './features/oneshots/oneshots-http'
+import { createOneshotSession } from './features/oneshots/oneshot-session'
 
 export { allowedOrigin }
 
@@ -206,9 +208,21 @@ export type GrillServerMessage =
     }
   | {
       type: 'grill.activity.changed'
+      linkedRun?: {
+        id: string
+        task: string
+        state: string
+        error?: string
+        createdAt: number
+        agentId?: string
+        provider?: string
+        model?: string
+        turnActive?: boolean
+      }
       latestStep?: GrillLatestStep
       narration: GrillLatestStep[]
     }
+  | { type: 'grill.changed'; grill: Grill }
   | { type: 'grill.presence.changed'; participants: GrillParticipantMessage[] }
   | {
       type: 'grill.lease.changed'
@@ -227,6 +241,29 @@ export type GrillServerMessage =
       questionId: string
       reason: 'lease-held' | 'lease-required' | 'question-not-found'
     }
+  | {
+      type: 'grill.run.activity'
+      linkedRun: {
+        id: string
+        task: string
+        state: string
+        error?: string
+        turnActive?: boolean
+        exitCode?: number
+        agentId: string
+        provider: string
+        model: string
+        createdAt: number
+        startedAt?: number
+        completedAt?: number
+      }
+      latestStep?: {
+        kind: string
+        tool?: string
+        text: string
+        at: number
+      }
+    }
 export type ServerMessage =
   RoomServerMessage | WorkspaceServerMessage | GrillServerMessage
 
@@ -236,6 +273,7 @@ export type AgentDefinitionSummary = {
   description: string
   kind?: 'cursor' | 'openai-agents'
   icon: string
+  includeRepository: boolean
   capabilities: { id: string; name: string; tools: string[] }[]
   skills: { id: string; name: string; description: string }[]
 }
@@ -288,6 +326,9 @@ export function createCoordinator(options: {
   bulletinStore?: BulletinStore
   docStore?: DocStore
   grillStore?: GrillStore
+  grillNotify?: {
+    onChanged: (grill: Grill) => void
+  }
   issueNotify?: {
     onCreated: (issue: Issue) => void
     onChanged: (issue: Issue) => void
@@ -363,6 +404,12 @@ export function createCoordinator(options: {
       if (socket.data.scope === 'grill' && socket.data.grillId === grillId)
         send(socket, message)
   }
+  const broadcastGrillChanged = (grillId: string, grill: Grill): void =>
+    broadcastGrill(grillId, { type: 'grill.changed', grill })
+  if (options.grillNotify) {
+    options.grillNotify.onChanged = (grill) =>
+      broadcastGrillChanged(grill.id, grill)
+  }
   const grillLinkedRuns = options.grillStore
     ? createGrillLinkedRuns({
         startWarm: ({
@@ -382,10 +429,12 @@ export function createCoordinator(options: {
         followUp: (runId, task) => options.control.followUp(runId, task),
         cancel: (runId) => options.control.cancel(runId),
         getRun: (runId) => options.control.getRun(runId),
+        subscribe: (listener) => options.control.subscribe(listener),
         subscribeSteps: (listener) => options.control.subscribeSteps(listener),
-        onActivityChanged: ({ grillId, latestStep, narration }) =>
+        onActivityChanged: ({ grillId, linkedRun, latestStep, narration }) =>
           broadcastGrill(grillId, {
             type: 'grill.activity.changed',
+            ...(linkedRun ? { linkedRun } : {}),
             ...(latestStep ? { latestStep } : {}),
             narration,
           }),
@@ -509,6 +558,7 @@ export function createCoordinator(options: {
         issueRunner!.maybeStartForOwner(issueId)
     }
   }
+  const oneshotSession = createOneshotSession({ control: options.control })
   const broadcastAttention = (
     userId: string,
     roomId: string,
@@ -835,10 +885,15 @@ export function createCoordinator(options: {
     ? createGrillsHttp({
         grillStore: options.grillStore,
         broadcastGrillAttention,
+        broadcastGrillChanged,
         hasActiveEditLeases: hasActiveGrillLeases,
         linkedRuns: grillLinkedRuns,
       })
     : undefined
+  const oneshotsHttp = createOneshotsHttp({
+    oneshotSession,
+    agentDefinitions,
+  })
   const roomsHttp = createRoomsHttp({
     store: options.store,
     messages: options.messages,
@@ -952,6 +1007,7 @@ export function createCoordinator(options: {
           : undefined) ??
         (docsHttp ? await docsHttp(request, url, user) : undefined) ??
         (grillsHttp ? await grillsHttp(request, url, user) : undefined) ??
+        (await oneshotsHttp(request, url, user)) ??
         (await roomsHttp(request, url, user)) ??
         (await membersHttp(request, url, user))
       if (handled) return cors(handled)
@@ -989,6 +1045,7 @@ export function createCoordinator(options: {
         if (grillLeaseInterval) clearInterval(grillLeaseInterval)
         scheduleRunner?.stop()
         issueRunner?.stop()
+        oneshotSession.stop()
         await Promise.all([server.stop(true), options.control.stop()])
       })()),
   }
@@ -1026,10 +1083,10 @@ if (import.meta.main) {
     { createDockerSandboxProvider },
   ] = await Promise.all([
     import('../lib/auth'),
-    import('./session-auth'),
-    import('./admission'),
-    import('./llm-config'),
-    import('./cursor-runtime-config'),
+    import('./features/accounts/session-auth'),
+    import('./features/accounts/admission'),
+    import('./features/workspace/llm-config'),
+    import('./features/workspace/cursor-runtime-config'),
     import('../../../agents/roster'),
     import('../../../agents/software-engineer-adapters'),
     import('../../../mcp/github'),
@@ -1109,6 +1166,9 @@ if (import.meta.main) {
       if (!issue) throw new Error('Issue not found')
       return { issue }
     },
+  }
+  const grillNotify = {
+    onChanged: (_grill: Grill) => {},
   }
   const messages = createRoomMessageHub(store)
   const attachmentsDirectory = attachmentDirectory(
@@ -1279,12 +1339,26 @@ if (import.meta.main) {
         }),
         createWorkspaceGrillAdapter({
           port: {
-            setFrontier: (grillId, frontier, now) =>
-              grillStore.setFrontier(grillId, frontier, now),
-            setIssueProposal: (grillId, issues, now, files) =>
-              grillStore.setIssueProposal(grillId, issues, now, files),
-            setWriteup: (grillId, writeup, now) =>
-              grillStore.setWriteup(grillId, writeup, now),
+            setFrontier: (grillId, frontier, now) => {
+              const grill = grillStore.setFrontier(grillId, frontier, now)
+              if (grill) grillNotify.onChanged(grill)
+              return grill
+            },
+            setIssueProposal: (grillId, issues, now, files) => {
+              const grill = grillStore.setIssueProposal(
+                grillId,
+                issues,
+                now,
+                files,
+              )
+              if (grill) grillNotify.onChanged(grill)
+              return grill
+            },
+            setWriteup: (grillId, writeup, now) => {
+              const grill = grillStore.setWriteup(grillId, writeup, now)
+              if (grill) grillNotify.onChanged(grill)
+              return grill
+            },
           },
         }),
         ...(linearAccessToken
@@ -1301,6 +1375,16 @@ if (import.meta.main) {
                 repository: githubRepository,
                 base: githubBase,
                 verifyCommand: process.env.SWEAT_VERIFY_COMMAND,
+                bindIssueBranch: (issueId, branch) => {
+                  const issue = issueStore.getIssue(issueId)
+                  if (!issue || issue.branch) return
+                  const updated = issueStore.updateIssue(
+                    issueId,
+                    { branch },
+                    Date.now(),
+                  )
+                  issueNotify.onChanged(updated)
+                },
               }),
             ]
           : []),
@@ -1328,6 +1412,7 @@ if (import.meta.main) {
     bulletinStore,
     docStore,
     grillStore,
+    grillNotify,
     issueNotify,
     agentDefinitions: () => {
       const attachments = skills.listAttachments()
@@ -1424,7 +1509,7 @@ if (import.meta.main) {
   })
   process.stdout.write(`Coordinator listening on ${coordinator.port}\n`)
   const setupToken = admissionStore.ensureSetupToken()
-  if (setupToken) process.stdout.write(`Sweat setup token: ${setupToken}\n`)
+  if (setupToken) process.stdout.write(`Colony setup token: ${setupToken}\n`)
   let stopping = false
   const stop = async () => {
     if (stopping) return

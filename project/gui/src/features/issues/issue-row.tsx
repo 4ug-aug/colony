@@ -12,10 +12,14 @@ import {
 } from '#/components/ui/tooltip'
 import { Circle, CornerDownRight, Timer } from 'lucide-react'
 import { useState } from 'react'
-import { formatIssueCreatedAt, formatIssueId } from './format'
+import {
+  formatIssueCreatedAt,
+  formatIssueId,
+  formatTimeSpentMinutes,
+} from './format'
 import { IssueDeleteContextMenu } from './issue-delete-menu'
 import { IssueStatusIcon } from './issue-icons'
-import { LabelDot } from './issue-labels'
+import { IssueLabelChip } from './issue-labels'
 import {
   OwnerPicker,
   PriorityPicker,
@@ -129,13 +133,14 @@ function StartTimingButton({ issueId }: { issueId: string }) {
 
 function IssueTimeSpent({ timeSpent }: { timeSpent: number[] }) {
   const total = timeSpent.reduce((sum, minutes) => sum + minutes, 0)
+  const label = total > 0 ? formatTimeSpentMinutes(total) : '—'
   return (
     <span
-      className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+      className="min-w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
       aria-label="Time spent"
-      title="Time spent"
+      title={total > 0 ? label : 'Time spent'}
     >
-      {total > 0 ? `${total}m` : '—'}
+      {label}
     </span>
   )
 }
@@ -219,13 +224,7 @@ export function IssueRow({
       ) : null}
       <div className="flex min-w-0 items-center gap-1.5">
         {issue.tags.map((tag) => (
-          <span
-            key={tag}
-            className="inline-flex h-7 max-w-32 items-center gap-1.5 truncate rounded-full border border-border/70 px-2 text-xs text-muted-foreground"
-          >
-            <LabelDot tag={tag} className="size-1.5" />
-            {tag}
-          </span>
+          <IssueLabelChip key={tag} tag={tag} />
         ))}
         <ChildProgressChip issue={issue} onOpen={onOpen} />
       </div>

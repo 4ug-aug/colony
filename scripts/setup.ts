@@ -438,7 +438,7 @@ async function installMacApplication(): Promise<void> {
     throw new Error("The macOS application can only be installed on macOS.");
 
   const checking = spinner();
-  checking.start("Checking for the latest Sweat release...");
+  checking.start("Checking for the latest Colony release...");
   let asset: ReleaseAsset;
   try {
     const response = await fetch(releaseApi, {
@@ -506,7 +506,7 @@ async function installMacApplication(): Promise<void> {
   console.log("Opening the installer...");
   await run("open", [path]);
   outro(
-    `Opened ${path}. Drag Sweat to Applications to finish installation.`,
+    `Opened ${path}. Drag Colony to Applications to finish installation.`,
   );
 }
 
@@ -515,7 +515,7 @@ export async function runSetup(): Promise<void> {
     throw new Error("make setup requires an interactive terminal.");
   }
 
-  intro("Sweat setup");
+  intro("Colony setup");
   const choice = assertNotCancelled(
     await select({
       message: "What do you want to set up?",

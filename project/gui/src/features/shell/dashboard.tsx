@@ -12,6 +12,7 @@ import { MembersPanel } from '#/features/members/members-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
 import { MessageSearchCommand } from '#/features/rooms/message-search-command'
+import { OneshotPanel } from '#/features/oneshot/oneshot-panel'
 import { Timeline } from '#/features/rooms/room-timeline'
 import type { Author, RoomMessage } from '#/features/rooms/types'
 import { useRooms } from '#/features/rooms/use-rooms'
@@ -46,7 +47,6 @@ import type { DashboardLocation } from './dashboard-navigation'
 import type { DashboardView } from './room-sidebar'
 import { RoomSidebar } from './room-sidebar'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
-import { Kbd } from '#/components/ui/kbd'
 
 const bottomScrollThreshold = 150
 const historyTopThreshold = 80
@@ -123,6 +123,7 @@ export function Dashboard({
     navigate({ view: 'docs', id: docId })
   }
   const [searchOpen, setSearchOpen] = useState(false)
+  const [oneshotOpen, setOneshotOpen] = useState(false)
   const [selectedRunId, setSelectedRunId] = useState<string>()
   const [editingMessage, setEditingMessage] = useState<RoomMessage>()
   const composer = useRef<MessageComposerHandle>(null)
@@ -242,6 +243,7 @@ export function Dashboard({
       <WindowToolbar
         accountId={user.id}
         onOpenSearch={() => setSearchOpen(true)}
+        onOpenOneshot={() => setOneshotOpen(true)}
       />
       <MessageSearchCommand
         open={searchOpen}
@@ -251,6 +253,7 @@ export function Dashboard({
           openMessage(hit.roomId, hit.messageId)
         }}
       />
+      <OneshotPanel open={oneshotOpen} onOpenChange={setOneshotOpen} />
       <RoomSidebar
         rooms={rooms}
         selectedRoomId={room?.id}

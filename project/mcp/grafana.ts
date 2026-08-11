@@ -3,7 +3,7 @@ import { createRemoteMcpUpstream } from "./remote";
 
 export type GrafanaConfiguration = { url: string; apiKey: string };
 
-/** Remote Grafana MCP over streamable HTTP. Sweat does not host the server. */
+/** Remote Grafana MCP over streamable HTTP. Colony does not host the server. */
 export function createGrafanaMcpUpstream(
   options: GrafanaConfiguration,
 ): McpUpstream {

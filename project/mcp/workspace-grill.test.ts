@@ -145,6 +145,141 @@ test("set_grill_frontier rejects blank recommendation", async () => {
   ).rejects.toThrow("Invalid questions");
 });
 
+test("set_grill_frontier round-trips choices and recommendedChoiceId", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+  const questions = [
+    {
+      id: "q1",
+      prompt: "When should Tier 05 analysis run?",
+      choices: [
+        {
+          id: "on-demand",
+          label: "On-demand only",
+          description: "Broaden who can run it; leave Kafka off until async-safe.",
+        },
+        {
+          id: "auto",
+          label: "Auto on create",
+          description: "Enable consumer after moving analyze off the request thread.",
+        },
+        {
+          id: "hybrid",
+          label: "Hybrid",
+          description: "Auto-enqueue on create plus manual re-run; UI reads stored classification.",
+        },
+      ],
+      recommendedChoiceId: "hybrid",
+    },
+  ];
+
+  const result = (await upstream.callTool("workspace.set_grill_frontier", {
+    questions,
+  })) as { content: { text: string }[] };
+
+  expect(JSON.parse(result.content[0]!.text)).toEqual({
+    questions,
+    drafts: {},
+  });
+  expect(port.frontier).toEqual({ questions, drafts: {} });
+});
+
+test("set_grill_frontier rejects recommendedChoiceId without matching choice", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+
+  await expect(
+    upstream.callTool("workspace.set_grill_frontier", {
+      questions: [
+        {
+          id: "q1",
+          prompt: "Pick one",
+          choices: [
+            { id: "a", label: "A" },
+            { id: "b", label: "B" },
+          ],
+          recommendedChoiceId: "c",
+        },
+      ],
+    }),
+  ).rejects.toThrow("Invalid questions");
+});
+
+test("set_grill_frontier rejects choices together with recommendation", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+
+  await expect(
+    upstream.callTool("workspace.set_grill_frontier", {
+      questions: [
+        {
+          id: "q1",
+          prompt: "Pick one",
+          choices: [
+            { id: "a", label: "A" },
+            { id: "b", label: "B" },
+          ],
+          recommendation: "A",
+        },
+      ],
+    }),
+  ).rejects.toThrow("Invalid questions");
+});
+
+test("set_grill_frontier rejects fewer than two choices", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+
+  await expect(
+    upstream.callTool("workspace.set_grill_frontier", {
+      questions: [
+        {
+          id: "q1",
+          prompt: "Pick one",
+          choices: [{ id: "a", label: "A" }],
+        },
+      ],
+    }),
+  ).rejects.toThrow("Invalid questions");
+});
+
+test("set_grill_frontier rejects duplicate choice ids", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+
+  await expect(
+    upstream.callTool("workspace.set_grill_frontier", {
+      questions: [
+        {
+          id: "q1",
+          prompt: "Pick one",
+          choices: [
+            { id: "a", label: "A" },
+            { id: "a", label: "Also A" },
+          ],
+        },
+      ],
+    }),
+  ).rejects.toThrow("Invalid questions");
+});
+
+test("set_grill_frontier rejects recommendedChoiceId on freeform questions", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceGrillMcpUpstream({ port });
+
+  await expect(
+    upstream.callTool("workspace.set_grill_frontier", {
+      questions: [
+        {
+          id: "q1",
+          prompt: "What should we name it?",
+          recommendedChoiceId: "a",
+        },
+      ],
+    }),
+  ).rejects.toThrow("Invalid questions");
+});
+
 test("propose_grill_issues publishes an Issue tree proposal", async () => {
   const port = makePort();
   const upstream = createWorkspaceGrillMcpUpstream({ port });

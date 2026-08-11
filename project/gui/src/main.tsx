@@ -59,7 +59,7 @@ class ErrorBoundary extends Component<
         role="alert"
       >
         <div className="flex max-w-sm flex-col items-center gap-3">
-          <h1 className="text-xl font-semibold">Sweat hit a problem</h1>
+          <h1 className="text-xl font-semibold">Colony hit a problem</h1>
           <p className="text-sm text-muted-foreground">
             Reload the app to try again.
           </p>

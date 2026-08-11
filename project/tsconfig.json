@@ -4,6 +4,7 @@
       "module": "ESNext",
       "moduleResolution": "bundler",
       "strict": true,
+      "skipLibCheck": true,
       "noEmit": true,
       // Container runtimes run TypeScript directly (node --experimental-strip-types),
       // which requires the .ts extension on their imports.

@@ -1,30 +1,32 @@
-import { expect, test } from "bun:test";
 import {
-  OpenAIChatCompletionsModel,
-  OpenAIResponsesModel,
-  Usage,
-  type ModelRequest,
-  type ResponseStreamEvent,
+    OpenAIChatCompletionsModel,
+    OpenAIResponsesModel,
+    Usage,
+    type ModelRequest,
+    type ResponseStreamEvent,
 } from "@openai/agents";
+import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import OpenAI from "openai";
-import type { Step } from "./step";
 import {
   CompatibleResponsesModel,
   createModelProvider,
   loadOpenAIAgentSession,
+  normalizeFunctionCallToolNames,
   normalizeModelBaseUrl,
+  openOpenAIAgentSession,
   rewriteVllmMcpCalls,
   runAgent,
-  openOpenAIAgentSession,
-  saveOpenAIAgentSession,
   sanitizeOutputStatuses,
   sanitizeUsageDetails,
+  saveOpenAIAgentSession,
   stripMcpProtocolInput,
+  toAgentsFunctionToolName,
   toolOutputText,
 } from "./openai-agents";
+import type { Step } from "./step";
 
 function completionStream(
   id: string,
@@ -112,7 +114,7 @@ test("custom providers normalize MLflow Responses extensions", async () => {
   expect(customModel).toBeInstanceOf(OpenAIResponsesModel);
   expect(
     await createModelProvider({ ...model, provider: "openai" }).getModel(),
-  ).toBeInstanceOf(OpenAIResponsesModel);
+  ).toBeInstanceOf(CompatibleResponsesModel);
 
   const usage = new Usage({
     inputTokens: 3,
@@ -227,7 +229,55 @@ test("custom providers rewrite vLLM mcp_call items into function calls", () => {
       status: "completed",
     },
   ]);
+});
 
+test("dotted MCP tool names normalize onto Agents SDK function tool names", () => {
+  expect(toAgentsFunctionToolName("workspace.set_grill_frontier")).toBe(
+    "workspace_set_grill_frontier",
+  );
+  const output = [
+    {
+      type: "function_call",
+      callId: "call-1",
+      name: "workspace.set_grill_frontier",
+      arguments: '{"questions":[]}',
+      status: "completed",
+    },
+    {
+      type: "hosted_tool_call",
+      id: "mcp_1",
+      name: "mcp_call",
+      status: "completed",
+      providerData: {
+        type: "mcp_call",
+        id: "mcp_1",
+        name: "workspace.propose_grill_writeup",
+        arguments: '{"title":"t","body":"b"}',
+      },
+    },
+  ];
+  rewriteVllmMcpCalls(output);
+  normalizeFunctionCallToolNames(output);
+  expect(output).toEqual([
+    {
+      type: "function_call",
+      callId: "call-1",
+      name: "workspace_set_grill_frontier",
+      arguments: '{"questions":[]}',
+      status: "completed",
+    },
+    {
+      type: "function_call",
+      id: "mcp_1",
+      callId: "mcp_1",
+      name: "workspace_propose_grill_writeup",
+      arguments: '{"title":"t","body":"b"}',
+      status: "completed",
+    },
+  ]);
+});
+
+test("stripMcpProtocolInput drops hosted mcp protocol items", () => {
   expect(
     stripMcpProtocolInput([
       {

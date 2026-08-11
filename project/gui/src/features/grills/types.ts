@@ -1,9 +1,17 @@
 export type GrillKind = 'code' | 'general'
 export type GrillVisibility = 'invite-only' | 'workspace-open'
 
+export type GrillChoice = {
+  id: string
+  label: string
+  description?: string
+}
+
 export type GrillQuestion = {
   id: string
   prompt: string
+  choices?: GrillChoice[]
+  recommendedChoiceId?: string
   recommendation?: string
 }
 
@@ -37,8 +45,13 @@ export type GrillStreamMessage =
     }
   | {
       type: 'grill.activity.changed'
+      linkedRun?: GrillLinkedRun
       latestStep?: GrillLatestStep
       narration: GrillLatestStep[]
+    }
+  | {
+      type: 'grill.changed'
+      grill: Grill
     }
   | {
       type: 'grill.presence.changed'
@@ -60,6 +73,11 @@ export type GrillStreamMessage =
       type: 'grill.edit.rejected'
       questionId: string
       reason: 'lease-held' | 'lease-required' | 'question-not-found'
+    }
+  | {
+      type: 'grill.run.activity'
+      linkedRun: GrillLinkedRun
+      latestStep?: GrillLatestStep
     }
 
 export type SettledRound = {

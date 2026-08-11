@@ -1,4 +1,4 @@
-# Sweat client and server
+# Colony client and server
 
 `src/main.tsx` builds a static React client. `src/server/coordinator.ts` is the
 authoritative HTTP/WebSocket server for authentication, public and private
@@ -70,7 +70,7 @@ bun run tauri:dev     # launch the desktop window against the Vite dev server
 bun run tauri:build   # produce a macOS .app / .dmg
 ```
 
-On first launch the app asks for the Sweat server URL (for local development,
+On first launch the app asks for the Colony server URL (for local development,
 `http://localhost:3011` with a coordinator running) and remembers it. Unlike the
 browser client, the desktop app runs its HTTP through Tauri's native cookie jar
 and authenticates the realtime WebSocket with a short-lived ticket, so the

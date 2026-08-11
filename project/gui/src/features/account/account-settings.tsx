@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SubmitEvent } from 'react'
+import { getVersion } from '@tauri-apps/api/app'
 import { Server } from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
 import { Avatar } from '#/components/avatar'
@@ -37,6 +38,11 @@ export function AccountSettingsPage({
   const [pending, setPending] = useState<'password' | 'sessions' | 'server'>()
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
+  const [version, setVersion] = useState<string>()
+
+  useEffect(() => {
+    if (isTauriRuntime()) void getVersion().then(setVersion)
+  }, [])
 
   const changePassword = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -135,7 +141,7 @@ export function AccountSettingsPage({
                 <AlertDialogTitle>Change server?</AlertDialogTitle>
                 <AlertDialogDescription>
                   You will be signed out and disconnected from this workspace.
-                  Sweat will return to the server connection screen.
+                  Colony will return to the server connection screen.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -225,6 +231,10 @@ export function AccountSettingsPage({
           </p>
         )}
       </section>
+
+      {version && (
+        <p className="text-xs text-muted-foreground">Colony {version}</p>
+      )}
     </div>
   )
 }

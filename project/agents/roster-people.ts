@@ -11,14 +11,14 @@ export const capabilityPresentation: Record<
   { name: string; tools: Record<string, string> }
 > = {
   "workspace.docs": {
-    name: "Sweat Docs",
+    name: "Docs",
     tools: {
       "workspace.list_docs": "List Docs",
       "workspace.get_doc": "Read Docs",
     },
   },
   "workspace.issues": {
-    name: "Sweat Issues",
+    name: "Issues",
     tools: {
       "workspace.list_issues": "List issues",
       "workspace.get_issue": "Get issues",
