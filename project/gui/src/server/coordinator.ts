@@ -79,7 +79,10 @@ import { createSchedulesHttp } from './features/schedules/schedules-http'
 import { createBulletinsHttp } from './features/bulletins/bulletins-http'
 import { createDocsHttp } from './features/docs/docs-http'
 import { createGrillsHttp } from './features/grills/grills-http'
-import { createGrillLinkedRuns } from './features/grills/grill-linked-runs'
+import {
+  createGrillLinkedRuns,
+  type GrillLatestStep,
+} from './features/grills/grill-linked-runs'
 import { createRoomsHttp } from './features/rooms/rooms-http'
 import { createMembersHttp } from './features/rooms/members-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
@@ -200,6 +203,24 @@ export type GrillServerMessage =
       presenceId: string
       leases: GrillLeaseMessage[]
       participants: GrillParticipantMessage[]
+      latestStep?: GrillLatestStep
+      narration: GrillLatestStep[]
+    }
+  | {
+      type: 'grill.activity.changed'
+      linkedRun?: {
+        id: string
+        task: string
+        state: string
+        error?: string
+        createdAt: number
+        agentId?: string
+        provider?: string
+        model?: string
+        turnActive?: boolean
+      }
+      latestStep?: GrillLatestStep
+      narration: GrillLatestStep[]
     }
   | { type: 'grill.changed'; grill: Grill }
   | { type: 'grill.presence.changed'; participants: GrillParticipantMessage[] }
@@ -389,6 +410,36 @@ export function createCoordinator(options: {
     options.grillNotify.onChanged = (grill) =>
       broadcastGrillChanged(grill.id, grill)
   }
+  const grillLinkedRuns = options.grillStore
+    ? createGrillLinkedRuns({
+        startWarm: ({
+          grillId,
+          task,
+          agentDefinitionId,
+          idleTtlMs,
+          onCreate,
+        }) =>
+          options.control.start(task, {
+            grillId,
+            agentDefinitionId,
+            warm: true,
+            idleTtlMs,
+            onCreate,
+          }),
+        followUp: (runId, task) => options.control.followUp(runId, task),
+        cancel: (runId) => options.control.cancel(runId),
+        getRun: (runId) => options.control.getRun(runId),
+        subscribe: (listener) => options.control.subscribe(listener),
+        subscribeSteps: (listener) => options.control.subscribeSteps(listener),
+        onActivityChanged: ({ grillId, linkedRun, latestStep, narration }) =>
+          broadcastGrill(grillId, {
+            type: 'grill.activity.changed',
+            ...(linkedRun ? { linkedRun } : {}),
+            ...(latestStep ? { latestStep } : {}),
+            narration,
+          }),
+      })
+    : undefined
   const grillParticipants = (grillId: string): GrillParticipantMessage[] => {
     const participants = new Map<string, GrillParticipantMessage>()
     for (const socket of sockets) {
@@ -571,6 +622,7 @@ export function createCoordinator(options: {
       )
       if (!grill) return socket.close()
       expireGrillLeases()
+      const latestStep = grillLinkedRuns?.getLatestStep(socket.data.grillId)
       send(socket, {
         type: 'grill.snapshot',
         grill,
@@ -579,6 +631,8 @@ export function createCoordinator(options: {
           publicLease,
         ),
         participants: grillParticipants(socket.data.grillId),
+        ...(latestStep ? { latestStep } : {}),
+        narration: grillLinkedRuns?.getNarration(socket.data.grillId) ?? [],
       })
       return
     }
@@ -683,15 +737,15 @@ export function createCoordinator(options: {
     }
 
     if (input.type !== 'grill.draft' || typeof input.value !== 'string') return
-    if (current?.socket !== socket) {
+    if (current && current.socket !== socket) {
       send(socket, {
         type: 'grill.edit.rejected',
         questionId,
-        reason: current ? 'lease-held' : 'lease-required',
+        reason: 'lease-held',
       })
       return
     }
-    current.lastSeen = Date.now()
+    if (current) current.lastSeen = Date.now()
     const updated = options.grillStore.updateDrafts(
       grillId,
       { [questionId]: input.value },
@@ -833,35 +887,7 @@ export function createCoordinator(options: {
         broadcastGrillAttention,
         broadcastGrillChanged,
         hasActiveEditLeases: hasActiveGrillLeases,
-        linkedRuns: createGrillLinkedRuns({
-          startWarm: ({
-            grillId,
-            task,
-            agentDefinitionId,
-            idleTtlMs,
-            onCreate,
-          }) =>
-            options.control.start(task, {
-              grillId,
-              agentDefinitionId,
-              warm: true,
-              idleTtlMs,
-              onCreate,
-            }),
-          followUp: (runId, task) => options.control.followUp(runId, task),
-          cancel: (runId) => options.control.cancel(runId),
-          getRun: (runId) => options.control.getRun(runId),
-          subscribe: (listener) => options.control.subscribe(listener),
-          subscribeSteps: (listener) => options.control.subscribeSteps(listener),
-          onActivity: (grillId, activity) =>
-            broadcastGrill(grillId, {
-              type: 'grill.run.activity',
-              linkedRun: activity.linkedRun,
-              ...(activity.latestStep
-                ? { latestStep: activity.latestStep }
-                : {}),
-            }),
-        }),
+        linkedRuns: grillLinkedRuns,
       })
     : undefined
   const oneshotsHttp = createOneshotsHttp({

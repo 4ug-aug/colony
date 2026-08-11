@@ -116,6 +116,15 @@ answer drafts in a Grill. Timeline narration is not the source of truth for
 what must be answered or submitted.
 _Avoid_: Chat thread (as the decision record), prompt, Task
 
+**Grill presence**: One Account's live participation in a Grill through a
+single app or browser window, distinct from that Account's other open windows.
+_Avoid_: Account session, participant, websocket connection
+
+**Grill answer edit lease**: The transient exclusive right of one Grill
+presence to edit one Grill frontier answer while every participant sees its
+draft and Account identity live.
+_Avoid_: Lock, field ownership, collaborative cursor
+
 **Code Grill**: A Grill whose design-language artifacts are materialized into a
 repository branch at successful completion (not live-committed each round).
 The session is bound at start to the workspace's configured repository and a
@@ -157,6 +166,10 @@ _Avoid_: Board, corkboard, whiteboard, kanban
 **Room**: A durable context in a workspace where people coordinate work and
 where related runs and their results remain visible.
 _Avoid_: Channel, conversation
+
+**Oneshot**: An ephemeral, bounded, single-turn run started from the workspace
+launcher whose Task and result are not retained as workspace history.
+_Avoid_: Quick run, one-shot prompt, temporary Room
 
 **Room attachment**: Durable bytes and metadata attached to one room message.
 When that message starts a run, the server verifies and copies the attachment

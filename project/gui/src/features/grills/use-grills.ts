@@ -45,6 +45,7 @@ export type GrillDetail = {
   grill: Grill
   linkedRun?: GrillLinkedRun
   latestStep?: GrillLatestStep
+  narration?: GrillLatestStep[]
 }
 
 export type GrillListPageResult = {
@@ -86,6 +87,7 @@ function upsertGrillCache(
   grill: Grill,
   linkedRun?: GrillLinkedRun,
   latestStep?: GrillLatestStep | null,
+  narration?: GrillLatestStep[],
 ) {
   queryClient.setQueryData(
     grillQueryKey(grill.id),
@@ -96,6 +98,7 @@ function upsertGrillCache(
         latestStep === null
           ? undefined
           : (latestStep ?? current?.latestStep),
+      narration: narration ?? current?.narration,
     }),
   )
   invalidateGrillList(queryClient)
@@ -119,6 +122,7 @@ function markGrillFollowUpStarted(
     grill,
     prior ? { ...prior, turnActive: true } : undefined,
     null,
+    [],
   )
 }
 
@@ -228,7 +232,13 @@ export function useGrillRealtime(grillId: string) {
             setPresenceId(event.presenceId)
             setLeases(event.leases)
             setParticipants(event.participants)
-            upsertGrillCache(queryClient, event.grill)
+            upsertGrillCache(
+              queryClient,
+              event.grill,
+              undefined,
+              event.latestStep ?? null,
+              event.narration,
+            )
             for (const [questionId, pending] of pendingRef.current) {
               const canonical = event.grill.frontier.drafts[questionId] ?? ''
               if (
@@ -247,6 +257,20 @@ export function useGrillRealtime(grillId: string) {
                 type: 'grill.focus',
                 questionId: focusedQuestionRef.current,
               })
+            return
+          }
+          if (event.type === 'grill.activity.changed') {
+            const current = queryClient.getQueryData<GrillDetail>(
+              grillQueryKey(grillId),
+            )
+            if (current)
+              upsertGrillCache(
+                queryClient,
+                current.grill,
+                event.linkedRun ?? current.linkedRun,
+                event.latestStep ?? null,
+                event.narration,
+              )
             return
           }
           if (event.type === 'grill.changed') {

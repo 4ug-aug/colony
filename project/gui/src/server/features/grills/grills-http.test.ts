@@ -192,9 +192,14 @@ test('Accounts can push back or confirm an Issue proposal', async () => {
     Date.now(),
   )
 
-  const pushed = await call(ada, 'POST', `/api/grills/${id}/proposal/push-back`, {
-    notes: 'Need a third leaf',
-  })
+  const pushed = await call(
+    ada,
+    'POST',
+    `/api/grills/${id}/proposal/push-back`,
+    {
+      notes: 'Need a third leaf',
+    },
+  )
   expect(pushed.status).toBe(200)
   expect(pushed.body.grill.issueProposal).toMatchObject({
     status: 'revision_requested',
@@ -218,11 +223,9 @@ test('Accounts can push back or confirm an Issue proposal', async () => {
   )
   expect(confirmed.status).toBe(200)
   expect(confirmed.body.grill.issueProposal.status).toBe('confirmed')
-  expect(confirmed.body.issues.map((issue: { title: string }) => issue.title)).toEqual([
-    'Parent',
-    'Leaf A',
-    'Leaf B',
-  ])
+  expect(
+    confirmed.body.issues.map((issue: { title: string }) => issue.title),
+  ).toEqual(['Parent', 'Leaf A', 'Leaf B'])
   expect(minted).toEqual(['Parent', 'Leaf A', 'Leaf B'])
   sqlite.close()
 })
@@ -444,9 +447,9 @@ test('POST /api/grills/:id/reply follows up when frontier is empty', async () =>
     ada,
   )
   expect(frontierResponse?.status).toBe(400)
-  expect(((await frontierResponse!.json()) as { error: string }).error).toContain(
-    'frontier is empty',
-  )
+  expect(
+    ((await frontierResponse!.json()) as { error: string }).error,
+  ).toContain('frontier is empty')
 
   grillStore.setFrontier(grill.id, { questions: [], drafts: {} }, 3)
   grillStore.setWriteup(grill.id, { title: 'Decisions', body: '# Done\n' }, 4)
@@ -479,9 +482,9 @@ test('POST /api/grills/:id/reply follows up when frontier is empty', async () =>
     ada,
   )
   expect(completeResponse?.status).toBe(400)
-  expect(((await completeResponse!.json()) as { error: string }).error).toContain(
-    'complete',
-  )
+  expect(
+    ((await completeResponse!.json()) as { error: string }).error,
+  ).toContain('complete')
 
   sqlite.close()
 })
@@ -537,7 +540,9 @@ test('POST /run appends the Grill turn contract so questions must use tools', as
   expect(response?.status).toBe(201)
   expect(starts).toHaveLength(1)
   expect(starts[0]!.task).toContain('Grill the auth redesign')
-  expect(starts[0]!.task).toContain('HARD RULE — Grill questions are tools, never chat')
+  expect(starts[0]!.task).toContain(
+    'HARD RULE — Grill questions are tools, never chat',
+  )
   expect(starts[0]!.task).toContain('workspace.set_grill_frontier')
   expect(starts[0]!.task).toContain(
     'Granted workspace tools are the three Grill tools plus read-only workspace.list_docs / workspace.get_doc',
