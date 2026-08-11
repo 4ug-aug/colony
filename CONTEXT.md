@@ -30,9 +30,9 @@ same visible `@` syntax but are not account mentions.
 _Avoid_: Notification, assignment
 
 **Attention**: A durable, account-directed reason to return to a place in the
-workspace — a Room (from an account mention or a terminal run relevant to that
-account) or a Grill (from an invite to an invite-only Grill). Acknowledging
-attention clears its badge without changing or deleting the shared record.
+workspace — a Room, Room thread, or Grill — because of a relevant mention,
+thread reply, terminal run, or Grill invite; acknowledging it clears its badge
+without changing or deleting the shared record.
 _Avoid_: Unread message, notification
 
 **Schedule**: A workspace-owned recurring delegation that starts bounded runs
@@ -166,6 +166,33 @@ _Avoid_: Board, corkboard, whiteboard, kanban
 **Room**: A durable context in a workspace where people coordinate work and
 where related runs and their results remain visible.
 _Avoid_: Channel, conversation
+
+**Room thread**: A focused conversation that begins with the first reply to
+exactly one root Room message; replies inherit the Room's access and retention,
+stay out of its main timeline, and cannot form nested threads.
+_Avoid_: Chat thread, reply rail, sub-Room
+
+**Thread reply**: A visible contribution after the root of a Room thread,
+including a Room message or a successful Room-linked run's final result but
+excluding run activity and failed or cancelled runs.
+_Avoid_: Run step, nested message
+
+**Room thread participant**: An Account that authored the root or a reply in a
+Room thread and therefore receives Attention for later replies by others.
+_Avoid_: Follower, subscriber, Room member
+
+**Thread Attention**: Attention created for the root author and prior Account
+participants by a later reply from someone else; opening the Room thread
+acknowledges it, while opening only the containing Room does not, and its badge
+is aggregated onto the Room without marking the flat timeline unread.
+_Avoid_: Room unread, thread notification
+
+**Room-linked run**: A run invoked by an agent mention in a Room message;
+top-level invocations retain Room-scoped message tools and write into a thread
+rooted at the triggering message, while thread invocations receive
+thread-scoped message tools and write into that existing thread, and every
+mention starts a new bounded run without a retained provider conversation.
+_Avoid_: Room agent, flat run
 
 **Oneshot**: An ephemeral, bounded, single-turn run started from the workspace
 launcher whose Task and result are not retained as workspace history.

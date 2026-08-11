@@ -14,3 +14,17 @@ Colony is the current product name. Sweat is the legacy name.
 - In legacy documentation, use **Sweat** only when referring to one of those
   existing identifiers or describing historical behavior.
 
+## Agent skills
+
+### Issue tracker
+
+PRDs and issues use local Markdown under `.scratch/<feature>/`. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the standard triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. See `docs/agents/domain.md`.

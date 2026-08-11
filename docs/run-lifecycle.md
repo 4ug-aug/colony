@@ -90,6 +90,14 @@ message in its room. Steps are the live agent-to-operator channel and the audit
 trail; see [ADR 0003](adr/0003-structured-step-stream-over-container-stdout.md).
 V1 still does not collect artifacts.
 
+For a Room-linked run, the Run capsule stays beneath the message that invoked
+it: beneath the root for a top-level invocation or beneath the triggering reply
+for a thread invocation. Separate mention messages may start concurrent runs.
+A successful final result appears in the root's Room thread and counts as a
+reply; failed and cancelled runs create no reply and do not affect the count,
+but direct terminal-run Attention to the requester so the failure remains
+discoverable through its capsule.
+
 Capability grants are resolved before execution by a separate composition or
 policy layer. The executor receives those resolved grants and only binds and
 revokes their sessions; it does not make authorization decisions.

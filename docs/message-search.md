@@ -9,15 +9,17 @@ outside the default recent snapshot.
 
 - **Open:** toolbar Search control (shows ⌘K / Ctrl+K) or Cmd/Ctrl+K anywhere,
   including while the composer is focused.
-- **Match:** message `text` only (not room names, runs, steps, or attachments).
+- **Match:** flat and threaded room-message `text` only (not room names, runs,
+  run results, steps, or attachments).
 - **Scope:** every room the signed-in user can access (public rooms, or private
   rooms where they are a member).
 - **Query rules:** at least two characters; results newest-first; default cap
   20 (API max 50).
-- **Jump:** `openMessage(roomId, messageId)` — if the message is missing from
-  the live snapshot, the client loads `GET /api/rooms/:id/messages?around=` and
-  replaces the in-memory history page so `loadOlder` still paginates from the
-  oldest loaded message.
+- **Jump:** selecting a flat-message hit opens and focuses it in the Room;
+  selecting a thread-reply hit opens the Room, its thread rail, and the focused
+  reply. If a flat message is missing from the live snapshot, the client loads
+  `GET /api/rooms/:id/messages?around=` and replaces the in-memory history page
+  so `loadOlder` still paginates from the oldest loaded message.
 
 In-room-only search chrome is intentionally out of scope while universal search
 covers jump-to.
@@ -29,7 +31,8 @@ covers jump-to.
 | `GET` | `/api/search/messages?q=&limit=` | Session-auth; returns `{ hits }` for accessible rooms |
 | `GET` | `/api/rooms/:id/messages?around=` | History page centered on a message (mutually exclusive with `cursor`) |
 
-Hit shape: `messageId`, `roomId`, `roomName`, `author`, `text`, `createdAt`.
+Hit shape: `messageId`, `roomId`, `roomName`, `author`, `text`, `createdAt`, and
+optional `threadRootMessageId`.
 
 ## Persistence dependency: SQLite FTS5
 
