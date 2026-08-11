@@ -189,22 +189,11 @@ export function stripMcpProtocolInput(
 /**
  * Match `@openai/agents` `toFunctionToolName`: MCP tools such as
  * `workspace.set_grill_frontier` are registered as `workspace_set_grill_frontier`.
- * Models (and Grill instructions) often still emit the dotted MCP name.
  */
 export function toAgentsFunctionToolName(name: string): string {
   const sanitized = name.replace(/\s/g, "_").replace(/[^a-zA-Z0-9]/g, "_");
   if (!sanitized) throw new Error("Tool name cannot be empty");
   return sanitized;
-}
-
-/** Normalize function_call names onto the Agents SDK registry form. */
-export function normalizeFunctionCallToolNames(output: unknown[]): void {
-  for (const value of output) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-    const item = value as Record<string, unknown>;
-    if (item.type !== "function_call" || typeof item.name !== "string") continue;
-    item.name = toAgentsFunctionToolName(item.name);
-  }
 }
 
 /**
@@ -275,7 +264,6 @@ function sanitizeCompatibleInput(
 
 function sanitizeCompatibleOutput(output: unknown[]): void {
   rewriteVllmMcpCalls(output);
-  normalizeFunctionCallToolNames(output);
   sanitizeOutputStatuses(output);
 }
 
@@ -314,8 +302,7 @@ export function createModelProvider(
   model: OpenAICompatibleModel,
 ): ModelProvider {
   const baseURL = normalizeModelBaseUrl(model.baseUrl);
-  // Always use CompatibleResponsesModel so dotted MCP tool names from
-  // instructions/skills are normalized onto the Agents SDK registry form.
+  // Always use CompatibleResponsesModel for vLLM/MLflow response shaping.
   const client = new OpenAI({ apiKey: model.apiKey, baseURL });
   return {
     getModel: (name) =>

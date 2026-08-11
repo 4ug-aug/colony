@@ -38,6 +38,9 @@ export function GrillSession({
 }) {
   const { data, isPending, isError, error } = useGrill(grillId)
   const realtime = useGrillRealtime(grillId)
+  // Must stay above early returns — loading→ready used to add this hook and
+  // crash the whole app with "Rendered more hooks than during the previous render".
+  const [toolbarEnd, setToolbarEnd] = useState<HTMLDivElement | null>(null)
   const grill = data?.grill
   const linkedRun = data?.linkedRun
   const latestStep = data?.latestStep
@@ -63,7 +66,6 @@ export function GrillSession({
   const complete = grillIsComplete(grill)
   const awaitingWrapUp = grillAwaitingWrapUpReview(grill)
   const focusWrapUp = complete || awaitingWrapUp
-  const [toolbarEnd, setToolbarEnd] = useState<HTMLDivElement | null>(null)
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

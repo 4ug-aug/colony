@@ -14,7 +14,6 @@ import {
   CompatibleResponsesModel,
   createModelProvider,
   loadOpenAIAgentSession,
-  normalizeFunctionCallToolNames,
   normalizeModelBaseUrl,
   openOpenAIAgentSession,
   rewriteVllmMcpCalls,
@@ -231,18 +230,11 @@ test("custom providers rewrite vLLM mcp_call items into function calls", () => {
   ]);
 });
 
-test("dotted MCP tool names normalize onto Agents SDK function tool names", () => {
+test("vLLM mcp_call tool names map onto Agents SDK function tool names", () => {
   expect(toAgentsFunctionToolName("workspace.set_grill_frontier")).toBe(
     "workspace_set_grill_frontier",
   );
   const output = [
-    {
-      type: "function_call",
-      callId: "call-1",
-      name: "workspace.set_grill_frontier",
-      arguments: '{"questions":[]}',
-      status: "completed",
-    },
     {
       type: "hosted_tool_call",
       id: "mcp_1",
@@ -257,15 +249,7 @@ test("dotted MCP tool names normalize onto Agents SDK function tool names", () =
     },
   ];
   rewriteVllmMcpCalls(output);
-  normalizeFunctionCallToolNames(output);
   expect(output).toEqual([
-    {
-      type: "function_call",
-      callId: "call-1",
-      name: "workspace_set_grill_frontier",
-      arguments: '{"questions":[]}',
-      status: "completed",
-    },
     {
       type: "function_call",
       id: "mcp_1",

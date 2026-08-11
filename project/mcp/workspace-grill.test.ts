@@ -72,7 +72,7 @@ test("listTools returns frontier, issue proposal, and writeup tools", async () =
 
 test("GRILL_TURN_CONTRACT limits workspace access to Grill and read-only Docs", () => {
   expect(GRILL_TURN_CONTRACT).toContain(
-    "read-only workspace.list_docs / workspace.get_doc",
+    "read-only workspace_list_docs / workspace_get_doc",
   );
   expect(GRILL_TURN_CONTRACT).toContain("do not look for Issues, GitHub, or room tools");
 });

@@ -1,3 +1,4 @@
+import { ErrorBoundary } from '#/components/error-boundary'
 import { Badge } from '#/components/ui/badge'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
@@ -223,7 +224,15 @@ export function GrillsPage({
   })
 
   if (activeId) {
-    return <GrillSession grillId={activeId} onOpenDoc={onOpenDoc} />
+    return (
+      <ErrorBoundary
+        resetKeys={[activeId]}
+        title="This Grill hit a problem"
+        description="Retry the session, or go back to the Grills list after reloading."
+      >
+        <GrillSession grillId={activeId} onOpenDoc={onOpenDoc} />
+      </ErrorBoundary>
+    )
   }
 
   if (isPending) {

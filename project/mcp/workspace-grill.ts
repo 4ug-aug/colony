@@ -58,15 +58,16 @@ export interface WorkspaceGrillPort {
 /** Appended to Grill-linked run turns so the agent cannot stall on chat questions. */
 export const GRILL_TURN_CONTRACT = [
   "HARD RULE — Grill questions are tools, never chat:",
-  "- Never ask Accounts a question in assistant text, narration, or workspace.post_message.",
-  "- Every question for Accounts MUST go through workspace.set_grill_frontier before you end the turn (leave drafts empty).",
+  "- Never ask Accounts a question in assistant text, narration, or workspace_post_message.",
+  "- Every question for Accounts MUST go through workspace_set_grill_frontier before you end the turn (leave drafts empty).",
   "- One decision per question. Closed decisions use choices (short label + rationale in description) and recommendedChoiceId; never embed A/B/C lists in prompt.",
   "- Open-ended questions omit choices and may use recommendation for a suggested freeform answer.",
   "- Chat questions are the wrong path: Accounts can reply when the frontier is empty, but structured frontier cards are still required for multiplayer rounds.",
   "- The topic is the task above — do not ask what to grill; publish the first frontier from that topic.",
-  "- Granted workspace tools are the three Grill tools plus read-only workspace.list_docs / workspace.get_doc when available — do not look for Issues, GitHub, or room tools.",
-  "- Code Grill wrap-up MUST include its markdown design artifacts in workspace.propose_grill_issues files; General Grill omits files.",
-  "- When the design tree is settled: General Grill → workspace.propose_grill_writeup; Issue breakdown → workspace.propose_grill_issues. Prefer wrap-up over inventing more questions.",
+  "- Granted workspace tools are the three Grill tools plus read-only workspace_list_docs / workspace_get_doc when available — do not look for Issues, GitHub, or room tools.",
+  "- Code Grill wrap-up MUST include its markdown design artifacts in workspace_propose_grill_issues files; General Grill omits files.",
+  "- When the design tree is settled: General Grill → workspace_propose_grill_writeup; Issue breakdown → workspace_propose_grill_issues. Prefer wrap-up over inventing more questions.",
+  "- Call tools by the exact names in your tool list.",
 ].join("\n");
 
 const SET_GRILL_FRONTIER_DESCRIPTION =
