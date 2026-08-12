@@ -1,4 +1,37 @@
-export { formatIssueId } from '#/server/features/issues/issue-model'
+import { formatIssueId } from '#/server/features/issues/issue-model'
+import {
+  ISSUE_PRIORITY_LABEL,
+  ISSUE_STATUS_LABEL,
+  type Issue,
+} from './types'
+
+export { formatIssueId }
+
+export function formatIssueMarkdown(
+  issue: Issue,
+  options?: { assignee?: string },
+): string {
+  const heading = `# ${formatIssueId(issue.number)} ${issue.title}`
+  const timeSpent = issue.timeSpent.reduce((sum, minutes) => sum + minutes, 0)
+  const properties = [
+    `- Status: ${ISSUE_STATUS_LABEL[issue.status]}`,
+    `- Priority: ${ISSUE_PRIORITY_LABEL[issue.priority]}`,
+    `- Assignee: ${
+      options?.assignee ??
+      (issue.owner ? `${issue.owner.kind}:${issue.owner.id}` : '—')
+    }`,
+    `- Branch: ${issue.effectiveBranch ?? '—'}`,
+    `- Tags: ${issue.tags.length > 0 ? issue.tags.join(', ') : '—'}`,
+    `- Time spent: ${timeSpent > 0 ? formatTimeSpentMinutes(timeSpent) : '—'}`,
+  ]
+
+  const sections = [heading, properties.join('\n')]
+  const description = issue.description.trim()
+  if (description) sections.push(`## Description\n\n${description}`)
+  const deliverable = issue.deliverable.trim()
+  if (deliverable) sections.push(`## Deliverable\n\n${deliverable}`)
+  return sections.join('\n\n')
+}
 
 export function formatIssueCreatedAt(createdAt: number): string {
   return new Intl.DateTimeFormat(undefined, {

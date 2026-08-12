@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '#/lib/api-transport'
-import type { RoomMessage, RoomThread } from './types'
+import { runResultsForThread } from './thread-helpers'
+import type { RoomMessage, RoomRun, RoomThread, RunResultReply } from './types'
 
 const emptyResults: RoomThread['results'] = []
 
@@ -12,14 +13,25 @@ function mergeReplies(persisted: RoomMessage[], live: RoomMessage[]) {
   )
 }
 
+function mergeResults(persisted: RunResultReply[], live: RunResultReply[]) {
+  const byId = new Map(persisted.map((result) => [result.id, result]))
+  for (const result of live) byId.set(result.id, result)
+  return [...byId.values()].sort(
+    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+  )
+}
+
 /**
  * Fetches the durable thread for a root message and layers in replies
  * received live over the room stream (passed in from `useRooms`).
+ * Successful Room-linked run finals from `runs` are merged the same way so
+ * an open rail shows a just-finished result without waiting on refetch.
  */
 export function useRoomThread(
   roomId: string | undefined,
   rootId: string | undefined,
   liveReplies: RoomMessage[] = [],
+  runs: readonly RoomRun[] = [],
 ) {
   const query = useQuery({
     queryKey: ['room-thread', roomId, rootId],
@@ -41,10 +53,26 @@ export function useRoomThread(
     },
   })
   const replies = mergeReplies(query.data?.replies ?? [], liveReplies)
+  const root =
+    query.data?.root ??
+    (rootId && roomId
+      ? {
+          id: rootId,
+          roomId,
+          author: { id: '', name: '' },
+          text: '',
+          createdAt: 0,
+          attachments: [],
+        }
+      : undefined)
+  const results = mergeResults(
+    query.data?.results ?? emptyResults,
+    runResultsForThread(runs, root, replies),
+  )
   return {
     root: query.data?.root,
     replies,
-    results: query.data?.results ?? emptyResults,
+    results,
     isLoading: query.isLoading,
     error: query.error instanceof Error ? query.error.message : undefined,
     refetch: query.refetch,

@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { applyLiveReply, isThreadReply, runsForThread } from './thread-helpers'
+import {
+  applyLiveReply,
+  buildFlatTimelineItems,
+  isThreadReply,
+  runResultAsLiveReply,
+  runResultsForThread,
+  runsForThread,
+  threadRootIdForTrigger,
+  withLiveThreadSummaries,
+} from './thread-helpers'
 import type { RoomMessage, RoomRun } from './types'
 
 const root: RoomMessage = {
@@ -112,5 +121,158 @@ describe('runsForThread', () => {
     expect(runsForThread([run('run-root', 'root-1')], undefined, [])).toEqual(
       [],
     )
+  })
+})
+
+describe('withLiveThreadSummaries', () => {
+  test('folds live replies and run results onto the server baseline summary', () => {
+    const rooted: RoomMessage = {
+      ...root,
+      replySummary: {
+        replyCount: 1,
+        participantIds: ['user-2'],
+        latestReplyAt: 2,
+      },
+    }
+    const liveReply = reply('reply-2', 'user-1', 3)
+    const liveResult = runResultAsLiveReply(
+      {
+        id: 'run-1',
+        roomId: 'general',
+        agentId: 'antboy',
+        createdAt: 4,
+        completedAt: 4,
+      },
+      'root-1',
+    )
+    const [updated] = withLiveThreadSummaries(
+      [rooted],
+      { 'root-1': [liveReply] },
+      { 'root-1': [liveResult] },
+    )
+    expect(updated?.replySummary).toEqual({
+      replyCount: 3,
+      participantIds: ['antboy', 'user-1', 'user-2'],
+      latestReplyAt: 4,
+    })
+  })
+
+  test('leaves messages without live activity unchanged', () => {
+    const rooted: RoomMessage = {
+      ...root,
+      replySummary: {
+        replyCount: 2,
+        participantIds: ['user-2'],
+        latestReplyAt: 2,
+      },
+    }
+    expect(withLiveThreadSummaries([rooted], {})).toEqual([rooted])
+  })
+})
+
+describe('threadRootIdForTrigger', () => {
+  test('resolves a top-level trigger to itself and a reply trigger to its root', () => {
+    expect(threadRootIdForTrigger('root-1', [root], {})).toBe('root-1')
+    expect(
+      threadRootIdForTrigger('reply-1', [root], {
+        'root-1': [reply('reply-1', 'user-2', 2)],
+      }),
+    ).toBe('root-1')
+  })
+})
+
+describe('buildFlatTimelineItems', () => {
+  test('keeps the Run capsule on the trigger and never inserts a succeeded result into the flat Room', () => {
+    const trigger: RoomMessage = {
+      ...root,
+      id: 'trigger-1',
+      text: '@software-engineer hey!',
+      createdAt: 100,
+      replySummary: {
+        replyCount: 1,
+        participantIds: ['software-engineer'],
+        latestReplyAt: 200,
+      },
+    }
+    const succeeded: RoomRun = {
+      ...run('run-1', 'trigger-1'),
+      state: 'succeeded',
+      createdAt: 100,
+      completedAt: 200,
+      stdout: 'Hey! How can I help?',
+      output: 'Hey! How can I help?',
+    }
+    const failed: RoomRun = {
+      ...run('run-2', 'other-1'),
+      state: 'failed',
+      completedAt: 150,
+      error: 'boom',
+    }
+    const other: RoomMessage = {
+      ...root,
+      id: 'other-1',
+      text: 'side note',
+      createdAt: 120,
+    }
+
+    const items = buildFlatTimelineItems([trigger, other], [succeeded, failed])
+
+    expect(items.map((item) => item.id)).toEqual(['trigger-1', 'other-1'])
+    expect(items[0]?.run).toEqual(succeeded)
+    expect(items[1]?.run).toEqual(failed)
+    expect(items.every((item) => !('result' in item))).toBe(true)
+  })
+})
+
+describe('runResultsForThread', () => {
+  test('maps succeeded thread runs to result replies and skips failures', () => {
+    const replies = [reply('reply-1', 'user-2', 2)]
+    const succeededRoot: RoomRun = {
+      ...run('run-root', 'root-1'),
+      state: 'succeeded',
+      completedAt: 5,
+      stdout: 'Final answer',
+      output: 'Final answer',
+    }
+    const succeededReply: RoomRun = {
+      ...run('run-reply', 'reply-1'),
+      state: 'succeeded',
+      completedAt: 6,
+      stdout: 'Also done',
+    }
+    const failed: RoomRun = {
+      ...run('run-fail', 'root-1'),
+      state: 'failed',
+      completedAt: 7,
+      error: 'nope',
+      stdout: 'partial',
+    }
+    const elsewhere: RoomRun = {
+      ...run('run-elsewhere', 'other-message'),
+      state: 'succeeded',
+      completedAt: 8,
+      stdout: 'wrong thread',
+    }
+
+    expect(
+      runResultsForThread(
+        [succeededRoot, succeededReply, failed, elsewhere],
+        root,
+        replies,
+      ),
+    ).toEqual([
+      {
+        id: 'run-root',
+        agentId: 'software-engineer',
+        text: 'Final answer',
+        createdAt: 5,
+      },
+      {
+        id: 'run-reply',
+        agentId: 'software-engineer',
+        text: 'Also done',
+        createdAt: 6,
+      },
+    ])
   })
 })

@@ -111,10 +111,14 @@ export function Dashboard({
     notificationByRoom,
   } = useRooms(user.id)
   const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
-  const [location, setLocation] = useState<DashboardLocation>(
-    () =>
-      readDashboardLocation(window.history.state, user.id) ?? { view: 'room' },
-  )
+  const [location, setLocation] = useState<DashboardLocation>(() => {
+    const pathIssue = window.location.pathname.match(/^\/issues\/([^/]+)$/)
+    if (pathIssue)
+      return { view: 'issues', id: decodeURIComponent(pathIssue[1]!) }
+    return (
+      readDashboardLocation(window.history.state, user.id) ?? { view: 'room' }
+    )
+  })
   const view = location.view
   const selectedIssueId = view === 'issues' ? location.id : undefined
   const selectedDocId = view === 'docs' ? location.id : undefined
@@ -545,7 +549,13 @@ export function Dashboard({
         )}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
-            <div className="relative flex min-w-0 flex-1 flex-col">
+            <div
+              className="relative flex min-w-0 flex-1 flex-col"
+              onPointerDown={() => {
+                if (activeRootId || activeSurface?.kind === 'activity')
+                  closeSideSurface()
+              }}
+            >
               <div className="relative min-h-0 flex-1">
                 <section
                   key={room?.id}

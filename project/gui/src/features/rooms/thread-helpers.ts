@@ -1,4 +1,9 @@
-import type { RoomMessage, RoomRun } from './types'
+import type {
+  RoomMessage,
+  RoomRun,
+  RunResultReply,
+  ThreadSummary,
+} from './types'
 
 export function isThreadReply(message: RoomMessage): boolean {
   return message.rootId != null
@@ -17,6 +22,60 @@ export function runsForThread(
   if (!root) return []
   const triggerIds = new Set([root.id, ...replies.map((reply) => reply.id)])
   return runs.filter((run) => triggerIds.has(run.triggerMessageId))
+}
+
+/** Successful run finals for a thread, presented as chronological result replies. */
+export function runResultsForThread(
+  runs: readonly RoomRun[],
+  root: RoomMessage | undefined,
+  replies: readonly RoomMessage[],
+): RunResultReply[] {
+  return runsForThread(runs, root, replies)
+    .filter((run) => run.state === 'succeeded')
+    .map((run) => ({
+      id: run.id,
+      agentId: run.agentId,
+      text: (run.output ?? run.stdout) || 'Completed.',
+      createdAt: run.completedAt ?? run.createdAt,
+    }))
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+}
+
+export type FlatTimelineItem = {
+  id: string
+  message: RoomMessage
+  createdAt: number
+  run?: RoomRun
+  grouped: boolean
+}
+
+/**
+ * Flat Room timeline: top-level messages with Run capsules under their
+ * triggers. Successful finals belong in the root thread, never here.
+ */
+export function buildFlatTimelineItems(
+  messages: readonly RoomMessage[],
+  runs: readonly RoomRun[],
+): FlatTimelineItem[] {
+  const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
+  const sorted = [...messages]
+    .map((message) => ({
+      id: message.id,
+      message,
+      createdAt: message.createdAt,
+    }))
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+  return sorted.map((item, index) => {
+    const previous = sorted[index - 1]
+    return {
+      ...item,
+      run: statuses.get(item.message.id),
+      grouped:
+        previous != null &&
+        previous.message.author.id === item.message.author.id &&
+        item.createdAt - previous.createdAt < 5 * 60 * 1000,
+    }
+  })
 }
 
 /**
@@ -49,3 +108,65 @@ export function applyLiveReply(
     applied: true,
   }
 }
+
+/**
+ * Timeline chip summaries must stay live. Server-loaded `message.replySummary`
+ * is the baseline; replies / successful run results received since then are
+ * folded on top so chips update without waiting for a history refetch, and
+ * without being clobbered when a stale page merge overwrites message rows.
+ */
+export function withLiveThreadSummaries(
+  messages: readonly RoomMessage[],
+  liveRepliesByRoot: Readonly<Record<string, readonly RoomMessage[]>>,
+  liveResultsByRoot: Readonly<Record<string, readonly RoomMessage[]>> = {},
+): RoomMessage[] {
+  return messages.map((message) => {
+    if (message.rootId != null) return message
+    const liveReplies = liveRepliesByRoot[message.id] ?? []
+    const liveResults = liveResultsByRoot[message.id] ?? []
+    if (!liveReplies.length && !liveResults.length) return message
+    const applied = new Set<string>()
+    let next = message
+    for (const reply of [...liveReplies, ...liveResults]) {
+      const result = applyLiveReply(next, reply, applied)
+      if (!result.applied) continue
+      applied.add(reply.id)
+      next = result.message
+    }
+    return next
+  })
+}
+
+/** Synthetic reply used to count a successful run result toward a root summary. */
+export function runResultAsLiveReply(
+  run: Pick<
+    RoomRun,
+    'id' | 'roomId' | 'agentId' | 'completedAt' | 'createdAt'
+  >,
+  rootId: string,
+): RoomMessage {
+  return {
+    id: run.id,
+    roomId: run.roomId,
+    author: { kind: 'agent', id: run.agentId, name: run.agentId },
+    text: '',
+    createdAt: run.completedAt ?? run.createdAt,
+    attachments: [],
+    rootId,
+  }
+}
+
+export function threadRootIdForTrigger(
+  triggerMessageId: string,
+  messages: readonly RoomMessage[],
+  liveRepliesByRoot: Readonly<Record<string, readonly RoomMessage[]>>,
+): string | undefined {
+  const topLevel = messages.find((message) => message.id === triggerMessageId)
+  if (topLevel) return topLevel.rootId ?? topLevel.id
+  for (const [rootId, replies] of Object.entries(liveRepliesByRoot)) {
+    if (replies.some((reply) => reply.id === triggerMessageId)) return rootId
+  }
+  return undefined
+}
+
+export type { ThreadSummary }

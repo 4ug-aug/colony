@@ -1,5 +1,75 @@
 import { describe, expect, it } from 'vitest'
-import { formatTimeSpentMinutes } from './format'
+import { formatIssueMarkdown, formatTimeSpentMinutes } from './format'
+import type { Issue } from './types'
+
+const issue = (values: Partial<Issue> = {}): Issue => ({
+  id: 'issue-1',
+  number: 5,
+  title: 'Test child 2',
+  description: '',
+  deliverable: '',
+  status: 'todo',
+  priority: 'none',
+  tags: [],
+  timeSpent: [],
+  createdAt: 0,
+  updatedAt: 0,
+  ...values,
+})
+
+describe('formatIssueMarkdown', () => {
+  it('includes properties, description, and deliverable', () => {
+    expect(
+      formatIssueMarkdown(
+        issue({
+          status: 'in_progress',
+          priority: 'high',
+          tags: ['api', 'bug'],
+          timeSpent: [45, 30],
+          effectiveBranch: 'feat/badge',
+          description: 'Ship the badge.',
+          deliverable: 'Badge shipped.',
+          owner: { kind: 'account', id: 'user-1' },
+        }),
+        { assignee: 'August' },
+      ),
+    ).toBe(
+      [
+        '# COL-5 Test child 2',
+        '',
+        '- Status: In Progress',
+        '- Priority: High',
+        '- Assignee: August',
+        '- Branch: feat/badge',
+        '- Tags: api, bug',
+        '- Time spent: 1h 15m',
+        '',
+        '## Description',
+        '',
+        'Ship the badge.',
+        '',
+        '## Deliverable',
+        '',
+        'Badge shipped.',
+      ].join('\n'),
+    )
+  })
+
+  it('uses placeholders when optional fields are empty', () => {
+    expect(formatIssueMarkdown(issue())).toBe(
+      [
+        '# COL-5 Test child 2',
+        '',
+        '- Status: Todo',
+        '- Priority: No priority',
+        '- Assignee: —',
+        '- Branch: —',
+        '- Tags: —',
+        '- Time spent: —',
+      ].join('\n'),
+    )
+  })
+})
 
 describe('formatTimeSpentMinutes', () => {
   it('formats under an hour as minutes', () => {

@@ -34,6 +34,7 @@ export function RunCapsule({
         className,
       )}
       aria-label={`View ${name} activity using ${llmProviderName(run.provider)}, ${state}`}
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={() => openRun(run.id)}
     >
       <AvatarGroup>

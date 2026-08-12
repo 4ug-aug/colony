@@ -1,8 +1,8 @@
-import ReactMarkdown from 'react-markdown'
-import type { Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import type { ReactNode } from 'react'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import type { ReactNode } from 'react'
+import type { Components } from 'react-markdown'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const mentionChip = (key: string, handle: string) => (
   <span

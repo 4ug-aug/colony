@@ -17,7 +17,7 @@ import {
 } from '#/features/agents/use-agent-definitions'
 import { RunCapsule } from '#/features/runs/run-capsule'
 import { useMediaQuery } from '#/hooks/use-media-query'
-import { AttachmentView } from './room-timeline'
+import { AttachmentView } from './attachment-view'
 import { MessageComposer } from './message-composer'
 import { runsForThread } from './thread-helpers'
 import {
@@ -68,6 +68,7 @@ function ThreadMessage({
   onFocusHandled,
   run,
   openRun,
+  bubble = false,
 }: {
   message: RoomMessage
   mentionHandles: string[]
@@ -77,6 +78,8 @@ function ThreadMessage({
   onFocusHandled?: () => void
   run?: RoomRun
   openRun?: (runId: string) => void
+  /** Root message only — replies stay flush with the thread timeline. */
+  bubble?: boolean
 }) {
   const canEdit =
     Boolean(onEdit) &&
@@ -96,7 +99,13 @@ function ThreadMessage({
       }
     >
       <Avatar author={message.author} agent={message.author.kind === 'agent'} />
-      <div className="min-w-0 flex-1">
+      <div
+        className={
+          bubble
+            ? 'min-w-0 flex-1 rounded-lg border bg-muted/30 px-3 py-2'
+            : 'min-w-0 flex-1'
+        }
+      >
         <div className="flex items-baseline gap-2">
           <span className="font-semibold">{message.author.name}</span>
           <time className="text-xs text-muted-foreground">
@@ -185,6 +194,7 @@ export function RoomThreadRailContent({
     roomId,
     rootId,
     liveReplies,
+    runs,
   )
   const { data: agents = [] } = useAgentDefinitions()
   const [editingReply, setEditingReply] = useState<RoomMessage>()
@@ -303,6 +313,7 @@ export function RoomThreadRailContent({
                   currentUserId={currentUserId}
                   run={threadRuns.get(root.id)}
                   openRun={openRun}
+                  bubble
                 />
               </div>
               <div className="space-y-4 pt-4">
@@ -388,10 +399,10 @@ export function RoomThreadRail({
   if (inline)
     return (
       <aside
-        className={`flex w-[26rem] shrink-0 flex-col border-l bg-background duration-200 ${
+        className={`flex w-[26rem] shrink-0 flex-col border-l bg-background ${
           exiting
-            ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards'
-            : 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards'
+            ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards duration-100'
+            : 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards duration-200'
         }`}
         aria-label="Thread"
         onAnimationEnd={

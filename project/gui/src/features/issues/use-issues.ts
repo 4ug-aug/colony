@@ -5,6 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
+import { formatIssueId } from './format'
 import type {
   Issue,
   IssueOwner,
@@ -110,11 +111,15 @@ async function fetchIssue(ref: string): Promise<Issue> {
   return data.issue
 }
 
-/** Prefer list cache; fetch single issue only when missing. */
+/** Prefer list cache; fetch single issue only when missing. Accepts id or COL-N. */
 export function useIssue(id: string | undefined) {
   const list = useIssues()
   const cached = id
-    ? list.data?.find((issue) => issue.id === id)
+    ? list.data?.find(
+        (issue) =>
+          issue.id === id ||
+          formatIssueId(issue.number).toLowerCase() === id.toLowerCase(),
+      )
     : undefined
 
   const detail = useQuery({

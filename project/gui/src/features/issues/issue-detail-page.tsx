@@ -163,7 +163,7 @@ function EditableDescription({ issue }: { issue: Issue }) {
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => void save()}
         rows={8}
-        className="w-full resize-y rounded-sm bg-transparent text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="w-full resize-y rounded-sm bg-transparent p-1 text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         aria-label="Issue description"
         disabled={updateIssue.isPending}
       />
@@ -174,7 +174,7 @@ function EditableDescription({ issue }: { issue: Issue }) {
     <div
       role="button"
       tabIndex={0}
-      className="w-full cursor-text rounded-sm text-left text-sm leading-relaxed outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40"
+      className="w-full cursor-text rounded-sm p-1 text-left text-sm leading-relaxed whitespace-pre-wrap outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40"
       onClick={begin}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
