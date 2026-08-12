@@ -262,6 +262,10 @@ export const MessageComposer = forwardRef<
   const [sending, setSending] = useState(false)
   const roomNameRef = useRef(roomName)
   const editingRef = useRef(editing)
+  // TipTap onUpdate is sync, but React may re-render with a lagging `value`
+  // (e.g. live room updates while typing fast). Re-applying that plain-text
+  // value via setContent strips mention atoms — skip sync for our own emits.
+  const skipNextValueSync = useRef(false)
   const mentionItems = useRef<MentionItem[]>([])
   mentionItems.current = [
     ...mentionableAccounts.map((account) => {
@@ -350,7 +354,10 @@ export const MessageComposer = forwardRef<
         return false
       },
     },
-    onUpdate: ({ editor: updatedEditor }) => onChange(updatedEditor.getText()),
+    onUpdate: ({ editor: updatedEditor }) => {
+      skipNextValueSync.current = true
+      onChange(updatedEditor.getText())
+    },
   })
   const editorState = useEditorState({
     editor,
@@ -390,6 +397,10 @@ export const MessageComposer = forwardRef<
   )
 
   useEffect(() => {
+    if (skipNextValueSync.current) {
+      skipNextValueSync.current = false
+      return
+    }
     if (editor.getText() !== value)
       editor.commands.setContent(value, { emitUpdate: false })
   }, [editor, value])

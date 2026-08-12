@@ -1,10 +1,7 @@
-import { useLayoutEffect, useRef, useState } from 'react'
-import type { AnimationEvent } from 'react'
-import { ArrowDown, X } from 'lucide-react'
 import { Avatar, timestamp } from '#/components/avatar'
 import { Markdown } from '#/components/markdown'
-import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
+import { Button } from '#/components/ui/button'
 import {
   Sheet,
   SheetContent,
@@ -15,9 +12,12 @@ import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
+import { AttachmentView } from '#/features/rooms/attachment-view'
 import { RunCapsule } from '#/features/runs/run-capsule'
 import { useMediaQuery } from '#/hooks/use-media-query'
-import { AttachmentView } from './attachment-view'
+import { ArrowDown, X } from 'lucide-react'
+import type { AnimationEvent } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { MessageComposer } from './message-composer'
 import { runsForThread } from './thread-helpers'
 import {
@@ -26,13 +26,13 @@ import {
   applyScrollMetrics,
   initialThreadScrollState,
 } from './thread-scroll'
-import { useRoomThread } from './use-room-thread'
 import type {
   MentionableAccount,
   RoomMessage,
   RoomRun,
   RunResultReply,
 } from './types'
+import { useRoomThread } from './use-room-thread'
 
 function ThreadResult({
   result,
