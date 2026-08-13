@@ -111,6 +111,7 @@ export function IssuesPage({
     return (
       <>
         <IssueDetailPage
+          key={selectedId}
           issueId={selectedId}
           onBack={() => onSelectedIdChange(undefined)}
           onOpenIssue={onSelectedIdChange}
@@ -132,7 +133,7 @@ export function IssuesPage({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none">
           {isPending ? (
             <div
               className="flex justify-center py-12 text-sm text-muted-foreground"

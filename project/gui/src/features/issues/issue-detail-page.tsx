@@ -329,7 +329,7 @@ export function IssueDetailPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2 animate-in fade-in-0 slide-in-from-top-1 duration-150 ease-out fill-mode-backwards motion-reduce:animate-none">
         <Breadcrumb className="min-w-0 flex-1">
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -377,7 +377,7 @@ export function IssueDetailPage({
         <IssueDeleteButton issue={issue} onDeleted={onBack} />
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6 lg:px-10">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none lg:px-10">
           <div className="mx-auto max-w-3xl">
             {parentCovered && parent ? (
               <ParentCoverAlert
@@ -431,7 +431,7 @@ export function IssueDetailPage({
             />
           </div>
         </main>
-        <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-border/60 px-4 py-5 sm:block lg:w-80">
+        <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-border/60 px-4 py-5 animate-in fade-in-0 slide-in-from-right-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none sm:block lg:w-80">
           <section className="mb-5 space-y-0.5">
             <h3 className="mb-2 text-xs font-medium text-muted-foreground">
               Properties
