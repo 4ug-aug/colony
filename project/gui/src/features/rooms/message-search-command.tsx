@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Cuboid, Hash } from 'lucide-react'
 import { timestamp } from '#/components/avatar'
 import {
@@ -39,6 +39,11 @@ export function MessageSearchCommand({
   onSelectIssue: (issue: Issue) => void
 }) {
   const [query, setQuery] = useState('')
+  const pendingSelection = useRef<
+    | { kind: 'message'; hit: MessageSearchHit }
+    | { kind: 'issue'; issue: Issue }
+    | undefined
+  >(undefined)
   const trimmed = query.trim()
   const search = useMessageSearch(query, open)
   const hits: MessageSearchHit[] = search.data ?? []
@@ -68,6 +73,13 @@ export function MessageSearchCommand({
       onOpenChange={(next) => {
         onOpenChange(next)
         if (!next) setQuery('')
+      }}
+      onOpenChangeComplete={() => {
+        const selection = pendingSelection.current
+        pendingSelection.current = undefined
+        if (!selection) return
+        if (selection.kind === 'issue') onSelectIssue(selection.issue)
+        else onSelectHit(selection.hit)
       }}
       title="Search Colony"
       description="Search messages and Issues"
@@ -101,7 +113,7 @@ export function MessageSearchCommand({
                       value={`${formatIssueId(issue.number)}:${issue.title}:${issue.description}`}
                       className="items-start [&>svg:last-child]:hidden"
                       onSelect={() => {
-                        onSelectIssue(issue)
+                        pendingSelection.current = { kind: 'issue', issue }
                         onOpenChange(false)
                         setQuery('')
                       }}
@@ -132,7 +144,7 @@ export function MessageSearchCommand({
                       value={`${hit.roomId}:${hit.messageId}:${hit.text}`}
                       className="items-start [&>svg:last-child]:hidden"
                       onSelect={() => {
-                        onSelectHit(hit)
+                        pendingSelection.current = { kind: 'message', hit }
                         onOpenChange(false)
                         setQuery('')
                       }}
