@@ -4,11 +4,7 @@ import { Kbd, KbdGroup } from '#/components/ui/kbd'
 import { SidebarTrigger } from '#/components/ui/sidebar'
 import { ActiveIssueTiming } from '#/features/issues/active-issue-timing'
 import { isTauriRuntime } from '#/lib/server-config'
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  SearchIcon,
-} from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react'
 import type { CSSProperties } from 'react'
 
 // Single source of truth for the custom title-bar (bezel) height. The drag
@@ -41,8 +37,8 @@ function SearchShortcutButton({ onOpenSearch }: { onOpenSearch: () => void }) {
       variant="outline"
       size="sm"
       className="pointer-events-auto h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-      aria-label="Search messages"
-      title="Search messages"
+      aria-label="Search Colony"
+      title="Search Colony"
       onClick={onOpenSearch}
     >
       <SearchIcon className="size-3.5" />

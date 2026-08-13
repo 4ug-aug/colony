@@ -349,6 +349,7 @@ export function Dashboard({
       <MessageSearchCommand
         open={searchOpen}
         onOpenChange={setSearchOpen}
+        onSelectIssue={(issue) => navigate({ view: 'issues', id: issue.id })}
         onSelectHit={(hit) => {
           const target = navigationForSearchHit(hit)
           navigate({ view: 'room', id: target.roomId })

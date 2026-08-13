@@ -4,12 +4,15 @@ import {
   filterIssues,
   issueFiltersActive,
   parseStoredIssueFilters,
+  searchIssues,
   serializeIssueFilters,
-  type IssueListFilters,
 } from './issue-filters'
+import type { IssueListFilters } from './issue-filters'
 import type { Issue } from './types'
 
-const issue = (values: Partial<Issue> & Pick<Issue, 'id' | 'number'>): Issue => ({
+const issue = (
+  values: Partial<Issue> & Pick<Issue, 'id' | 'number'>,
+): Issue => ({
   title: `Issue ${values.number}`,
   description: '',
   deliverable: '',
@@ -121,6 +124,25 @@ describe('filterIssues', () => {
     }
     expect(ids(filterIssues(base, filters))).toEqual(['a'])
   })
+})
+
+test('searchIssues matches Issue id, title, description, and tags', () => {
+  const issues = [
+    issue({
+      id: 'a',
+      number: 12,
+      title: 'Repair search',
+      description: 'Include archived records',
+      tags: ['frontend'],
+    }),
+    issue({ id: 'b', number: 13, title: 'Unrelated' }),
+  ]
+
+  expect(searchIssues(issues, 'COL-12').map(({ id }) => id)).toEqual(['a'])
+  expect(searchIssues(issues, 'repair').map(({ id }) => id)).toEqual(['a'])
+  expect(searchIssues(issues, 'archived').map(({ id }) => id)).toEqual(['a'])
+  expect(searchIssues(issues, 'frontend').map(({ id }) => id)).toEqual(['a'])
+  expect(searchIssues(issues, '  ')).toEqual([])
 })
 
 describe('issueFiltersActive', () => {

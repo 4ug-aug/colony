@@ -1,5 +1,6 @@
 import type { Issue, IssuePriority, IssueStatus } from './types'
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from './types'
+import { formatIssueId } from './format'
 
 export type IssueListFilters = {
   assignedToMe: boolean
@@ -50,7 +51,9 @@ function isIssueStatus(value: unknown): value is IssueStatus {
 }
 
 /** Parse persisted filters; invalid/missing fields fall back to empty. */
-export function parseStoredIssueFilters(raw: string | null): StoredIssueListFilters {
+export function parseStoredIssueFilters(
+  raw: string | null,
+): StoredIssueListFilters {
   if (!raw) return { ...EMPTY_ISSUE_FILTERS }
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -116,4 +119,15 @@ export function filterIssues(
       return false
     return true
   })
+}
+
+export function searchIssues(issues: Issue[], query: string): Issue[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return []
+  return issues.filter((issue) =>
+    [formatIssueId(issue.number), issue.title, issue.description, ...issue.tags]
+      .join('\n')
+      .toLowerCase()
+      .includes(needle),
+  )
 }

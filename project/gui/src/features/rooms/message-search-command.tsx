@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Hash } from 'lucide-react'
+import { Cuboid, Hash } from 'lucide-react'
 import { timestamp } from '#/components/avatar'
 import {
   Command,
@@ -11,6 +11,11 @@ import {
   CommandList,
 } from '#/components/ui/command'
 import type { MessageSearchHit } from './types'
+import { searchIssues } from '#/features/issues/issue-filters'
+import { formatIssueId } from '#/features/issues/format'
+import { IssueStatusIcon } from '#/features/issues/issue-icons'
+import type { Issue } from '#/features/issues/types'
+import { useIssues } from '#/features/issues/use-issues'
 import {
   MESSAGE_SEARCH_MIN_QUERY_LENGTH,
   useMessageSearch,
@@ -26,19 +31,24 @@ export function MessageSearchCommand({
   open,
   onOpenChange,
   onSelectHit,
+  onSelectIssue,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSelectHit: (hit: MessageSearchHit) => void
+  onSelectIssue: (issue: Issue) => void
 }) {
   const [query, setQuery] = useState('')
   const trimmed = query.trim()
   const search = useMessageSearch(query, open)
   const hits: MessageSearchHit[] = search.data ?? []
+  const issuesQuery = useIssues({ enabled: open })
+  const issues = searchIssues(issuesQuery.data ?? [], trimmed).slice(0, 20)
   const waiting =
     trimmed.length >= MESSAGE_SEARCH_MIN_QUERY_LENGTH &&
-    (search.isFetching || search.isPending) &&
-    hits.length === 0
+    (search.isFetching || search.isPending || issuesQuery.isPending) &&
+    hits.length === 0 &&
+    issues.length === 0
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -59,12 +69,12 @@ export function MessageSearchCommand({
         onOpenChange(next)
         if (!next) setQuery('')
       }}
-      title="Search messages"
-      description="Search across rooms"
+      title="Search Colony"
+      description="Search messages and Issues"
     >
       <Command shouldFilter={false} loop>
         <CommandInput
-          placeholder="Search messages…"
+          placeholder="Search messages and Issues…"
           value={query}
           onValueChange={setQuery}
         />
@@ -75,7 +85,45 @@ export function MessageSearchCommand({
             <CommandEmpty>Searching…</CommandEmpty>
           ) : (
             <>
-              <CommandEmpty>No messages found.</CommandEmpty>
+              <CommandEmpty>No messages or Issues found.</CommandEmpty>
+              {issues.length > 0 && (
+                <CommandGroup
+                  heading={
+                    <span className="flex items-center gap-2">
+                      <Cuboid className="size-3.5" />
+                      Issues
+                    </span>
+                  }
+                >
+                  {issues.map((issue) => (
+                    <CommandItem
+                      key={issue.id}
+                      value={`${formatIssueId(issue.number)}:${issue.title}:${issue.description}`}
+                      className="items-start [&>svg:last-child]:hidden"
+                      onSelect={() => {
+                        onSelectIssue(issue)
+                        onOpenChange(false)
+                        setQuery('')
+                      }}
+                    >
+                      <IssueStatusIcon status={issue.status} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="shrink-0 font-medium">
+                            {formatIssueId(issue.number)}
+                          </span>
+                          <span className="truncate">{issue.title}</span>
+                        </div>
+                        {issue.description && (
+                          <p className="truncate text-muted-foreground">
+                            {truncate(issue.description)}
+                          </p>
+                        )}
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
               {hits.length > 0 && (
                 <CommandGroup heading="Messages">
                   {hits.map((hit) => (
