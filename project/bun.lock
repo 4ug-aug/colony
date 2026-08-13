@@ -7,6 +7,7 @@
         "@cursor/sdk": "^1.0.26",
         "@openai/agents": "^0.13.5",
         "octokit": "^5.0.5",
+        "openai": "^6.49.0",
         "zod": "^4",
       },
       "devDependencies": {

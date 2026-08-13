@@ -26,11 +26,12 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@cursor/sdk": "^1.0.26",
+    "@dnd-kit/dom": "^0.5.0",
     "@dnd-kit/react": "^0.5.0",
     "@dot-loaders/react": "^0.1.0",
     "@paper-design/shaders-react": "^0.0.78",
     "@shadcn/react": "^0.3.0",
-    "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-query": "^5.101.4",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-deep-link": "^2",
@@ -64,6 +65,7 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.16",
+    "@tailwindcss/vite": "^4.1.18",
     "@tanstack/eslint-config": "latest",
     "@tauri-apps/cli": "^2",
     "@types/better-sqlite3": "^7.6.13",

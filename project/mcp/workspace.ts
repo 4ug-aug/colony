@@ -40,7 +40,7 @@ const relativeTimeFormat = new Intl.RelativeTimeFormat("en-US", {
 });
 
 /** Human-friendly relative timestamp, e.g. "5 minutes ago" or "yesterday". */
-export function formatRelativeTime(createdAt: number, now: number): string {
+function formatRelativeTime(createdAt: number, now: number): string {
   const diffMs = createdAt - now;
   const abs = Math.abs(diffMs);
   for (const [ms, unit] of relativeDivisions) {

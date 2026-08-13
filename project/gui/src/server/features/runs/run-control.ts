@@ -76,7 +76,7 @@ export interface RunControl {
   stop(): Promise<void>
 }
 
-export function runSummary<Input extends RunInput>(
+function runSummary<Input extends RunInput>(
   run: RunRecord<Input>,
 ): RunSummary {
   const {
@@ -123,7 +123,7 @@ export function runSummary<Input extends RunInput>(
   }
 }
 
-type RunControlExecutor = Pick<
+export type RunControlExecutor = Pick<
   WorkspaceAgentExecutor,
   | 'startRun'
   | 'followUp'

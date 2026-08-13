@@ -142,7 +142,7 @@ function ThreadMessage({
   )
 }
 
-export function RoomThreadRailContent({
+function RoomThreadRailContent({
   roomId,
   roomName,
   rootId,

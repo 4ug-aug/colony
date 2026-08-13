@@ -41,7 +41,7 @@ function upsertIssue(issues: Issue[], issue: Issue): Issue[] {
 }
 
 /** Recompute parent childProgress from the live list (server field goes stale on upsert). */
-export function withDerivedChildProgress(issues: Issue[]): Issue[] {
+function withDerivedChildProgress(issues: Issue[]): Issue[] {
   const totals = new Map<string, { done: number; total: number }>()
   for (const issue of issues) {
     if (!issue.parentId) continue
@@ -136,7 +136,7 @@ export function useIssue(id: string | undefined) {
   }
 }
 
-export type CreateIssueInput = {
+type CreateIssueInput = {
   title: string
   description?: string
   status?: IssueStatus

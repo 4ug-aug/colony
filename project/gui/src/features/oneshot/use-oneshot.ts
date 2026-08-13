@@ -10,11 +10,11 @@ import type { OneshotRun, OneshotRunStep } from './types'
 
 const LAST_AGENT_KEY = 'sweat.oneshot.lastAgentDefinitionId'
 
-export function oneshotQueryKey(runId: string) {
+function oneshotQueryKey(runId: string) {
   return ['oneshot', runId] as const
 }
 
-export const activeOneshotQueryKey = ['oneshot', 'active'] as const
+const activeOneshotQueryKey = ['oneshot', 'active'] as const
 
 export function useLastOneshotAgent(fallback: string) {
   const [value, setValue] = useState(() => {

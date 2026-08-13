@@ -44,7 +44,7 @@ const defaultLimits = {
   maxSteps: 500,
 };
 
-interface AgentCapabilityContext {
+export interface AgentCapabilityContext {
   workspace?: PreparedWorkspace;
   sandbox?: Pick<Sandbox, "exec">;
   grantContext?: AgentGrantContext;
@@ -54,7 +54,7 @@ interface AgentCapabilityContext {
  * Eligibility is decided before a workspace or sandbox exists, so `applies`
  * sees only the grant context. Gate on prepared inputs in `createUpstream`.
  */
-type AgentEligibilityContext = Pick<AgentCapabilityContext, "grantContext">;
+export type AgentEligibilityContext = Pick<AgentCapabilityContext, "grantContext">;
 
 export interface WorkspaceAgentAdapter {
   repository?: {

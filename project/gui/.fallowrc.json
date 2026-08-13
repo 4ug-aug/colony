@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "src/server/reset-admin-password.ts",
+    "src/server/rotate-setup-token.ts"
+  ],
+  "ignoreDependencies": ["@tailwindcss/typography"],
+  "ignoreExports": [
+    { "file": "src/components/avatar.tsx", "exports": ["Avatar"] },
+    { "file": "src/components/ui/avatar.tsx", "exports": ["Avatar"] }
+  ]
+}

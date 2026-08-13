@@ -4,7 +4,7 @@ import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import type { Doc } from './types'
 
 export const docsQueryKey = ['docs'] as const
-export const docQueryKey = (id: string) => ['docs', id] as const
+const docQueryKey = (id: string) => ['docs', id] as const
 
 function upsertDoc(docs: Doc[], doc: Doc): Doc[] {
   const index = docs.findIndex(({ id }) => id === doc.id)

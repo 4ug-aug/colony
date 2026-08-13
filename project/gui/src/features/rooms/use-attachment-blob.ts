@@ -8,17 +8,17 @@ import { apiFetch } from '#/lib/api-transport'
 
 const attachmentGcTime = 30 * 60 * 1000
 
-export function attachmentQueryKey(id: string) {
+function attachmentQueryKey(id: string) {
   return ['attachment', id] as const
 }
 
-export async function fetchAttachmentObjectUrl(id: string): Promise<string> {
+async function fetchAttachmentObjectUrl(id: string): Promise<string> {
   const response = await apiFetch(`/api/attachments/${id}`)
   if (!response.ok) throw new Error(`Failed to load attachment ${id}`)
   return URL.createObjectURL(await response.blob())
 }
 
-export function attachmentQueryOptions(id: string) {
+function attachmentQueryOptions(id: string) {
   return queryOptions({
     queryKey: attachmentQueryKey(id),
     queryFn: () => fetchAttachmentObjectUrl(id),

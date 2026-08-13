@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WORKSPACE_PEOPLE } from '../../../../../agents/roster-people'
 
-type AccountInput = {
+export type AccountInput = {
   email: string
   username: string
   password: string

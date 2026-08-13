@@ -56,7 +56,7 @@ export type SkillSource = {
   layoutForAgent(agentDefinitionId: string): SkillRuntimeLayout | undefined;
 };
 
-type WorkspaceProvisionerOptions = {
+export type WorkspaceProvisionerOptions = {
   sources: readonly RepositoryCheckoutSource[];
   attachmentSource?: AttachmentSource;
   skillSource?: SkillSource;

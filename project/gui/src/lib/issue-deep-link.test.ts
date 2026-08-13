@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test } from 'bun:test'
 import { parseIssueDeepLink } from './issue-deep-link'
 
 test('only valid sweat://issue deep links are accepted', () => {

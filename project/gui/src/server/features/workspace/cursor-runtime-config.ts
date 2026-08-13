@@ -2,7 +2,7 @@ import type { CursorRuntimeConfig } from '../../../../../agents/definition'
 import {
   createSecretBox,
   validModel,
-  type Sqlite,
+  type TransactionalSqlite,
 } from '#/server/secret-box'
 
 type StoredConfig = {
@@ -33,7 +33,7 @@ export type ListCursorModels = (
 
 const { encrypt, decrypt } = createSecretBox('sweat-cursor-runtime-config')
 
-export const defaultListCursorModels: ListCursorModels = async (apiKey) => {
+const defaultListCursorModels: ListCursorModels = async (apiKey) => {
   const { Cursor } = await import('@cursor/sdk')
   const models = await Cursor.models.list({ apiKey })
   return models.map((model) => ({
@@ -43,7 +43,7 @@ export const defaultListCursorModels: ListCursorModels = async (apiKey) => {
 }
 
 export function createWorkspaceCursorRuntimeConfig(
-  sqlite: Sqlite,
+  sqlite: TransactionalSqlite,
   options: { listModels?: ListCursorModels } = {},
 ) {
   const listModels = options.listModels ?? defaultListCursorModels

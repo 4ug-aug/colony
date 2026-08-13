@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { authClient } from '#/lib/auth-client'
 import { Dashboard } from '#/features/shell/dashboard'
 
-type DashboardUser = Parameters<typeof Dashboard>[0]['user']
+export type DashboardUser = Parameters<typeof Dashboard>[0]['user']
 
 export function App({
   onSession,

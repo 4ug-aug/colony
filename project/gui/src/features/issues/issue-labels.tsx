@@ -54,11 +54,11 @@ function labelPalette(tag: string) {
   return LABEL_PALETTE[Math.abs(hash) % LABEL_PALETTE.length]!
 }
 
-export function labelDotClass(tag: string): string {
+function labelDotClass(tag: string): string {
   return labelPalette(tag).dot
 }
 
-export function labelChipClass(tag: string): string {
+function labelChipClass(tag: string): string {
   return labelPalette(tag).chip
 }
 

@@ -49,7 +49,7 @@ type SkillPackageDetail = {
   files: { path: string; content: string }[]
 }
 
-export const workspaceSkillsQueryKey = [
+const workspaceSkillsQueryKey = [
   'workspace-settings',
   'skills',
 ] as const

@@ -19,7 +19,7 @@ export const GRILL_LIST_STATUS_LABEL: Record<GrillListStatus, string> = {
   settled: 'Settled',
 }
 
-type LinkedRunActivity = {
+export type LinkedRunActivity = {
   state?: string
   turnActive?: boolean
   error?: string

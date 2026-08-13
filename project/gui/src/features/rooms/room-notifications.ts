@@ -1,8 +1,4 @@
-export type RoomMessageMarker = {
-  id: string
-  createdAt: number
-  authorId: string
-}
+import type { RoomMessageMarker } from './types'
 
 export type RoomNotification = 'mention' | 'unread'
 

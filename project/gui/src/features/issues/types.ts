@@ -1,6 +1,5 @@
 export type {
   Issue,
-  IssueChildProgress,
   IssueOwner,
   IssuePriority,
   IssueRun,
@@ -13,11 +12,8 @@ export {
 
 import type {
   IssuePriority,
-  IssueRun,
   IssueStatus,
 } from '#/server/features/issues/issue-model'
-
-export type IssueRunState = IssueRun['state']
 
 export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
   backlog: 'Backlog',

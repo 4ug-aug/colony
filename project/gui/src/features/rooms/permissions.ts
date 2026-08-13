@@ -1,5 +1,5 @@
-type User = { id: string; role?: string }
-type OwnedRoom = { id: string; createdBy?: string }
+export type User = { id: string; role?: string }
+export type OwnedRoom = { id: string; createdBy?: string }
 
 export const canDeleteRoom = (user: User, room: OwnedRoom): boolean =>
   room.id !== 'general' &&

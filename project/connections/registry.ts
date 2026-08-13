@@ -181,9 +181,6 @@ const grafanaKind: ConnectionKind = {
 const kinds: readonly ConnectionKind[] = [asanaKind, outlineKind, grafanaKind]
 
 const byId = new Map(kinds.map((kind) => [kind.id, kind] as const))
-const byCapabilityId = new Map(
-  kinds.map((kind) => [kind.capabilityId, kind] as const),
-)
 
 export function listConnectionKinds(): readonly ConnectionKind[] {
   return kinds
@@ -191,16 +188,6 @@ export function listConnectionKinds(): readonly ConnectionKind[] {
 
 export function getConnectionKind(id: string): ConnectionKind | undefined {
   return byId.get(id)
-}
-
-export function getConnectionKindByCapability(
-  capabilityId: string,
-): ConnectionKind | undefined {
-  return byCapabilityId.get(capabilityId)
-}
-
-export function isConnectionCapability(capabilityId: string): boolean {
-  return byCapabilityId.has(capabilityId)
 }
 
 export function connectionKindPublic(

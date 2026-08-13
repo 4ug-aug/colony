@@ -13,7 +13,7 @@ export type StagedSkillPackage = {
 
 export type SkillRuntimeLayout = "cursor" | "openai-agents";
 
-export function skillRelativeRoot(
+function skillRelativeRoot(
   layout: SkillRuntimeLayout,
   skillName: string,
 ): string {

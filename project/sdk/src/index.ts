@@ -198,7 +198,7 @@ function addProcessOptions(
   }
 }
 
-export function createContainerOperations(
+function createContainerOperations(
   runner: CommandRunner,
 ): ContainerOperations {
   return {
@@ -270,7 +270,7 @@ export function createContainerOperations(
   };
 }
 
-export function createImageOperations(runner: CommandRunner): ImageOperations {
+function createImageOperations(runner: CommandRunner): ImageOperations {
   return {
     async pull(reference, options = {}) {
       await checked(runner, [
@@ -301,7 +301,7 @@ export function createImageOperations(runner: CommandRunner): ImageOperations {
   };
 }
 
-export function createSystemOperations(
+function createSystemOperations(
   runner: CommandRunner,
 ): SystemOperations {
   return {

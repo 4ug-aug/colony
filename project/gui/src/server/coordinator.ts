@@ -191,12 +191,12 @@ export type WorkspaceServerMessage =
   | { type: 'doc.created'; doc: Doc }
   | { type: 'doc.changed'; doc: Doc }
   | { type: 'doc.deleted'; docId: string }
-type GrillLeaseMessage = {
+export type GrillLeaseMessage = {
   questionId: string
   presenceId: string
   editor: Pick<RoomUser, 'id' | 'name' | 'image' | 'displayName'>
 }
-type GrillParticipantMessage = Pick<
+export type GrillParticipantMessage = Pick<
   RoomUser,
   'id' | 'name' | 'image' | 'displayName'
 >

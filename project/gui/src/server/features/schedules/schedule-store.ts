@@ -1,12 +1,6 @@
 import { previewCron } from '#/features/schedules/cron'
 import type { RunState, Step } from '../../../../../runs'
-
-type Sqlite = { prepare(sql: string): Statement }
-type Statement = {
-  all(...values: unknown[]): unknown[]
-  get(...values: unknown[]): unknown
-  run(...values: unknown[]): unknown
-}
+import type { Sqlite } from '#/server/sqlite'
 
 export type ScheduleState = 'active' | 'paused' | 'archived'
 export type ScheduleSource = 'automatic' | 'manual'

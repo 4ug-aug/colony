@@ -21,8 +21,6 @@ const invocationRoles = [
   },
 ] as const;
 
-export type AgentInvocationRole = (typeof invocationRoles)[number]["id"];
-
 export function instructionsForInvocation(
   base: string,
   context?: AgentGrantContext,

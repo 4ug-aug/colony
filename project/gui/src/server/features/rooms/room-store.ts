@@ -1,6 +1,6 @@
-import { rosterParticipant } from '../../../../../agents/roster-people'
 import type { RunState } from '../../../../../runs'
 import type { RunSummary } from '#/server/features/runs/run-control'
+import type { Sqlite } from '#/server/sqlite'
 
 export const GENERAL_ROOM_ID = 'general' as const
 
@@ -94,12 +94,12 @@ export type MessageSearchHit = {
   rootId?: string
 }
 
-export const MESSAGE_SEARCH_MIN_QUERY_LENGTH = 2
+const MESSAGE_SEARCH_MIN_QUERY_LENGTH = 2
 export const MESSAGE_SEARCH_DEFAULT_LIMIT = 20
 export const MESSAGE_SEARCH_MAX_LIMIT = 50
 
 /** Build a safe FTS5 MATCH expression from user input (quoted tokens + prefix). */
-export function buildFtsMatchQuery(raw: string): string | undefined {
+function buildFtsMatchQuery(raw: string): string | undefined {
   const trimmed = raw.trim()
   if (trimmed.length < MESSAGE_SEARCH_MIN_QUERY_LENGTH) return undefined
   const tokens = trimmed.split(/\s+/).flatMap((token) => {
@@ -122,7 +122,6 @@ export type RoomAttention = {
   createdAt: number
 }
 
-export const agentParticipant = rosterParticipant
 export type RoomRun = RunSummary & {
   roomId: string
   triggerMessageId: string
@@ -217,12 +216,6 @@ export interface RoomStore {
   latestStepsForActiveRuns(roomId: string): Map<string, StoredStep>
 }
 
-type Statement = {
-  all(...values: unknown[]): unknown[]
-  get(...values: unknown[]): unknown
-  run(...values: unknown[]): unknown
-}
-type Sqlite = { prepare(sql: string): Statement }
 type RoomRow = {
   id: string
   name: string

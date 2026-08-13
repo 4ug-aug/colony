@@ -4,13 +4,9 @@ import {
   hkdfSync,
   randomBytes,
 } from 'node:crypto'
+import type { Sqlite } from '#/server/sqlite'
 
-export type Sqlite = {
-  prepare(sql: string): {
-    get(...values: unknown[]): unknown
-    all(...values: unknown[]): unknown
-    run(...values: unknown[]): unknown
-  }
+export type TransactionalSqlite = Sqlite & {
   transaction<T>(fn: () => T): () => T
 }
 

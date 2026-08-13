@@ -2,7 +2,6 @@ import type {
   RoomMessage,
   RoomRun,
   RunResultReply,
-  ThreadSummary,
 } from './types'
 
 export function isThreadReply(message: RoomMessage): boolean {
@@ -168,5 +167,3 @@ export function threadRootIdForTrigger(
   }
   return undefined
 }
-
-export type { ThreadSummary }

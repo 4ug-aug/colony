@@ -42,7 +42,7 @@ export function getIssueTimingSession(): IssueTimingSession | null {
   return cachedSession
 }
 
-export function setIssueTimingSession(session: IssueTimingSession | null) {
+function setIssueTimingSession(session: IssueTimingSession | null) {
   if (typeof localStorage === 'undefined') return
   if (session) {
     const raw = JSON.stringify(session)
@@ -83,7 +83,7 @@ export function subscribeIssueTiming(listener: () => void): () => void {
   }
 }
 
-export function elapsedMs(startedAt: number, now = Date.now()): number {
+function elapsedMs(startedAt: number, now = Date.now()): number {
   return Math.max(0, now - startedAt)
 }
 

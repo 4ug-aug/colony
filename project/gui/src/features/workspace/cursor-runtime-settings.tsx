@@ -24,12 +24,12 @@ type CursorModel = {
   displayName: string
 }
 
-export const cursorRuntimeQueryKey = [
+const cursorRuntimeQueryKey = [
   'workspace-settings',
   'cursor-runtime',
 ] as const
 
-export const cursorModelsQueryKey = [
+const cursorModelsQueryKey = [
   'workspace-settings',
   'cursor-runtime',
   'models',

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import type { Bulletin, Poll } from './types'
 
-export const bulletinsQueryKey = ['bulletins'] as const
+const bulletinsQueryKey = ['bulletins'] as const
 
 function upsertBulletin(bulletins: Bulletin[], bulletin: Bulletin): Bulletin[] {
   const index = bulletins.findIndex(({ id }) => id === bulletin.id)

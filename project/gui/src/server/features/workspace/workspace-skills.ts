@@ -13,7 +13,7 @@ import {
   validateSkillPackageFiles,
   type SkillPackageFile,
 } from '../../../../../skills/package'
-import type { Sqlite } from '#/server/secret-box'
+import type { TransactionalSqlite } from '#/server/secret-box'
 
 export type WorkspaceSkill = {
   id: string
@@ -72,7 +72,7 @@ async function removeTree(root: string, storageKey: string): Promise<void> {
   await rm(target, { force: true, recursive: true })
 }
 
-export async function readSkillPackageFiles(
+async function readSkillPackageFiles(
   packageRoot: string,
 ): Promise<SkillPackageFile[]> {
   const root = resolve(packageRoot)
@@ -164,7 +164,7 @@ export type WorkspaceSkillStore = {
 }
 
 export function createWorkspaceSkillStore(options: {
-  sqlite: Sqlite
+  sqlite: TransactionalSqlite
   directory: string
 }): WorkspaceSkillStore {
   const { sqlite, directory } = options

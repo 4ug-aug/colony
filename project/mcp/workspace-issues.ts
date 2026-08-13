@@ -161,7 +161,7 @@ const formatKnownOwners = (candidates: AssignableOwner[]): string => {
     .join("; ")}.`;
 };
 
-export function invalidOwnerMessage(
+function invalidOwnerMessage(
   received: unknown,
   candidates: AssignableOwner[] = [],
 ): string {
@@ -174,7 +174,7 @@ export function invalidOwnerMessage(
   return `Invalid owner. Expected ${OWNER_SHAPE}. Received: ${receivedText}.${suggestion}${formatKnownOwners(candidates)}`;
 }
 
-export function unknownOwnerMessage(
+function unknownOwnerMessage(
   owner: WorkspaceIssueOwner,
   candidates: AssignableOwner[],
 ): string {

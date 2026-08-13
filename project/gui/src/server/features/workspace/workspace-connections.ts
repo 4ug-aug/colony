@@ -10,14 +10,7 @@ import {
   createSecretBox,
   type EncryptedSecretColumns,
 } from '#/server/secret-box'
-
-type Sqlite = {
-  prepare(sql: string): {
-    get(...values: unknown[]): unknown
-    all(...values: unknown[]): unknown[]
-    run(...values: unknown[]): unknown
-  }
-}
+import type { Sqlite } from '#/server/sqlite'
 
 const { encrypt, decrypt } = createSecretBox('sweat-workspace-connections')
 

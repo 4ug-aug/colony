@@ -2,12 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import type { Author } from '#/features/rooms/types'
 import { apiJson } from '#/lib/api-transport'
 
-export type WorkspaceMember = Pick<
+type WorkspaceMember = Pick<
   Author,
   'id' | 'name' | 'image' | 'email' | 'displayName'
 >
 
-export const workspaceMembersQueryKey = ['workspace-members'] as const
+const workspaceMembersQueryKey = ['workspace-members'] as const
 
 export function useWorkspaceMembers(enabled = true) {
   return useQuery({

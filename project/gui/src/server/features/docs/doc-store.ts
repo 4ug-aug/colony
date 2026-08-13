@@ -1,9 +1,4 @@
-type Sqlite = { prepare(sql: string): Statement }
-type Statement = {
-  all(...values: unknown[]): unknown[]
-  get(...values: unknown[]): unknown
-  run(...values: unknown[]): unknown
-}
+import type { Sqlite } from '#/server/sqlite'
 
 export type DocActor = { id: string; name: string; image?: string }
 

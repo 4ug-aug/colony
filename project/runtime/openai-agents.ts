@@ -73,8 +73,8 @@ export function toolOutputText(output: unknown): string {
   return String(output);
 }
 
-type TokenDetails = Record<string, number>;
-type SanitizableUsage = {
+export type TokenDetails = Record<string, number>;
+export type SanitizableUsage = {
   inputTokensDetails?: TokenDetails | TokenDetails[];
   outputTokensDetails?: TokenDetails | TokenDetails[];
   requestUsageEntries?: Array<{
@@ -278,6 +278,7 @@ export class CompatibleResponsesModel extends OpenAIResponsesModel {
     }, stream);
   }
 
+  // fallow-ignore-next-line unused-class-member -- called through the SDK Model contract
   override async getResponse(request: ModelRequest): Promise<ModelResponse> {
     const response = await super.getResponse(request);
     sanitizeUsageDetails(response.usage);
@@ -285,6 +286,7 @@ export class CompatibleResponsesModel extends OpenAIResponsesModel {
     return response;
   }
 
+  // fallow-ignore-next-line unused-class-member -- called through the SDK Model contract
   override async *getStreamedResponse(
     request: ModelRequest,
   ): AsyncIterable<ResponseStreamEvent> {

@@ -1,4 +1,5 @@
 import type { RunState, Step } from '../../../../../runs'
+import type { Sqlite } from '#/server/sqlite'
 import {
   formatIssueId,
   ISSUE_DESCRIPTION_MAX,
@@ -21,25 +22,13 @@ export type IssueRunStep = Step & {
 
 export {
   formatIssueId,
-  ISSUE_DESCRIPTION_MAX,
-  ISSUE_PRIORITIES,
-  ISSUE_STATUSES,
-  ISSUE_TITLE_MAX,
   parseIssueRef,
   type Issue,
-  type IssueChildProgress,
   type IssueOwner,
   type IssuePriority,
   type IssueRun,
   type IssueStatus,
 } from './issue-model'
-
-type Sqlite = { prepare(sql: string): Statement }
-type Statement = {
-  all(...values: unknown[]): unknown[]
-  get(...values: unknown[]): unknown
-  run(...values: unknown[]): unknown
-}
 
 export type NewIssue = {
   id: string

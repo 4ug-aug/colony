@@ -3,7 +3,7 @@ import { cn } from '#/lib/utils'
 import type { ErrorInfo, ReactNode } from 'react'
 import { Component } from 'react'
 
-type ErrorBoundaryProps = {
+export type ErrorBoundaryProps = {
   children: ReactNode
   /** Remount/reset when this changes (e.g. grill id). */
   resetKeys?: ReadonlyArray<string | number | boolean | null | undefined>
@@ -16,7 +16,7 @@ type ErrorBoundaryProps = {
   fatal?: boolean
 }
 
-type ErrorBoundaryState = {
+export type ErrorBoundaryState = {
   error: Error | null
 }
 

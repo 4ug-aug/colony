@@ -25,6 +25,12 @@ export function currentServerBase(): string | undefined {
   return _base
 }
 
+export const sweatApiUrl = (path = ''): string => {
+  const base = currentServerBase()
+  if (!base) throw new Error('Server base URL is not configured')
+  return new URL(path, `${base.replace(/\/$/, '')}/`).toString()
+}
+
 export async function initServerConfig(): Promise<void> {
   if (_isTauri) {
     _store = await load('sweat.json')

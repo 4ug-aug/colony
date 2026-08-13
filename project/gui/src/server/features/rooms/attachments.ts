@@ -4,15 +4,15 @@ import { dirname, resolve, sep } from 'node:path'
 import type { AttachmentSource } from '../../../../../inputs/repository'
 import type { NewRoomAttachment, RoomStore } from './room-store'
 
-export const MAX_ATTACHMENTS = 5
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+const MAX_ATTACHMENTS = 5
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 export const MAX_REQUEST_BYTES = 50 * 1024 * 1024
 
 export function attachmentDirectory(databasePath: string): string {
   return resolve(dirname(resolve(databasePath)), 'attachments')
 }
 
-export function safeFilename(filename: string): string {
+function safeFilename(filename: string): string {
   const normalized = filename
     .normalize('NFKC')
     .split('')

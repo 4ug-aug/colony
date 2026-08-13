@@ -19,7 +19,7 @@ import { ToolCallDetailsList } from './tool-call-details-list'
 import type { Step } from './step-label'
 import { stepLabel } from './step-label'
 
-type Person = { name: string; image?: string }
+export type Person = { name: string; image?: string }
 export type ActivityRun = {
   id: string
   roomId: string
@@ -34,7 +34,7 @@ export type ActivityRun = {
   output?: string
   attribution?: string
 }
-type TriggerMessage = { author: Person; text: string }
+export type TriggerMessage = { author: Person; text: string }
 
 function useInlineRail() {
   const [inline, setInline] = useState(

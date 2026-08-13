@@ -13,7 +13,7 @@ type Member = {
   role?: string
 }
 
-export const workspaceSettingsMembersQueryKey = [
+const workspaceSettingsMembersQueryKey = [
   'workspace-settings',
   'members',
 ] as const

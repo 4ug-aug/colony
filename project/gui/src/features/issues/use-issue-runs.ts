@@ -11,11 +11,11 @@ import { upsertIssueInCache } from './use-issues'
 
 export type { IssueRunStep }
 
-export function issueRunsQueryKey(issueId: string) {
+function issueRunsQueryKey(issueId: string) {
   return ['issue-runs', issueId] as const
 }
 
-export function issueRunStepsQueryKey(runId: string) {
+function issueRunStepsQueryKey(runId: string) {
   return ['issue-run-steps', runId] as const
 }
 

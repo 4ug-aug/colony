@@ -27,9 +27,9 @@ import type {
 
 export { grillTurnActive } from './grill-status'
 
-export const grillsQueryKey = ['grills'] as const
-export const grillQueryKey = (id: string) => ['grills', id] as const
-export const grillsPageQueryKey = (params: GrillListQueryParams) =>
+const grillsQueryKey = ['grills'] as const
+const grillQueryKey = (id: string) => ['grills', id] as const
+const grillsPageQueryKey = (params: GrillListQueryParams) =>
   [
     'grills',
     'page',
@@ -41,14 +41,14 @@ export const grillsPageQueryKey = (params: GrillListQueryParams) =>
     params.filters.visibilities.slice().sort().join(','),
   ] as const
 
-export type GrillDetail = {
+type GrillDetail = {
   grill: Grill
   linkedRun?: GrillLinkedRun
   latestStep?: GrillLatestStep
   narration?: GrillLatestStep[]
 }
 
-export type GrillListPageResult = {
+type GrillListPageResult = {
   grills: GrillListItem[]
   total: number
   page: number

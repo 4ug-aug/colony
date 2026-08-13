@@ -5,7 +5,7 @@ import {
 import {
   createSecretBox,
   validModel,
-  type Sqlite,
+  type TransactionalSqlite,
 } from '#/server/secret-box'
 
 export type LlmProvider = 'openai' | 'custom'
@@ -50,7 +50,7 @@ const validBaseUrl = (value: unknown): string | undefined => {
 const validProvider = (value: unknown): LlmProvider | undefined =>
   value === 'openai' || value === 'custom' ? value : undefined
 
-export function createWorkspaceLlmConfig(sqlite: Sqlite) {
+export function createWorkspaceLlmConfig(sqlite: TransactionalSqlite) {
   const read = (): StoredConfig | undefined =>
     sqlite
       .prepare(

@@ -1,15 +1,8 @@
-/* eslint-disable @typescript-eslint/method-signature-style -- accepts Bun and better-sqlite3 statements */
 import { createHash, randomBytes } from 'node:crypto'
+import type { Sqlite } from '#/server/sqlite'
 
-type Statement = {
-  all(...values: unknown[]): unknown[]
-  get(...values: unknown[]): unknown
-  run(...values: unknown[]): { changes?: number }
-}
-type Sqlite = { prepare(sql: string): Statement }
-
-export type InvitationState = 'pending' | 'expired' | 'revoked' | 'redeemed'
-export type Invitation = {
+type InvitationState = 'pending' | 'expired' | 'revoked' | 'redeemed'
+type Invitation = {
   id: string
   createdBy: string
   createdAt: number

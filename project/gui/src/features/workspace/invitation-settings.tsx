@@ -20,7 +20,7 @@ type Invitation = {
   state: 'pending' | 'expired' | 'revoked' | 'redeemed'
 }
 
-export const invitationsQueryKey = [
+const invitationsQueryKey = [
   'workspace-settings',
   'invitations',
 ] as const

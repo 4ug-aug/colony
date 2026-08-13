@@ -13,7 +13,7 @@ import { useWorkspaceMembers } from '#/features/issues/use-workspace-members'
 import { cn } from '#/lib/utils'
 import type { Poll } from './types'
 
-export const maxPollOptions = 8
+const maxPollOptions = 8
 export const emptyPoll = (): Poll => ({ options: ['', ''], votes: {} })
 
 /**

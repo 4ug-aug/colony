@@ -27,7 +27,7 @@ type LlmConfig = {
   model?: string
 }
 
-export const llmConfigQueryKey = ['workspace-settings', 'llm'] as const
+const llmConfigQueryKey = ['workspace-settings', 'llm'] as const
 
 function useLlmConfig() {
   return useQuery({

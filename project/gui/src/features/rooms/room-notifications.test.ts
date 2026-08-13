@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { hasAnyRoomNotification, roomNotification } from './room-notifications'
-import type { RoomMessageMarker } from './room-notifications'
+import type { RoomMessageMarker } from './types'
 
 const message = (id: string, createdAt: number): RoomMessageMarker => ({
   id,

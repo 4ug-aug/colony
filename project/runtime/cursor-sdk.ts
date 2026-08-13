@@ -83,7 +83,7 @@ export type CursorAgentSession = {
   agentId?: string;
 };
 
-type CursorAgentDependencies = {
+export type CursorAgentDependencies = {
   createAgent?: CursorAgentFactory;
   resumeAgent?: CursorAgentResumeFactory;
   onStep?: (step: Step) => void;

@@ -3,7 +3,7 @@ import type { GrillQuestion } from './types'
 /** Draft sentinel while Other is selected but the freeform field is still empty. */
 export const GRILL_OTHER_VALUE = '__grill_other__'
 
-export function isChoiceAnswer(
+function isChoiceAnswer(
   question: GrillQuestion,
   answer: string,
 ): boolean {

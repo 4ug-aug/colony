@@ -1,5 +1,4 @@
-import { isTauriRuntime } from '#/lib/server-config'
-import { sweatApiUrl } from '#/lib/auth-client'
+import { isTauriRuntime, sweatApiUrl } from '#/lib/server-config'
 
 // In Tauri, HTTP goes through the plugin's native fetch, which carries a
 // persistent cookie jar (the session) that the webview's own fetch cannot use

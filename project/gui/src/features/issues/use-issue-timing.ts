@@ -30,7 +30,7 @@ async function fetchIssue(issueId: string): Promise<Issue> {
   return data.issue
 }
 
-export function useIssueTimingSession(): IssueTimingSession | null {
+function useIssueTimingSession(): IssueTimingSession | null {
   return useSyncExternalStore(
     subscribeIssueTiming,
     getIssueTimingSession,
