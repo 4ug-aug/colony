@@ -91,16 +91,18 @@ export function applyLiveReply(
   if (reply.rootId !== root.id || appliedReplyIds.has(reply.id))
     return { message: root, applied: false }
   const previous = root.replySummary
-  const participantIds = [
-    reply.author.id,
-    ...(previous?.participantIds ?? []).filter((id) => id !== reply.author.id),
+  const participants = [
+    { id: reply.author.id, name: reply.author.name },
+    ...(previous?.participants ?? []).filter(
+      (participant) => participant.id !== reply.author.id,
+    ),
   ].slice(0, 3)
   return {
     message: {
       ...root,
       replySummary: {
         replyCount: (previous?.replyCount ?? 0) + 1,
-        participantIds,
+        participants,
         latestReplyAt: Math.max(previous?.latestReplyAt ?? 0, reply.createdAt),
       },
     },

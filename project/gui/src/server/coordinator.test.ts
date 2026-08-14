@@ -275,31 +275,39 @@ class MemoryRoomStore implements RoomStore {
   decorateRoots(list: RoomMessage[]): RoomMessage[] {
     return list.map((message) => {
       if (message.rootId != null) return message
-      const replies: { author: { id: string }; createdAt: number }[] = [
-        ...this.messages.filter((reply) => reply.rootId === message.id),
-        ...this.runs
-          .filter(
-            (run) =>
-              this.effectiveRootFor(run.triggerMessageId) === message.id &&
-              run.state === 'succeeded',
-          )
-          .map((run) => ({
-            author: { id: run.agentId },
-            createdAt: run.completedAt ?? run.createdAt,
-          })),
-      ].sort((a, b) => b.createdAt - a.createdAt)
+      const replies: { author: { id: string; name: string }; createdAt: number }[] =
+        [
+          ...this.messages
+            .filter((reply) => reply.rootId === message.id)
+            .map((reply) => ({
+              author: { id: reply.author.id, name: reply.author.name },
+              createdAt: reply.createdAt,
+            })),
+          ...this.runs
+            .filter(
+              (run) =>
+                this.effectiveRootFor(run.triggerMessageId) === message.id &&
+                run.state === 'succeeded',
+            )
+            .map((run) => ({
+              author: { id: run.agentId, name: run.agentId },
+              createdAt: run.completedAt ?? run.createdAt,
+            })),
+        ].sort((a, b) => b.createdAt - a.createdAt)
       if (!replies.length) return message
-      const participantIds: string[] = []
+      const participants: { id: string; name: string }[] = []
       for (const reply of replies) {
-        if (!participantIds.includes(reply.author.id))
-          participantIds.push(reply.author.id)
-        if (participantIds.length >= 3) break
+        if (
+          !participants.some((participant) => participant.id === reply.author.id)
+        )
+          participants.push(reply.author)
+        if (participants.length >= 3) break
       }
       return {
         ...message,
         replySummary: {
           replyCount: replies.length,
-          participantIds,
+          participants,
           latestReplyAt: replies[0]!.createdAt,
         },
       }
@@ -555,6 +563,21 @@ class MemoryRoomStore implements RoomStore {
       counts.set(attention.roomId, (counts.get(attention.roomId) ?? 0) + 1)
     }
     return counts
+  }
+  listOpenThreadAttentionRootIds(userId: string, roomId: string) {
+    return [
+      ...new Set(
+        this.attentions.flatMap((attention) =>
+          attention.recipientId === userId &&
+          attention.roomId === roomId &&
+          attention.kind === 'thread_reply' &&
+          attention.acknowledgedAt === undefined &&
+          attention.rootId
+            ? [attention.rootId]
+            : [],
+        ),
+      ),
+    ].sort()
   }
   acknowledgeRoomAttention(roomId: string, userId: string, at: number) {
     this.attentions = this.attentions.map((attention) =>
@@ -1539,6 +1562,67 @@ test('a reply creates Thread Attention for the root author and prior participant
     rootAuthorAgain.socket.close()
     priorReplier.socket.close()
     secondReplyAuthor.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('room and workspace snapshots include threadAttentionRootIds for the recipient', async () => {
+  let currentUser = 'user-1'
+  const users: RoomUser[] = [
+    { id: 'user-1', name: 'ada', username: 'ada' },
+    { id: 'user-2', name: 'bob', username: 'bob' },
+  ]
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = users
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: {
+      authenticate: async () => users.find(({ id }) => id === currentUser),
+    },
+  })
+  try {
+    currentUser = 'user-1'
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+    currentUser = 'user-2'
+    await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'A reply', rootId: root.id }),
+    })
+
+    currentUser = 'user-1'
+    const wsBase = base.replace('http', 'ws')
+    const workspace = await open(`${wsBase}/api/workspace/stream`)
+    expect(await workspace.next()).toMatchObject({
+      type: 'workspace.snapshot',
+      rooms: [
+        expect.objectContaining({
+          id: GENERAL_ROOM_ID,
+          threadAttentionRootIds: [root.id],
+        }),
+      ],
+    })
+    const room = await open(`${wsBase}/api/rooms/general/stream`)
+    expect(await room.next()).toMatchObject({
+      type: 'room.snapshot',
+      room: { threadAttentionRootIds: [root.id] },
+    })
+    workspace.socket.close()
+    room.socket.close()
   } finally {
     coordinator.stop()
   }
@@ -3273,7 +3357,7 @@ test('POST reply is linked to its root, excluded from flat history, and returned
     expect(flatBody.messages.map(({ id }) => id)).toEqual([root.id])
     expect(flatBody.messages[0]?.replySummary).toEqual({
       replyCount: 1,
-      participantIds: ['user-1'],
+      participants: [{ id: 'user-1', name: 'Ada' }],
       latestReplyAt: reply.createdAt,
     })
 
@@ -3337,7 +3421,9 @@ test('a top-level mention run is bound to its trigger as the invocation root, an
     const completedAt = store.getRun(run.id)!.completedAt!
     expect(flatBody.messages[0]?.replySummary).toEqual({
       replyCount: 1,
-      participantIds: ['software-engineer'],
+      participants: [
+        { id: 'software-engineer', name: 'software-engineer' },
+      ],
       latestReplyAt: completedAt,
     })
 

@@ -91,6 +91,7 @@ export function Timeline({
   onOpenThread,
   focusMessageId,
   onFocusHandled,
+  unreadThreadRootIds = [],
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
@@ -101,6 +102,7 @@ export function Timeline({
   onOpenThread?: (rootId: string) => void
   focusMessageId?: string
   onFocusHandled?: () => void
+  unreadThreadRootIds?: readonly string[]
 }) {
   const { data: agents = [] } = useAgentDefinitions()
   // Hover can't reveal the action on touch layouts, so keep it visible there
@@ -268,8 +270,9 @@ export function Timeline({
                   {item.message.replySummary && onOpenThread && (
                     <ThreadSummaryChip
                       replyCount={item.message.replySummary.replyCount}
-                      participantIds={item.message.replySummary.participantIds}
+                      participants={item.message.replySummary.participants}
                       latestReplyAt={item.message.replySummary.latestReplyAt}
+                      unread={unreadThreadRootIds.includes(item.message.id)}
                       onOpen={() => onOpenThread(item.message.id)}
                     />
                   )}

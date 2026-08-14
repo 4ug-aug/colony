@@ -237,12 +237,23 @@ a:hover {
 }
 
 code {
-  font-size: 0.9em;
-  background: var(--muted);
+  font-size: 0.85em;
+  font-weight: 400;
+  background: color-mix(in oklab, var(--foreground) 8%, transparent);
   border-radius: 0.25rem;
-  padding: 0.15em 0.4em;
+  padding: 0.1em 0.35em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+}
+
+.prose code {
+  font-weight: 400;
+  color: inherit;
+}
+
+.prose code::before,
+.prose code::after {
+  content: none;
 }
 
 pre code {
@@ -254,13 +265,46 @@ pre code {
   color: inherit;
 }
 
-.prose pre {
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  background: #1d2e45;
-  color: #e8efff;
-  padding: 0.75rem 1rem;
+.md-code-block {
+  margin-block: 0.25rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--foreground) 4.5%, transparent);
+}
+
+.md-code-block-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+  padding: 0 0.25rem 0 0.75rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+.md-code-block-lang {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground);
+  padding: 0.625rem 0.75rem;
   overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.5;
 }
 
 .tiptap p.is-editor-empty:first-child::before {

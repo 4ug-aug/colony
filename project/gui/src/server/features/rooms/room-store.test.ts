@@ -925,6 +925,72 @@ test('acknowledgeThreadAttention clears only the matching root, not other thread
   sqlite.close()
 })
 
+test('listOpenThreadAttentionRootIds returns distinct unacked thread roots and ignores room-level ack', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  const store = createSqliteRoomStore(sqlite)
+  store.createAttention({
+    id: 'attention-mention',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'mention',
+    sourceId: 'message-1',
+    createdAt: 1,
+  })
+  store.createAttention({
+    id: 'attention-thread-a1',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'thread_reply',
+    sourceId: 'reply-a1',
+    rootId: 'root-a',
+    createdAt: 2,
+  })
+  store.createAttention({
+    id: 'attention-thread-a2',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'thread_reply',
+    sourceId: 'reply-a2',
+    rootId: 'root-a',
+    createdAt: 3,
+  })
+  store.createAttention({
+    id: 'attention-thread-b',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-2',
+    kind: 'thread_reply',
+    sourceId: 'reply-b',
+    rootId: 'root-b',
+    createdAt: 4,
+  })
+  store.createAttention({
+    id: 'attention-other-user',
+    roomId: GENERAL_ROOM_ID,
+    recipientId: 'user-1',
+    kind: 'thread_reply',
+    sourceId: 'reply-c',
+    rootId: 'root-c',
+    createdAt: 5,
+  })
+
+  expect(store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID)).toEqual(
+    ['root-a', 'root-b'],
+  )
+
+  store.acknowledgeRoomAttention(GENERAL_ROOM_ID, 'user-2', 6)
+  expect(store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID)).toEqual(
+    ['root-a', 'root-b'],
+  )
+
+  store.acknowledgeThreadAttention(GENERAL_ROOM_ID, 'root-a', 'user-2', 7)
+  expect(store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID)).toEqual(
+    ['root-b'],
+  )
+
+  sqlite.close()
+})
+
 test('room store updates message text and editedAt in place', () => {
   const sqlite = new Database(':memory:')
   sqlite.run(SCHEMA_DDL)
@@ -1374,7 +1440,10 @@ test('root summary derives reply count, recent participants, and latest-reply ti
   const [root] = store.listMessages(GENERAL_ROOM_ID)
   expect(root?.replySummary).toEqual({
     replyCount: 2,
-    participantIds: ['user-1', 'user-2'],
+    participants: [
+      { id: 'user-1', name: 'Ada' },
+      { id: 'user-2', name: 'Bob' },
+    ],
     latestReplyAt: 3,
   })
 
@@ -1423,7 +1492,10 @@ test('root summary counts a succeeded run result as a reply and orders participa
   const [root] = store.listMessages(GENERAL_ROOM_ID)
   expect(root?.replySummary).toEqual({
     replyCount: 2,
-    participantIds: ['software-engineer', 'user-2'],
+    participants: [
+      { id: 'software-engineer', name: 'software-engineer' },
+      { id: 'user-2', name: 'Bob' },
+    ],
     latestReplyAt: 5,
   })
 
@@ -1473,7 +1545,10 @@ test('a run triggered by a reply (an in-thread invocation) is attributed to the 
   const [root] = store.listMessages(GENERAL_ROOM_ID)
   expect(root?.replySummary).toEqual({
     replyCount: 2,
-    participantIds: ['software-engineer', 'user-2'],
+    participants: [
+      { id: 'software-engineer', name: 'software-engineer' },
+      { id: 'user-2', name: 'Bob' },
+    ],
     latestReplyAt: 5,
   })
 

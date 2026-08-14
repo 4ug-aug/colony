@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { hasAnyRoomNotification, roomNotification } from './room-notifications'
+import {
+  acknowledgeThreadAttentionRoot,
+  applyThreadAttentionEvent,
+  hasAnyRoomNotification,
+  roomNotification,
+} from './room-notifications'
 import type { RoomMessageMarker } from './types'
 
 const message = (id: string, createdAt: number): RoomMessageMarker => ({
@@ -36,4 +41,37 @@ test('hasAnyRoomNotification is true when any room has a notification', () => {
   expect(hasAnyRoomNotification({ a: undefined })).toBe(false)
   expect(hasAnyRoomNotification({ a: 'unread' })).toBe(true)
   expect(hasAnyRoomNotification({ a: 'mention', b: 'unread' })).toBe(true)
+})
+
+test('a thread_reply attention event adds its root, mentions do not', () => {
+  const empty = {}
+  expect(
+    applyThreadAttentionEvent(empty, {
+      roomId: 'general',
+      kind: 'mention',
+      rootId: 'root-1',
+    }),
+  ).toBe(empty)
+  expect(
+    applyThreadAttentionEvent(empty, {
+      roomId: 'general',
+      kind: 'thread_reply',
+      rootId: 'root-1',
+    }),
+  ).toEqual({ general: ['root-1'] })
+})
+
+test('thread_reply attention is idempotent per root and acknowledge removes only that root', () => {
+  const withTwo = { general: ['root-a', 'root-b'] }
+  expect(
+    applyThreadAttentionEvent(withTwo, {
+      roomId: 'general',
+      kind: 'thread_reply',
+      rootId: 'root-a',
+    }),
+  ).toBe(withTwo)
+  expect(acknowledgeThreadAttentionRoot(withTwo, 'general', 'root-a')).toEqual({
+    general: ['root-b'],
+  })
+  expect(acknowledgeThreadAttentionRoot(withTwo, 'docs', 'root-a')).toBe(withTwo)
 })

@@ -17,9 +17,12 @@ import type {
 import type { Step } from '#/features/runs/step-label'
 import { toast } from '#/components/ui/toast'
 import {
+  acknowledgeThreadAttentionRoot,
+  applyThreadAttentionEvent,
   compareMessageMarkers,
   hasAnyRoomNotification,
   roomNotification,
+  threadAttentionRootsFromRooms,
 } from './room-notifications'
 import type { RoomNotification } from './room-notifications'
 import { setAppDockBadge } from '#/lib/dock-badge'
@@ -100,6 +103,9 @@ function playMentionSound() {
 
 export function useRooms(userId: string) {
   const [rooms, setRooms] = useState<Room[]>([])
+  const [threadAttentionByRoom, setThreadAttentionByRoom] = useState<
+    Record<string, string[]>
+  >({})
   const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [threadReplies, setThreadReplies] = useState<
@@ -452,6 +458,7 @@ export function useRooms(userId: string) {
           if (event.type === 'workspace.snapshot') {
             const next = orderedRooms(event.rooms)
             setRooms(next)
+            setThreadAttentionByRoom(threadAttentionRootsFromRooms(next))
             selectFrom(next)
           }
           if (event.type === 'room.created')
@@ -484,6 +491,9 @@ export function useRooms(userId: string) {
               })
               playMentionSound()
             }
+            setThreadAttentionByRoom((current) =>
+              applyThreadAttentionEvent(current, event),
+            )
             if (event.attentionCount > 0 && alreadyViewing)
               void acknowledge(event.roomId)
           }
@@ -506,6 +516,7 @@ export function useRooms(userId: string) {
         if (stopped) return
         const next = orderedRooms(result.rooms)
         setRooms(next)
+        setThreadAttentionByRoom(threadAttentionRootsFromRooms(next))
         selectFrom(next)
       })
       .catch((reason) =>
@@ -552,6 +563,13 @@ export function useRooms(userId: string) {
                   : room,
               ),
             )
+            setThreadAttentionByRoom((current) => {
+              const next = { ...current }
+              if (event.room.threadAttentionRootIds?.length)
+                next[event.room.id] = [...event.room.threadAttentionRootIds]
+              else delete next[event.room.id]
+              return next
+            })
             if (!historyReadyRef.current) {
               const focusId = pendingFocusRef.current
               if (
@@ -805,6 +823,16 @@ export function useRooms(userId: string) {
     membersChangedAt,
     mentionableAccounts,
     notificationByRoom,
+    threadAttentionRootIds: selectedRoomId
+      ? (threadAttentionByRoom[selectedRoomId] ?? [])
+      : [],
+    clearThreadAttention: (rootId: string) => {
+      const roomId = selectedRoomRef.current
+      if (!roomId) return
+      setThreadAttentionByRoom((current) =>
+        acknowledgeThreadAttentionRoot(current, roomId, rootId),
+      )
+    },
     select: (roomId: string) => {
       if (roomId === selectedRoomId) return
       pendingFocusRef.current = undefined

@@ -46,7 +46,7 @@ describe('applyLiveReply', () => {
     expect(first.applied).toBe(true)
     expect(first.message.replySummary).toEqual({
       replyCount: 1,
-      participantIds: ['user-2'],
+      participants: [{ id: 'user-2', name: 'user-2' }],
       latestReplyAt: 2,
     })
     applied.add('reply-1')
@@ -59,7 +59,10 @@ describe('applyLiveReply', () => {
     expect(second.applied).toBe(true)
     expect(second.message.replySummary).toEqual({
       replyCount: 2,
-      participantIds: ['user-1', 'user-2'],
+      participants: [
+        { id: 'user-1', name: 'user-1' },
+        { id: 'user-2', name: 'user-2' },
+      ],
       latestReplyAt: 3,
     })
     applied.add('reply-2')
@@ -130,7 +133,7 @@ describe('withLiveThreadSummaries', () => {
       ...root,
       replySummary: {
         replyCount: 1,
-        participantIds: ['user-2'],
+        participants: [{ id: 'user-2', name: 'user-2' }],
         latestReplyAt: 2,
       },
     }
@@ -152,7 +155,11 @@ describe('withLiveThreadSummaries', () => {
     )
     expect(updated?.replySummary).toEqual({
       replyCount: 3,
-      participantIds: ['antboy', 'user-1', 'user-2'],
+      participants: [
+        { id: 'antboy', name: 'antboy' },
+        { id: 'user-1', name: 'user-1' },
+        { id: 'user-2', name: 'user-2' },
+      ],
       latestReplyAt: 4,
     })
   })
@@ -162,7 +169,7 @@ describe('withLiveThreadSummaries', () => {
       ...root,
       replySummary: {
         replyCount: 2,
-        participantIds: ['user-2'],
+        participants: [{ id: 'user-2', name: 'user-2' }],
         latestReplyAt: 2,
       },
     }
@@ -190,7 +197,9 @@ describe('buildFlatTimelineItems', () => {
       createdAt: 100,
       replySummary: {
         replyCount: 1,
-        participantIds: ['software-engineer'],
+        participants: [
+          { id: 'software-engineer', name: 'software-engineer' },
+        ],
         latestReplyAt: 200,
       },
     }

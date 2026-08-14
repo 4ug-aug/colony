@@ -31,3 +31,46 @@ export function hasAnyRoomNotification(
 ): boolean {
   return Object.values(notificationByRoom).some(Boolean)
 }
+
+export type ThreadAttentionByRoom = Record<string, string[]>
+
+export function applyThreadAttentionEvent(
+  byRoom: ThreadAttentionByRoom,
+  event: {
+    roomId: string
+    kind?: 'mention' | 'run_terminal' | 'thread_reply'
+    rootId?: string
+  },
+): ThreadAttentionByRoom {
+  if (event.kind !== 'thread_reply' || !event.rootId) return byRoom
+  const current = byRoom[event.roomId] ?? []
+  if (current.includes(event.rootId)) return byRoom
+  return { ...byRoom, [event.roomId]: [...current, event.rootId] }
+}
+
+export function acknowledgeThreadAttentionRoot(
+  byRoom: ThreadAttentionByRoom,
+  roomId: string,
+  rootId: string,
+): ThreadAttentionByRoom {
+  const current = byRoom[roomId]
+  if (!current?.includes(rootId)) return byRoom
+  const nextRoots = current.filter((id) => id !== rootId)
+  if (!nextRoots.length) {
+    const next = { ...byRoom }
+    delete next[roomId]
+    return next
+  }
+  return { ...byRoom, [roomId]: nextRoots }
+}
+
+export function threadAttentionRootsFromRooms(
+  rooms: { id: string; threadAttentionRootIds?: string[] }[],
+): ThreadAttentionByRoom {
+  const next: ThreadAttentionByRoom = {}
+  for (const room of rooms) {
+    if (room.threadAttentionRootIds?.length)
+      next[room.id] = [...room.threadAttentionRootIds]
+  }
+  return next
+}

@@ -109,6 +109,8 @@ export function Dashboard({
     loadingOlder,
     hasOlderMessages,
     notificationByRoom,
+    threadAttentionRootIds,
+    clearThreadAttention,
   } = useRooms(user.id)
   const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
   const [location, setLocation] = useState<DashboardLocation>(() => {
@@ -136,6 +138,7 @@ export function Dashboard({
     applyLocation(next)
   }
   const openThread = (rootId: string, threadFocusReplyId?: string) => {
+    clearThreadAttention(rootId)
     if (
       location.surface?.kind === 'thread' &&
       location.surface.rootId === rootId &&
@@ -205,9 +208,6 @@ export function Dashboard({
   const timelineRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
   const followRoomRef = useRef(true)
-  const historyAnchorRef = useRef<{ height: number; top: number } | undefined>(
-    undefined,
-  )
   const [atBottom, setAtBottom] = useState(true)
 
   useEffect(() => {
@@ -254,13 +254,14 @@ export function Dashboard({
 
   useLayoutEffect(() => {
     followRoomRef.current = true
+    setEditingMessage(undefined)
   }, [room?.id])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el || loading || (!followRoomRef.current && !atBottomRef.current))
       return
-    el.scrollTop = el.scrollHeight
+    el.scrollTop = 0
     atBottomRef.current = true
     setAtBottom(true)
   }, [loading, messages, room?.id, runs])
@@ -270,24 +271,10 @@ export function Dashboard({
     const timeline = timelineRef.current
     if (!el || !timeline) return
     const observer = new ResizeObserver(() => {
-      if (followRoomRef.current || atBottomRef.current)
-        el.scrollTop = el.scrollHeight
+      if (followRoomRef.current || atBottomRef.current) el.scrollTop = 0
     })
     observer.observe(timeline)
     return () => observer.disconnect()
-  }, [room?.id])
-
-  useLayoutEffect(() => {
-    const el = scrollRef.current
-    const anchor = historyAnchorRef.current
-    if (!el || !anchor) return
-    el.scrollTop = anchor.top + el.scrollHeight - anchor.height
-    historyAnchorRef.current = undefined
-  }, [messages])
-
-  useLayoutEffect(() => {
-    historyAnchorRef.current = undefined
-    setEditingMessage(undefined)
   }, [room?.id])
 
   useLayoutEffect(() => {
@@ -561,7 +548,7 @@ export function Dashboard({
                 <section
                   key={room?.id}
                   ref={scrollRef}
-                  className="no-scrollbar h-full overflow-y-auto px-5 py-8 sm:px-8"
+                  className="no-scrollbar flex h-full flex-col-reverse overflow-y-auto px-5 py-8 sm:px-8"
                   aria-busy={loading}
                   onPointerDown={() => {
                     followRoomRef.current = false
@@ -574,27 +561,26 @@ export function Dashboard({
                   }}
                   onScroll={() => {
                     const el = scrollRef.current
-                    if (el) {
-                      if (
-                        el.scrollTop <= historyTopThreshold &&
-                        hasOlderMessages &&
-                        !loadingOlder
-                      ) {
-                        historyAnchorRef.current = {
-                          height: el.scrollHeight,
-                          top: el.scrollTop,
-                        }
-                        void loadOlder()
-                      }
-                      const nextAtBottom =
-                        el.scrollHeight - el.scrollTop - el.clientHeight <
-                        bottomScrollThreshold
-                      atBottomRef.current = nextAtBottom
-                      setAtBottom(nextAtBottom)
-                    }
+                    if (!el) return
+                    if (
+                      el.scrollHeight -
+                        el.clientHeight -
+                        Math.abs(el.scrollTop) <=
+                        historyTopThreshold &&
+                      hasOlderMessages &&
+                      !loadingOlder
+                    )
+                      void loadOlder()
+                    const nextAtBottom =
+                      Math.abs(el.scrollTop) < bottomScrollThreshold
+                    atBottomRef.current = nextAtBottom
+                    setAtBottom(nextAtBottom)
                   }}
                 >
-                  <div ref={timelineRef} className="mx-auto max-w-7xl">
+                  <div
+                    ref={timelineRef}
+                    className="mx-auto w-full max-w-7xl shrink-0"
+                  >
                     {loadingOlder && (
                       <div
                         className="flex justify-center pb-4 text-sm text-muted-foreground"
@@ -619,6 +605,7 @@ export function Dashboard({
                           currentUserId={user.id}
                           focusMessageId={focusMessageId}
                           onFocusHandled={clearFocusMessage}
+                          unreadThreadRootIds={threadAttentionRootIds}
                           onEdit={(message) => {
                             setEditingMessage(message)
                             setDraft(message.text)
@@ -645,7 +632,7 @@ export function Dashboard({
                   onClick={() => {
                     const el = scrollRef.current
                     el?.scrollTo({
-                      top: el.scrollHeight,
+                      top: 0,
                       behavior: 'smooth',
                     })
                   }}

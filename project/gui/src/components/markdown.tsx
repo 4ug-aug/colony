@@ -1,5 +1,15 @@
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
-import type { ReactNode } from 'react'
+import { Button } from '#/components/ui/button'
+import { toast } from '#/components/ui/toast'
+import { Check, Copy } from 'lucide-react'
+import {
+  Children,
+  isValidElement,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react'
 import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -40,6 +50,52 @@ function withMentions(
   return result
 }
 
+function languageFromCodeChild(children: ReactNode): string {
+  const child = Children.toArray(children).find((node) => isValidElement(node))
+  if (!isValidElement<{ className?: string }>(child)) return ''
+  return /language-([a-zA-Z0-9_+-]+)/.exec(child.props.className ?? '')?.[1] ?? ''
+}
+
+function CodeBlock({
+  children,
+  node: _node,
+  ...props
+}: ComponentProps<'pre'> & { node?: unknown }) {
+  const [copied, setCopied] = useState(false)
+  const preRef = useRef<HTMLPreElement>(null)
+  const language = languageFromCodeChild(children)
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(preRef.current?.textContent ?? '')
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.add({ title: 'Copy failed', type: 'error' })
+    }
+  }
+
+  return (
+    <div className="md-code-block not-prose">
+      <div className="md-code-block-header">
+        <span className="md-code-block-lang">{language}</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={copied ? 'Copied' : 'Copy code'}
+          onClick={() => void copy()}
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      </div>
+      <pre ref={preRef} {...props}>
+        {children}
+      </pre>
+    </div>
+  )
+}
+
 export function Markdown({
   children,
   components,
@@ -70,6 +126,7 @@ export function Markdown({
         <li {...props}>{withMentions(content, handles, mentionPattern)}</li>
       )
     },
+    pre: CodeBlock,
   }
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none break-words prose-p:my-0 prose-pre:my-1 prose-headings:my-1 prose-ul:my-1 prose-ol:my-1">

@@ -215,7 +215,7 @@ export function RunActivityContent({
         {run.state === 'failed' && (
           <section className="flex gap-2 border-t pt-5 text-sm text-destructive">
             <CircleX className="mt-0.5 size-4 shrink-0" />
-            <p>{run.error ?? 'The run failed.'}</p>
+            <p className="min-w-0 break-all">{run.error ?? 'The run failed.'}</p>
           </section>
         )}
         {run.state === 'cancelled' && (
