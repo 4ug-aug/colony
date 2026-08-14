@@ -1374,7 +1374,10 @@ test('root summary derives reply count, recent participants, and latest-reply ti
   const [root] = store.listMessages(GENERAL_ROOM_ID)
   expect(root?.replySummary).toEqual({
     replyCount: 2,
-    participantIds: ['user-1', 'user-2'],
+    participants: [
+      { id: 'user-1', name: 'Ada' },
+      { id: 'user-2', name: 'Bob' },
+    ],
     latestReplyAt: 3,
   })
 
@@ -1423,7 +1426,10 @@ test('root summary counts a succeeded run result as a reply and orders participa
   const [root] = store.listMessages(GENERAL_ROOM_ID)
   expect(root?.replySummary).toEqual({
     replyCount: 2,
-    participantIds: ['software-engineer', 'user-2'],
+    participants: [
+      { id: 'software-engineer', name: 'software-engineer' },
+      { id: 'user-2', name: 'Bob' },
+    ],
     latestReplyAt: 5,
   })
 
@@ -1473,7 +1479,10 @@ test('a run triggered by a reply (an in-thread invocation) is attributed to the 
   const [root] = store.listMessages(GENERAL_ROOM_ID)
   expect(root?.replySummary).toEqual({
     replyCount: 2,
-    participantIds: ['software-engineer', 'user-2'],
+    participants: [
+      { id: 'software-engineer', name: 'software-engineer' },
+      { id: 'user-2', name: 'Bob' },
+    ],
     latestReplyAt: 5,
   })
 

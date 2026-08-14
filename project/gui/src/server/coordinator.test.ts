@@ -275,31 +275,39 @@ class MemoryRoomStore implements RoomStore {
   decorateRoots(list: RoomMessage[]): RoomMessage[] {
     return list.map((message) => {
       if (message.rootId != null) return message
-      const replies: { author: { id: string }; createdAt: number }[] = [
-        ...this.messages.filter((reply) => reply.rootId === message.id),
-        ...this.runs
-          .filter(
-            (run) =>
-              this.effectiveRootFor(run.triggerMessageId) === message.id &&
-              run.state === 'succeeded',
-          )
-          .map((run) => ({
-            author: { id: run.agentId },
-            createdAt: run.completedAt ?? run.createdAt,
-          })),
-      ].sort((a, b) => b.createdAt - a.createdAt)
+      const replies: { author: { id: string; name: string }; createdAt: number }[] =
+        [
+          ...this.messages
+            .filter((reply) => reply.rootId === message.id)
+            .map((reply) => ({
+              author: { id: reply.author.id, name: reply.author.name },
+              createdAt: reply.createdAt,
+            })),
+          ...this.runs
+            .filter(
+              (run) =>
+                this.effectiveRootFor(run.triggerMessageId) === message.id &&
+                run.state === 'succeeded',
+            )
+            .map((run) => ({
+              author: { id: run.agentId, name: run.agentId },
+              createdAt: run.completedAt ?? run.createdAt,
+            })),
+        ].sort((a, b) => b.createdAt - a.createdAt)
       if (!replies.length) return message
-      const participantIds: string[] = []
+      const participants: { id: string; name: string }[] = []
       for (const reply of replies) {
-        if (!participantIds.includes(reply.author.id))
-          participantIds.push(reply.author.id)
-        if (participantIds.length >= 3) break
+        if (
+          !participants.some((participant) => participant.id === reply.author.id)
+        )
+          participants.push(reply.author)
+        if (participants.length >= 3) break
       }
       return {
         ...message,
         replySummary: {
           replyCount: replies.length,
-          participantIds,
+          participants,
           latestReplyAt: replies[0]!.createdAt,
         },
       }
@@ -3273,7 +3281,7 @@ test('POST reply is linked to its root, excluded from flat history, and returned
     expect(flatBody.messages.map(({ id }) => id)).toEqual([root.id])
     expect(flatBody.messages[0]?.replySummary).toEqual({
       replyCount: 1,
-      participantIds: ['user-1'],
+      participants: [{ id: 'user-1', name: 'Ada' }],
       latestReplyAt: reply.createdAt,
     })
 
@@ -3337,7 +3345,9 @@ test('a top-level mention run is bound to its trigger as the invocation root, an
     const completedAt = store.getRun(run.id)!.completedAt!
     expect(flatBody.messages[0]?.replySummary).toEqual({
       replyCount: 1,
-      participantIds: ['software-engineer'],
+      participants: [
+        { id: 'software-engineer', name: 'software-engineer' },
+      ],
       latestReplyAt: completedAt,
     })
 

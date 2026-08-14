@@ -23,10 +23,14 @@ export type RoomSummary = {
   visibility: 'public' | 'private'
   createdBy?: string
 }
+export type ThreadParticipant = {
+  id: string
+  name: string
+}
 export type ThreadSummary = {
   replyCount: number
-  /** Distinct reply-author ids, most-recent-first, capped at 3. */
-  participantIds: string[]
+  /** Distinct reply authors, most-recent-first, capped at 3. */
+  participants: ThreadParticipant[]
   latestReplyAt: number
 }
 export type RoomMessage = {
@@ -468,12 +472,13 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     const placeholders = rootIds.map(() => '?').join(', ')
     const messageRows = sqlite
       .prepare(
-        `SELECT root_id, author_id, created_at, id FROM room_message
+        `SELECT root_id, author_id, author_name, created_at, id FROM room_message
          WHERE root_id IN (${placeholders})`,
       )
       .all(...rootIds) as {
       root_id: string
       author_id: string
+      author_name: string
       created_at: number
       id: string
     }[]
@@ -483,7 +488,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     const runRows = sqlite
       .prepare(
         `SELECT COALESCE(trig.root_id, room_run.trigger_message_id) AS root_id,
-                room_run.agent_id AS author_id, room_run.completed_at AS created_at, room_run.id
+                room_run.agent_id AS author_id, room_run.agent_id AS author_name,
+                room_run.completed_at AS created_at, room_run.id
          FROM room_run
          LEFT JOIN room_message trig ON trig.id = room_run.trigger_message_id
          WHERE COALESCE(trig.root_id, room_run.trigger_message_id) IN (${placeholders})
@@ -492,6 +498,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       .all(...rootIds) as {
       root_id: string
       author_id: string
+      author_name: string
       created_at: number
       id: string
     }[]
@@ -505,15 +512,15 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       grouped.set(row.root_id, list)
     }
     for (const [rootId, list] of grouped) {
-      const participantIds: string[] = []
+      const participants: ThreadParticipant[] = []
       for (const row of list) {
-        if (!participantIds.includes(row.author_id))
-          participantIds.push(row.author_id)
-        if (participantIds.length >= 3) break
+        if (!participants.some((participant) => participant.id === row.author_id))
+          participants.push({ id: row.author_id, name: row.author_name })
+        if (participants.length >= 3) break
       }
       map.set(rootId, {
         replyCount: list.length,
-        participantIds,
+        participants,
         latestReplyAt: list[0]!.created_at,
       })
     }

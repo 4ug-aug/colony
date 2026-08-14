@@ -3,28 +3,33 @@ import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
+import type { ThreadParticipant } from './types'
 
-function ReplyAvatars({ participantIds }: { participantIds: string[] }) {
+function ReplyAvatars({ participants }: { participants: ThreadParticipant[] }) {
   const { data: agents = [] } = useAgentDefinitions()
-  if (!participantIds.length) return null
+  if (!participants.length) return null
   const agentIds = new Set(agents.map((agent) => agent.id))
   return (
     <div className="flex -space-x-1.5">
-      {participantIds.map((id) => {
-        const isAgent = agentIds.has(id)
+      {participants.map((participant) => {
+        const isAgent = agentIds.has(participant.id)
         return (
           <div
-            key={id}
+            key={participant.id}
             className={`flex size-5 items-center justify-center rounded-full border border-border bg-muted text-[10px] font-semibold ${
               isAgent ? 'text-primary' : 'text-muted-foreground'
             }`}
             aria-hidden="true"
-            title={isAgent ? agentNameFrom(agents, id) : undefined}
+            title={
+              isAgent
+                ? agentNameFrom(agents, participant.id)
+                : participant.name
+            }
           >
             {isAgent ? (
               <AgentAnt className="size-3.5" />
             ) : (
-              id.slice(0, 1).toUpperCase()
+              participant.name.slice(0, 1).toUpperCase()
             )}
           </div>
         )
@@ -35,12 +40,12 @@ function ReplyAvatars({ participantIds }: { participantIds: string[] }) {
 
 export function ThreadSummaryChip({
   replyCount,
-  participantIds,
+  participants,
   latestReplyAt,
   onOpen,
 }: {
   replyCount: number
-  participantIds: string[]
+  participants: ThreadParticipant[]
   latestReplyAt: number
   onOpen: () => void
 }) {
@@ -51,7 +56,7 @@ export function ThreadSummaryChip({
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onOpen}
     >
-      <ReplyAvatars participantIds={participantIds} />
+      <ReplyAvatars participants={participants} />
       <span className="font-medium text-foreground">
         {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
       </span>

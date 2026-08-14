@@ -31,10 +31,14 @@ export type MentionableAccount = {
   displayName?: string
   image?: string
 }
+export type ThreadParticipant = {
+  id: string
+  name: string
+}
 export type ThreadSummary = {
   replyCount: number
-  /** Distinct reply-author ids, most-recent-first, capped at 3. */
-  participantIds: string[]
+  /** Distinct reply authors, most-recent-first, capped at 3. */
+  participants: ThreadParticipant[]
   latestReplyAt: number
 }
 export type RoomMessage = {

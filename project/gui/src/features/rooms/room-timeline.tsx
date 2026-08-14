@@ -268,7 +268,7 @@ export function Timeline({
                   {item.message.replySummary && onOpenThread && (
                     <ThreadSummaryChip
                       replyCount={item.message.replySummary.replyCount}
-                      participantIds={item.message.replySummary.participantIds}
+                      participants={item.message.replySummary.participants}
                       latestReplyAt={item.message.replySummary.latestReplyAt}
                       onOpen={() => onOpenThread(item.message.id)}
                     />
