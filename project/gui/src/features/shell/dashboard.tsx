@@ -1,5 +1,10 @@
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '#/components/ui/resizable'
 import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import { AccountSettingsPage } from '#/features/account/account-settings'
 import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
@@ -38,6 +43,7 @@ import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
 import { SchedulesPage } from '#/features/schedules/schedules-page'
 import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
+import { useMediaQuery } from '#/hooks/use-media-query'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import {
@@ -113,6 +119,8 @@ export function Dashboard({
     clearThreadAttention,
   } = useRooms(user.id)
   const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
+  const inlineRail = useMediaQuery('(min-width: 1024px)')
+  const threadWidthRef = useRef(localStorage.getItem('thread.width') ?? '26rem')
   const [location, setLocation] = useState<DashboardLocation>(() => {
     const pathIssue = window.location.pathname.match(/^\/issues\/([^/]+)$/)
     if (pathIssue)
@@ -321,6 +329,51 @@ export function Dashboard({
   const activityTriggerMessage = activeRun
     ? messages.find(({ id }) => id === activeRun.triggerMessageId)
     : undefined
+  const threadRail =
+    activeRootId && room ? (
+      <RoomThreadRail
+        key={activeRootId}
+        roomId={room.id}
+        roomName={`${room.name} thread`}
+        rootId={activeRootId}
+        liveReplies={threadReplies[activeRootId] ?? []}
+        runs={runs}
+        openRun={openActivity}
+        mentionHandles={[
+          user.name,
+          ...mentionableAccounts.map(
+            (account) => account.username ?? account.name,
+          ),
+        ]}
+        mentionableAccounts={mentionableAccounts}
+        currentUserId={user.id}
+        onClose={closeSideSurface}
+        sendReply={sendReply}
+        editMessage={edit}
+        focusReplyId={
+          location.surface?.kind === 'thread'
+            ? location.surface.focusReplyId
+            : undefined
+        }
+        onFocusReplyHandled={clearThreadFocus}
+        draftText={threadDraft(threadDraftsRef.current, activeRootId)}
+        onDraftChange={(text) => {
+          threadDraftsRef.current = withThreadDraft(
+            threadDraftsRef.current,
+            activeRootId,
+            text,
+          )
+        }}
+        onDraftSubmitted={() => {
+          threadDraftsRef.current = withoutThreadDraft(
+            threadDraftsRef.current,
+            activeRootId,
+          )
+        }}
+        exiting={surfaceExiting}
+        onExited={() => setTransition(finishThreadExit)}
+      />
+    ) : null
 
   return (
     <SidebarProvider
@@ -537,143 +590,170 @@ export function Dashboard({
         )}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
-            <div
-              className="relative flex min-w-0 flex-1 flex-col"
-              onPointerDown={() => {
-                if (activeRootId || activeSurface?.kind === 'activity')
-                  closeSideSurface()
-              }}
-            >
-              <div className="relative min-h-0 flex-1">
-                <section
-                  key={room?.id}
-                  ref={scrollRef}
-                  className="no-scrollbar flex h-full flex-col-reverse overflow-y-auto px-5 py-8 sm:px-8"
-                  aria-busy={loading}
+            <ResizablePanelGroup className="min-h-0 min-w-0 flex-1">
+              <ResizablePanel className="min-h-0" id="room" minSize="20rem">
+                <div
+                  className="relative flex h-full min-h-0 min-w-0 flex-col"
                   onPointerDown={() => {
-                    followRoomRef.current = false
-                  }}
-                  onTouchMove={() => {
-                    followRoomRef.current = false
-                  }}
-                  onWheel={() => {
-                    followRoomRef.current = false
-                  }}
-                  onScroll={() => {
-                    const el = scrollRef.current
-                    if (!el) return
-                    if (
-                      el.scrollHeight -
-                        el.clientHeight -
-                        Math.abs(el.scrollTop) <=
-                        historyTopThreshold &&
-                      hasOlderMessages &&
-                      !loadingOlder
-                    )
-                      void loadOlder()
-                    const nextAtBottom =
-                      Math.abs(el.scrollTop) < bottomScrollThreshold
-                    atBottomRef.current = nextAtBottom
-                    setAtBottom(nextAtBottom)
+                    if (activeRootId || activeSurface?.kind === 'activity')
+                      closeSideSurface()
                   }}
                 >
-                  <div
-                    ref={timelineRef}
-                    className="mx-auto w-full max-w-7xl shrink-0"
-                  >
-                    {loadingOlder && (
+                  <div className="relative min-h-0 flex-1">
+                    <section
+                      key={room?.id}
+                      ref={scrollRef}
+                      className="no-scrollbar flex h-full flex-col-reverse overflow-y-auto px-5 py-8 sm:px-8"
+                      aria-busy={loading}
+                      onPointerDown={() => {
+                        followRoomRef.current = false
+                      }}
+                      onTouchMove={() => {
+                        followRoomRef.current = false
+                      }}
+                      onWheel={() => {
+                        followRoomRef.current = false
+                      }}
+                      onScroll={() => {
+                        const el = scrollRef.current
+                        if (!el) return
+                        if (
+                          el.scrollHeight -
+                            el.clientHeight -
+                            Math.abs(el.scrollTop) <=
+                            historyTopThreshold &&
+                          hasOlderMessages &&
+                          !loadingOlder
+                        )
+                          void loadOlder()
+                        const nextAtBottom =
+                          Math.abs(el.scrollTop) < bottomScrollThreshold
+                        atBottomRef.current = nextAtBottom
+                        setAtBottom(nextAtBottom)
+                      }}
+                    >
                       <div
-                        className="flex justify-center pb-4 text-sm text-muted-foreground"
-                        role="status"
+                        ref={timelineRef}
+                        className="mx-auto w-full max-w-7xl shrink-0"
                       >
-                        <BrailleLoader text="Loading older messages…" />
+                        {loadingOlder && (
+                          <div
+                            className="flex justify-center pb-4 text-sm text-muted-foreground"
+                            role="status"
+                          >
+                            <BrailleLoader text="Loading older messages…" />
+                          </div>
+                        )}
+                        {loading ? (
+                          <div
+                            className="flex justify-center py-12 text-sm text-muted-foreground"
+                            role="status"
+                          >
+                            <BrailleLoader text="Loading room…" />
+                          </div>
+                        ) : (
+                          <div className="room-fade-in">
+                            <Timeline
+                              messages={messages}
+                              runs={runs}
+                              openRun={openActivity}
+                              currentUserId={user.id}
+                              focusMessageId={focusMessageId}
+                              onFocusHandled={clearFocusMessage}
+                              unreadThreadRootIds={threadAttentionRootIds}
+                              onEdit={(message) => {
+                                setEditingMessage(message)
+                                setDraft(message.text)
+                              }}
+                              onOpenThread={(nextRootId) =>
+                                openThread(nextRootId)
+                              }
+                              mentionHandles={[
+                                user.name,
+                                ...mentionableAccounts.map(
+                                  (account) => account.username ?? account.name,
+                                ),
+                              ]}
+                            />
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {loading ? (
-                      <div
-                        className="flex justify-center py-12 text-sm text-muted-foreground"
-                        role="status"
+                    </section>
+                    <Button
+                      type="button"
+                      size="sm"
+                      aria-hidden={atBottom}
+                      tabIndex={atBottom ? -1 : 0}
+                      data-visible={!atBottom}
+                      className="scroll-to-bottom-button absolute right-5 bottom-4 rounded-sm shadow-md sm:right-8"
+                      onClick={() => {
+                        const el = scrollRef.current
+                        el?.scrollTo({
+                          top: 0,
+                          behavior: 'smooth',
+                        })
+                      }}
+                    >
+                      To the bottom
+                      <ArrowDown data-icon="inline-end" />
+                    </Button>
+                  </div>
+                  <div className="shrink-0 px-4 pb-4 sm:px-6">
+                    <div className="mx-auto max-w-7xl rounded-xl border bg-background p-2.5 shadow-sm">
+                      <MessageComposer
+                        key={room?.id}
+                        ref={composer}
+                        value={draft}
+                        onChange={setDraft}
+                        onSubmit={submit}
+                        disabled={loading || !room}
+                        roomName={room?.name ?? 'room'}
+                        mentionableAccounts={mentionableAccounts}
+                        editing={Boolean(editingMessage)}
+                        onCancelEdit={cancelEdit}
+                      />
+                    </div>
+                    <div className="mx-auto max-w-7xl">
+                      <ActiveAgents
+                        runs={runs}
+                        latestStepByRun={latestStepByRun}
+                        cancel={(runId) => void cancel(runId)}
+                        openRun={openActivity}
+                      />
+                    </div>
+                    {error && (
+                      <p
+                        className="mx-auto mt-2 max-w-5xl text-sm text-destructive"
+                        role="alert"
                       >
-                        <BrailleLoader text="Loading room…" />
-                      </div>
-                    ) : (
-                      <div className="room-fade-in">
-                        <Timeline
-                          messages={messages}
-                          runs={runs}
-                          openRun={openActivity}
-                          currentUserId={user.id}
-                          focusMessageId={focusMessageId}
-                          onFocusHandled={clearFocusMessage}
-                          unreadThreadRootIds={threadAttentionRootIds}
-                          onEdit={(message) => {
-                            setEditingMessage(message)
-                            setDraft(message.text)
-                          }}
-                          onOpenThread={(nextRootId) => openThread(nextRootId)}
-                          mentionHandles={[
-                            user.name,
-                            ...mentionableAccounts.map(
-                              (account) => account.username ?? account.name,
-                            ),
-                          ]}
-                        />
-                      </div>
+                        {error}
+                      </p>
                     )}
                   </div>
-                </section>
-                <Button
-                  type="button"
-                  size="sm"
-                  aria-hidden={atBottom}
-                  tabIndex={atBottom ? -1 : 0}
-                  data-visible={!atBottom}
-                  className="scroll-to-bottom-button absolute right-5 bottom-4 rounded-sm shadow-md sm:right-8"
-                  onClick={() => {
-                    const el = scrollRef.current
-                    el?.scrollTo({
-                      top: 0,
-                      behavior: 'smooth',
-                    })
-                  }}
-                >
-                  To the bottom
-                  <ArrowDown data-icon="inline-end" />
-                </Button>
-              </div>
-              <div className="shrink-0 px-4 pb-4 sm:px-6">
-                <div className="mx-auto max-w-7xl rounded-xl border bg-background p-2.5 shadow-sm">
-                  <MessageComposer
-                    key={room?.id}
-                    ref={composer}
-                    value={draft}
-                    onChange={setDraft}
-                    onSubmit={submit}
-                    disabled={loading || !room}
-                    roomName={room?.name ?? 'room'}
-                    mentionableAccounts={mentionableAccounts}
-                    editing={Boolean(editingMessage)}
-                    onCancelEdit={cancelEdit}
-                  />
                 </div>
-                <div className="mx-auto max-w-7xl">
-                  <ActiveAgents
-                    runs={runs}
-                    latestStepByRun={latestStepByRun}
-                    cancel={(runId) => void cancel(runId)}
-                    openRun={openActivity}
-                  />
-                </div>
-                {error && (
-                  <p
-                    className="mx-auto mt-2 max-w-5xl text-sm text-destructive"
-                    role="alert"
+              </ResizablePanel>
+              {inlineRail && threadRail ? (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel
+                    className="min-h-0"
+                    defaultSize={threadWidthRef.current}
+                    groupResizeBehavior="preserve-pixel-size"
+                    id="thread"
+                    maxSize="40rem"
+                    minSize="20rem"
+                    onResize={(size, _id, prev) => {
+                      if (prev == null) return
+                      const next = `${Math.round(size.inPixels)}px`
+                      threadWidthRef.current = next
+                      localStorage.setItem('thread.width', next)
+                    }}
                   >
-                    {error}
-                  </p>
-                )}
-              </div>
-            </div>
+                    {threadRail}
+                  </ResizablePanel>
+                </>
+              ) : null}
+            </ResizablePanelGroup>
             {activeSurface?.kind === 'activity' && activeRun && (
               <RunActivityRail
                 key={activeRun.id}
@@ -686,50 +766,7 @@ export function Dashboard({
                 onExited={() => setTransition(finishThreadExit)}
               />
             )}
-            {activeRootId && room && (
-              <RoomThreadRail
-                key={activeRootId}
-                roomId={room.id}
-                roomName={`${room.name} thread`}
-                rootId={activeRootId}
-                liveReplies={threadReplies[activeRootId] ?? []}
-                runs={runs}
-                openRun={openActivity}
-                mentionHandles={[
-                  user.name,
-                  ...mentionableAccounts.map(
-                    (account) => account.username ?? account.name,
-                  ),
-                ]}
-                mentionableAccounts={mentionableAccounts}
-                currentUserId={user.id}
-                onClose={closeSideSurface}
-                sendReply={sendReply}
-                editMessage={edit}
-                focusReplyId={
-                  location.surface?.kind === 'thread'
-                    ? location.surface.focusReplyId
-                    : undefined
-                }
-                onFocusReplyHandled={clearThreadFocus}
-                draftText={threadDraft(threadDraftsRef.current, activeRootId)}
-                onDraftChange={(text) => {
-                  threadDraftsRef.current = withThreadDraft(
-                    threadDraftsRef.current,
-                    activeRootId,
-                    text,
-                  )
-                }}
-                onDraftSubmitted={() => {
-                  threadDraftsRef.current = withoutThreadDraft(
-                    threadDraftsRef.current,
-                    activeRootId,
-                  )
-                }}
-                exiting={surfaceExiting}
-                onExited={() => setTransition(finishThreadExit)}
-              />
-            )}
+            {!inlineRail && threadRail}
           </div>
         )}
       </SidebarInset>

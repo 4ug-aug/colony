@@ -1,4 +1,5 @@
 import { App, Octokit } from "octokit";
+import { boundStepText } from "../runtime/step";
 import { createMcpGateway, type McpGateway, type McpTool, type McpUpstream } from "./gateway";
 
 const tools: readonly McpTool[] = [
@@ -25,6 +26,43 @@ const tools: readonly McpTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "github.compare",
+    description: "List files changed between two refs in the granted repository. Default is path and status only. Set includeDiff to true for a truncated unified diff. Compare first; use github.get_file only for named paths. Do not git fetch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        base: { type: "string" },
+        head: { type: "string" },
+        includeDiff: { type: "boolean" },
+      },
+      required: ["base", "head"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "github.get_file",
+    description: "Read one file at a branch, tag, or SHA in the granted repository. A directory path returns a truncated entry list. Use after github.compare for named paths, not to walk a whole tree.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        ref: { type: "string" },
+      },
+      required: ["path", "ref"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "github.get_pull_request",
+    description: "Read a pull request in the granted repository: title, body, head and base refs, state, and changed-file list without a patch.",
+    inputSchema: {
+      type: "object",
+      properties: { number: { type: "integer", minimum: 1 } },
+      required: ["number"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 type PullRequestRequest = { title: string; body?: string };
@@ -32,6 +70,10 @@ type Change = { path: string; deleted: boolean };
 type RemoteBranch = { sha: string; tree: string };
 type WorkspaceState = { commits: readonly string[]; head: string; tree: string };
 type PullRequestChecksRequest = { number: number };
+type CompareRequest = { base: string; head: string; includeDiff: boolean };
+type GetFileRequest = { path: string; ref: string };
+
+const directoryEntryLimit = 100;
 
 const checkWaitMs = 4 * 60_000;
 const checkPollMs = 15_000;
@@ -53,6 +95,28 @@ function parsePullRequestChecksRequest(value: Record<string, unknown>): PullRequ
     throw new Error("GitHub pull request number must be a positive integer");
   }
   return { number: value.number as number };
+}
+
+function parseCompareRequest(value: Record<string, unknown>): CompareRequest {
+  return {
+    base: string(value.base, "GitHub compare base is required"),
+    head: string(value.head, "GitHub compare head is required"),
+    includeDiff: value.includeDiff === true,
+  };
+}
+
+function parseGetFileRequest(value: Record<string, unknown>): GetFileRequest {
+  return {
+    path: string(value.path, "GitHub file path is required"),
+    ref: string(value.ref, "GitHub file ref is required"),
+  };
+}
+
+function shortStatus(status: string): string {
+  if (status === "added") return "A";
+  if (status === "removed") return "D";
+  if (status === "renamed") return "R";
+  return "M";
 }
 
 function repositoryParts(repository: string): { owner: string; repo: string } {
@@ -218,6 +282,93 @@ async function existingPullRequest(options: {
   return response.data[0];
 }
 
+async function compareRefs(options: {
+  octokit: Octokit;
+  repository: { owner: string; repo: string };
+  args: Record<string, unknown>;
+}): Promise<{ base: string; head: string; files: { path: string; status: string }[]; diff?: string }> {
+  const input = parseCompareRequest(options.args);
+  const comparison = await options.octokit.rest.repos.compareCommits({
+    ...options.repository,
+    base: input.base,
+    head: input.head,
+  });
+  const files = (comparison.data.files ?? []).map((file) => ({
+    path: file.filename,
+    status: shortStatus(file.status ?? "modified"),
+  }));
+  if (!input.includeDiff) return { base: input.base, head: input.head, files };
+  const diff = boundStepText(
+    (comparison.data.files ?? []).map((file) => file.patch).filter(Boolean).join("\n"),
+  );
+  return { base: input.base, head: input.head, files, diff };
+}
+
+async function getFile(options: {
+  octokit: Octokit;
+  repository: { owner: string; repo: string };
+  args: Record<string, unknown>;
+}): Promise<unknown> {
+  const input = parseGetFileRequest(options.args);
+  const response = await options.octokit.rest.repos.getContent({
+    ...options.repository,
+    path: input.path,
+    ref: input.ref,
+  });
+  if (Array.isArray(response.data)) {
+    const truncated = response.data.length > directoryEntryLimit;
+    return {
+      type: "dir",
+      path: input.path,
+      ref: input.ref,
+      entries: response.data.slice(0, directoryEntryLimit).map((entry) => ({
+        path: entry.path,
+        type: entry.type,
+      })),
+      ...(truncated ? { truncated: true } : {}),
+    };
+  }
+  if (response.data.type !== "file") {
+    throw new Error(`GitHub path is not a file: ${input.path}`);
+  }
+  if (!response.data.content || response.data.encoding === "none") {
+    throw new Error("GitHub file is too large to read; name a smaller path");
+  }
+  return {
+    path: response.data.path,
+    ref: input.ref,
+    content: boundStepText(Buffer.from(response.data.content, "base64").toString("utf8")),
+  };
+}
+
+async function getPullRequest(options: {
+  octokit: Octokit;
+  repository: { owner: string; repo: string };
+  args: Record<string, unknown>;
+}): Promise<unknown> {
+  const input = parsePullRequestChecksRequest(options.args);
+  const [pullRequest, files] = await Promise.all([
+    options.octokit.rest.pulls.get({ ...options.repository, pull_number: input.number }),
+    options.octokit.rest.pulls.listFiles({
+      ...options.repository,
+      pull_number: input.number,
+      per_page: 100,
+    }),
+  ]);
+  return {
+    number: pullRequest.data.number,
+    title: pullRequest.data.title,
+    body: pullRequest.data.body ?? "",
+    state: pullRequest.data.state,
+    head: { ref: pullRequest.data.head.ref, sha: pullRequest.data.head.sha },
+    base: { ref: pullRequest.data.base.ref, sha: pullRequest.data.base.sha },
+    files: files.data.map((file) => ({
+      path: file.filename,
+      status: shortStatus(file.status),
+    })),
+  };
+}
+
 export async function createGitHubAppInstallationClient(options: {
   appId: string;
   privateKey: string;
@@ -305,6 +456,15 @@ export function createGitHubMcpUpstream(options: {
   return {
     listTools: async () => tools,
     async callTool(name, args) {
+      if (name === "github.compare") {
+        return compareRefs({ octokit: options.octokit, repository, args });
+      }
+      if (name === "github.get_file") {
+        return getFile({ octokit: options.octokit, repository, args });
+      }
+      if (name === "github.get_pull_request") {
+        return getPullRequest({ octokit: options.octokit, repository, args });
+      }
       if (name === "github.wait_for_pull_request_checks") {
         const input = parsePullRequestChecksRequest(args);
         const deadline = Date.now() + checkWaitMs;

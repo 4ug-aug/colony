@@ -3,6 +3,7 @@ import { chmod, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Octokit } from "octokit";
+import { STEP_TEXT_LIMIT } from "../runtime/step";
 import { createGitHubMcpGateway } from "./github";
 
 async function git(directory: string, args: readonly string[]): Promise<string> {
@@ -406,4 +407,153 @@ test("publishGitHubBranchFiles creates a remote branch from base with file conte
     ref: "refs/heads/sweat/grill/g1",
     sha: "commit",
   });
+});
+
+function readGateway(fetch: (url: string) => Promise<Response>) {
+  return createGitHubMcpGateway({
+    octokit: new Octokit({ auth: "secret", request: { fetch } }),
+    repository: "acme/product",
+    workspace: "/unused",
+    branch: "sweat/run-1",
+    baseCommit: "base",
+    base: "main",
+  });
+}
+
+test("GitHub compare lists changed files without a diff by default", async () => {
+  const requests: string[] = [];
+  const gateway = readGateway(async (url) => {
+    requests.push(url);
+    if (url.includes("/compare/")) {
+      return Response.json({
+        files: [
+          { filename: "compose.yml", status: "modified", patch: "@@ -1 +1 @@\n-a\n+b\n" },
+          { filename: "gone.txt", status: "removed" },
+        ],
+      });
+    }
+    throw new Error(`Unexpected GitHub request: ${url}`);
+  });
+  const session = gateway.createSession({
+    tools: ["github.compare"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await expect(gateway.callTool(session.token, "github.compare", {
+    base: "main", head: "feat/col-66",
+  })).resolves.toEqual({
+    base: "main",
+    head: "feat/col-66",
+    files: [
+      { path: "compose.yml", status: "M" },
+      { path: "gone.txt", status: "D" },
+    ],
+  });
+  expect(requests.some((url) => url.includes("compare/main...feat%2Fcol-66"))).toBe(true);
+});
+
+test("GitHub compare includes a truncated diff when asked", async () => {
+  const patch = `${"x".repeat(STEP_TEXT_LIMIT + 50)}\n`;
+  const gateway = readGateway(async (url) => {
+    if (url.includes("/compare/")) {
+      return Response.json({ files: [{ filename: "big.txt", status: "added", patch }] });
+    }
+    throw new Error(`Unexpected GitHub request: ${url}`);
+  });
+  const session = gateway.createSession({
+    tools: ["github.compare"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  const result = await gateway.callTool(session.token, "github.compare", {
+    base: "main", head: "feat/x", includeDiff: true,
+  }) as { files: unknown[]; diff: string };
+  expect(result.files).toEqual([{ path: "big.txt", status: "A" }]);
+  expect(result.diff.endsWith("…[truncated]")).toBe(true);
+  expect(result.diff.length).toBeLessThan(patch.length);
+});
+
+test("GitHub get_file returns decoded contents at a ref", async () => {
+  const gateway = readGateway(async (url) => {
+    if (url.includes("/contents/compose.yml") && url.includes("ref=feat%2Fcol-66")) {
+      return Response.json({
+        type: "file",
+        encoding: "base64",
+        path: "compose.yml",
+        content: Buffer.from("loki:\n  image: grafana/loki\n").toString("base64"),
+      });
+    }
+    throw new Error(`Unexpected GitHub request: ${url}`);
+  });
+  const session = gateway.createSession({
+    tools: ["github.get_file"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await expect(gateway.callTool(session.token, "github.get_file", {
+    path: "compose.yml", ref: "feat/col-66",
+  })).resolves.toEqual({
+    path: "compose.yml",
+    ref: "feat/col-66",
+    content: "loki:\n  image: grafana/loki\n",
+  });
+});
+
+test("GitHub get_file lists a truncated directory", async () => {
+  const gateway = readGateway(async (url) => {
+    if (url.includes("/contents/monitoring")) {
+      return Response.json([
+        { type: "file", path: "monitoring/promtail.yml", name: "promtail.yml" },
+        { type: "dir", path: "monitoring/rules", name: "rules" },
+      ]);
+    }
+    throw new Error(`Unexpected GitHub request: ${url}`);
+  });
+  const session = gateway.createSession({
+    tools: ["github.get_file"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await expect(gateway.callTool(session.token, "github.get_file", {
+    path: "monitoring", ref: "main",
+  })).resolves.toEqual({
+    type: "dir",
+    path: "monitoring",
+    ref: "main",
+    entries: [
+      { path: "monitoring/promtail.yml", type: "file" },
+      { path: "monitoring/rules", type: "dir" },
+    ],
+  });
+});
+
+test("GitHub get_pull_request returns metadata and changed files without a patch", async () => {
+  const gateway = readGateway(async (url) => {
+    if (url.includes("/pulls/12/files")) {
+      return Response.json([
+        { filename: "compose.yml", status: "modified", patch: "secret-patch" },
+      ]);
+    }
+    if (url.includes("/pulls/12")) {
+      return Response.json({
+        number: 12,
+        title: "Ship Loki",
+        body: "In-stack logs",
+        state: "open",
+        head: { ref: "feat/col-66", sha: "abc" },
+        base: { ref: "main", sha: "def" },
+      });
+    }
+    throw new Error(`Unexpected GitHub request: ${url}`);
+  });
+  const session = gateway.createSession({
+    tools: ["github.get_pull_request"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await expect(gateway.callTool(session.token, "github.get_pull_request", { number: 12 }))
+    .resolves.toEqual({
+      number: 12,
+      title: "Ship Loki",
+      body: "In-stack logs",
+      state: "open",
+      head: { ref: "feat/col-66", sha: "abc" },
+      base: { ref: "main", sha: "def" },
+      files: [{ path: "compose.yml", status: "M" }],
+    });
 });

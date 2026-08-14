@@ -151,6 +151,9 @@ export function buildIssueRunTask(
         'parent',
         [
           `Parent: ${formatIssueId(parent.number)} — ${parent.title}`,
+          ...(parent.effectiveBranch
+            ? [`Branch: ${parent.effectiveBranch}`]
+            : []),
           `Parent description: ${parent.description || '(none)'}`,
         ].join('\n'),
       ),
@@ -161,10 +164,12 @@ export function buildIssueRunTask(
       fence(
         'children',
         children
-          .map(
-            (child) =>
-              `${formatIssueId(child.number)} [${child.status}] — ${child.title}`,
-          )
+          .map((child) => {
+            const branch = child.effectiveBranch
+              ? ` — ${child.effectiveBranch}`
+              : ''
+            return `${formatIssueId(child.number)} [${child.status}] — ${child.title}${branch}`
+          })
           .join('\n'),
       ),
     )

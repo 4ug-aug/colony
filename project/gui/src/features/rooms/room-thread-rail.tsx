@@ -399,7 +399,7 @@ export function RoomThreadRail({
   if (inline)
     return (
       <aside
-        className={`flex w-[26rem] shrink-0 flex-col border-l bg-background ${
+        className={`flex h-full min-h-0 w-full flex-col bg-background ${
           exiting
             ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards duration-100'
             : 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards duration-200'

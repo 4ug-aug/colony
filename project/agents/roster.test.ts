@@ -67,6 +67,9 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
             return [
               { name: "github.create_pull_request" },
               { name: "github.wait_for_pull_request_checks" },
+              { name: "github.compare" },
+              { name: "github.get_file" },
+              { name: "github.get_pull_request" },
             ];
           },
           async callTool() {
@@ -111,6 +114,9 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
   expect(run.capabilityGrant?.tools).toEqual([
     "github.create_pull_request",
     "github.wait_for_pull_request_checks",
+    "github.compare",
+    "github.get_file",
+    "github.get_pull_request",
   ]);
   expect(run.capabilityGrant?.resources).toEqual([
     { provider: "github", repository: "acme/widgets" },
@@ -657,6 +663,9 @@ test("Grill-linked runs grant Grill tools and read-only workspace Docs", async (
         listTools: async () => [
           { name: "github.create_pull_request" },
           { name: "github.wait_for_pull_request_checks" },
+          { name: "github.compare" },
+          { name: "github.get_file" },
+          { name: "github.get_pull_request" },
         ],
         callTool: async () => ({}),
       }),

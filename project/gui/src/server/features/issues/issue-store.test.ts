@@ -289,5 +289,19 @@ test('issue branch binding resolves own and inherited effectiveBranch', () => {
     effectiveBranch: 'feat/x',
   })
 
+  const childTask = buildIssueRunTask(
+    store.getIssue(child.id)!,
+    store.getIssue(parent.id)!,
+  )
+  expect(childTask).toContain('Branch: feat/parent')
+
+  const parentTask = buildIssueRunTask(
+    store.getIssue(parent.id)!,
+    undefined,
+    [store.getIssue(child.id)!, store.getIssue(middle.id)!],
+  )
+  expect(parentTask).toContain('COL-2 [backlog] — Child — feat/parent')
+  expect(parentTask).toContain('COL-3 [backlog] — Middle — feat/x')
+
   sqlite.close()
 })

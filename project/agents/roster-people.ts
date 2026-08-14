@@ -85,6 +85,9 @@ export const capabilityPresentation: Record<
     tools: {
       "github.create_pull_request": "Create pull requests",
       "github.wait_for_pull_request_checks": "Wait for pull request checks",
+      "github.compare": "Compare refs",
+      "github.get_file": "Read files at a ref",
+      "github.get_pull_request": "Read pull requests",
     },
   },
   "workspace.room": {
