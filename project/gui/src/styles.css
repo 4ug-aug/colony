@@ -435,12 +435,23 @@ pre code {
   background: var(--card);
 }
 
+@keyframes room-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.room-fade-in {
+  animation: room-fade-in 150ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .entry-form,
   .entry-form--exiting,
   .entry-shell-frame--exiting,
   .mention-menu,
-  .mention-menu.is-leaving {
+  .mention-menu.is-leaving,
+  .room-fade-in {
     animation: none;
   }
 }

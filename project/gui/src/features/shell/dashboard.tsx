@@ -2,20 +2,36 @@ import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
 import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import { AccountSettingsPage } from '#/features/account/account-settings'
+import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
+import { BulletinsPage } from '#/features/bulletins/bulletins-page'
+import { DocSessionHeader, DocsPage } from '#/features/docs/docs-page'
+import { GrillSessionHeader, GrillsPage } from '#/features/grills/grills-page'
 import { IssuesPage } from '#/features/issues/issues-page'
 import type { IssueStatus } from '#/features/issues/types'
-import { BulletinsPage } from '#/features/bulletins/bulletins-page'
-import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
-import { DocsPage, DocSessionHeader } from '#/features/docs/docs-page'
-import { GrillsPage, GrillSessionHeader } from '#/features/grills/grills-page'
 import { MembersPanel } from '#/features/members/members-panel'
+import { OneshotPanel } from '#/features/oneshot/oneshot-panel'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
 import { MessageSearchCommand } from '#/features/rooms/message-search-command'
-import { OneshotPanel } from '#/features/oneshot/oneshot-panel'
 import { navigationForSearchHit } from '#/features/rooms/message-search-navigation'
-import { Timeline } from '#/features/rooms/room-timeline'
 import { RoomThreadRail } from '#/features/rooms/room-thread-rail'
+import { Timeline } from '#/features/rooms/room-timeline'
+import type { ThreadDrafts } from '#/features/rooms/thread-drafts'
+import {
+  emptyThreadDrafts,
+  threadDraft,
+  withThreadDraft,
+  withoutThreadDraft,
+} from '#/features/rooms/thread-drafts'
+import type {
+  ThreadTransitionState,
+  ThreadTransitionSurface,
+} from '#/features/rooms/thread-transition'
+import {
+  finishThreadExit,
+  requestThreadSurface,
+  sameThreadSurface,
+} from '#/features/rooms/thread-transition'
 import type { Author, RoomMessage } from '#/features/rooms/types'
 import { useRooms } from '#/features/rooms/use-rooms'
 import { ActiveAgents } from '#/features/runs/active-agents'
@@ -40,6 +56,7 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { DashboardLocation } from './dashboard-navigation'
 import {
   closeSurface,
   historyDirection,
@@ -48,25 +65,8 @@ import {
   readDashboardLocation,
   writeDashboardLocation,
 } from './dashboard-navigation'
-import type { DashboardLocation } from './dashboard-navigation'
 import type { DashboardView } from './room-sidebar'
 import { RoomSidebar } from './room-sidebar'
-import {
-  emptyThreadDrafts,
-  threadDraft,
-  withThreadDraft,
-  withoutThreadDraft,
-} from '#/features/rooms/thread-drafts'
-import type { ThreadDrafts } from '#/features/rooms/thread-drafts'
-import {
-  finishThreadExit,
-  requestThreadSurface,
-  sameThreadSurface,
-} from '#/features/rooms/thread-transition'
-import type {
-  ThreadTransitionState,
-  ThreadTransitionSurface,
-} from '#/features/rooms/thread-transition'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
 
 const bottomScrollThreshold = 150
@@ -597,7 +597,7 @@ export function Dashboard({
                         <BrailleLoader text="Loading room…" />
                       </div>
                     ) : (
-                      <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none">
+                      <div className="room-fade-in">
                         <Timeline
                           messages={messages}
                           runs={runs}

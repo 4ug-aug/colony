@@ -1,18 +1,18 @@
-import { useMemo, useState, type AnimationEvent } from 'react'
-import { Check, Copy, MessageCircle } from 'lucide-react'
 import { Avatar, timestamp } from '#/components/avatar'
 import { Markdown } from '#/components/markdown'
 import { Button } from '#/components/ui/button'
-import { RunCapsule } from '#/features/runs/run-capsule'
 import { toast } from '#/components/ui/toast'
 import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
+import { RunCapsule } from '#/features/runs/run-capsule'
 import { useMediaQuery } from '#/hooks/use-media-query'
+import { Check, Copy, MessageCircle } from 'lucide-react'
+import { useMemo, useState, type AnimationEvent } from 'react'
 import { AttachmentView } from './attachment-view'
-import { ThreadSummaryChip } from './thread-summary-chip'
 import { buildFlatTimelineItems } from './thread-helpers'
+import { ThreadSummaryChip } from './thread-summary-chip'
 import type { RoomMessage, RoomRun } from './types'
 
 const agentMessageClampChars = 520
@@ -136,7 +136,7 @@ export function Timeline({
         const canReplyInThread = Boolean(onOpenThread)
         return (
           <article
-            className={`group -mx-2 flex gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-muted ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}${
+            className={`group -mx-2 flex gap-3 rounded-md px-2 py-1.5 transition-colors dark:hover:bg-muted/40 hover:bg-muted/20 ${item.grouped ? 'mt-1' : 'mt-5 first:mt-0'}${
               focusMessageId === item.message.id ? ' message-search-hit' : ''
             }`}
             key={item.id}

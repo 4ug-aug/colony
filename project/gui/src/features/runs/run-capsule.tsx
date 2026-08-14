@@ -1,12 +1,12 @@
-import { Check, CircleX, X } from 'lucide-react'
-import { BrailleLoader } from '#/components/ui/braille-loader'
-import { AvatarGroup } from '#/components/ui/avatar'
-import { useAgentName } from '#/features/agents/use-agent-definitions'
-import { RunAvatar } from './run-avatar'
 import { ProviderIcon } from '#/components/provider-icon'
+import { AvatarGroup } from '#/components/ui/avatar'
+import { BrailleLoader } from '#/components/ui/braille-loader'
+import { useAgentName } from '#/features/agents/use-agent-definitions'
+import type { RoomRun } from '#/features/rooms/types'
 import { llmProviderName } from '#/lib/llm-provider'
 import { cn } from '#/lib/utils'
-import type { RoomRun } from '#/features/rooms/types'
+import { Check, CircleX, X } from 'lucide-react'
+import { RunAvatar } from './run-avatar'
 
 export function RunCapsule({
   run,
@@ -30,7 +30,7 @@ export function RunCapsule({
     <button
       type="button"
       className={cn(
-        'mt-2 inline-flex items-center gap-1.5 rounded-md border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer',
+        'mt-2 inline-flex h-8 items-center gap-1.5 rounded-md border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer',
         className,
       )}
       aria-label={`View ${name} activity using ${llmProviderName(run.provider)}, ${state}`}

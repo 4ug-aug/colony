@@ -17,7 +17,7 @@ import remarkGfm from 'remark-gfm'
 const mentionChip = (key: string, handle: string) => (
   <span
     key={key}
-    className="rounded bg-muted px-1.5 py-0.5 text-sm font-medium text-muted-foreground"
+    className="rounded bg-muted px-1.5 font-medium text-muted-foreground"
   >
     @{handle}
   </span>
