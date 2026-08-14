@@ -526,7 +526,7 @@ export function Dashboard({
           <BulletinsPage ref={bulletinsRef} currentUserId={user.id} />
         )}
         {view === 'docs' && (
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none">
             <DocsPage
               selectedId={selectedDocId}
               onSelectedIdChange={(id) =>
@@ -536,7 +536,7 @@ export function Dashboard({
           </div>
         )}
         {view === 'grills' && (
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none">
             <GrillsPage
               startOpen={grillStartOpen}
               onStartOpenChange={setGrillStartOpen}
@@ -611,25 +611,27 @@ export function Dashboard({
                         <BrailleLoader text="Loading room…" />
                       </div>
                     ) : (
-                      <Timeline
-                        messages={messages}
-                        runs={runs}
-                        openRun={openActivity}
-                        currentUserId={user.id}
-                        focusMessageId={focusMessageId}
-                        onFocusHandled={clearFocusMessage}
-                        onEdit={(message) => {
-                          setEditingMessage(message)
-                          setDraft(message.text)
-                        }}
-                        onOpenThread={(nextRootId) => openThread(nextRootId)}
-                        mentionHandles={[
-                          user.name,
-                          ...mentionableAccounts.map(
-                            (account) => account.username ?? account.name,
-                          ),
-                        ]}
-                      />
+                      <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none">
+                        <Timeline
+                          messages={messages}
+                          runs={runs}
+                          openRun={openActivity}
+                          currentUserId={user.id}
+                          focusMessageId={focusMessageId}
+                          onFocusHandled={clearFocusMessage}
+                          onEdit={(message) => {
+                            setEditingMessage(message)
+                            setDraft(message.text)
+                          }}
+                          onOpenThread={(nextRootId) => openThread(nextRootId)}
+                          mentionHandles={[
+                            user.name,
+                            ...mentionableAccounts.map(
+                              (account) => account.username ?? account.name,
+                            ),
+                          ]}
+                        />
+                      </div>
                     )}
                   </div>
                 </section>
