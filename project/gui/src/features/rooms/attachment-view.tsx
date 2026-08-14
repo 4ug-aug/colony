@@ -55,14 +55,14 @@ export function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
             <img
               src={url}
               alt={attachment.filename}
-              className="h-auto max-h-[min(36rem,70vh)] w-auto max-w-full rounded-md border object-contain bg-muted"
+              className="h-auto max-h-[20rem] w-auto max-w-[min(100%,28rem)] rounded-md border object-contain bg-muted"
             />
           </button>
           <Button
             type="button"
             variant="secondary"
             size="icon-xs"
-            className="absolute right-2 bottom-2 shadow-sm cursor-pointer hover:bg-muted"
+            className="absolute right-3 bottom-3 shadow-sm cursor-pointer hover:bg-muted"
             aria-label={`Download ${attachment.filename}`}
             onClick={() => void download()}
           >
@@ -79,7 +79,7 @@ export function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
               <img
                 src={url}
                 alt={attachment.filename}
-                className="block h-auto max-h-[calc(100dvh-1.5rem)] w-auto max-w-[calc(100vw-1.5rem)] object-contain"
+                className="block h-auto max-h-[min(70dvh,40rem)] w-auto max-w-[min(70vw,56rem)] object-contain"
               />
               <div className="absolute top-3 right-3 flex gap-2">
                 <Button
