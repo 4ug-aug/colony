@@ -12,11 +12,23 @@ export type WorkspaceIssuePriority =
   | "medium"
   | "high"
   | "urgent";
-export type WorkspaceIssueOwner =
+export type WorkspaceIssueActor =
   | { kind: "account"; id: string }
   | { kind: "agent"; id: string };
 
+export type WorkspaceIssueOwner = WorkspaceIssueActor;
+
 export type AssignableOwner = WorkspaceIssueOwner & { name: string };
+
+export type WorkspaceIssueCreate = {
+  title: string;
+  description?: string;
+  status?: WorkspaceIssueStatus;
+  priority?: WorkspaceIssuePriority;
+  tags?: string[];
+  parentId?: string;
+  owner?: WorkspaceIssueOwner;
+};
 
 export type WorkspaceIssue = {
   id: string;
@@ -32,6 +44,7 @@ export type WorkspaceIssue = {
   branch?: string;
   effectiveBranch?: string;
   owner?: WorkspaceIssueOwner;
+  createdBy?: WorkspaceIssueActor;
   createdAt: number;
   updatedAt: number;
 };
@@ -39,15 +52,9 @@ export type WorkspaceIssue = {
 export interface WorkspaceIssuesPort {
   listIssues(filter?: { status?: WorkspaceIssueStatus }): WorkspaceIssue[];
   getIssue(ref: string): WorkspaceIssue | undefined;
-  createIssue(input: {
-    title: string;
-    description?: string;
-    status?: WorkspaceIssueStatus;
-    priority?: WorkspaceIssuePriority;
-    tags?: string[];
-    parentId?: string;
-    owner?: WorkspaceIssueOwner;
-  }): WorkspaceIssue;
+  createIssue(
+    input: WorkspaceIssueCreate & { createdBy: WorkspaceIssueActor },
+  ): WorkspaceIssue;
   updateIssue(
     ref: string,
     patch: Partial<{
@@ -210,7 +217,9 @@ const ownerSchemaDescription =
   'Owner as { "kind": "agent" | "account", "id": "<id>" }, or null to clear. Use agent definition ids (e.g. "software-engineer"), not display names.';
 
 export function createWorkspaceIssuesMcpUpstream(options: {
-  port: WorkspaceIssuesPort;
+  port: Omit<WorkspaceIssuesPort, "createIssue"> & {
+    createIssue(input: WorkspaceIssueCreate): WorkspaceIssue;
+  };
   listAssignableOwners?: () => AssignableOwner[];
 }): McpUpstream {
   const assignableOwners = () => options.listAssignableOwners?.() ?? [];

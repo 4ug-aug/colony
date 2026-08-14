@@ -6,6 +6,7 @@ import { Octokit } from "octokit";
 import {
   createGitHubSoftwareEngineerAdapter,
   createWorkspaceGrillAdapter,
+  createWorkspaceIssuesAdapter,
   createWorkspaceSoftwareEngineerAdapter,
 } from "./software-engineer-adapters";
 
@@ -332,3 +333,48 @@ test("GitHub PR publish skips Issue branch bind without issueId", async () => {
     await workspace.dispose();
   }
 }, 15_000);
+
+test("workspace.issues stamps createdBy from grantContext.agentDefinitionId", async () => {
+  const created: unknown[] = [];
+  const adapter = createWorkspaceIssuesAdapter({
+    port: {
+      listIssues: () => [],
+      getIssue: () => undefined,
+      createIssue: (input) => {
+        created.push(input.createdBy);
+        return {
+          id: "id-1",
+          number: 1,
+          title: input.title,
+          description: "",
+          deliverable: "",
+          status: "backlog",
+          priority: "none",
+          tags: [],
+          timeSpent: [],
+          createdAt: 1,
+          updatedAt: 1,
+        };
+      },
+      updateIssue: () => {
+        throw new Error("unused");
+      },
+      assignIssue: () => {
+        throw new Error("unused");
+      },
+    },
+  });
+  expect(() =>
+    adapter.capability!.createUpstream({ grantContext: {} }),
+  ).toThrow(
+    "An agent definition id is required for the workspace issues capability",
+  );
+  const upstream = adapter.capability!.createUpstream({
+    grantContext: { agentDefinitionId: "antboy" },
+  });
+  await upstream.callTool("workspace.create_issue", {
+    title: "From antboy",
+    createdBy: { kind: "account", id: "ada" },
+  });
+  expect(created).toEqual([{ kind: "agent", id: "antboy" }]);
+});

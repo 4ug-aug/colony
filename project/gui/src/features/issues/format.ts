@@ -20,6 +20,9 @@ export function formatIssueMarkdown(
       options?.assignee ??
       (issue.owner ? `${issue.owner.kind}:${issue.owner.id}` : '—')
     }`,
+    `- Creator: ${
+      issue.createdBy ? `${issue.createdBy.kind}:${issue.createdBy.id}` : '—'
+    }`,
     `- Branch: ${issue.effectiveBranch ?? '—'}`,
     `- Tags: ${issue.tags.length > 0 ? issue.tags.join(', ') : '—'}`,
     `- Time spent: ${timeSpent > 0 ? formatTimeSpentMinutes(timeSpent) : '—'}`,

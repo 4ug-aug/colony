@@ -6,6 +6,7 @@ import {
   ISSUE_TITLE_MAX,
   parseIssueRef,
   type Issue,
+  type IssueActor,
   type IssueChildProgress,
   type IssueOwner,
   type IssuePriority,
@@ -24,6 +25,7 @@ export {
   formatIssueId,
   parseIssueRef,
   type Issue,
+  type IssueActor,
   type IssueOwner,
   type IssuePriority,
   type IssueRun,
@@ -40,6 +42,7 @@ export type NewIssue = {
   timeSpent?: number[]
   parentId?: string
   owner?: IssueOwner
+  createdBy: IssueActor
   createdAt: number
 }
 
@@ -83,6 +86,8 @@ type IssueRow = {
   branch: string | null
   owner_kind: 'account' | 'agent' | null
   owner_id: string | null
+  created_by_kind: 'account' | 'agent' | null
+  created_by_id: string | null
   created_at: number
   updated_at: number
 }
@@ -227,6 +232,9 @@ const issueFrom = (
   ...(effectiveBranch ? { effectiveBranch } : {}),
   ...(row.owner_kind && row.owner_id
     ? { owner: { kind: row.owner_kind, id: row.owner_id } }
+    : {}),
+  ...(row.created_by_kind && row.created_by_id
+    ? { createdBy: { kind: row.created_by_kind, id: row.created_by_id } }
     : {}),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -427,8 +435,9 @@ export function createSqliteIssueStore(
           .prepare(
             `INSERT INTO issue (
               id, number, title, description, status, priority, tags, time_spent,
-              parent_id, owner_kind, owner_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              parent_id, owner_kind, owner_id, created_by_kind, created_by_id,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             issue.id,
@@ -442,6 +451,8 @@ export function createSqliteIssueStore(
             issue.parentId ?? null,
             issue.owner?.kind ?? null,
             issue.owner?.id ?? null,
+            issue.createdBy.kind,
+            issue.createdBy.id,
             issue.createdAt,
             issue.createdAt,
           )

@@ -29,7 +29,11 @@ export function createIssuesHttp(deps: {
   agentDefinitions: () => AgentDefinitionSummary[]
   listWorkspaceUsers: () => RoomUser[]
   broadcastWorkspace: (message: WorkspaceServerMessage) => void
-}): (request: Request, url: URL) => Promise<Response | undefined> {
+}): (
+  request: Request,
+  url: URL,
+  user: RoomUser,
+) => Promise<Response | undefined> {
   const knownAgent = (id: unknown): id is string =>
     typeof id === 'string' &&
     deps.agentDefinitions().some((agent) => agent.id === id)
@@ -66,6 +70,57 @@ export function createIssuesHttp(deps: {
     return { ok: true, issue }
   }
 
+  const createIssue = async (request: Request, user: RoomUser) => {
+    const body = await readBody(request)
+    if (!body) return json({ error: 'Invalid Issue' }, 400)
+    try {
+      const parsed = parseIssueCreate(body)
+      if ('error' in parsed) return json({ error: parsed.error }, 400)
+      const ownerError = requireOwner(parsed.owner)
+      if (ownerError) return ownerError
+      const issue = deps.issueStore.createIssue({
+        id: crypto.randomUUID(),
+        title: parsed.title,
+        description: parsed.description,
+        ...(parsed.status ? { status: parsed.status } : {}),
+        ...(parsed.priority ? { priority: parsed.priority } : {}),
+        ...(parsed.tags ? { tags: parsed.tags } : {}),
+        ...(parsed.timeSpent ? { timeSpent: parsed.timeSpent } : {}),
+        ...(parsed.parentId ? { parentId: parsed.parentId } : {}),
+        ...(parsed.owner ? { owner: parsed.owner } : {}),
+        createdBy: { kind: 'account', id: user.id },
+        createdAt: Date.now(),
+      })
+      deps.broadcastWorkspace({ type: 'issue.created', issue })
+      if (parsed.owner?.kind === 'agent' && deps.issueRunner) {
+        try {
+          const started = deps.issueRunner.maybeStartForOwner(issue.id)
+          return json(
+            {
+              issue: started.issue,
+              ...(started.run ? { run: started.run } : {}),
+            },
+            201,
+          )
+        } catch (error) {
+          if (error instanceof IssueActiveRunError)
+            return json({ issue, error: error.message }, 201)
+          if (error instanceof IssueParentCoveredError)
+            return json({ issue }, 201)
+          throw error
+        }
+      }
+      return json({ issue }, 201)
+    } catch (error) {
+      return json(
+        {
+          error: error instanceof Error ? error.message : 'Invalid Issue',
+        },
+        400,
+      )
+    }
+  }
+
   const routes: Route[] = [
     {
       method: 'GET',
@@ -79,60 +134,6 @@ export function createIssuesHttp(deps: {
             status && isIssueStatus(status) ? { status } : undefined,
           ),
         })
-      },
-    },
-    {
-      method: 'POST',
-      path: '/api/issues',
-      handle: async (request) => {
-        const body = await readBody(request)
-        if (!body) return json({ error: 'Invalid Issue' }, 400)
-        try {
-          const parsed = parseIssueCreate(body)
-          if ('error' in parsed) return json({ error: parsed.error }, 400)
-          const ownerError = requireOwner(parsed.owner)
-          if (ownerError) return ownerError
-          const issue = deps.issueStore.createIssue({
-            id: crypto.randomUUID(),
-            title: parsed.title,
-            description: parsed.description,
-            ...(parsed.status ? { status: parsed.status } : {}),
-            ...(parsed.priority ? { priority: parsed.priority } : {}),
-            ...(parsed.tags ? { tags: parsed.tags } : {}),
-            ...(parsed.timeSpent ? { timeSpent: parsed.timeSpent } : {}),
-            ...(parsed.parentId ? { parentId: parsed.parentId } : {}),
-            ...(parsed.owner ? { owner: parsed.owner } : {}),
-            createdAt: Date.now(),
-          })
-          deps.broadcastWorkspace({ type: 'issue.created', issue })
-          if (parsed.owner?.kind === 'agent' && deps.issueRunner) {
-            try {
-              const started = deps.issueRunner.maybeStartForOwner(issue.id)
-              return json(
-                {
-                  issue: started.issue,
-                  ...(started.run ? { run: started.run } : {}),
-                },
-                201,
-              )
-            } catch (error) {
-              if (error instanceof IssueActiveRunError)
-                return json({ issue, error: error.message }, 201)
-              if (error instanceof IssueParentCoveredError)
-                return json({ issue }, 201)
-              throw error
-            }
-          }
-          return json({ issue }, 201)
-        } catch (error) {
-          return json(
-            {
-              error:
-                error instanceof Error ? error.message : 'Invalid Issue',
-            },
-            400,
-          )
-        }
       },
     },
     {
@@ -322,8 +323,20 @@ export function createIssuesHttp(deps: {
   return async (
     request: Request,
     url: URL,
+    user: RoomUser,
   ): Promise<Response | undefined> => {
-    const matched = matchRoute(routes, request.method, url.pathname)
+    const matched = matchRoute(
+      [
+        {
+          method: 'POST',
+          path: '/api/issues',
+          handle: (request) => createIssue(request, user),
+        },
+        ...routes,
+      ],
+      request.method,
+      url.pathname,
+    )
     if (!matched) return undefined
     return matched.handle(request, url, matched.params)
   }

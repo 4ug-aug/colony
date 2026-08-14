@@ -33,6 +33,12 @@ const migration = [
     ),
     'utf8',
   ),
+  readFileSync(
+    fileURLToPath(
+      new URL('../../../../drizzle/0029_issue_created_by.sql', import.meta.url),
+    ),
+    'utf8',
+  ),
 ].join('\n--> statement-breakpoint\n')
 
 const applyMigration = (sqlite: Database) => {
@@ -43,6 +49,8 @@ const applyMigration = (sqlite: Database) => {
   }
 }
 
+const ada = { kind: 'account' as const, id: 'ada' }
+
 test('issue store allocates COL numbers and accepts legacy SWE references', () => {
   const sqlite = new Database(':memory:')
   applyMigration(sqlite)
@@ -52,6 +60,7 @@ test('issue store allocates COL numbers and accepts legacy SWE references', () =
     id: 'parent',
     title: 'Ship dock badge',
     description: 'Parent feature',
+    createdBy: ada,
     createdAt: 1,
   })
   expect(parent).toMatchObject({ number: 1, status: 'backlog', priority: 'none' })
@@ -61,6 +70,7 @@ test('issue store allocates COL numbers and accepts legacy SWE references', () =
     id: 'child-a',
     title: 'UI badge',
     parentId: parent.id,
+    createdBy: ada,
     createdAt: 2,
   })
   const childB = store.createIssue({
@@ -68,6 +78,7 @@ test('issue store allocates COL numbers and accepts legacy SWE references', () =
     title: 'Wire notifications',
     parentId: parent.id,
     status: 'done',
+    createdBy: ada,
     createdAt: 3,
   })
   expect(childA.number).toBe(2)
@@ -176,12 +187,14 @@ test('deleteIssue removes the issue, cascades runs, and orphans children', () =>
   const parent = store.createIssue({
     id: 'parent',
     title: 'Parent',
+    createdBy: ada,
     createdAt: 1,
   })
   const child = store.createIssue({
     id: 'child',
     title: 'Child',
     parentId: parent.id,
+    createdBy: ada,
     createdAt: 2,
   })
   store.createRun({
@@ -210,11 +223,17 @@ test('issue store rejects parent cycles and oversized descriptions', () => {
   const sqlite = new Database(':memory:')
   applyMigration(sqlite)
   const store = createSqliteIssueStore(sqlite)
-  const a = store.createIssue({ id: 'a', title: 'A', createdAt: 1 })
+  const a = store.createIssue({
+    id: 'a',
+    title: 'A',
+    createdBy: ada,
+    createdAt: 1,
+  })
   const b = store.createIssue({
     id: 'b',
     title: 'B',
     parentId: a.id,
+    createdBy: ada,
     createdAt: 2,
   })
   expect(() =>
@@ -225,6 +244,7 @@ test('issue store rejects parent cycles and oversized descriptions', () => {
       id: 'huge',
       title: 'Huge',
       description: 'x'.repeat(10_001),
+      createdBy: ada,
       createdAt: 4,
     }),
   ).toThrow('Invalid Issue description')
@@ -239,6 +259,7 @@ test('issue branch binding resolves own and inherited effectiveBranch', () => {
   const parent = store.createIssue({
     id: 'parent',
     title: 'Parent',
+    createdBy: ada,
     createdAt: 1,
   })
   store.updateIssue(parent.id, { branch: 'feat/parent' }, 2)
@@ -252,6 +273,7 @@ test('issue branch binding resolves own and inherited effectiveBranch', () => {
     id: 'child',
     title: 'Child',
     parentId: parent.id,
+    createdBy: ada,
     createdAt: 3,
   })
   expect(store.getIssue(child.id)).toMatchObject({
@@ -269,12 +291,14 @@ test('issue branch binding resolves own and inherited effectiveBranch', () => {
     id: 'middle',
     title: 'Middle',
     parentId: parent.id,
+    createdBy: ada,
     createdAt: 5,
   })
   const grandchild = store.createIssue({
     id: 'grandchild',
     title: 'Grandchild',
     parentId: middle.id,
+    createdBy: ada,
     createdAt: 6,
   })
   expect(store.getIssue(grandchild.id)?.effectiveBranch).toBe('feat/parent')
@@ -303,5 +327,61 @@ test('issue branch binding resolves own and inherited effectiveBranch', () => {
   expect(parentTask).toContain('COL-2 [backlog] — Child — feat/parent')
   expect(parentTask).toContain('COL-3 [backlog] — Middle — feat/x')
 
+  sqlite.close()
+})
+
+test('issue store retains createdBy for account and agent creators', () => {
+  const sqlite = new Database(':memory:')
+  applyMigration(sqlite)
+  sqlite
+    .prepare(
+      `INSERT INTO issue (
+        id, number, title, description, status, priority, tags, time_spent,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      'legacy',
+      1,
+      'Legacy',
+      '',
+      'backlog',
+      'none',
+      '[]',
+      '[]',
+      1,
+      1,
+    )
+  sqlite.prepare('UPDATE issue_counter SET next_number = 2 WHERE id = 1').run()
+  const store = createSqliteIssueStore(sqlite)
+
+  expect(store.getIssue('legacy')?.createdBy).toBeUndefined()
+
+  const fromAccount = store.createIssue({
+    id: 'from-account',
+    title: 'From account',
+    createdBy: { kind: 'account', id: 'ada' },
+    createdAt: 2,
+  })
+  expect(store.getIssue(fromAccount.id)?.createdBy).toEqual({
+    kind: 'account',
+    id: 'ada',
+  })
+
+  const fromAgent = store.createIssue({
+    id: 'from-agent',
+    title: 'From agent',
+    createdBy: { kind: 'agent', id: 'software-engineer' },
+    createdAt: 3,
+  })
+  expect(store.getIssue(fromAgent.id)?.createdBy).toEqual({
+    kind: 'agent',
+    id: 'software-engineer',
+  })
+  expect(store.listIssues().map((issue) => issue.createdBy)).toEqual([
+    undefined,
+    { kind: 'account', id: 'ada' },
+    { kind: 'agent', id: 'software-engineer' },
+  ])
   sqlite.close()
 })

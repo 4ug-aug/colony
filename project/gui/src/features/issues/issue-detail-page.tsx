@@ -27,6 +27,7 @@ import { IssueDeleteButton } from './issue-delete-menu'
 import { IssueStatusIcon } from './issue-icons'
 import { IssueLiveWork } from './issue-live-work'
 import {
+  OwnerDisplay,
   OwnerPicker,
   PriorityPicker,
   StatusPicker,
@@ -444,6 +445,17 @@ export function IssueDetailPage({
             </RailRow>
             <RailRow label="Assignee">
               <OwnerPicker issue={issue} />
+            </RailRow>
+            <RailRow label="Creator">
+              {issue.createdBy ? (
+                <div className="px-1.5 pt-1">
+                  <OwnerDisplay owner={issue.createdBy} />
+                </div>
+              ) : (
+                <span className="px-1.5 pt-1.5 text-sm text-muted-foreground">
+                  —
+                </span>
+              )}
             </RailRow>
             <RailRow label="Branch">
               {issue.effectiveBranch ? (

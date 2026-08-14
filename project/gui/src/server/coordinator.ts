@@ -1064,7 +1064,7 @@ export function createCoordinator(options: {
         return cors(json({ agents: agentDefinitions() }))
       const handled =
         (schedulesHttp ? await schedulesHttp(request, url, user) : undefined) ??
-        (issuesHttp ? await issuesHttp(request, url) : undefined) ??
+        (issuesHttp ? await issuesHttp(request, url, user) : undefined) ??
         (bulletinsHttp ? await bulletinsHttp(request, url, user) : undefined) ??
         (docsHttp ? await docsHttp(request, url, user) : undefined) ??
         (grillsHttp ? await grillsHttp(request, url, user) : undefined) ??
@@ -1189,6 +1189,7 @@ if (import.meta.main) {
         title: input.title,
         description: input.description,
         ...(input.parentId ? { parentId: input.parentId } : {}),
+        createdBy: input.createdBy,
         createdAt: input.createdAt,
       }),
     createDoc: (input) =>
@@ -1331,6 +1332,7 @@ if (import.meta.main) {
                 ...(input.tags ? { tags: input.tags } : {}),
                 ...(input.parentId ? { parentId: input.parentId } : {}),
                 ...(input.owner ? { owner: input.owner } : {}),
+                createdBy: input.createdBy,
                 createdAt: Date.now(),
               })
               issueNotify.onCreated(issue)

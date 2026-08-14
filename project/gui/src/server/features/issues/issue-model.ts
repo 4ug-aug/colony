@@ -23,9 +23,11 @@ export const ISSUE_PRIORITIES = [
 
 export type IssuePriority = (typeof ISSUE_PRIORITIES)[number]
 
-export type IssueOwner =
+export type IssueActor =
   | { kind: 'account'; id: string }
   | { kind: 'agent'; id: string }
+
+export type IssueOwner = IssueActor
 
 export type IssueChildProgress = { done: number; total: number }
 
@@ -46,6 +48,7 @@ export type Issue = {
   effectiveBranch?: string
   branchUrl?: string
   owner?: IssueOwner
+  createdBy?: IssueActor
   createdAt: number
   updatedAt: number
   childProgress?: IssueChildProgress

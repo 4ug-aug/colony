@@ -114,6 +114,18 @@ test("create, assign, and get Issues through MCP tools", async () => {
   expect(port.issues).toHaveLength(1);
 });
 
+test("create_issue does not accept createdBy from tool args", async () => {
+  const port = makePort();
+  const upstream = createWorkspaceIssuesMcpUpstream({ port });
+  const created = (await upstream.callTool("workspace.create_issue", {
+    title: "From agent",
+    createdBy: { kind: "account", id: "ada" },
+  })) as { content: { text: string }[] };
+  const issue = JSON.parse(created.content[0]!.text) as WorkspaceIssue;
+  expect(issue.title).toBe("From agent");
+  expect(issue.createdBy).toBeUndefined();
+});
+
 test("assign_issue explains owner shape and suggests close matches", async () => {
   const upstream = createWorkspaceIssuesMcpUpstream({
     port: makePort([

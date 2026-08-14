@@ -72,13 +72,27 @@ export function createWorkspaceIssuesAdapter(options: {
   return {
     capability: {
       id: "workspace.issues",
-      createUpstream: () =>
-        createWorkspaceIssuesMcpUpstream({
-          port: options.port,
+      createUpstream({ grantContext }) {
+        const agentDefinitionId = grantContext?.agentDefinitionId;
+        if (!agentDefinitionId) {
+          throw new Error(
+            "An agent definition id is required for the workspace issues capability",
+          );
+        }
+        return createWorkspaceIssuesMcpUpstream({
+          port: {
+            ...options.port,
+            createIssue: (input) =>
+              options.port.createIssue({
+                ...input,
+                createdBy: { kind: "agent", id: agentDefinitionId },
+              }),
+          },
           ...(options.listAssignableOwners
             ? { listAssignableOwners: options.listAssignableOwners }
             : {}),
-        }),
+        });
+      },
     },
   };
 }

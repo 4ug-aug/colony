@@ -266,6 +266,7 @@ test('Issue proposal can be revised, confirmed into Issues, or discarded without
     title: string
     description: string
     parentId?: string
+    createdBy: { kind: 'account'; id: string }
   }> = []
   const { store, sqlite } = harness({
     createIssue: (input) => {
@@ -274,6 +275,7 @@ test('Issue proposal can be revised, confirmed into Issues, or discarded without
         title: input.title,
         description: input.description,
         ...(input.parentId ? { parentId: input.parentId } : {}),
+        createdBy: input.createdBy,
       })
       return { id: input.id }
     },
@@ -330,18 +332,21 @@ test('Issue proposal can be revised, confirmed into Issues, or discarded without
       id: expect.any(String),
       title: 'Ship Grill',
       description: 'Parent',
+      createdBy: { kind: 'account', id: 'ada' },
     },
     {
       id: expect.any(String),
       title: 'Frontier UI',
       description: '',
       parentId: created[0]!.id,
+      createdBy: { kind: 'account', id: 'ada' },
     },
     {
       id: expect.any(String),
       title: 'Proposal API',
       description: '',
       parentId: created[0]!.id,
+      createdBy: { kind: 'account', id: 'ada' },
     },
   ])
   expect(confirmed?.issues.map((issue) => issue.title)).toEqual([

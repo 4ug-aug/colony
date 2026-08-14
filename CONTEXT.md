@@ -235,6 +235,11 @@ assigning (or creating) Issues to other agent definitions, not a separate
 delegation type.
 _Avoid_: Assignee, owners (plural), worker, run participant
 
+**Issue creator**: The Account or Agent definition that created the Issue.
+Retained as attribution; it is distinct from the Issue owner and does not
+change when ownership is assigned.
+_Avoid_: Author, reporter, opened by
+
 **Issue time spent**: An ordered list of minute durations logged against an
 Issue. Total spent is the sum of those numbers; v1 entries carry no actor or
 timestamp.

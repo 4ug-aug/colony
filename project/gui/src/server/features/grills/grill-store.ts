@@ -104,6 +104,7 @@ export type GrillStoreDeps = {
     title: string
     description: string
     parentId?: string
+    createdBy: { kind: 'account'; id: string }
     createdAt: number
   }) => { id: string }
   createDoc?: (input: {
@@ -811,6 +812,7 @@ export function createSqliteGrillStore(
             title: issue.title,
             description,
             ...(parentId ? { parentId } : {}),
+            createdBy: { kind: 'account', id: current.createdBy },
             createdAt: now,
           })
           keyToId.set(key, id)

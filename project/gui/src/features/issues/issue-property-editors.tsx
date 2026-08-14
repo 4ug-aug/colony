@@ -27,7 +27,13 @@ import { cn } from '#/lib/utils'
 import { formatIssueId, formatTimeSpentMinutes } from './format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
 import { LabelDot, IssueLabelChip } from './issue-labels'
-import type { Issue, IssueOwner, IssuePriority, IssueStatus } from './types'
+import type {
+  Issue,
+  IssueActor,
+  IssueOwner,
+  IssuePriority,
+  IssueStatus,
+} from './types'
 import {
   ISSUE_PRIORITIES,
   ISSUE_PRIORITY_LABEL,
@@ -63,7 +69,7 @@ export function OwnerDisplay({
   owner,
   className,
 }: {
-  owner?: IssueOwner
+  owner?: IssueActor
   className?: string
 }) {
   const { data: agents = [] } = useAgentDefinitions()

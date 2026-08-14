@@ -1,5 +1,6 @@
 export type {
   Issue,
+  IssueActor,
   IssueOwner,
   IssuePriority,
   IssueRun,
