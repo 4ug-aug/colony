@@ -83,7 +83,7 @@ function ChildProgressChip({
                 }}
               >
                 <IssueStatusIcon status={child.status} />
-                <span className="w-12 shrink-0 tabular-nums text-muted-foreground">
+                <span className="w-14 shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">
                   {formatIssueId(child.number)}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{child.title}</span>
