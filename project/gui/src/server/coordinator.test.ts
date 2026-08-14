@@ -564,6 +564,21 @@ class MemoryRoomStore implements RoomStore {
     }
     return counts
   }
+  listOpenThreadAttentionRootIds(userId: string, roomId: string) {
+    return [
+      ...new Set(
+        this.attentions.flatMap((attention) =>
+          attention.recipientId === userId &&
+          attention.roomId === roomId &&
+          attention.kind === 'thread_reply' &&
+          attention.acknowledgedAt === undefined &&
+          attention.rootId
+            ? [attention.rootId]
+            : [],
+        ),
+      ),
+    ].sort()
+  }
   acknowledgeRoomAttention(roomId: string, userId: string, at: number) {
     this.attentions = this.attentions.map((attention) =>
       attention.roomId === roomId &&
@@ -1547,6 +1562,67 @@ test('a reply creates Thread Attention for the root author and prior participant
     rootAuthorAgain.socket.close()
     priorReplier.socket.close()
     secondReplyAuthor.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('room and workspace snapshots include threadAttentionRootIds for the recipient', async () => {
+  let currentUser = 'user-1'
+  const users: RoomUser[] = [
+    { id: 'user-1', name: 'ada', username: 'ada' },
+    { id: 'user-2', name: 'bob', username: 'bob' },
+  ]
+  const store = new MemoryRoomStore()
+  store.workspaceUsers = users
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    authenticator: {
+      authenticate: async () => users.find(({ id }) => id === currentUser),
+    },
+  })
+  try {
+    currentUser = 'user-1'
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+    currentUser = 'user-2'
+    await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'A reply', rootId: root.id }),
+    })
+
+    currentUser = 'user-1'
+    const wsBase = base.replace('http', 'ws')
+    const workspace = await open(`${wsBase}/api/workspace/stream`)
+    expect(await workspace.next()).toMatchObject({
+      type: 'workspace.snapshot',
+      rooms: [
+        expect.objectContaining({
+          id: GENERAL_ROOM_ID,
+          threadAttentionRootIds: [root.id],
+        }),
+      ],
+    })
+    const room = await open(`${wsBase}/api/rooms/general/stream`)
+    expect(await room.next()).toMatchObject({
+      type: 'room.snapshot',
+      room: { threadAttentionRootIds: [root.id] },
+    })
+    workspace.socket.close()
+    room.socket.close()
   } finally {
     coordinator.stop()
   }

@@ -18,6 +18,8 @@ export type Room = {
   attentionCount: number
   mentionCount: number
   latestOtherMessage?: RoomMessageMarker
+  /** Unacked Thread Attention roots for the current Account. */
+  threadAttentionRootIds?: string[]
 }
 export type RoomMessageMarker = {
   id: string

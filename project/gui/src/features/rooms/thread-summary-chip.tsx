@@ -3,6 +3,7 @@ import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
+import { cn } from '#/lib/utils'
 import type { ThreadParticipant } from './types'
 
 function ReplyAvatars({ participants }: { participants: ThreadParticipant[] }) {
@@ -42,21 +43,36 @@ export function ThreadSummaryChip({
   replyCount,
   participants,
   latestReplyAt,
+  unread = false,
   onOpen,
 }: {
   replyCount: number
   participants: ThreadParticipant[]
   latestReplyAt: number
+  unread?: boolean
   onOpen: () => void
 }) {
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 rounded-md border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-2 text-xs hover:bg-muted cursor-pointer',
+        unread
+          ? 'border-green-500/40 bg-green-500/10 text-foreground'
+          : 'bg-muted/30 text-muted-foreground',
+      )}
+      aria-label={
+        unread
+          ? `${replyCount} unread ${replyCount === 1 ? 'reply' : 'replies'}`
+          : undefined
+      }
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onOpen}
     >
       <ReplyAvatars participants={participants} />
+      {unread && (
+        <span className="size-2 rounded-full bg-green-500" aria-hidden="true" />
+      )}
       <span className="font-medium text-foreground">
         {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
       </span>

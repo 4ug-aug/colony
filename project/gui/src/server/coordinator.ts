@@ -145,6 +145,8 @@ export type WorkspaceRoom = RoomSummary & {
   attentionCount: number
   mentionCount: number
   latestOtherMessage?: RoomMessageMarker
+  /** Unacked Thread Attention roots for the current Account. */
+  threadAttentionRootIds?: string[]
 }
 export type WorkspaceServerMessage =
   | { type: 'workspace.snapshot'; rooms: WorkspaceRoom[] }
@@ -373,11 +375,16 @@ export function createCoordinator(options: {
         room.id,
         userId,
       )
+      const threadAttentionRootIds =
+        options.store.listOpenThreadAttentionRootIds(userId, room.id)
       return {
         ...room,
         attentionCount: counts.get(room.id) ?? 0,
         mentionCount: mentionCounts.get(room.id) ?? 0,
         ...(latestOtherMessage ? { latestOtherMessage } : {}),
+        ...(threadAttentionRootIds.length > 0
+          ? { threadAttentionRootIds }
+          : {}),
       }
     })
   }
@@ -658,6 +665,9 @@ export function createCoordinator(options: {
         mentionCount: roomState?.mentionCount ?? 0,
         ...(roomState?.latestOtherMessage
           ? { latestOtherMessage: roomState.latestOtherMessage }
+          : {}),
+        ...(roomState?.threadAttentionRootIds
+          ? { threadAttentionRootIds: roomState.threadAttentionRootIds }
           : {}),
       },
       messages: page.messages,

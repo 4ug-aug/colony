@@ -109,6 +109,8 @@ export function Dashboard({
     loadingOlder,
     hasOlderMessages,
     notificationByRoom,
+    threadAttentionRootIds,
+    clearThreadAttention,
   } = useRooms(user.id)
   const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
   const [location, setLocation] = useState<DashboardLocation>(() => {
@@ -136,6 +138,7 @@ export function Dashboard({
     applyLocation(next)
   }
   const openThread = (rootId: string, threadFocusReplyId?: string) => {
+    clearThreadAttention(rootId)
     if (
       location.surface?.kind === 'thread' &&
       location.surface.rootId === rootId &&
@@ -601,6 +604,7 @@ export function Dashboard({
                         currentUserId={user.id}
                         focusMessageId={focusMessageId}
                         onFocusHandled={clearFocusMessage}
+                        unreadThreadRootIds={threadAttentionRootIds}
                         onEdit={(message) => {
                           setEditingMessage(message)
                           setDraft(message.text)

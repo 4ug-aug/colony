@@ -202,6 +202,8 @@ export interface RoomStore {
   createAttention(attention: RoomAttention): boolean
   listMentionRecipientIds(messageId: string): string[]
   listAttentionCounts(userId: string, kind?: AttentionKind): Map<string, number>
+  /** Distinct unacked thread_reply root ids for a recipient in one room. */
+  listOpenThreadAttentionRootIds(userId: string, roomId: string): string[]
   /** Clears all open attention for a room except thread_reply, which requires opening the thread itself. */
   acknowledgeRoomAttention(roomId: string, userId: string, at: number): void
   /** Clears only the open thread_reply attention for one root, leaving other threads and room-level attention untouched. */
@@ -1127,6 +1129,23 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         count: number
       }[]
       return new Map(rows.map(({ room_id, count }) => [room_id, count]))
+    },
+    listOpenThreadAttentionRootIds: (userId, roomId) => {
+      if (!hasAttentionRootId) return []
+      return (
+        sqlite
+          .prepare(
+            `SELECT DISTINCT a.root_id AS root_id
+             FROM room_attention a
+             WHERE a.recipient_id = ?
+               AND a.room_id = ?
+               AND a.kind = 'thread_reply'
+               AND a.acknowledged_at IS NULL
+               AND a.root_id IS NOT NULL
+             ORDER BY a.root_id`,
+          )
+          .all(userId, roomId) as { root_id: string }[]
+      ).map(({ root_id }) => root_id)
     },
     acknowledgeRoomAttention: (roomId, userId, at) => {
       sqlite
