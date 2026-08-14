@@ -226,11 +226,13 @@ _Avoid_: UUID-as-display-id, ticket number, per-workspace prefix
 
 **Issue owner**: The single Account or Agent definition responsible for an
 Issue. Child Issues keep their own owners; assigning a parent does not cascade
-ownership. When a child's parent is owned by an Agent definition (**parent
-cover**), Start run on the child is blocked and assigning an agent to the child
-does not auto-start a run — the parent's Issue-linked run carries child context
-instead. Agent-to-agent hand-off is assigning (or creating) Issues to other
-agent definitions, not a separate delegation type.
+ownership. When a child's parent is owned by an Agent definition and that
+parent has an active Issue-linked run (**parent cover**), Start run on the
+child is blocked and assigning an agent to the child does not auto-start a
+run — the parent's run carries child context instead. Cover lifts when the
+parent run is no longer preparing or running. Agent-to-agent hand-off is
+assigning (or creating) Issues to other agent definitions, not a separate
+delegation type.
 _Avoid_: Assignee, owners (plural), worker, run participant
 
 **Issue time spent**: An ordered list of minute durations logged against an

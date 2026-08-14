@@ -289,6 +289,18 @@ test('parent cover blocks startRun and assign-agent auto-start', () => {
     title: 'Child',
   })
   const store = fakeStore(child, [parent])
+  store.createRun({
+    id: 'parent-run',
+    issueId: 'parent',
+    task: 'parent',
+    agentId: 'antboy',
+    provider: 'cursor',
+    model: '',
+    state: 'running',
+    createdAt: 1,
+    stdout: '',
+    stderr: '',
+  })
   const control = fakeControl()
   const runner = createIssueRunner({ store, control })
   expect(() =>
@@ -305,6 +317,34 @@ test('parent cover blocks startRun and assign-agent auto-start', () => {
   })
   expect(assigned.run).toBeUndefined()
   expect(control.starts).toHaveLength(0)
+})
+
+test('idle agent-owned parent does not cover; child auto-starts from inherited branch', () => {
+  const parent = baseIssue({
+    id: 'parent',
+    number: 1,
+    owner: { kind: 'agent', id: 'antboy' },
+    effectiveBranch: 'feat/initiative',
+  })
+  const child = baseIssue({
+    id: 'child',
+    number: 2,
+    parentId: 'parent',
+    title: 'Child',
+    effectiveBranch: 'feat/initiative',
+  })
+  const store = fakeStore(child, [parent])
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  const assigned = runner.assignOwner('child', {
+    kind: 'agent',
+    id: 'software-engineer',
+  } satisfies IssueOwner)
+  expect(assigned.run?.agentId).toBe('software-engineer')
+  expect(control.starts[0]?.context).toMatchObject({
+    issueId: 'child',
+    repositoryBase: 'feat/initiative',
+  })
 })
 
 test('startRun includes children in the parent task', () => {

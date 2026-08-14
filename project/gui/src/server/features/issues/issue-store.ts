@@ -172,14 +172,14 @@ export function buildIssueRunTask(
   return lines.join('\n')
 }
 
-/** True when this Issue's parent is owned by an agent (parent cover). */
+/** True while the parent is agent-owned and has an active Issue-linked run. */
 export function isParentCovered(
-  store: Pick<IssueStore, 'getIssue'>,
+  store: Pick<IssueStore, 'getIssue' | 'hasActiveRun'>,
   issue: Issue,
 ): boolean {
   if (!issue.parentId) return false
   const parent = store.getIssue(issue.parentId)
-  return parent?.owner?.kind === 'agent'
+  return parent?.owner?.kind === 'agent' && store.hasActiveRun(parent.id)
 }
 
 const parseJsonArray = <T>(
