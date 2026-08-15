@@ -565,6 +565,11 @@ export function createCoordinator(options: {
         issueRunner!.assignOwner(issueId, owner)
       options.issueNotify.maybeStartForOwner = (issueId) =>
         issueRunner!.maybeStartForOwner(issueId)
+      const broadcastChanged = options.issueNotify.onChanged
+      options.issueNotify.onChanged = (issue) => {
+        broadcastChanged(issue)
+        issueRunner!.noteChanged(issue)
+      }
     }
   }
   const oneshotSession = createOneshotSession({ control: options.control })

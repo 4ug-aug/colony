@@ -434,3 +434,179 @@ test('succeeded run overwrites Issue Deliverable', () => {
   })
   expect(store.getIssue('issue-1')?.deliverable).toBe('Done: badge shipped.')
 })
+
+const settledTree = () => {
+  const parent = baseIssue({
+    id: 'parent',
+    number: 1,
+    title: 'Add auth',
+    status: 'in_progress',
+    owner: { kind: 'agent', id: 'antboy' },
+  })
+  const childUi = baseIssue({
+    id: 'child-ui',
+    number: 2,
+    parentId: 'parent',
+    title: 'Login UI',
+    status: 'in_review',
+    deliverable: 'UI shipped.',
+  })
+  const childApi = baseIssue({
+    id: 'child-api',
+    number: 3,
+    parentId: 'parent',
+    title: 'Session API',
+    status: 'todo',
+    deliverable: 'Session API shipped.',
+  })
+  return fakeStore(parent, [childUi, childApi])
+}
+
+test('last direct child to In review starts an integrate run on an idle agent-owned parent', () => {
+  const store = settledTree()
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.noteChanged(store.getIssue('child-ui')!)
+  expect(control.starts).toHaveLength(0)
+
+  store.updateIssue('child-api', { status: 'in_review' }, 2)
+  runner.noteChanged(store.getIssue('child-api')!)
+  expect(control.starts).toHaveLength(1)
+  expect(control.starts[0]?.context).toMatchObject({ issueId: 'parent' })
+  expect(control.starts[0]?.task).toContain('Session API shipped.')
+  expect(control.starts[0]?.task).toContain('UI shipped.')
+})
+
+test('parent run ending starts integrate when children already settled', () => {
+  const store = settledTree()
+  store.updateIssue('child-api', { status: 'done' }, 2)
+  store.createRun({
+    id: 'dispatch',
+    issueId: 'parent',
+    task: 'dispatch',
+    agentId: 'antboy',
+    provider: 'openai',
+    model: '',
+    state: 'running',
+    createdAt: 1,
+    stdout: '',
+    stderr: '',
+  })
+  const listeners: Array<(run: RunSummary) => void> = []
+  const control = fakeControl([], listeners)
+  const runner = createIssueRunner({ store, control })
+  runner.noteChanged(store.getIssue('child-api')!)
+  expect(control.starts).toHaveLength(0)
+
+  control.emit({
+    id: 'dispatch',
+    task: 'dispatch',
+    state: 'succeeded',
+    createdAt: 1,
+    stdout: 'Children assigned.',
+    stderr: '',
+    agentId: 'antboy',
+    provider: 'openai',
+    model: '',
+  })
+  expect(control.starts).toHaveLength(1)
+  expect(control.starts[0]?.context).toMatchObject({ issueId: 'parent' })
+  expect(store.getIssue('parent')?.deliverable).toBe('Children assigned.')
+})
+
+test('grandchild settlement does not start a grandparent integrate run', () => {
+  const parent = baseIssue({
+    id: 'parent',
+    number: 1,
+    status: 'in_progress',
+    owner: { kind: 'agent', id: 'antboy' },
+  })
+  const child = baseIssue({
+    id: 'child',
+    number: 2,
+    parentId: 'parent',
+    status: 'in_progress',
+    owner: { kind: 'account', id: 'ada' },
+  })
+  const grandchild = baseIssue({
+    id: 'grandchild',
+    number: 3,
+    parentId: 'child',
+    status: 'in_review',
+  })
+  const store = fakeStore(parent, [child, grandchild])
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.noteChanged(store.getIssue('grandchild')!)
+  expect(control.starts).toHaveLength(0)
+})
+
+test('parent already In review does not get an integrate run', () => {
+  const store = settledTree()
+  store.updateIssue('parent', { status: 'in_review' }, 2)
+  store.updateIssue('child-api', { status: 'done' }, 3)
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.noteChanged(store.getIssue('child-api')!)
+  expect(control.starts).toHaveLength(0)
+})
+
+test('failed child left In progress blocks integrate and does not auto-retry', () => {
+  const store = settledTree()
+  store.updateIssue('child-api', { status: 'in_progress' }, 2)
+  store.createRun({
+    id: 'child-run',
+    issueId: 'child-api',
+    task: 'api',
+    agentId: 'software-engineer',
+    provider: 'openai',
+    model: '',
+    state: 'running',
+    createdAt: 1,
+    stdout: '',
+    stderr: '',
+  })
+  const listeners: Array<(run: RunSummary) => void> = []
+  const control = fakeControl([], listeners)
+  const runner = createIssueRunner({ store, control })
+  control.emit({
+    id: 'child-run',
+    task: 'api',
+    state: 'failed',
+    createdAt: 1,
+    stdout: '',
+    stderr: 'boom',
+    agentId: 'software-engineer',
+    provider: 'openai',
+    model: '',
+  })
+  runner.noteChanged(store.getIssue('child-ui')!)
+  expect(control.starts).toHaveLength(0)
+  expect(store.getIssue('child-api')?.status).toBe('in_progress')
+  expect(store.hasActiveRun('child-api')).toBe(false)
+})
+
+test('succeeded integrate writes parent Deliverable and does not retry while parent stays In progress', () => {
+  const store = settledTree()
+  store.updateIssue('child-api', { status: 'in_review' }, 2)
+  const listeners: Array<(run: RunSummary) => void> = []
+  const control = fakeControl([], listeners)
+  const runner = createIssueRunner({ store, control })
+  runner.noteChanged(store.getIssue('child-api')!)
+  expect(control.starts).toHaveLength(1)
+  const run = store.listRuns('parent')[0]!
+  control.emit({
+    id: run.id,
+    task: run.task,
+    state: 'succeeded',
+    createdAt: run.createdAt,
+    stdout: 'Auth integrated.',
+    stderr: '',
+    agentId: 'antboy',
+    provider: 'openai',
+    model: '',
+  })
+  expect(store.getIssue('parent')?.deliverable).toBe('Auth integrated.')
+  expect(store.getIssue('parent')?.status).toBe('in_progress')
+  expect(control.starts).toHaveLength(1)
+})

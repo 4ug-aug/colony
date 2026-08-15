@@ -34,6 +34,8 @@ export type IssueRunner = {
   ): { issue: Issue; run?: IssueRun }
   /** After create with an agent owner — start a run when the Issue is idle. */
   maybeStartForOwner(issueId: string): { issue: Issue; run?: IssueRun }
+  /** After an Issue changes, start an integrate run on its parent when direct children have settled. */
+  noteChanged(issue: Issue): void
   cancel(runId: string): Promise<IssueRun | undefined>
   failStaleRuns(): IssueRun[]
   stop(): void
@@ -49,14 +51,41 @@ export function createIssueRunner(options: {
   onStep?: (step: IssueRunStep) => void
 }): IssueRunner {
   const now = options.now ?? Date.now
+  const pendingIntegrate = new Set<string>()
+  const settled = (status: Issue['status']) =>
+    status === 'in_review' || status === 'done'
+  const ended = (state: RunSummary['state']) =>
+    state === 'succeeded' || state === 'failed' || state === 'cancelled'
+
+  const considerIntegrate = (parentId: string): void => {
+    const parent = options.store.getIssue(parentId)
+    if (!parent) return
+    const children = options.store.listChildIssues(parent.id)
+    if (children.length === 0) return
+    if (!children.every((child) => settled(child.status))) return
+    if (parent.owner?.kind !== 'agent') return
+    if (settled(parent.status)) return
+    if (options.store.hasActiveRun(parent.id)) {
+      pendingIntegrate.add(parent.id)
+      return
+    }
+    try {
+      startRun(parent.id)
+    } catch (error) {
+      if (error instanceof IssueActiveRunError) return
+      throw error
+    }
+  }
+
   const project = (summary: RunSummary): void => {
     const existing = options.store.getRun(summary.id)
     if (!existing) return
-    const wasSucceeded = existing.state === 'succeeded'
+    const wasActive =
+      existing.state === 'preparing' || existing.state === 'running'
     const changed = { ...existing, ...summary }
     options.store.updateRun(changed)
     options.onRunChange?.(changed)
-    if (!wasSucceeded && changed.state === 'succeeded') {
+    if (wasActive && changed.state === 'succeeded') {
       try {
         const updated = options.store.setDeliverable(
           changed.issueId,
@@ -72,6 +101,12 @@ export function createIssueRunner(options: {
         )
       }
     }
+    if (
+      wasActive &&
+      ended(changed.state) &&
+      pendingIntegrate.delete(changed.issueId)
+    )
+      considerIntegrate(changed.issueId)
   }
   const unsubscribe = options.control.subscribe(project)
   const unsubscribeSteps = options.control.subscribeSteps((runId, step) => {
@@ -155,6 +190,10 @@ export function createIssueRunner(options: {
       return startRun(issueId)
     },
     maybeStartForOwner,
+    noteChanged: (issue) => {
+      if (!settled(issue.status) || !issue.parentId) return
+      considerIntegrate(issue.parentId)
+    },
     cancel: async (runId) => {
       const run = await options.control.cancel(runId)
       return run ? options.store.getRun(run.id) : undefined

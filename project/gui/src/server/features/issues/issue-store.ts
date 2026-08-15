@@ -175,7 +175,11 @@ export function buildIssueRunTask(
             const branch = child.effectiveBranch
               ? ` — ${child.effectiveBranch}`
               : ''
-            return `${formatIssueId(child.number)} [${child.status}] — ${child.title}${branch}`
+            return `${formatIssueId(child.number)} [${child.status}] — ${child.title}${branch}${
+              child.deliverable.trim()
+                ? `\nDeliverable: ${child.deliverable}`
+                : ''
+            }`
           })
           .join('\n'),
       ),

@@ -159,6 +159,7 @@ export function createIssuesHttp(deps: {
             Date.now(),
           )
           deps.broadcastWorkspace({ type: 'issue.changed', issue: updated })
+          deps.issueRunner?.noteChanged(updated)
           return json({ issue: updated })
         } catch (error) {
           return json(

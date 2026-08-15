@@ -190,3 +190,29 @@ test('child assign, create, and start run while the parent run is active', async
     ]),
   )
 })
+
+test('PATCH last child to In review starts a parent integrate run when the parent is idle', async () => {
+  const { call, issueStore } = harness()
+  const parent = await call('POST', '/api/issues', {
+    title: 'Add auth',
+    owner: { kind: 'agent', id: 'antboy' },
+  })
+  const dispatch = issueStore.listRuns(parent.body.issue.id)[0]!
+  issueStore.updateRun({ ...dispatch, state: 'succeeded' })
+
+  const ui = await call('POST', '/api/issues', {
+    title: 'Login UI',
+    parentId: parent.body.issue.id,
+  })
+  const api = await call('POST', '/api/issues', {
+    title: 'Session API',
+    parentId: parent.body.issue.id,
+  })
+  await call('PATCH', `/api/issues/${ui.body.issue.id}`, { status: 'in_review' })
+  const last = await call('PATCH', `/api/issues/${api.body.issue.id}`, {
+    status: 'done',
+  })
+  expect(last.status).toBe(200)
+  const runs = await call('GET', `/api/issues/${parent.body.issue.id}/runs`)
+  expect(runs.body.runs).toHaveLength(2)
+})
