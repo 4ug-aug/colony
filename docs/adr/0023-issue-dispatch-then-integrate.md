@@ -30,4 +30,8 @@ until that parent is no longer settled.
 
 Rejected: keeping parent cover so Cursor SDK subagents fan out inside one
 sandbox; a warm parent coordinator that stays up until children finish;
-auto-In-review or auto-Done on run success; a messenger between agents.
+auto-In-review or auto-Done on run success; a messenger between agents;
+blocked-until / depends-on edges. Follow-up work is a child the parent
+creates and assigns when it is time (for example docs after implementation).
+That open child keeps the parent from settling, so another integrate run
+fires when it finishes.

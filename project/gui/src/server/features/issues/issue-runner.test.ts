@@ -59,6 +59,13 @@ function fakeStore(
       }
       if (patch.parentId === null) delete updated.parentId
       else if (patch.parentId !== undefined) updated.parentId = patch.parentId
+      if (patch.branch === null) {
+        delete updated.branch
+        delete updated.effectiveBranch
+      } else if (patch.branch !== undefined) {
+        updated.branch = patch.branch
+        updated.effectiveBranch = patch.branch
+      }
       issues.set(id, updated)
       return updated
     },
@@ -224,6 +231,99 @@ test('startRun omits repositoryBase when Issue has no effective branch', () => {
   expect(
     (control.starts[0]?.context as { repositoryBase?: string }).repositoryBase,
   ).toBeUndefined()
+})
+
+test('child startRun binds a root Issue line and passes it as repositoryBase', () => {
+  const parent = baseIssue({
+    id: 'parent',
+    number: 1,
+    owner: { kind: 'agent', id: 'antboy' },
+  })
+  const child = baseIssue({
+    id: 'child',
+    number: 2,
+    parentId: 'parent',
+    owner: { kind: 'agent', id: 'software-engineer' },
+  })
+  const store = fakeStore(child, [parent])
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.startRun('child')
+  expect(store.getIssue('parent')).toMatchObject({
+    branch: 'sweat/issue/COL-1',
+    effectiveBranch: 'sweat/issue/COL-1',
+  })
+  expect(control.starts[0]?.context).toMatchObject({
+    issueId: 'child',
+    repositoryBase: 'sweat/issue/COL-1',
+  })
+
+  const sibling = baseIssue({
+    id: 'sibling',
+    number: 3,
+    parentId: 'parent',
+    owner: { kind: 'agent', id: 'software-engineer' },
+  })
+  store.issues.set(sibling.id, sibling)
+  runner.startRun('sibling')
+  expect(store.getIssue('parent')?.branch).toBe('sweat/issue/COL-1')
+  expect(control.starts[1]?.context).toMatchObject({
+    issueId: 'sibling',
+    repositoryBase: 'sweat/issue/COL-1',
+  })
+})
+
+test('grandchild startRun binds the tree root Issue line', () => {
+  const root = baseIssue({
+    id: 'root',
+    number: 1,
+    owner: { kind: 'agent', id: 'antboy' },
+  })
+  const middle = baseIssue({
+    id: 'middle',
+    number: 2,
+    parentId: 'root',
+  })
+  const grandchild = baseIssue({
+    id: 'grandchild',
+    number: 3,
+    parentId: 'middle',
+    owner: { kind: 'agent', id: 'software-engineer' },
+  })
+  const store = fakeStore(grandchild, [root, middle])
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.startRun('grandchild')
+  expect(store.getIssue('root')?.branch).toBe('sweat/issue/COL-1')
+  expect(store.getIssue('middle')?.branch).toBeUndefined()
+  expect(control.starts[0]?.context).toMatchObject({
+    repositoryBase: 'sweat/issue/COL-1',
+  })
+})
+
+test('child startRun keeps an existing root Issue branch', () => {
+  const parent = baseIssue({
+    id: 'parent',
+    number: 1,
+    branch: 'feat/auth',
+    effectiveBranch: 'feat/auth',
+    owner: { kind: 'agent', id: 'antboy' },
+  })
+  const child = baseIssue({
+    id: 'child',
+    number: 2,
+    parentId: 'parent',
+    effectiveBranch: 'feat/auth',
+    owner: { kind: 'agent', id: 'software-engineer' },
+  })
+  const store = fakeStore(child, [parent])
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.startRun('child')
+  expect(store.getIssue('parent')?.branch).toBe('feat/auth')
+  expect(control.starts[0]?.context).toMatchObject({
+    repositoryBase: 'feat/auth',
+  })
 })
 
 test('startRun requires agentDefinitionId when owner is an account', () => {

@@ -13,4 +13,6 @@ branch identity only on Grill output or only on parent Issues: those hide the
 seam agents need when dispatched, and force every multi-Issue initiative into
 one inheritance rule. We also rejected treating the Issue branch as only a
 start snapshot while still PRing into the repository default: that skips the
-integration line the binding is meant to provide.
+integration line the binding is meant to provide. A child run in a tree with
+no branch binds `sweat/issue/COL-N` on the root so siblings share a line;
+landing that line to the default base remains out of band.

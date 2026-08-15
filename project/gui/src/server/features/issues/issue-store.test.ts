@@ -552,6 +552,9 @@ test('buildIssueRunTask tells a parent not to settle while a direct child is ope
   expect(task).toContain(
     'You cannot set this Issue to In review or Done until every direct child is In review or Done',
   )
+  expect(task).toContain(
+    'You may create further child Issues and assign them',
+  )
   expect(task).not.toContain('This run is to integrate direct children')
   expect(task).not.toContain('When this work is ready, set this Issue to In review or Done')
 })
@@ -576,5 +579,11 @@ test('buildIssueRunTask is an integrate run when direct children are settled', (
   expect(task).toContain('This run is to integrate direct children')
   expect(task).toContain('UI shipped.')
   expect(task).toContain('API shipped.')
+  expect(task).toContain(
+    'You may create further child Issues and assign them',
+  )
+  expect(task).toContain(
+    'You cannot set this Issue to In review or Done until every direct child is In review or Done',
+  )
   expect(task).toContain('Colony does not change status when the run succeeds')
 })

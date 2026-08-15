@@ -23,6 +23,13 @@ There is no agent chat: related agents read the same Issue tree.
 7. **A parent cannot be In review or Done** while a direct child is not.
    Accounts and agents get the same rejection. That keeps the parent open so
    the integrate run can start.
+8. **Follow-up work is a new child**, not a depends-on edge. The parent
+   creates and assigns it when it is time (for example docs after
+   implementation). That child keeps the parent open; when it settles,
+   Colony starts another integrate run.
+9. **A child coding run shares the tree's Issue branch.** If the root has
+   none, Colony binds `sweat/issue/COL-N` and children PR into that line,
+   not the repository default.
 
 Grandchildren do not settle a grandparent. Nested trees integrate from the
 leaves up.

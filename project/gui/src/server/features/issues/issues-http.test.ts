@@ -181,6 +181,8 @@ test('child assign, create, and start run while the parent run is active', async
 
   const got = await call('GET', `/api/issues/${parentId}`)
   expect(got.body.issue.hasActiveRun).toBe(true)
+  expect(got.body.issue.branch).toBe('sweat/issue/COL-1')
+  expect(got.body.issue.effectiveBranch).toBe('sweat/issue/COL-1')
   expect(got.body.issue.children).toEqual(
     expect.arrayContaining([
       expect.objectContaining({

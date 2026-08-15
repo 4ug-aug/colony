@@ -1,6 +1,7 @@
 import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
 import {
   buildIssueRunTask,
+  issueLineBranch,
   type Issue,
   type IssueOwner,
   type IssueRun,
@@ -127,6 +128,16 @@ export function createIssueRunner(options: {
     options.onStep?.(stored)
   })
 
+  const rootOf = (issue: Issue): Issue => {
+    let current = issue
+    while (current.parentId) {
+      const parent = options.store.getIssue(current.parentId)
+      if (!parent) break
+      current = parent
+    }
+    return current
+  }
+
   const startRun = (
     issueId: string,
     startOptions: { agentDefinitionId?: string } = {},
@@ -138,6 +149,20 @@ export function createIssueRunner(options: {
         ? issue.owner.id
         : startOptions.agentDefinitionId
     if (!agentDefinitionId) throw new IssueAgentRequiredError()
+    let repositoryBase = issue.effectiveBranch
+    if (!repositoryBase && issue.parentId) {
+      const root = rootOf(issue)
+      repositoryBase = root.branch ?? root.effectiveBranch
+      if (!repositoryBase) {
+        repositoryBase = issueLineBranch(root.number)
+        const updated = options.store.updateIssue(
+          root.id,
+          { branch: repositoryBase },
+          now(),
+        )
+        options.onIssueChange?.(updated)
+      }
+    }
     const parent = issue.parentId
       ? options.store.getIssue(issue.parentId)
       : undefined
@@ -146,9 +171,7 @@ export function createIssueRunner(options: {
     return options.control.start(task, {
       issueId: issue.id,
       agentDefinitionId,
-      ...(issue.effectiveBranch
-        ? { repositoryBase: issue.effectiveBranch }
-        : {}),
+      ...(repositoryBase ? { repositoryBase } : {}),
       onCreate: (summary) => {
         const created = options.store.createRun({
           ...summary,

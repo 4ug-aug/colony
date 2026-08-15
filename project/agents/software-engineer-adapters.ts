@@ -245,6 +245,7 @@ export function createGitHubSoftwareEngineerAdapter(options: {
       },
       source: createGitHubRepositoryCheckoutSource({
         octokit: options.octokit,
+        fallbackRevision: options.base,
       }),
     },
     ...(options.verifyCommand

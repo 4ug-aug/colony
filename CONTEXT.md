@@ -275,7 +275,8 @@ itself is not, and no Issue-linked run is already active. It is not a distinct
 run kind. The trigger is that settlement (or the parent run ending if children
 already settled), not a standing retry while the parent stays agent-owned. A
 failed child stays In progress and idle until someone assigns or Start run; it
-blocks integrate.
+blocks integrate. The parent may create further child Issues during the run;
+it cannot settle until every direct child is In review or Done.
 _Avoid_: Follow-up run, warm run, coordinator run, subagent run, parent cover
 
 **Issue Deliverable**: The durable text on an Issue that holds the latest
@@ -296,13 +297,17 @@ an Issue-linked run prepares its Git workspace from that branch rather than
 only the workspace default base. If unset, the Issue inherits the nearest
 ancestor's Issue branch when one exists. Any Issue may carry an Issue branch; a
 Code Grill commonly writes the same binding onto Issues confirmed from its
-materialized session branch. Publish still uses a platform-assigned run branch;
+materialized session branch. When a non-root Issue-linked run starts and the
+tree has no Issue branch, the platform binds `sweat/issue/COL-N` on the root
+(N is the root's number) and creates that remote ref from the repository
+default if it does not exist. Publish still uses a platform-assigned run branch;
 the pull request's merge base is the Issue branch when bound (or inherited), so
 child Issues can integrate into the parent's line before that line merges to the
 repository default base. When an Issue-linked run successfully creates a pull
 request and the Issue has no own Issue branch yet, the platform binds that run
 branch onto the Issue so the work is discoverable from the Issue; an existing
-binding (including a Code Grill session branch) is left unchanged.
+binding (including a Code Grill session branch or the platform root line) is
+left unchanged.
 _Avoid_: Run branch, sweat/<runId>, PR branch (as synonyms for this binding)
 
 **Issue tools**: First-party agent tools for reading and writing Colony Issues.

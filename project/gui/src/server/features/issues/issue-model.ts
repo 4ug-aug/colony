@@ -88,6 +88,11 @@ export function formatIssueId(number: number): string {
   return `COL-${number}`
 }
 
+/** Platform Issue branch for a tree that has none yet. */
+export function issueLineBranch(number: number): string {
+  return `sweat/issue/${formatIssueId(number)}`
+}
+
 export function parseIssueRef(
   raw: string,
 ): { kind: 'number'; number: number } | { kind: 'id'; id: string } | undefined {

@@ -9,6 +9,18 @@ function repositoryParts(repository: string): { owner: string; repo: string } {
   return { owner, repo };
 }
 
+const issueLinePrefix = "sweat/issue/";
+
+function statusOf(error: unknown): number | undefined {
+  if (
+    error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof (error as { status: unknown }).status === "number"
+  )
+    return (error as { status: number }).status;
+}
+
 function archiveBody(value: unknown): Blob {
   if (value instanceof Blob) return value;
   if (value instanceof Uint8Array) return new Blob([Uint8Array.from(value)]);
@@ -20,6 +32,8 @@ function archiveBody(value: unknown): Blob {
 
 export function createGitHubRepositoryCheckoutSource(options: {
   octokit: Octokit;
+  /** Workspace default base; used to mint a missing `sweat/issue/*` ref. */
+  fallbackRevision?: string;
   extract?: (archive: string, directory: string) => Promise<void>;
 }): RepositoryCheckoutSource {
   const extract = options.extract ?? (async (archive, directory) => {
@@ -33,14 +47,42 @@ export function createGitHubRepositoryCheckoutSource(options: {
   return {
     provider: "github",
     async checkout(input, directory) {
+      const repository = repositoryParts(input.repository);
+      let sha: string;
+      try {
+        sha = (
+          await options.octokit.rest.repos.getCommit({
+            ...repository,
+            ref: input.revision,
+          })
+        ).data.sha;
+      } catch (error) {
+        if (
+          statusOf(error) !== 404 ||
+          !input.revision.startsWith(issueLinePrefix) ||
+          !options.fallbackRevision
+        )
+          throw error;
+        sha = (
+          await options.octokit.rest.repos.getCommit({
+            ...repository,
+            ref: options.fallbackRevision,
+          })
+        ).data.sha;
+        try {
+          await options.octokit.rest.git.createRef({
+            ...repository,
+            ref: `refs/heads/${input.revision}`,
+            sha,
+          });
+        } catch (created) {
+          if (statusOf(created) !== 422) throw created;
+        }
+      }
       const archive = join(directory, "repository.tar.gz");
-      const commit = await options.octokit.rest.repos.getCommit({
-        ...repositoryParts(input.repository),
-        ref: input.revision,
-      });
       const response = await options.octokit.rest.repos.downloadTarballArchive({
-        ...repositoryParts(input.repository),
-        ref: commit.data.sha,
+        ...repository,
+        ref: sha,
       });
       await Bun.write(archive, archiveBody(response.data));
       try {
@@ -48,7 +90,7 @@ export function createGitHubRepositoryCheckoutSource(options: {
       } finally {
         await rm(archive, { force: true });
       }
-      return { revision: commit.data.sha };
+      return { revision: sha };
     },
   };
 }
