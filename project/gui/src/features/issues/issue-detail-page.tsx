@@ -35,7 +35,7 @@ import {
   TimeSpentEditor,
 } from './issue-property-editors'
 import { IssueRunsRail } from './issue-runs-rail'
-import { ParentCoverAlert } from './parent-cover-alert'
+import { parentWorkLabel } from './issue-tree'
 import type { Issue, IssueRun } from './types'
 import { useIssueRuns } from './use-issue-runs'
 import { useIssue, useIssues, useUpdateIssue } from './use-issues'
@@ -321,7 +321,7 @@ export function IssueDetailPage({
   }
 
   const issueRef = formatIssueId(issue.number)
-  const parentCovered = parent?.owner?.kind === 'agent'
+  const work = parentWorkLabel(issue, issues)
 
   const selectRun = (run: IssueRun) => {
     setSelectedRunId(run.id)
@@ -380,15 +380,12 @@ export function IssueDetailPage({
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none lg:px-10">
           <div className="mx-auto max-w-3xl">
-            {parentCovered && parent ? (
-              <ParentCoverAlert
-                parent={parent}
-                onOpenParent={() => onOpenIssue(parent.id)}
-              />
-            ) : null}
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
                 <EditableTitle issue={issue} />
+                {work ? (
+                  <p className="mt-1 text-sm text-muted-foreground">{work}</p>
+                ) : null}
               </div>
             </div>
             <Tabs

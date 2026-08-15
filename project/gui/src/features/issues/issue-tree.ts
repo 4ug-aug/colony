@@ -5,6 +5,33 @@ export type IssueTreeNode = {
   depth: number
 }
 
+const settled = (status: Issue['status']) =>
+  status === 'in_review' || status === 'done'
+
+export function childrenAreRunning(issue: Issue, issues: Issue[]): boolean {
+  return issues.some(
+    (child) => child.parentId === issue.id && Boolean(child.hasActiveRun),
+  )
+}
+
+/** Agent-owned parent, idle, with at least one direct child not In review or Done. */
+export function isWaitingToIntegrate(issue: Issue, issues: Issue[]): boolean {
+  if (issue.owner?.kind !== 'agent' || issue.hasActiveRun) return false
+  if (settled(issue.status)) return false
+  const children = issues.filter((child) => child.parentId === issue.id)
+  return (
+    children.length > 0 && children.some((child) => !settled(child.status))
+  )
+}
+
+export function parentWorkLabel(
+  issue: Issue,
+  issues: Issue[],
+): 'Children running' | 'Waiting to integrate' | undefined {
+  if (childrenAreRunning(issue, issues)) return 'Children running'
+  if (isWaitingToIntegrate(issue, issues)) return 'Waiting to integrate'
+}
+
 /** Flatten issues into parent→child order within a status group. */
 export function nestIssuesByParent(issues: Issue[]): IssueTreeNode[] {
   const byId = new Map(issues.map((issue) => [issue.id, issue]))

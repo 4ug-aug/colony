@@ -8,6 +8,7 @@ import {
   formatIssueId,
   parseIssueRef,
   resolveIssue,
+  type Issue,
 } from './issue-store'
 
 const migration = [
@@ -476,4 +477,104 @@ test('issue store retains createdBy for account and agent creators', () => {
     { kind: 'agent', id: 'software-engineer' },
   ])
   sqlite.close()
+})
+
+const taskIssue = (overrides: Partial<Issue> = {}): Issue => ({
+  id: 'issue-1',
+  number: 1,
+  title: 'Add auth',
+  description: '',
+  deliverable: '',
+  status: 'in_progress',
+  priority: 'none',
+  tags: [],
+  timeSpent: [],
+  createdAt: 1,
+  updatedAt: 1,
+  ...overrides,
+})
+
+test('updateIssue rejects In review and Done while a direct child is open', () => {
+  const sqlite = new Database(':memory:')
+  applyMigration(sqlite)
+  const store = createSqliteIssueStore(sqlite)
+  const parent = store.createIssue({
+    id: 'parent',
+    title: 'Add auth',
+    createdBy: ada,
+    createdAt: 1,
+  })
+  store.createIssue({
+    id: 'child',
+    title: 'Login UI',
+    parentId: parent.id,
+    status: 'in_progress',
+    createdBy: ada,
+    createdAt: 2,
+  })
+
+  expect(() =>
+    store.updateIssue(parent.id, { status: 'in_review' }, 3),
+  ).toThrow(
+    'Cannot set In review or Done while a direct child is not In review or Done',
+  )
+  expect(() =>
+    store.updateIssue(parent.id, { status: 'done' }, 4),
+  ).toThrow(
+    'Cannot set In review or Done while a direct child is not In review or Done',
+  )
+  expect(store.updateIssue(parent.id, { title: 'Auth' }, 5).title).toBe('Auth')
+  expect(store.getIssue(parent.id)?.status).toBe('backlog')
+
+  store.updateIssue('child', { status: 'in_review' }, 6)
+  expect(store.updateIssue(parent.id, { status: 'in_review' }, 7).status).toBe(
+    'in_review',
+  )
+  sqlite.close()
+})
+
+test('buildIssueRunTask tells the agent to set In review or Done', () => {
+  const task = buildIssueRunTask(taskIssue())
+  expect(task).toContain('set this Issue to In review or Done')
+  expect(task).toContain('Colony does not change status when the run succeeds')
+  expect(task).not.toContain('This run is to integrate direct children')
+})
+
+test('buildIssueRunTask tells a parent not to settle while a direct child is open', () => {
+  const task = buildIssueRunTask(taskIssue(), undefined, [
+    taskIssue({
+      id: 'child-ui',
+      number: 2,
+      title: 'Login UI',
+      status: 'in_progress',
+    }),
+  ])
+  expect(task).toContain(
+    'You cannot set this Issue to In review or Done until every direct child is In review or Done',
+  )
+  expect(task).not.toContain('This run is to integrate direct children')
+  expect(task).not.toContain('When this work is ready, set this Issue to In review or Done')
+})
+
+test('buildIssueRunTask is an integrate run when direct children are settled', () => {
+  const task = buildIssueRunTask(taskIssue(), undefined, [
+    taskIssue({
+      id: 'child-ui',
+      number: 2,
+      title: 'Login UI',
+      status: 'in_review',
+      deliverable: 'UI shipped.',
+    }),
+    taskIssue({
+      id: 'child-api',
+      number: 3,
+      title: 'Session API',
+      status: 'done',
+      deliverable: 'API shipped.',
+    }),
+  ])
+  expect(task).toContain('This run is to integrate direct children')
+  expect(task).toContain('UI shipped.')
+  expect(task).toContain('API shipped.')
+  expect(task).toContain('Colony does not change status when the run succeeds')
 })

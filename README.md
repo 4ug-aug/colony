@@ -20,8 +20,10 @@ and sandboxed agent execution. The native Tauri app and browser client connect
 to the same authoritative Colony server.
 
 Read [VISION.md](./VISION.md) for the product direction,
-[CONTEXT.md](./CONTEXT.md) for the domain language, and
-[docs/architecture.md](./docs/architecture.md) for the current architecture.
+[CONTEXT.md](./CONTEXT.md) for the domain language,
+[docs/architecture.md](./docs/architecture.md) for the current architecture,
+and [docs/issue-dispatch-integrate.md](./docs/issue-dispatch-integrate.md) for
+how Issues dispatch child agent runs and integrate afterward.
 
 ## Install
 

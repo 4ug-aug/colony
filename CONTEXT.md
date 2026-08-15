@@ -252,6 +252,8 @@ _Avoid_: Timesheet, server-persisted timer, estimate
 are Backlog, Todo, In progress, In review, and Done, in that order. Starting
 a run linked to an Issue moves it to In progress, including when it was In
 review; run completion does not change status. Done is not moved by run start.
+An Issue with a direct child that is not In review or Done cannot itself be
+In review or Done.
 _Avoid_: State, column, phase
 
 **Issue-linked run**: A run started from an Issue to execute work toward it.

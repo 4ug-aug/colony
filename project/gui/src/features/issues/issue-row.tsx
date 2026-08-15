@@ -26,6 +26,7 @@ import {
   StatusPicker,
 } from './issue-property-editors'
 import type { Issue } from './types'
+import { parentWorkLabel } from './issue-tree'
 import { useIssueTiming } from './use-issue-timing'
 import { useIssues } from './use-issues'
 
@@ -158,6 +159,8 @@ export function IssueRow({
   selected?: boolean
   onSelectedChange?: (selected: boolean, extendSelection: boolean) => void
 }) {
+  const { data: issues = [] } = useIssues()
+  const work = parentWorkLabel(issue, issues)
   return (
     <IssueDeleteContextMenu
       issue={issue}
@@ -221,6 +224,13 @@ export function IssueRow({
           text="Running"
           className="shrink-0 text-xs text-muted-foreground"
         />
+      ) : work === 'Children running' ? (
+        <BrailleLoader
+          text="Children running"
+          className="shrink-0 text-xs text-muted-foreground"
+        />
+      ) : work ? (
+        <span className="shrink-0 text-xs text-muted-foreground">{work}</span>
       ) : null}
       <div className="flex min-w-0 items-center gap-1.5">
         {issue.tags.map((tag) => (

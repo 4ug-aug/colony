@@ -124,6 +124,10 @@ future Tauri shell. The client does not own room state or execution.
   sends supported raster copies to vision-capable models.
 - Universal message search (Cmd/Ctrl+K) over accessible rooms via FTS5-backed
   `GET /api/search/messages`, with jump-to via history `around` loading.
+- Issues as the agent-work surface: assigning an agent starts an Issue-linked
+  run, child assigns dispatch isolated child runs, and the parent gets an
+  integrate run when direct children are In review or Done. See
+  [Issue dispatch then integrate](./issue-dispatch-integrate.md).
 
 ## MCP target design
 

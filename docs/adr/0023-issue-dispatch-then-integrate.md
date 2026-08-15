@@ -22,6 +22,12 @@ progress and idle until someone assigns or Start run; it does not auto-retry
 and it blocks integrate. Run success still does not move status; the agent
 sets In review or Done when its work is ready.
 
+An Issue cannot be In review or Done while a direct child is not. Accounts
+and agents hit the same `updateIssue` rejection, so a parent that only
+dispatched cannot settle itself and skip the integrate run. Creating a child
+under an already-settled parent is still allowed; integrate still no-ops
+until that parent is no longer settled.
+
 Rejected: keeping parent cover so Cursor SDK subagents fan out inside one
 sandbox; a warm parent coordinator that stays up until children finish;
 auto-In-review or auto-Done on run success; a messenger between agents.
