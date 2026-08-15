@@ -1,18 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  MessageSquarePlus,
-  MessagesSquare,
-  SquareTerminal,
-  Wrench,
-} from 'lucide-react'
-import { getToolIcon } from './run-tool-icon'
+import { toolIconId } from './run-tool-icon'
 
 describe('tool icons', () => {
-  test('maps known tools and falls back for unknown tools', () => {
-    expect(getToolIcon('shell')).toBe(SquareTerminal)
-    expect(getToolIcon('workspace_read_messages')).toBe(MessagesSquare)
-    expect(getToolIcon('workspace_post_message')).toBe(MessageSquarePlus)
-    expect(getToolIcon('future_tool')).toBe(Wrench)
-    expect(getToolIcon()).toBe(Wrench)
+  test('maps brand prefixes, known tools, and a wrench fallback', () => {
+    expect(toolIconId('github.create_pull_request')).toBe('github')
+    expect(toolIconId('github_create_pull_request')).toBe('github')
+    expect(toolIconId('linear.get_issue')).toBe('linear')
+    expect(toolIconId('asana.list_tasks')).toBe('asana')
+    expect(toolIconId('grafana.query_prometheus')).toBe('grafana')
+    expect(toolIconId('outline.fetch')).toBe('outline')
+    expect(toolIconId('shell')).toBe('shell')
+    expect(toolIconId('workspace.read_messages')).toBe('workspace')
+    expect(toolIconId('workspace_read_messages')).toBe('workspace')
+    expect(toolIconId('workspace.post_message')).toBe('workspace')
+    expect(toolIconId('workspace.list_issues')).toBe('workspace')
+    expect(toolIconId('future_tool')).toBe('wrench')
+    expect(toolIconId()).toBe('wrench')
   })
 })

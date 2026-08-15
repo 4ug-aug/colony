@@ -1,10 +1,19 @@
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '#/components/ui/collapsible'
 import { cn } from '#/lib/utils'
+import { ChevronRight } from 'lucide-react'
 import {
   formatStepText,
   isFailedToolResult,
   type ActivityItem,
 } from './run-activity'
 import { ToolIcon } from './run-tool-icon'
+
+const panelClassName =
+  "h-(--collapsible-panel-height) overflow-hidden transition-[height,opacity] duration-200 ease-out motion-reduce:transition-none data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 [&[hidden]:not([hidden='until-found'])]:hidden"
 
 function toolName(step: ActivityItem['step']): string {
   const fallback = step.tool ?? 'Tool call'
@@ -19,6 +28,97 @@ function toolName(step: ActivityItem['step']): string {
   return fallback
 }
 
+function statusLabel(result: ActivityItem['result'], failed: boolean): string {
+  if (!result) return 'Pending'
+  return failed ? 'Failed' : 'Completed'
+}
+
+function ToolCallDetailsRow({
+  item,
+  compact,
+  resultMaxLength,
+}: {
+  item: ActivityItem
+  compact: boolean
+  resultMaxLength?: number
+}) {
+  const name = toolName(item.step)
+  const failed = item.result ? isFailedToolResult(item.result.text) : false
+  const argsText = formatStepText(item.step.text)
+  const resultText = item.result
+    ? formatStepText(item.result.text)
+    : undefined
+  const shownResult =
+    resultText && resultMaxLength !== undefined
+      ? resultText.slice(0, resultMaxLength)
+      : resultText
+
+  return (
+    <Collapsible className="text-xs text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none">
+      <CollapsibleTrigger
+        render={
+          <button
+            type="button"
+            className={cn(
+              'group/tool flex w-full cursor-pointer items-center gap-1.5 text-left outline-none',
+              compact ? 'py-0.5' : 'py-1',
+              failed ? 'text-destructive' : 'hover:text-foreground',
+            )}
+            aria-label={`${name}, ${statusLabel(item.result, failed)}`}
+          />
+        }
+      >
+        <ToolIcon tool={name} />
+        <span className="min-w-0 truncate font-mono">{name}</span>
+        <ChevronRight
+          aria-hidden="true"
+          className="size-3 shrink-0 transition-transform duration-200 group-data-[panel-open]/tool:rotate-90 motion-reduce:transition-none"
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent className={panelClassName}>
+        <div
+          className={cn(
+            'text-xs',
+            compact ? 'mt-1.5 space-y-2 pb-1.5 pl-5' : 'mt-2 space-y-3 pb-2 pl-5',
+          )}
+        >
+          {argsText && argsText !== '{}' ? (
+            <div>
+              <p className="mb-1 font-semibold">Arguments</p>
+              <pre
+                className={cn(
+                  'overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted font-mono leading-4 text-muted-foreground',
+                  compact
+                    ? 'max-h-28 px-2 py-1.5 text-[0.7rem]'
+                    : 'overflow-x-auto px-3 py-2 text-xs leading-5',
+                )}
+              >
+                {argsText}
+              </pre>
+            </div>
+          ) : null}
+          {shownResult ? (
+            <div>
+              <p className="mb-1 font-semibold">Result</p>
+              <pre
+                className={cn(
+                  'overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted font-mono leading-4',
+                  compact
+                    ? 'max-h-28 px-2 py-1.5 text-[0.7rem]'
+                    : 'overflow-x-auto px-3 py-2 text-xs leading-5',
+                  failed ? 'text-destructive' : 'text-muted-foreground',
+                )}
+              >
+                {shownResult}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 export function ToolCallDetailsList({
   items,
   compact = false,
@@ -30,86 +130,15 @@ export function ToolCallDetailsList({
 }) {
   if (items.length === 0) return null
   return (
-    <div className="overflow-hidden rounded-sm border divide-y">
-      {items.map(({ step, result }) => {
-        const name = toolName(step)
-        const failed = result ? isFailedToolResult(result.text) : false
-        const argsText = formatStepText(step.text)
-        const resultText = result
-          ? formatStepText(result.text)
-          : undefined
-        const shownResult =
-          resultText && resultMaxLength !== undefined
-            ? resultText.slice(0, resultMaxLength)
-            : resultText
-        return (
-          <details
-            key={step.id}
-            className={cn(
-              'group text-xs animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none',
-              compact ? 'px-2.5 py-2' : 'px-3 py-2',
-            )}
-          >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium">
-              <span className="flex min-w-0 items-center gap-2">
-                <ToolIcon tool={name} />
-                <span className="truncate font-mono text-xs">{name}</span>
-              </span>
-              <span
-                className={cn(
-                  'shrink-0 rounded-full px-2 py-0.5 text-[11px]',
-                  failed
-                    ? 'bg-destructive/15 text-destructive'
-                    : 'bg-muted text-muted-foreground',
-                )}
-              >
-                {result ? (failed ? 'Failed' : 'Completed') : 'Pending'}
-              </span>
-            </summary>
-            <div
-              className={cn(
-                'text-xs group-open:animate-in group-open:fade-in-0 group-open:slide-in-from-top-1 group-open:duration-200',
-                compact ? 'mt-2 space-y-2' : 'mt-3 space-y-3',
-              )}
-            >
-              {argsText && argsText !== '{}' ? (
-                <div>
-                  <p className="mb-1 font-semibold text-muted-foreground">
-                    Arguments
-                  </p>
-                  <pre
-                    className={cn(
-                      'overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted font-mono leading-4',
-                      compact
-                        ? 'max-h-28 px-2 py-1.5 text-[0.7rem]'
-                        : 'overflow-x-auto px-3 py-2 text-xs leading-5',
-                    )}
-                  >
-                    {argsText}
-                  </pre>
-                </div>
-              ) : null}
-              {shownResult ? (
-                <div>
-                  <p className="mb-1 font-semibold text-muted-foreground">
-                    Result
-                  </p>
-                  <pre
-                    className={cn(
-                      'overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted font-mono leading-4',
-                      compact
-                        ? 'max-h-28 px-2 py-1.5 text-[0.7rem]'
-                        : 'overflow-x-auto px-3 py-2 text-xs leading-5',
-                    )}
-                  >
-                    {shownResult}
-                  </pre>
-                </div>
-              ) : null}
-            </div>
-          </details>
-        )
-      })}
+    <div className="space-y-0.5">
+      {items.map((item) => (
+        <ToolCallDetailsRow
+          key={item.step.id}
+          item={item}
+          compact={compact}
+          resultMaxLength={resultMaxLength}
+        />
+      ))}
     </div>
   )
 }

@@ -404,7 +404,11 @@ export function Dashboard({
           }
         }}
       />
-      <OneshotPanel open={oneshotOpen} onOpenChange={setOneshotOpen} />
+      <OneshotPanel
+        open={oneshotOpen}
+        onOpenChange={setOneshotOpen}
+        onOpenIssue={(id) => navigate({ view: 'issues', id })}
+      />
       <RoomSidebar
         rooms={rooms}
         selectedRoomId={room?.id}

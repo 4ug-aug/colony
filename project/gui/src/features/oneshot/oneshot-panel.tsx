@@ -18,12 +18,14 @@ import { toast } from '#/components/ui/toast'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { pairSteps } from '#/features/runs/run-activity'
 import { terminal } from '#/features/runs/run-helpers'
+import { ToolIcon } from '#/features/runs/run-tool-icon'
 import { stepLabel } from '#/features/runs/step-label'
 import { ToolCallDetailsList } from '#/features/runs/tool-call-details-list'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { cn } from '#/lib/utils'
 import { Check, Copy, X } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { oneshotPeeks, type OneshotToolPeek } from './oneshot-tool-peeks'
 import type { OneshotRun, OneshotRunStep } from './types'
 import {
   useActiveOneshot,
@@ -97,12 +99,60 @@ function OneshotStream({
   )
 }
 
+function OneshotPeek({
+  peek,
+  onOpenIssue,
+}: {
+  peek: OneshotToolPeek
+  onOpenIssue?: (id: string) => void
+}) {
+  const className = 'flex w-full min-w-0 items-center justify-start gap-1 px-1 hover:bg-accent'
+  const inner = (
+    <>
+      <ToolIcon tool={peek.tool} className="size-3" />
+      <span className="min-w-0 truncate">{peek.label}</span>
+    </>
+  )
+  const issueId = peek.issueId
+  if (issueId && onOpenIssue) {
+    return (
+      <Button
+        type="button"
+        variant="link"
+        size="xs"
+        className={className}
+        aria-label={`Open ${peek.label}`}
+        onClick={() => onOpenIssue(issueId)}
+      >
+        {inner}
+      </Button>
+    )
+  }
+  if (peek.href) {
+    return (
+      <Button
+        variant="link"
+        size="xs"
+        className={className}
+        render={<a href={peek.href} />}
+      >
+        {inner}
+      </Button>
+    )
+  }
+  return (
+    <span className={cn(className, 'text-xs font-medium')}>{inner}</span>
+  )
+}
+
 export function OneshotPanel({
   open,
   onOpenChange,
+  onOpenIssue,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onOpenIssue?: (id: string) => void
 }) {
   const { data: agents = [] } = useAgentDefinitions()
   const [agentId, setAgentId] = useLastOneshotAgent(
@@ -127,6 +177,7 @@ export function OneshotPanel({
   const showRevision = Boolean(selectedAgent?.includeRepository)
   const run = data?.run
   const steps = data?.steps ?? []
+  const peeks = oneshotPeeks(steps)
   const active = Boolean(runId)
   const working = Boolean(run && !terminal(run.state)) || start.isPending
   const agentName = selectedAgent?.name ?? run?.agentId ?? 'Agent'
@@ -259,7 +310,7 @@ export function OneshotPanel({
 
   return (
     <div
-      className="oneshot-panel-shell fixed right-3 bottom-3 z-50 w-[min(100vw-1.5rem,24rem)]"
+      className="oneshot-panel-shell fixed right-3 bottom-3 z-50 flex w-[min(100vw-1.5rem,24rem)] flex-col"
       data-open={shown ? 'true' : 'false'}
       ref={(node) => {
         if (!node || !open || shown || enterArmedRef.current || reducedMotion)
@@ -284,11 +335,23 @@ export function OneshotPanel({
         setCopied(false)
       }}
     >
+      {peeks.length > 0 ? (
+        <div className="-mb-px flex w-fit max-w-[80%] flex-col items-stretch gap-0.5 self-end rounded-t-xl border border-b-0 bg-background px-2 py-1 dark:bg-muted animate-in fade-in-0 slide-in-from-bottom-2 duration-200 fill-mode-both motion-reduce:animate-none">
+          {peeks.map((peek) => (
+            <OneshotPeek
+              key={peek.key}
+              peek={peek}
+              onOpenIssue={onOpenIssue}
+            />
+          ))}
+        </div>
+      ) : null}
       <div
         role="dialog"
         aria-label="Oneshot"
         className={cn(
           'dark:bg-muted flex w-full flex-col overflow-hidden rounded-xl border bg-background shadow-lg transition-[height] duration-150 ease-out motion-reduce:transition-none',
+          peeks.length > 0 && 'rounded-tr-none',
           active ? 'h-[min(70vh,28rem)]' : 'h-[min(50vh,20rem)]',
         )}
       >
