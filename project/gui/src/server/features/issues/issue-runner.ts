@@ -1,7 +1,6 @@
 import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
 import {
   buildIssueRunTask,
-  isParentCovered,
   type Issue,
   type IssueOwner,
   type IssueRun,
@@ -23,26 +22,17 @@ export class IssueActiveRunError extends Error {
   }
 }
 
-export class IssueParentCoveredError extends Error {
-  constructor() {
-    super(
-      'Start run is blocked while the parent Issue is owned by an agent',
-    )
-    this.name = 'IssueParentCoveredError'
-  }
-}
-
 export type IssueRunner = {
   startRun(
     issueId: string,
     options?: { agentDefinitionId?: string },
   ): { issue: Issue; run: IssueRun }
-  /** Assign owner; auto-start when assigning an agent and not parent-covered / idle. */
+  /** Assign owner; auto-start when assigning an agent and the Issue is idle. */
   assignOwner(
     issueId: string,
     owner: IssueOwner | undefined,
   ): { issue: Issue; run?: IssueRun }
-  /** After create with an agent owner — start a run when not parent-covered. */
+  /** After create with an agent owner — start a run when the Issue is idle. */
   maybeStartForOwner(issueId: string): { issue: Issue; run?: IssueRun }
   cancel(runId: string): Promise<IssueRun | undefined>
   failStaleRuns(): IssueRun[]
@@ -108,8 +98,6 @@ export function createIssueRunner(options: {
   ): { issue: Issue; run: IssueRun } => {
     const issue = options.store.getIssue(issueId)
     if (!issue) throw new Error('Issue not found')
-    if (isParentCovered(options.store, issue))
-      throw new IssueParentCoveredError()
     const agentDefinitionId =
       issue.owner?.kind === 'agent'
         ? issue.owner.id
@@ -153,7 +141,6 @@ export function createIssueRunner(options: {
     const issue = options.store.getIssue(issueId)
     if (!issue) throw new Error('Issue not found')
     if (issue.owner?.kind !== 'agent') return { issue }
-    if (isParentCovered(options.store, issue)) return { issue }
     if (options.store.hasActiveRun(issue.id)) return { issue }
     return startRun(issueId)
   }
@@ -164,7 +151,6 @@ export function createIssueRunner(options: {
       const issue = options.store.assignIssue(issueId, owner, now())
       options.onIssueChange?.(issue)
       if (owner?.kind !== 'agent') return { issue }
-      if (isParentCovered(options.store, issue)) return { issue }
       if (options.store.hasActiveRun(issue.id)) return { issue }
       return startRun(issueId)
     },

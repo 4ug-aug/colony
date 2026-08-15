@@ -47,6 +47,17 @@ export type WorkspaceIssue = {
   createdBy?: WorkspaceIssueActor;
   createdAt: number;
   updatedAt: number;
+  hasActiveRun?: boolean;
+  children?: WorkspaceIssueChild[];
+};
+
+export type WorkspaceIssueChild = {
+  id: string;
+  number: number;
+  status: WorkspaceIssueStatus;
+  deliverable: string;
+  owner?: WorkspaceIssueOwner;
+  hasActiveRun?: boolean;
 };
 
 export interface WorkspaceIssuesPort {

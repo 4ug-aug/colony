@@ -180,6 +180,98 @@ test('issue store allocates COL numbers and accepts legacy SWE references', () =
   sqlite.close()
 })
 
+test('getIssue includes direct children with live related work; list omits children', () => {
+  const sqlite = new Database(':memory:')
+  applyMigration(sqlite)
+  const store = createSqliteIssueStore(sqlite)
+  const parent = store.createIssue({
+    id: 'parent',
+    title: 'Add auth',
+    createdBy: ada,
+    createdAt: 1,
+  })
+  const childUi = store.createIssue({
+    id: 'child-ui',
+    title: 'Login UI',
+    parentId: parent.id,
+    owner: { kind: 'agent', id: 'antboy' },
+    createdBy: ada,
+    createdAt: 2,
+  })
+  const childApi = store.createIssue({
+    id: 'child-api',
+    title: 'Session API',
+    parentId: parent.id,
+    owner: { kind: 'agent', id: 'software-engineer' },
+    createdBy: ada,
+    createdAt: 3,
+  })
+  store.createRun({
+    id: 'parent-run',
+    issueId: parent.id,
+    task: 'parent',
+    agentId: 'antboy',
+    provider: 'openai',
+    model: '',
+    state: 'running',
+    createdAt: 4,
+    stdout: '',
+    stderr: '',
+  })
+  store.createRun({
+    id: 'ui-run',
+    issueId: childUi.id,
+    task: 'ui',
+    agentId: 'antboy',
+    provider: 'openai',
+    model: '',
+    state: 'running',
+    createdAt: 5,
+    stdout: '',
+    stderr: '',
+  })
+  store.setDeliverable(childApi.id, 'Session API shipped.', 6)
+
+  const got = store.getIssue(parent.id)
+  expect(got?.hasActiveRun).toBe(true)
+  expect(got?.deliverable).toBe('')
+  expect(got?.children).toEqual([
+    {
+      id: childUi.id,
+      number: 2,
+      status: 'backlog',
+      deliverable: '',
+      owner: { kind: 'agent', id: 'antboy' },
+      hasActiveRun: true,
+    },
+    {
+      id: childApi.id,
+      number: 3,
+      status: 'backlog',
+      deliverable: 'Session API shipped.',
+      owner: { kind: 'agent', id: 'software-engineer' },
+    },
+  ])
+
+  const nested = store.getIssue(childUi.id)
+  expect(nested).toMatchObject({
+    parentId: parent.id,
+    hasActiveRun: true,
+    children: [],
+  })
+
+  const listed = store.listIssues()
+  expect(listed.find((issue) => issue.id === parent.id)).toMatchObject({
+    deliverable: '',
+    hasActiveRun: true,
+  })
+  expect(listed.find((issue) => issue.id === parent.id)?.children).toBeUndefined()
+  expect(listed.find((issue) => issue.id === childApi.id)?.deliverable).toBe(
+    'Session API shipped.',
+  )
+  sqlite.close()
+})
+
 test('deleteIssue removes the issue, cascades runs, and orphans children', () => {
   const sqlite = new Database(':memory:')
   applyMigration(sqlite)

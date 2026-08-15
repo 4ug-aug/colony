@@ -3,7 +3,6 @@ import {
   createIssueRunner,
   IssueActiveRunError,
   IssueAgentRequiredError,
-  IssueParentCoveredError,
 } from './issue-runner'
 import type { Issue, IssueOwner, IssueRun, IssueStore } from './issue-store'
 import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
@@ -276,7 +275,7 @@ test('assignOwner starts a run for an agent and skips Account owners', () => {
   expect(control.starts).toHaveLength(1)
 })
 
-test('parent cover blocks startRun and assign-agent auto-start', () => {
+test('child startRun and assign start while the parent run is active', () => {
   const parent = baseIssue({
     id: 'parent',
     number: 1,
@@ -303,20 +302,57 @@ test('parent cover blocks startRun and assign-agent auto-start', () => {
   })
   const control = fakeControl()
   const runner = createIssueRunner({ store, control })
-  expect(() =>
-    runner.startRun('child', { agentDefinitionId: 'software-engineer' }),
-  ).toThrow(IssueParentCoveredError)
-
-  const assigned = runner.assignOwner('child', {
-    kind: 'agent',
-    id: 'software-engineer',
-  } satisfies IssueOwner)
-  expect(assigned.issue.owner).toEqual({
-    kind: 'agent',
-    id: 'software-engineer',
+  const started = runner.startRun('child', {
+    agentDefinitionId: 'software-engineer',
   })
-  expect(assigned.run).toBeUndefined()
-  expect(control.starts).toHaveLength(0)
+  expect(started.run.agentId).toBe('software-engineer')
+  expect(control.starts).toHaveLength(1)
+
+  const sibling = baseIssue({
+    id: 'sibling',
+    number: 3,
+    parentId: 'parent',
+    title: 'Sibling',
+  })
+  store.issues.set(sibling.id, sibling)
+  const assigned = runner.assignOwner('sibling', {
+    kind: 'agent',
+    id: 'antboy',
+  } satisfies IssueOwner)
+  expect(assigned.run?.agentId).toBe('antboy')
+  expect(control.starts).toHaveLength(2)
+})
+
+test('creating a child with an agent owner starts a run while the parent is running', () => {
+  const parent = baseIssue({
+    id: 'parent',
+    number: 1,
+    owner: { kind: 'agent', id: 'antboy' },
+  })
+  const child = baseIssue({
+    id: 'child',
+    number: 2,
+    parentId: 'parent',
+    owner: { kind: 'agent', id: 'software-engineer' },
+  })
+  const store = fakeStore(child, [parent])
+  store.createRun({
+    id: 'parent-run',
+    issueId: 'parent',
+    task: 'parent',
+    agentId: 'antboy',
+    provider: 'cursor',
+    model: '',
+    state: 'running',
+    createdAt: 1,
+    stdout: '',
+    stderr: '',
+  })
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  const started = runner.maybeStartForOwner('child')
+  expect(started.run?.agentId).toBe('software-engineer')
+  expect(control.starts[0]?.context).toMatchObject({ issueId: 'child' })
 })
 
 test('idle agent-owned parent does not cover; child auto-starts from inherited branch', () => {

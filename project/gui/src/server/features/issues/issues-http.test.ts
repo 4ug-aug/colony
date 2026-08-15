@@ -3,8 +3,13 @@ import { Database } from 'bun:sqlite'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createSqliteIssueStore } from './issue-store'
+import { createIssueRunner } from './issue-runner'
 import { createIssuesHttp } from './issues-http'
-import type { WorkspaceServerMessage } from '#/server/coordinator'
+import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
+import type {
+  AgentDefinitionSummary,
+  WorkspaceServerMessage,
+} from '#/server/coordinator'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 
 const migration = [
@@ -49,9 +54,39 @@ function harness() {
   }
   const issueStore = createSqliteIssueStore(sqlite)
   const broadcasts: WorkspaceServerMessage[] = []
+  const issueRunner = createIssueRunner({
+    store: issueStore,
+    control: {
+      subscribe: () => () => {},
+      subscribeSteps: () => () => {},
+      getRun: () => undefined,
+      start: (task, context) => {
+        const summary = {
+          id: crypto.randomUUID(),
+          task,
+          state: 'preparing',
+          createdAt: Date.now(),
+          stdout: '',
+          stderr: '',
+          agentId: context.agentDefinitionId ?? 'software-engineer',
+          provider: 'openai',
+          model: '',
+        } satisfies RunSummary
+        return context.onCreate(summary)
+      },
+      followUp: async () => undefined,
+      cancel: async () => undefined,
+      stop: async () => {},
+    } satisfies RunControl,
+  })
   const handle = createIssuesHttp({
     issueStore,
-    agentDefinitions: () => [],
+    issueRunner,
+    agentDefinitions: () =>
+      [
+        { id: 'software-engineer', name: 'Software engineer' },
+        { id: 'antboy', name: 'Antboy' },
+      ] as AgentDefinitionSummary[],
     listWorkspaceUsers: () => [ada],
     broadcastWorkspace: (message) => broadcasts.push(message),
   })
@@ -101,4 +136,57 @@ test('creating an Issue stamps the authenticated account as createdBy', async ()
     kind: 'account',
     id: 'ada',
   })
+})
+
+test('child assign, create, and start run while the parent run is active', async () => {
+  const { call } = harness()
+
+  const parent = await call('POST', '/api/issues', {
+    title: 'Add auth',
+    owner: { kind: 'agent', id: 'antboy' },
+  })
+  expect(parent.status).toBe(201)
+  expect(parent.body.run?.agentId).toBe('antboy')
+  const parentId = parent.body.issue.id as string
+
+  const created = await call('POST', '/api/issues', {
+    title: 'Login UI',
+    parentId,
+    owner: { kind: 'agent', id: 'software-engineer' },
+  })
+  expect(created.status).toBe(201)
+  expect(created.body.run?.agentId).toBe('software-engineer')
+  expect(created.body.error).toBeUndefined()
+
+  const sibling = await call('POST', '/api/issues', { title: 'Session API', parentId })
+  expect(sibling.status).toBe(201)
+  const assigned = await call('POST', `/api/issues/${sibling.body.issue.id}/assign`, {
+    owner: { kind: 'agent', id: 'software-engineer' },
+  })
+  expect(assigned.status).toBe(200)
+  expect(assigned.body.run?.agentId).toBe('software-engineer')
+
+  const idle = await call('POST', '/api/issues', { title: 'Docs', parentId })
+  const started = await call('POST', `/api/issues/${idle.body.issue.id}/runs`, {
+    agentDefinitionId: 'software-engineer',
+  })
+  expect(started.status).toBe(202)
+  expect(started.body.run?.agentId).toBe('software-engineer')
+
+  const again = await call('POST', `/api/issues/${idle.body.issue.id}/runs`, {
+    agentDefinitionId: 'software-engineer',
+  })
+  expect(again.status).toBe(409)
+  expect(again.body.error).toBe('An Issue run is already active')
+
+  const got = await call('GET', `/api/issues/${parentId}`)
+  expect(got.body.issue.hasActiveRun).toBe(true)
+  expect(got.body.issue.children).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: created.body.issue.id,
+        hasActiveRun: true,
+      }),
+    ]),
+  )
 })

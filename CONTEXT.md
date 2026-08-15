@@ -208,14 +208,15 @@ _Avoid_: Artifact, workspace file
 _Avoid_: Prompt, Issue
 
 **Issue**: A workspace-owned unit of work — not scoped to a Room — that people
-and agents can create, update, and be assigned to. An Issue may have a parent
-Issue; a parent groups child Issues toward one outcome (for example a feature
-shaped by Docs from a Grill). An Issue may name a single **owner** and may link to one
-or more **runs** that execute work toward it. Assigning an Agent definition as
-owner starts an Issue-linked run on that Issue (unless the Issue is under
-parent cover); assigning an Account sets ownership only and the starter later
-chooses which agent runs. It is not a run and not the plain-text task a run
-supplies to an agent runtime.
+and agents can create, update, and be assigned to. Issues are the agent-work
+surface: people aim and review; agents execute via Issue-linked runs. An Issue
+may have a parent Issue; a parent groups child Issues toward one outcome (for
+example a feature shaped by Docs from a Grill). An Issue may name a single
+**owner** and may link to one or more **runs** that execute work toward it.
+Assigning an Agent definition as owner starts an Issue-linked run on that
+Issue when none is already active; assigning an Account sets ownership only
+and the starter later chooses which agent runs. It is not a run and not the
+plain-text task a run supplies to an agent runtime.
 _Avoid_: Task, ticket, work item, Objective (as a separate type), Epic, Project,
 room Issue
 
@@ -226,14 +227,11 @@ _Avoid_: UUID-as-display-id, ticket number, per-workspace prefix
 
 **Issue owner**: The single Account or Agent definition responsible for an
 Issue. Child Issues keep their own owners; assigning a parent does not cascade
-ownership. When a child's parent is owned by an Agent definition and that
-parent has an active Issue-linked run (**parent cover**), Start run on the
-child is blocked and assigning an agent to the child does not auto-start a
-run — the parent's run carries child context instead. Cover lifts when the
-parent run is no longer preparing or running. Agent-to-agent hand-off is
-assigning (or creating) Issues to other agent definitions, not a separate
-delegation type.
-_Avoid_: Assignee, owners (plural), worker, run participant
+ownership. Assigning an Agent definition starts that Issue's run even when a
+parent Issue-linked run is active. Agent-to-agent hand-off is assigning (or
+creating) Issues to other agent definitions, not a separate delegation type
+and not an in-sandbox subagent.
+_Avoid_: Assignee, owners (plural), worker, run participant, parent cover
 
 **Issue creator**: The Account or Agent definition that created the Issue.
 Retained as attribution; it is distinct from the Issue owner and does not
@@ -257,15 +255,26 @@ review; run completion does not change status. Done is not moved by run start.
 _Avoid_: State, column, phase
 
 **Issue-linked run**: A run started from an Issue to execute work toward it.
-Assigning an Agent definition as owner starts one when the Issue is not under
-parent cover and no run is already active; otherwise Start run remains
-explicit. V1 builds that run's Task from a fixed platform delegation prompt
-that includes the Issue id, title, and description, plus parent context when
-nested and direct child summaries when the Issue has children. The prompt is
-not user-editable yet. When the Issue has an Issue branch, prepare uses that
-branch as the Git workspace revision. When the run succeeds, the platform
-copies its final output onto the Issue Deliverable.
-_Avoid_: Issue task (ambiguous with Task), assignment run
+Assigning an Agent definition as owner starts one when no run is already
+active; otherwise Start run remains explicit. Child Issues start this way even
+while a parent run is active. V1 builds that run's Task from a fixed platform
+delegation prompt that includes the Issue id, title, and description, plus
+parent context when nested and direct child summaries (including Deliverable
+when set) when the Issue has children. The prompt is not user-editable yet.
+When the Issue has an Issue branch, prepare uses that branch as the Git
+workspace revision. When the run succeeds, the platform copies its final
+output onto the Issue Deliverable. Run success does not move Issue status; the
+agent sets In review or Done when its work is ready.
+_Avoid_: Issue task (ambiguous with Task), assignment run, parent cover
+
+**Issue integrate run**: An Issue-linked run the platform starts on an
+agent-owned parent when every direct child is In review or Done, the parent
+itself is not, and no Issue-linked run is already active. It is not a distinct
+run kind. The trigger is that settlement (or the parent run ending if children
+already settled), not a standing retry while the parent stays agent-owned. A
+failed child stays In progress and idle until someone assigns or Start run; it
+blocks integrate.
+_Avoid_: Follow-up run, warm run, coordinator run, subagent run, parent cover
 
 **Issue Deliverable**: The durable text on an Issue that holds the latest
 successful Issue-linked run's final output. Each successful run overwrites it;
@@ -294,15 +303,19 @@ branch onto the Issue so the work is discoverable from the Issue; an existing
 binding (including a Code Grill session branch) is left unchanged.
 _Avoid_: Run branch, sweat/<runId>, PR branch (as synonyms for this binding)
 
-**Issue tools**: First-party agent tools for reading and writing Sweat Issues.
+**Issue tools**: First-party agent tools for reading and writing Colony Issues.
 They are granted as a workspace capability (`workspace.issues`) over the same
 MCP session path as other capabilities (for example `workspace.room`), not as
 Linear/Asana tools and not as a cross-provider tracker abstraction. A grant
 covers the whole workspace's Issues, not a single Issue. V1 tools are
 list/get/create/update plus assign (set the Issue owner to an Account or Agent
-definition). They replace Linear as the software-engineer work-item path;
-Asana remains an optional external capability when configured.
-_Avoid_: linear.issues, task tools (ambiguous), generic task-management API
+definition). Get/list expose related-work facts on each Issue (status, owner,
+whether a run is active, Deliverable, parent, direct children) so agents
+coordinate through the Issue tree rather than a messenger. They replace Linear
+as the software-engineer work-item path; Asana remains an optional external
+capability when configured.
+_Avoid_: linear.issues, task tools (ambiguous), generic task-management API,
+agent chat, agent messenger
 
 **System instructions**: The role-owned instructions supplied by an agent
 definition.
@@ -492,9 +505,11 @@ branch, and opens its pull request in the scoped repository.
 ## Sub-agents
 
 SDK handoffs can delegate work within an agent runtime. True isolated
-sub-agents are platform-managed jobs: a parent requests a named agent
-definition with a task and budget, and the orchestrator validates and schedules
-the new sandbox. An agent must not receive raw container-daemon access.
+sub-agents are platform-managed jobs: assigning (or creating) a child Issue to
+an agent definition is that request, and the orchestrator starts a new
+Issue-linked run in its own sandbox. An agent must not receive raw
+container-daemon access. In-sandbox SDK subagents are not a substitute for
+child Issue-linked runs.
 
 The platform controls budgets, allowed roles, nesting depth, credentials, and
 network policy. Tool subprocesses must not inherit model API credentials.

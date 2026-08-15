@@ -12,7 +12,6 @@ import {
 import {
   IssueActiveRunError,
   IssueAgentRequiredError,
-  IssueParentCoveredError,
   type IssueRunner,
 } from './issue-runner'
 import type {
@@ -105,8 +104,6 @@ export function createIssuesHttp(deps: {
         } catch (error) {
           if (error instanceof IssueActiveRunError)
             return json({ issue, error: error.message }, 201)
-          if (error instanceof IssueParentCoveredError)
-            return json({ issue }, 201)
           throw error
         }
       }
@@ -222,8 +219,6 @@ export function createIssuesHttp(deps: {
         } catch (error) {
           if (error instanceof IssueActiveRunError)
             return json({ error: error.message }, 409)
-          if (error instanceof IssueParentCoveredError)
-            return json({ error: error.message }, 409)
           return json(
             {
               error:
@@ -272,8 +267,6 @@ export function createIssuesHttp(deps: {
           return json(result, 202)
         } catch (error) {
           if (error instanceof IssueActiveRunError)
-            return json({ error: error.message }, 409)
-          if (error instanceof IssueParentCoveredError)
             return json({ error: error.message }, 409)
           if (error instanceof IssueAgentRequiredError)
             return json({ error: error.message }, 400)

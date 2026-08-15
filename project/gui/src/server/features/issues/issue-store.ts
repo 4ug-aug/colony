@@ -7,6 +7,7 @@ import {
   parseIssueRef,
   type Issue,
   type IssueActor,
+  type IssueChild,
   type IssueChildProgress,
   type IssueOwner,
   type IssuePriority,
@@ -26,6 +27,7 @@ export {
   parseIssueRef,
   type Issue,
   type IssueActor,
+  type IssueChild,
   type IssueOwner,
   type IssuePriority,
   type IssueRun,
@@ -180,16 +182,6 @@ export function buildIssueRunTask(
     )
   }
   return lines.join('\n')
-}
-
-/** True while the parent is agent-owned and has an active Issue-linked run. */
-export function isParentCovered(
-  store: Pick<IssueStore, 'getIssue' | 'hasActiveRun'>,
-  issue: Issue,
-): boolean {
-  if (!issue.parentId) return false
-  const parent = store.getIssue(issue.parentId)
-  return parent?.owner?.kind === 'agent' && store.hasActiveRun(parent.id)
 }
 
 const parseJsonArray = <T>(
@@ -401,6 +393,23 @@ export function createSqliteIssueStore(
         : issue,
     )
 
+  const toChild = (issue: Issue): IssueChild => ({
+    id: issue.id,
+    number: issue.number,
+    status: issue.status,
+    deliverable: issue.deliverable,
+    ...(issue.owner ? { owner: issue.owner } : {}),
+    ...(issue.hasActiveRun ? { hasActiveRun: true } : {}),
+  })
+
+  const withChildren = (issue: Issue | undefined): Issue | undefined => {
+    if (!issue) return undefined
+    return {
+      ...issue,
+      children: issues('WHERE parent_id = ?', issue.id).map(toChild),
+    }
+  }
+
   return {
     listIssues: (filter) =>
       filter?.status
@@ -408,8 +417,9 @@ export function createSqliteIssueStore(
         : issues(),
     listChildIssues: (parentId) =>
       issues('WHERE parent_id = ?', parentId),
-    getIssue: (id) => issues('WHERE id = ?', id)[0],
-    getIssueByNumber: (number) => issues('WHERE number = ?', number)[0],
+    getIssue: (id) => withChildren(issues('WHERE id = ?', id)[0]),
+    getIssueByNumber: (number) =>
+      withChildren(issues('WHERE number = ?', number)[0]),
     createIssue: (issue) =>
       transaction(sqlite, () => {
         const counter = sqlite
@@ -456,7 +466,7 @@ export function createSqliteIssueStore(
             issue.createdAt,
             issue.createdAt,
           )
-        const created = issues('WHERE id = ?', issue.id)[0]
+        const created = withChildren(issues('WHERE id = ?', issue.id)[0])
         if (!created) throw new Error('Issue was not created')
         return created
       }),
@@ -496,7 +506,7 @@ export function createSqliteIssueStore(
           now,
           id,
         )
-      const updated = issues('WHERE id = ?', id)[0]
+      const updated = withChildren(issues('WHERE id = ?', id)[0])
       if (!updated) throw new Error('Issue was not updated')
       return updated
     },
@@ -508,7 +518,7 @@ export function createSqliteIssueStore(
           `UPDATE issue SET owner_kind = ?, owner_id = ?, updated_at = ? WHERE id = ?`,
         )
         .run(owner?.kind ?? null, owner?.id ?? null, now, id)
-      const updated = issues('WHERE id = ?', id)[0]
+      const updated = withChildren(issues('WHERE id = ?', id)[0])
       if (!updated) throw new Error('Issue was not assigned')
       return updated
     },
@@ -520,7 +530,7 @@ export function createSqliteIssueStore(
           `UPDATE issue SET deliverable = ?, updated_at = ? WHERE id = ?`,
         )
         .run(deliverable, now, id)
-      const updated = issues('WHERE id = ?', id)[0]
+      const updated = withChildren(issues('WHERE id = ?', id)[0])
       if (!updated) throw new Error('Issue deliverable was not updated')
       return updated
     },

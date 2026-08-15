@@ -31,6 +31,15 @@ export type IssueOwner = IssueActor
 
 export type IssueChildProgress = { done: number; total: number }
 
+export type IssueChild = {
+  id: string
+  number: number
+  status: IssueStatus
+  deliverable: string
+  owner?: IssueOwner
+  hasActiveRun?: boolean
+}
+
 export type Issue = {
   id: string
   number: number
@@ -52,6 +61,8 @@ export type Issue = {
   createdAt: number
   updatedAt: number
   childProgress?: IssueChildProgress
+  /** Direct children; present on get, omitted from list. */
+  children?: IssueChild[]
   /** True when this Issue has a preparing/running Issue-linked run. */
   hasActiveRun?: boolean
 }

@@ -31,6 +31,7 @@ function makePort(seed: WorkspaceIssue[] = []): WorkspaceIssuesPort & {
         number: nextNumber,
         title: input.title,
         description: input.description ?? "",
+        deliverable: "",
         status: input.status ?? "backlog",
         priority: input.priority ?? "none",
         tags: input.tags ?? [],
@@ -112,6 +113,101 @@ test("create, assign, and get Issues through MCP tools", async () => {
     owner: { kind: "agent", id: "software-engineer" },
   });
   expect(port.issues).toHaveLength(1);
+});
+
+test("get_issue includes live related work and list_issues includes active run and deliverable", async () => {
+  const upstream = createWorkspaceIssuesMcpUpstream({
+    port: makePort([
+      {
+        id: "parent",
+        number: 1,
+        title: "Add auth",
+        description: "",
+        deliverable: "",
+        status: "in_progress",
+        priority: "none",
+        tags: [],
+        timeSpent: [],
+        hasActiveRun: true,
+        createdAt: 1,
+        updatedAt: 1,
+        children: [
+          {
+            id: "child-ui",
+            number: 2,
+            status: "in_progress",
+            deliverable: "",
+            owner: { kind: "agent", id: "antboy" },
+            hasActiveRun: true,
+          },
+          {
+            id: "child-api",
+            number: 3,
+            status: "in_review",
+            deliverable: "Session API shipped.",
+            owner: { kind: "agent", id: "software-engineer" },
+          },
+        ],
+      },
+      {
+        id: "child-ui",
+        number: 2,
+        title: "Login UI",
+        description: "",
+        deliverable: "",
+        status: "in_progress",
+        priority: "none",
+        tags: [],
+        timeSpent: [],
+        parentId: "parent",
+        hasActiveRun: true,
+        owner: { kind: "agent", id: "antboy" },
+        createdAt: 2,
+        updatedAt: 2,
+        children: [],
+      },
+    ]),
+  });
+
+  const listed = (await upstream.callTool("workspace.list_issues", {})) as {
+    content: { text: string }[];
+  };
+  const rows = JSON.parse(listed.content[0]!.text) as WorkspaceIssue[];
+  expect(rows[0]).toMatchObject({
+    number: 1,
+    deliverable: "",
+    hasActiveRun: true,
+  });
+  expect(rows[1]).toMatchObject({
+    number: 2,
+    deliverable: "",
+    hasActiveRun: true,
+  });
+
+  const got = (await upstream.callTool("workspace.get_issue", {
+    ref: "COL-1",
+  })) as { content: { text: string }[] };
+  expect(JSON.parse(got.content[0]!.text)).toMatchObject({
+    number: 1,
+    hasActiveRun: true,
+    children: [
+      {
+        id: "child-ui",
+        number: 2,
+        status: "in_progress",
+        deliverable: "",
+        hasActiveRun: true,
+        owner: { kind: "agent", id: "antboy" },
+      },
+      {
+        id: "child-api",
+        number: 3,
+        status: "in_review",
+        deliverable: "Session API shipped.",
+        owner: { kind: "agent", id: "software-engineer" },
+      },
+    ],
+  });
 });
 
 test("create_issue does not accept createdBy from tool args", async () => {

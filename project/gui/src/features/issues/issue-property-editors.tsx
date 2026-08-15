@@ -20,13 +20,13 @@ import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
-import { Check, CircleDashed, Plus, UserRound } from 'lucide-react'
-import { useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
 import { cn } from '#/lib/utils'
+import { Check, CircleDashed, Plus, UserRound } from 'lucide-react'
+import type { KeyboardEvent, ReactNode } from 'react'
+import { useState } from 'react'
 import { formatIssueId, formatTimeSpentMinutes } from './format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
-import { LabelDot, IssueLabelChip } from './issue-labels'
+import { IssueLabelChip, LabelDot } from './issue-labels'
 import type {
   Issue,
   IssueActor,
@@ -100,7 +100,7 @@ export function OwnerDisplay({
             <AgentAnt className="size-3.5" />
           </AvatarFallback>
         </Avatar>
-        <span className="min-w-0 truncate">{name}</span>
+        <span className="min-w-0 truncate text-sm">{name}</span>
       </span>
     )
   }
@@ -123,7 +123,7 @@ export function OwnerDisplay({
           {initials || '?'}
         </AvatarFallback>
       </Avatar>
-      <span className="min-w-0 truncate">{name}</span>
+      <span className="min-w-0 truncate text-sm">{name}</span>
     </span>
   )
 }
