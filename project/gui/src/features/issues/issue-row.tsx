@@ -10,7 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '#/components/ui/tooltip'
-import { Circle, CornerDownRight, Timer } from 'lucide-react'
+import { CornerDownRight, Timer } from 'lucide-react'
 import { useState } from 'react'
 import {
   formatIssueCreatedAt,
@@ -18,7 +18,7 @@ import {
   formatTimeSpentMinutes,
 } from './format'
 import { IssueDeleteContextMenu } from './issue-delete-menu'
-import { IssueStatusIcon } from './issue-icons'
+import { ChildStatusRing, IssueStatusIcon } from './issue-icons'
 import { IssueLabelChip } from './issue-labels'
 import {
   OwnerPicker,
@@ -58,7 +58,7 @@ function ChildProgressChip({
           />
         }
       >
-        <Circle className="size-3.5" />
+        <ChildStatusRing statuses={children.map((child) => child.status)} />
         {progress.done}/{progress.total}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-2">
