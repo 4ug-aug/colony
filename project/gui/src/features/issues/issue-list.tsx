@@ -119,7 +119,7 @@ export function IssueList({
   const statuses = visibleStatuses ?? ISSUE_STATUSES
 
   return (
-    <div>
+    <div className="@container min-w-0">
       {statuses.map((status) => {
         const inStatus = issues.filter((issue) => issue.status === status)
         if (hideEmptyGroups && inStatus.length === 0) return null

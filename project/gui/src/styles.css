@@ -246,6 +246,22 @@ code {
   -webkit-box-decoration-break: clone;
 }
 
+.prose p {
+  margin-block: 0;
+}
+
+.prose p + p {
+  margin-top: 0.75em;
+}
+
+.prose li {
+  margin-block: 0;
+}
+
+.prose li + li {
+  margin-top: 0.25em;
+}
+
 .prose code {
   font-weight: 400;
   color: inherit;

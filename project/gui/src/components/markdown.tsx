@@ -129,7 +129,7 @@ export function Markdown({
     pre: CodeBlock,
   }
   return (
-    <div className="prose prose-sm dark:prose-invert max-w-none break-words prose-p:my-0 prose-pre:my-1 prose-headings:my-1 prose-ul:my-1 prose-ol:my-1">
+    <div className="prose prose-sm dark:prose-invert max-w-none whitespace-normal break-words prose-p:my-0 prose-pre:my-1 prose-headings:my-1 prose-ul:my-1 prose-ol:my-1">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{ ...defaultComponents, ...components }}

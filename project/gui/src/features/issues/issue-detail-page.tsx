@@ -175,7 +175,7 @@ function EditableDescription({ issue }: { issue: Issue }) {
     <div
       role="button"
       tabIndex={0}
-      className="w-full cursor-text rounded-sm p-1 text-left text-sm leading-relaxed whitespace-pre-wrap outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40"
+      className="w-full cursor-text rounded-sm p-1 text-left text-sm outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40"
       onClick={begin}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {

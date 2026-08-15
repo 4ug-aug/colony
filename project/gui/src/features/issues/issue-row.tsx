@@ -52,7 +52,7 @@ function ChildProgressChip({
         render={
           <button
             type="button"
-            className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border/70 px-2 text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/70 px-2 text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
             aria-label={`${progress.done} of ${progress.total} sub-issues done`}
             onClick={(event) => event.stopPropagation()}
           />
@@ -137,7 +137,7 @@ function IssueTimeSpent({ timeSpent }: { timeSpent: number[] }) {
   const label = total > 0 ? formatTimeSpentMinutes(total) : '—'
   return (
     <span
-      className="min-w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+      className="hidden min-w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground @xl:inline"
       aria-label="Time spent"
       title={total > 0 ? label : 'Time spent'}
     >
@@ -167,7 +167,7 @@ export function IssueRow({
       render={
         <div
           data-issue-row={issue.id}
-          className="group flex h-9 items-center gap-2 border-b border-border/40 px-3 text-sm last:border-b-0 hover:bg-muted/40"
+          className="group flex h-9 min-w-0 items-center gap-2 overflow-hidden border-b border-border/40 px-3 text-sm last:border-b-0 hover:bg-muted/40"
           onClick={
             onOpen
               ? (event) => {
@@ -218,28 +218,30 @@ export function IssueRow({
         {formatIssueId(issue.number)}
       </span>
       <StatusPicker issue={issue} />
-      <span className="min-w-0 flex-1 truncate font-medium">{issue.title}</span>
+      <span className="min-w-24 flex-1 truncate font-medium">{issue.title}</span>
       {issue.hasActiveRun ? (
         <BrailleLoader
           text="Running"
-          className="shrink-0 text-xs text-muted-foreground"
+          className="hidden shrink-0 text-xs text-muted-foreground @2xl:inline-flex"
         />
       ) : work === 'Children running' ? (
         <BrailleLoader
           text="Children running"
-          className="shrink-0 text-xs text-muted-foreground"
+          className="hidden shrink-0 text-xs text-muted-foreground @2xl:inline-flex"
         />
       ) : work ? (
-        <span className="shrink-0 text-xs text-muted-foreground">{work}</span>
+        <span className="hidden shrink-0 truncate text-xs text-muted-foreground @2xl:inline">
+          {work}
+        </span>
       ) : null}
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="hidden min-w-0 overflow-hidden @xl:flex @xl:items-center @xl:gap-1.5">
         {issue.tags.map((tag) => (
-          <IssueLabelChip key={tag} tag={tag} />
+          <IssueLabelChip key={tag} tag={tag} className="shrink-0" />
         ))}
-        <ChildProgressChip issue={issue} onOpen={onOpen} />
       </div>
+      <ChildProgressChip issue={issue} onOpen={onOpen} />
       <OwnerPicker issue={issue} variant="list" />
-      <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
+      <span className="hidden w-12 shrink-0 text-right text-xs text-muted-foreground @lg:inline">
         {formatIssueCreatedAt(issue.createdAt)}
       </span>
       <div className="flex shrink-0 items-center gap-0.5">

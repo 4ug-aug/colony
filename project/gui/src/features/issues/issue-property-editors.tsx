@@ -86,7 +86,9 @@ export function OwnerDisplay({
           <CircleDashed className="size-5" />
           <UserRound className="absolute size-2.5" />
         </span>
-        <span className="truncate">No assignee</span>
+        <span className="truncate" data-owner-name>
+          No assignee
+        </span>
       </span>
     )
   }
@@ -100,7 +102,9 @@ export function OwnerDisplay({
             <AgentAnt className="size-3.5" />
           </AvatarFallback>
         </Avatar>
-        <span className="min-w-0 truncate text-sm">{name}</span>
+        <span className="min-w-0 truncate text-sm" data-owner-name>
+          {name}
+        </span>
       </span>
     )
   }
@@ -123,7 +127,9 @@ export function OwnerDisplay({
           {initials || '?'}
         </AvatarFallback>
       </Avatar>
-      <span className="min-w-0 truncate text-sm">{name}</span>
+      <span className="min-w-0 truncate text-sm" data-owner-name>
+        {name}
+      </span>
     </span>
   )
 }
@@ -330,7 +336,7 @@ export function OwnerPicker({
             type="button"
             className={
               variant === 'list'
-                ? 'inline-flex h-7 w-28 shrink-0 items-center rounded-sm px-1 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/40'
+                ? 'inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/40 @xl:w-28 @xl:justify-start @xl:px-1 @max-xl:[&_[data-owner-name]]:hidden'
                 : cn(railTriggerClass, 'w-full justify-start')
             }
             aria-label="Assignee"
