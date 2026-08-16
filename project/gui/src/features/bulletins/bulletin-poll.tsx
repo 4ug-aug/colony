@@ -10,6 +10,7 @@ import { Button } from '#/components/ui/button'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
 import { useWorkspaceMembers } from '#/features/issues/use-workspace-members'
+import { accountFaceStyle, accountInitials } from '#/lib/account-color'
 import { cn } from '#/lib/utils'
 import type { Poll } from './types'
 
@@ -37,10 +38,6 @@ function tally(poll: Poll): string[][] {
   for (const [userId, chosen] of Object.entries(poll.votes))
     for (const index of chosen) buckets[index]?.push(userId)
   return buckets
-}
-
-function initials(name: string): string {
-  return name.slice(0, 2).toUpperCase()
 }
 
 export function PollResults({
@@ -98,11 +95,16 @@ export function PollResults({
               <AvatarGroup className="relative">
                 {voters.slice(0, 3).map((userId) => {
                   const member = byId.get(userId)
-                  const name = member?.displayName || member?.name || 'Someone'
+                  const name = member?.name || 'Someone'
                   return (
                     <Avatar key={userId} size="sm" title={name}>
                       {member?.image && <AvatarImage src={member.image} />}
-                      <AvatarFallback>{initials(name)}</AvatarFallback>
+                      <AvatarFallback
+                        className="text-[10px] font-semibold"
+                        style={accountFaceStyle(name, member?.color)}
+                      >
+                        {accountInitials(name)}
+                      </AvatarFallback>
                     </Avatar>
                   )
                 })}

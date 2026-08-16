@@ -3,6 +3,7 @@ import { APIError } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin } from 'better-auth/plugins/admin'
 import { username } from 'better-auth/plugins/username'
+import { parseAccountColor } from '#/lib/account-color'
 import { authSchema, db } from '#/lib/database'
 import { DESKTOP_ORIGINS } from '#/lib/desktop-origins'
 
@@ -28,6 +29,15 @@ export const auth = betterAuth({
     enabled: true,
     disableSignUp: true,
   },
+  user: {
+    additionalFields: {
+      color: {
+        type: 'string',
+        required: false,
+        input: true,
+      },
+    },
+  },
   databaseHooks: {
     user: {
       update: {
@@ -40,6 +50,35 @@ export const auth = betterAuth({
               code: 'USERNAME_IMMUTABLE',
               message: 'Username cannot be changed',
             })
+          const next = { ...changes }
+          if ('name' in next) {
+            const name = typeof next.name === 'string' ? next.name.trim() : ''
+            if (!name || name.length > 80)
+              throw APIError.from('BAD_REQUEST', {
+                code: 'INVALID_DISPLAY_NAME',
+                message: 'Display name must be 1 to 80 characters',
+              })
+            next.name = name
+          }
+          if ('color' in next) {
+            const color = next.color
+            if (color == null || color === '') next.color = null
+            else if (typeof color !== 'string')
+              throw APIError.from('BAD_REQUEST', {
+                code: 'INVALID_ACCOUNT_COLOR',
+                message: 'Account color must be a hex value',
+              })
+            else {
+              const parsed = parseAccountColor(color)
+              if (!parsed)
+                throw APIError.from('BAD_REQUEST', {
+                  code: 'INVALID_ACCOUNT_COLOR',
+                  message: 'Account color must be a hex value',
+                })
+              next.color = parsed
+            }
+          }
+          return { data: next }
         },
       },
     },

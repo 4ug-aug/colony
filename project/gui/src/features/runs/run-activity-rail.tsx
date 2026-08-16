@@ -8,6 +8,7 @@ import {
   SheetDescription,
   SheetTitle,
 } from '#/components/ui/sheet'
+import { accountFaceStyle, accountInitials } from '#/lib/account-color'
 import { apiFetch } from '#/lib/api-transport'
 import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -19,7 +20,7 @@ import { ToolCallDetailsList } from './tool-call-details-list'
 import type { Step } from './step-label'
 import { stepLabel } from './step-label'
 
-export type Person = { name: string; image?: string }
+export type Person = { name: string; image?: string; color?: string }
 export type ActivityRun = {
   id: string
   roomId: string
@@ -53,7 +54,12 @@ function PersonAvatar({ person }: { person: Person }) {
   return (
     <Avatar>
       {person.image && <AvatarImage src={person.image} alt="" />}
-      <AvatarFallback>{person.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+      <AvatarFallback
+        className="font-semibold"
+        style={accountFaceStyle(person.name, person.color)}
+      >
+        {accountInitials(person.name)}
+      </AvatarFallback>
     </Avatar>
   )
 }
@@ -215,7 +221,9 @@ export function RunActivityContent({
         {run.state === 'failed' && (
           <section className="flex gap-2 border-t pt-5 text-sm text-destructive">
             <CircleX className="mt-0.5 size-4 shrink-0" />
-            <p className="min-w-0 break-all">{run.error ?? 'The run failed.'}</p>
+            <p className="min-w-0 break-all">
+              {run.error ?? 'The run failed.'}
+            </p>
           </section>
         )}
         {run.state === 'cancelled' && (

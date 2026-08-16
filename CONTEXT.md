@@ -24,6 +24,10 @@ the account's email in secondary profile details. It does not identify message
 authors or room members.
 _Avoid_: Username, handle
 
+**Account color**: An optional chosen accent for the account's avatar. When
+unset, the avatar uses a color derived from the username.
+_Avoid_: Profile color, theme color
+
 **Account mention**: An exact `@username` reference in a room message that
 directs another account's attention to that room. Agent identifiers share the
 same visible `@` syntax but are not account mentions.

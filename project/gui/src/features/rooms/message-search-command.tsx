@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Cuboid, Hash } from 'lucide-react'
-import { timestamp } from '#/components/avatar'
+import { timestamp } from './format'
 import {
   Command,
   CommandDialog,

@@ -4,7 +4,7 @@ import { apiJson } from '#/lib/api-transport'
 
 type WorkspaceMember = Pick<
   Author,
-  'id' | 'name' | 'image' | 'email' | 'displayName'
+  'id' | 'name' | 'image' | 'color' | 'email' | 'displayName'
 >
 
 const workspaceMembersQueryKey = ['workspace-members'] as const

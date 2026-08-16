@@ -4,6 +4,7 @@ export type Author = {
   id: string
   name: string
   image?: string
+  color?: string
   email?: string
   displayName?: string
   username?: string

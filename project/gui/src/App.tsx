@@ -25,6 +25,9 @@ export function App({
             role: (session.user as typeof session.user & { role?: string })
               .role,
             image: session.user.image ?? undefined,
+            color:
+              (session.user as typeof session.user & { color?: string | null })
+                .color ?? undefined,
           }
         : undefined,
     )

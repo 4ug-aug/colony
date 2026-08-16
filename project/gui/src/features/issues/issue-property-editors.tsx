@@ -1,5 +1,5 @@
-import { AgentAnt } from '#/components/avatar'
-import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
+import { AccountFace, AgentAnt } from '#/components/avatar'
+import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import {
   Command,
@@ -111,22 +111,15 @@ export function OwnerDisplay({
 
   const member = members.find((user) => user.id === owner.id)
   const name = member?.displayName || member?.name || owner.id
-  const initials = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
-    .join('')
 
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
-      <Avatar size="sm" className="size-5 shrink-0" title={name}>
-        {member?.image && <AvatarImage src={member.image} alt="" />}
-        <AvatarFallback className="bg-orange-600 text-[9px] text-white">
-          {initials || '?'}
-        </AvatarFallback>
-      </Avatar>
+      <AccountFace
+        name={member?.name || owner.id}
+        image={member?.image}
+        color={member?.color}
+        className="size-5 text-[9px]"
+      />
       <span className="min-w-0 truncate text-sm" data-owner-name>
         {name}
       </span>

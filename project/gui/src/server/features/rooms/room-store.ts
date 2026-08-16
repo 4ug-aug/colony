@@ -8,6 +8,7 @@ export type RoomUser = {
   id: string
   name: string
   image?: string
+  color?: string
   email?: string
   displayName?: string
   username?: string
@@ -233,6 +234,7 @@ type UserRow = {
   name: string
   username?: string | null
   image: string | null
+  color?: string | null
   email?: string | null
   display_name?: string | null
 }
@@ -242,6 +244,7 @@ type MessageRow = {
   author_id: string
   author_name: string
   author_image: string | null
+  author_color?: string | null
   author_kind: string
   author_email?: string | null
   author_display_name?: string | null
@@ -306,6 +309,7 @@ const userFrom = (row: UserRow): RoomUser => ({
   ...(row.display_name != null ? { displayName: row.display_name } : {}),
   ...(row.email != null ? { email: row.email } : {}),
   ...(row.image != null ? { image: row.image } : {}),
+  ...(row.color ? { color: row.color } : {}),
 })
 const attachmentFrom = (row: AttachmentRow): RoomAttachment => ({
   id: row.id,
@@ -336,6 +340,7 @@ const messageFrom = (
             : {}),
           ...(row.author_email ? { email: row.author_email } : {}),
           ...(row.author_image ? { image: row.author_image } : {}),
+          ...(row.author_color ? { color: row.author_color } : {}),
         },
   text: row.text,
   createdAt: row.created_at,
@@ -436,14 +441,17 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
   }[]
   const hasUsername = userColumns.some((column) => column.name === 'username')
   const hasBanned = userColumns.some((column) => column.name === 'banned')
+  const hasColor = userColumns.some((column) => column.name === 'color')
   const activeUser = hasBanned ? 'AND COALESCE(u.banned, 0) = 0' : ''
   const userName = hasUsername ? 'COALESCE(u.username, u.name)' : 'u.name'
+  const colorSelect = hasColor ? ', u.color' : ''
+  const authorColorSelect = hasColor ? ', u.color AS author_color' : ''
   const userProfile = hasUsername
-    ? ', u.username, u.email, u.name AS display_name'
-    : ''
+    ? `, u.username, u.email, u.name AS display_name${colorSelect}`
+    : colorSelect
   const messageProfile = hasUsername
-    ? ', u.email AS author_email, u.name AS author_display_name'
-    : ''
+    ? `, u.email AS author_email, u.name AS author_display_name${authorColorSelect}`
+    : authorColorSelect
   const messageProfileJoin = hasUsername
     ? " LEFT JOIN user u ON m.author_kind = 'user' AND u.id = m.author_id"
     : ''
@@ -516,7 +524,9 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     for (const [rootId, list] of grouped) {
       const participants: ThreadParticipant[] = []
       for (const row of list) {
-        if (!participants.some((participant) => participant.id === row.author_id))
+        if (
+          !participants.some((participant) => participant.id === row.author_id)
+        )
           participants.push({ id: row.author_id, name: row.author_name })
         if (participants.length >= 3) break
       }

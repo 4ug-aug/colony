@@ -60,12 +60,8 @@ import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { authClient } from '#/lib/auth-client'
 import { isTauriRuntime } from '#/lib/server-config'
 import { cn } from '#/lib/utils'
-import {
-  Avatar,
-  AvatarBadge,
-  AvatarFallback,
-  AvatarImage,
-} from '#/components/ui/avatar'
+import { AccountFace } from '#/components/avatar'
+import { Avatar, AvatarBadge } from '#/components/ui/avatar'
 import {
   CalendarClock,
   ChevronRight,
@@ -689,12 +685,12 @@ export function RoomSidebar({
                 onClick={onOpenAccount}
               >
                 <Avatar>
-                  <AvatarImage
-                    src="/app-icon.png"
-                    alt=""
-                    className="bg-white p-1"
+                  <AccountFace
+                    name={user.name}
+                    image={user.image}
+                    color={user.color}
+                    className="size-8 text-xs"
                   />
-                  <AvatarFallback>{user.name.slice(0, 1)}</AvatarFallback>
                   <AvatarBadge className="bg-green-600 dark:bg-green-800" />
                 </Avatar>
 

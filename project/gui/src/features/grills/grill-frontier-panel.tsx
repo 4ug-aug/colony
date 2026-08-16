@@ -11,6 +11,7 @@ import {
 } from '#/components/ui/questionnaire'
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
+import { accountFaceStyle, accountInitials } from '#/lib/account-color'
 import { cn } from '#/lib/utils'
 import { Check, MousePointerClick } from 'lucide-react'
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
@@ -23,7 +24,12 @@ import {
 } from './grill-answers'
 import { grillEnterClassName, grillStepLabel } from './grill-presentation'
 import { grillAwaitingWrapUpReview, grillIsComplete } from './grill-status'
-import type { Grill, GrillLatestStep, GrillLinkedRun, GrillQuestion } from './types'
+import type {
+  Grill,
+  GrillLatestStep,
+  GrillLinkedRun,
+  GrillQuestion,
+} from './types'
 import type { useGrillRealtime } from './use-grills'
 import {
   grillTurnActive,
@@ -96,9 +102,7 @@ function AgentNotes({
   )
 }
 
-function hasChoices(
-  question: GrillQuestion,
-): question is GrillQuestion & {
+function hasChoices(question: GrillQuestion): question is GrillQuestion & {
   choices: NonNullable<GrillQuestion['choices']>
 } {
   return Boolean(question.choices && question.choices.length >= 2)
@@ -217,9 +221,7 @@ export function GrillFrontierPanel({
     ) : null
 
   const submitPortal =
-    submitButton && toolbarEnd
-      ? createPortal(submitButton, toolbarEnd)
-      : null
+    submitButton && toolbarEnd ? createPortal(submitButton, toolbarEnd) : null
 
   if (questions.length === 0) {
     if (grillIsComplete(grill) || grillAwaitingWrapUpReview(grill)) return null
@@ -337,7 +339,9 @@ export function GrillFrontierPanel({
             : ''
           const selected = drafts[question.id] ?? ''
           const choices = hasChoices(question) ? question.choices : undefined
-          const otherActive = choices ? isOtherAnswer(question, selected) : false
+          const otherActive = choices
+            ? isOtherAnswer(question, selected)
+            : false
           return (
             <div
               key={question.id}
@@ -385,7 +389,9 @@ export function GrillFrontierPanel({
                               }}
                             >
                               <span className="flex w-full min-w-0 items-baseline justify-between gap-2">
-                                <span className="font-medium">{choice.label}</span>
+                                <span className="font-medium">
+                                  {choice.label}
+                                </span>
                                 {isRecommended ? (
                                   <span className="shrink-0 text-[0.625rem] font-medium text-amber-700 dark:text-amber-400">
                                     Recommended
@@ -500,8 +506,14 @@ export function GrillFrontierPanel({
                       {lease.editor.image ? (
                         <AvatarImage src={lease.editor.image} alt="" />
                       ) : null}
-                      <AvatarFallback>
-                        {editorName.slice(0, 1).toUpperCase()}
+                      <AvatarFallback
+                        className="text-[10px] font-semibold"
+                        style={accountFaceStyle(
+                          lease.editor.name,
+                          lease.editor.color,
+                        )}
+                      >
+                        {accountInitials(lease.editor.name)}
                       </AvatarFallback>
                     </Avatar>
                     <span>

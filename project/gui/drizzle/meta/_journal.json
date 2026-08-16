@@ -211,6 +211,13 @@
       "when": 1798000000000,
       "tag": "0029_issue_created_by",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1799000000000,
+      "tag": "0030_user_color",
+      "breakpoints": true
     }
   ]
 }

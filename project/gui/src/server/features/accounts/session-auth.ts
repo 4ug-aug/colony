@@ -11,6 +11,7 @@ export const betterAuthSessionAuthenticator: SessionAuthenticator = {
       username?: string
       role?: string
       banned?: boolean | null
+      color?: string | null
     }
     if (account.banned) return undefined
     return {
@@ -22,6 +23,7 @@ export const betterAuthSessionAuthenticator: SessionAuthenticator = {
       ...(account.role ? { role: account.role } : {}),
       ...(account.banned != null ? { banned: account.banned } : {}),
       ...(session.user.image ? { image: session.user.image } : {}),
+      ...(account.color ? { color: account.color } : {}),
     }
   },
 }

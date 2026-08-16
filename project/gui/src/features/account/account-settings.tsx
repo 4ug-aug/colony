@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Server } from 'lucide-react'
 import { authClient } from '#/lib/auth-client'
+import { parseAccountColor } from '#/lib/account-color'
 import { Avatar } from '#/components/avatar'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
@@ -33,12 +35,45 @@ export function AccountSettingsPage({
   user: Author
   onChangeServer: () => void
 }) {
+  const queryClient = useQueryClient()
+  const [displayName, setDisplayName] = useState(user.displayName ?? '')
+  const [color, setColor] = useState(user.color)
+  const [hexInput, setHexInput] = useState(user.color ?? '')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [pending, setPending] = useState<'password' | 'sessions' | 'server'>()
+  const [pending, setPending] = useState<
+    'profile' | 'password' | 'sessions' | 'server'
+  >()
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
   const [version, setVersion] = useState<string>()
+  const preview = { ...user, displayName, color }
+  const saveProfile = useMutation({
+    mutationFn: async () => {
+      const parsed = hexInput.trim() ? parseAccountColor(hexInput) : undefined
+      if (hexInput.trim() && !parsed)
+        throw new Error('Enter a hex color like #1d4ed8')
+      const result = await authClient.updateUser({
+        name: displayName.trim() || user.name,
+        color: parsed ?? '',
+      } as Parameters<typeof authClient.updateUser>[0])
+      if (result.error) throw new Error(result.error.message)
+      return parsed
+    },
+    onSuccess: async (parsed) => {
+      setColor(parsed)
+      setHexInput(parsed ?? '')
+      await queryClient.invalidateQueries({ queryKey: ['workspace-members'] })
+      setMessage('Profile saved.')
+      setError(undefined)
+    },
+    onError: (reason) =>
+      setError(
+        reason instanceof Error && reason.message.startsWith('Enter a hex')
+          ? reason.message
+          : 'Could not save profile.',
+      ),
+  })
 
   useEffect(() => {
     if (isTauriRuntime()) void getVersion().then(setVersion)
@@ -98,11 +133,11 @@ export function AccountSettingsPage({
     <div className="mx-auto w-full space-y-6 p-6 sm:p-8">
       <section className="border-b pb-4">
         <div className="flex items-center gap-3">
-          <Avatar author={user} details={false} />
+          <Avatar author={preview} details={false} />
           <div className="min-w-0">
             <h2 className="truncate font-semibold">{user.name}</h2>
-            {user.displayName && user.displayName !== user.name && (
-              <p className="truncate text-sm">{user.displayName}</p>
+            {preview.displayName && preview.displayName !== user.name && (
+              <p className="truncate text-sm">{preview.displayName}</p>
             )}
             {user.email && (
               <p className="truncate text-sm text-muted-foreground">
@@ -111,6 +146,76 @@ export function AccountSettingsPage({
             )}
           </div>
         </div>
+        <form
+          className="mt-4 max-w-sm space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            setPending('profile')
+            setError(undefined)
+            setMessage(undefined)
+            void saveProfile.mutateAsync().finally(() => setPending(undefined))
+          }}
+        >
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">Display name</span>
+            <Input
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              maxLength={80}
+              placeholder={user.name}
+              aria-label="Display name"
+              disabled={pending !== undefined}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">Account color</span>
+            <Input
+              value={hexInput}
+              onChange={(event) => {
+                const value = event.target.value
+                setHexInput(value)
+                if (!value.trim()) {
+                  setColor(undefined)
+                  return
+                }
+                const parsed = parseAccountColor(value)
+                if (parsed) setColor(parsed)
+              }}
+              placeholder="#1d4ed8"
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              maxLength={7}
+              aria-label="Account color hex"
+              disabled={pending !== undefined}
+            />
+            <span className="text-xs text-muted-foreground">
+              Leave blank for an automatic color.
+            </span>
+          </label>
+          <Button
+            type="submit"
+            size="sm"
+            aria-busy={pending === 'profile'}
+            disabled={pending !== undefined}
+          >
+            {pending === 'profile' ? (
+              <BrailleLoader text="Saving profile" />
+            ) : (
+              'Save profile'
+            )}
+          </Button>
+          {error && (
+            <p className="text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+          {message && (
+            <p className="text-xs text-muted-foreground" role="status">
+              {message}
+            </p>
+          )}
+        </form>
       </section>
 
       {isTauriRuntime() && (

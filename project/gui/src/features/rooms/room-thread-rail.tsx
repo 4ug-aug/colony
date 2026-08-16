@@ -1,4 +1,5 @@
-import { Avatar, timestamp } from '#/components/avatar'
+import { Avatar } from '#/components/avatar'
+import { timestamp } from './format'
 import { Markdown } from '#/components/markdown'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'

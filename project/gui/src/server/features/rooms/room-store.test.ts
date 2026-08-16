@@ -30,9 +30,9 @@ const SCHEMA_DDL = `
   INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
   CREATE TABLE room_member (room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
   CREATE INDEX room_member_user_idx ON room_member (user_id);
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, username TEXT, banned INTEGER);
-  INSERT INTO user (id, name, email, image, username) VALUES ('user-1', 'Ada Lovelace', 'ada@example.com', NULL, 'ada');
-  INSERT INTO user (id, name, email, image, username) VALUES ('user-2', 'Bob Builder', 'bob@example.com', 'https://example.com/bob.png', 'bob');
+  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, color TEXT, username TEXT, banned INTEGER);
+  INSERT INTO user (id, name, email, image, color, username) VALUES ('user-1', 'Ada Lovelace', 'ada@example.com', NULL, NULL, 'ada');
+  INSERT INTO user (id, name, email, image, color, username) VALUES ('user-2', 'Bob Builder', 'bob@example.com', 'https://example.com/bob.png', '#1d4ed8', 'bob');
   CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER, edited_at INTEGER, root_id TEXT REFERENCES room_message(id));
   CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
   CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, room_id TEXT NOT NULL, idx INTEGER NOT NULL, kind TEXT NOT NULL, tool TEXT, call_id TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -707,8 +707,10 @@ test('member and message profiles use username with durable secondary details', 
     email: 'ada@example.com',
   })
   expect(ada.image).toBeUndefined()
+  expect(ada.color).toBeUndefined()
   expect(bob.name).toBe('bob')
   expect(bob.image).toBe('https://example.com/bob.png')
+  expect(bob.color).toBe('#1d4ed8')
   store.createMessage({
     id: 'message-1',
     roomId: GENERAL_ROOM_ID,
@@ -720,6 +722,17 @@ test('member and message profiles use username with durable secondary details', 
     name: 'ada',
     displayName: 'Ada Lovelace',
     email: 'ada@example.com',
+  })
+  store.createMessage({
+    id: 'message-2',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'bob' },
+    text: 'Hi',
+    createdAt: 2,
+  })
+  expect(store.listMessages(GENERAL_ROOM_ID)[1]?.author).toMatchObject({
+    name: 'bob',
+    color: '#1d4ed8',
   })
 
   sqlite.close()
@@ -736,6 +749,7 @@ test('listWorkspaceUsers returns all users ordered by name', () => {
   expect(users[1].id).toBe('user-2')
   expect(users[0].image).toBeUndefined()
   expect(users[1].image).toBe('https://example.com/bob.png')
+  expect(users[1].color).toBe('#1d4ed8')
 
   sqlite.close()
 })
@@ -974,19 +988,19 @@ test('listOpenThreadAttentionRootIds returns distinct unacked thread roots and i
     createdAt: 5,
   })
 
-  expect(store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID)).toEqual(
-    ['root-a', 'root-b'],
-  )
+  expect(
+    store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID),
+  ).toEqual(['root-a', 'root-b'])
 
   store.acknowledgeRoomAttention(GENERAL_ROOM_ID, 'user-2', 6)
-  expect(store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID)).toEqual(
-    ['root-a', 'root-b'],
-  )
+  expect(
+    store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID),
+  ).toEqual(['root-a', 'root-b'])
 
   store.acknowledgeThreadAttention(GENERAL_ROOM_ID, 'root-a', 'user-2', 7)
-  expect(store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID)).toEqual(
-    ['root-b'],
-  )
+  expect(
+    store.listOpenThreadAttentionRootIds('user-2', GENERAL_ROOM_ID),
+  ).toEqual(['root-b'])
 
   sqlite.close()
 })

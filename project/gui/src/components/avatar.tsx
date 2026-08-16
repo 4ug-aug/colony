@@ -4,11 +4,46 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '#/components/ui/hover-card'
+import { accountFaceStyle, accountInitials } from '#/lib/account-color'
 
 // The ant PNG is black with transparency; this CSS mask keeps its silhouette
 // while letting the surrounding text colour recolour it per avatar context.
 export function AgentAnt({ className = '' }: { className?: string }) {
   return <span aria-hidden="true" className={`agent-ant ${className}`} />
+}
+
+export function AccountFace({
+  name,
+  image,
+  color,
+  className = 'mt-0.5 size-9 text-sm',
+  title,
+}: {
+  name: string
+  image?: string
+  color?: string
+  className?: string
+  title?: string
+}) {
+  if (image)
+    return (
+      <img
+        className={`shrink-0 rounded-full object-cover ${className}`}
+        src={image}
+        alt=""
+        title={title}
+      />
+    )
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold ${className}`}
+      style={accountFaceStyle(name, color)}
+      aria-hidden="true"
+      title={title}
+    >
+      {accountInitials(name)}
+    </div>
+  )
 }
 
 export function Avatar({
@@ -20,25 +55,15 @@ export function Avatar({
   agent?: boolean
   details?: boolean
 }) {
-  const avatar = author.image ? (
-    <img
-      className="mt-0.5 size-9 shrink-0 rounded-full object-cover"
-      src={author.image}
-      alt=""
-    />
-  ) : (
+  const avatar = agent ? (
     <div
-      className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-        agent ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-      }`}
+      className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
       aria-hidden="true"
     >
-      {agent ? (
-        <AgentAnt className="size-8" />
-      ) : (
-        author.name.slice(0, 1).toUpperCase()
-      )}
+      <AgentAnt className="size-8" />
     </div>
+  ) : (
+    <AccountFace name={author.name} image={author.image} color={author.color} />
   )
   if (!details || agent || (!author.email && !author.displayName)) return avatar
   return (
@@ -55,11 +80,4 @@ export function Avatar({
       </HoverCardContent>
     </HoverCard>
   )
-}
-
-export function timestamp(value: number) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(value)
 }

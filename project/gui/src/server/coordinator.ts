@@ -196,11 +196,11 @@ export type WorkspaceServerMessage =
 export type GrillLeaseMessage = {
   questionId: string
   presenceId: string
-  editor: Pick<RoomUser, 'id' | 'name' | 'image' | 'displayName'>
+  editor: Pick<RoomUser, 'id' | 'name' | 'image' | 'displayName' | 'color'>
 }
 export type GrillParticipantMessage = Pick<
   RoomUser,
-  'id' | 'name' | 'image' | 'displayName'
+  'id' | 'name' | 'image' | 'displayName' | 'color'
 >
 export type GrillServerMessage =
   | {
@@ -459,6 +459,7 @@ export function createCoordinator(options: {
         id: user.id,
         name: user.name,
         ...(user.image ? { image: user.image } : {}),
+        ...(user.color ? { color: user.color } : {}),
         ...(user.displayName ? { displayName: user.displayName } : {}),
       })
     }
@@ -732,6 +733,7 @@ export function createCoordinator(options: {
           id: user.id,
           name: user.name,
           ...(user.image ? { image: user.image } : {}),
+          ...(user.color ? { color: user.color } : {}),
           ...(user.displayName ? { displayName: user.displayName } : {}),
         },
         socket,

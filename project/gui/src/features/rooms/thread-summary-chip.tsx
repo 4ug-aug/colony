@@ -1,9 +1,10 @@
-import { AgentAnt, timestamp } from '#/components/avatar'
+import { AccountFace, AgentAnt } from '#/components/avatar'
 import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
 import { cn } from '#/lib/utils'
+import { timestamp } from './format'
 import type { ThreadParticipant } from './types'
 
 function ReplyAvatars({ participants }: { participants: ThreadParticipant[] }) {
@@ -14,25 +15,22 @@ function ReplyAvatars({ participants }: { participants: ThreadParticipant[] }) {
     <div className="flex -space-x-1.5">
       {participants.map((participant) => {
         const isAgent = agentIds.has(participant.id)
-        return (
+        return isAgent ? (
           <div
             key={participant.id}
-            className={`flex size-5 items-center justify-center rounded-full border border-border bg-muted text-[10px] font-semibold ${
-              isAgent ? 'text-primary' : 'text-muted-foreground'
-            }`}
+            className="flex size-5 items-center justify-center rounded-full border border-border bg-muted text-primary"
             aria-hidden="true"
-            title={
-              isAgent
-                ? agentNameFrom(agents, participant.id)
-                : participant.name
-            }
+            title={agentNameFrom(agents, participant.id)}
           >
-            {isAgent ? (
-              <AgentAnt className="size-3.5" />
-            ) : (
-              participant.name.slice(0, 1).toUpperCase()
-            )}
+            <AgentAnt className="size-3.5" />
           </div>
+        ) : (
+          <AccountFace
+            key={participant.id}
+            name={participant.name}
+            className="size-5 border border-border text-[10px]"
+            title={participant.name}
+          />
         )
       })}
     </div>

@@ -9,6 +9,7 @@ export const user = sqliteTable('user', {
     .default(false)
     .notNull(),
   image: text('image'),
+  color: text('color'),
   username: text('username').unique(),
   displayUsername: text('display_username'),
   role: text('role').default('user'),

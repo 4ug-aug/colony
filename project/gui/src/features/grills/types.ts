@@ -27,6 +27,7 @@ export type GrillEditLease = {
     id: string
     name: string
     image?: string
+    color?: string
     displayName?: string
   }
 }

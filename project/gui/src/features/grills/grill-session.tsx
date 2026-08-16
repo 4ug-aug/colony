@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from '#/components/ui/tooltip'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import { accountFaceStyle, accountInitials } from '#/lib/account-color'
 import { cn } from '#/lib/utils'
 import { ArrowLeft, CheckCircle2, Flame } from 'lucide-react'
 import { useState } from 'react'
@@ -94,8 +95,14 @@ export function GrillSession({
                             className="border-1 hover:border-foreground"
                           />
                         ) : null}
-                        <AvatarFallback className="border-1 hover:border-foreground">
-                          {name.slice(0, 1).toUpperCase()}
+                        <AvatarFallback
+                          className="border-1 text-[10px] font-semibold hover:border-foreground"
+                          style={accountFaceStyle(
+                            participant.name,
+                            participant.color,
+                          )}
+                        >
+                          {accountInitials(participant.name)}
                         </AvatarFallback>
                         <AvatarBadge className="bg-emerald-500" />
                       </Avatar>

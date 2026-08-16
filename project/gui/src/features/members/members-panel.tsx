@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LogOut, UserPlus, Users, X } from 'lucide-react'
 import { apiFetch } from '#/lib/api-transport'
-import { Avatar } from '#/components/avatar'
+import { AccountFace, Avatar } from '#/components/avatar'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import {
@@ -15,7 +15,7 @@ import type { Author, Room } from '#/features/rooms/types'
 
 type MemberUser = Pick<
   Author,
-  'id' | 'name' | 'image' | 'email' | 'displayName'
+  'id' | 'name' | 'image' | 'color' | 'email' | 'displayName'
 >
 
 export function MembersPanel({
@@ -170,23 +170,15 @@ export function MembersPanel({
       >
         {stackAvatars.length > 0 ? (
           <span className="flex -space-x-1.5">
-            {stackAvatars.map((m) =>
-              m.image ? (
-                <img
-                  key={m.id}
-                  src={m.image}
-                  alt=""
-                  className="size-5 rounded-full border-2 border-background object-cover"
-                />
-              ) : (
-                <span
-                  key={m.id}
-                  className="flex size-5 items-center justify-center rounded-full border-2 border-background bg-muted text-[9px] font-semibold text-muted-foreground"
-                >
-                  {m.name.slice(0, 1).toUpperCase()}
-                </span>
-              ),
-            )}
+            {stackAvatars.map((m) => (
+              <AccountFace
+                key={m.id}
+                name={m.name}
+                image={m.image}
+                color={m.color}
+                className="size-5 border-2 border-background text-[9px]"
+              />
+            ))}
           </span>
         ) : (
           <Users className="size-3.5" />
