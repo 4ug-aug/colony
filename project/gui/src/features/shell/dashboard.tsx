@@ -57,7 +57,6 @@ import {
   Plus,
   Settings,
   StickyNote,
-  UserRound,
   Wifi,
   WifiOff,
 } from 'lucide-react'
@@ -440,42 +439,39 @@ export function Dashboard({
         user={user}
       />
       <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          {view === 'grills' && selectedGrillId ? (
-            <GrillSessionHeader
-              grillId={selectedGrillId}
-              onBack={() => navigate({ view: 'grills' })}
-            />
-          ) : view === 'docs' && selectedDocId ? (
-            <DocSessionHeader
-              docId={selectedDocId}
-              onBack={() => navigate({ view: 'docs' })}
-            />
-          ) : (
-            <>
-              {view === 'account' ? (
-                <UserRound className="size-4 text-muted-foreground" />
-              ) : view === 'workspace' ? (
-                <Settings className="size-4 text-muted-foreground" />
-              ) : view === 'schedules' ? (
-                <CalendarClock className="size-4 text-muted-foreground" />
-              ) : view === 'issues' ? (
-                <Cuboid className="size-4 text-muted-foreground" />
-              ) : view === 'bulletins' ? (
-                <StickyNote className="size-4 text-muted-foreground" />
-              ) : view === 'docs' ? (
-                <FileText className="size-4 text-muted-foreground" />
-              ) : view === 'grills' ? (
-                <Flame className="size-4 text-muted-foreground" />
-              ) : room?.visibility === 'private' ? (
-                <Lock className="size-4 text-muted-foreground" />
-              ) : (
-                <Hash className="size-4 text-muted-foreground" />
-              )}
-              <p className="font-semibold">
-                {view === 'account'
-                  ? 'User'
-                  : view === 'workspace'
+        {view !== 'account' && (
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+            {view === 'grills' && selectedGrillId ? (
+              <GrillSessionHeader
+                grillId={selectedGrillId}
+                onBack={() => navigate({ view: 'grills' })}
+              />
+            ) : view === 'docs' && selectedDocId ? (
+              <DocSessionHeader
+                docId={selectedDocId}
+                onBack={() => navigate({ view: 'docs' })}
+              />
+            ) : (
+              <>
+                {view === 'workspace' ? (
+                  <Settings className="size-4 text-muted-foreground" />
+                ) : view === 'schedules' ? (
+                  <CalendarClock className="size-4 text-muted-foreground" />
+                ) : view === 'issues' ? (
+                  <Cuboid className="size-4 text-muted-foreground" />
+                ) : view === 'bulletins' ? (
+                  <StickyNote className="size-4 text-muted-foreground" />
+                ) : view === 'docs' ? (
+                  <FileText className="size-4 text-muted-foreground" />
+                ) : view === 'grills' ? (
+                  <Flame className="size-4 text-muted-foreground" />
+                ) : room?.visibility === 'private' ? (
+                  <Lock className="size-4 text-muted-foreground" />
+                ) : (
+                  <Hash className="size-4 text-muted-foreground" />
+                )}
+                <p className="font-semibold">
+                  {view === 'workspace'
                     ? 'Workspace'
                     : view === 'schedules'
                       ? 'Schedules'
@@ -488,60 +484,61 @@ export function Dashboard({
                             : view === 'grills'
                               ? 'Grills'
                               : (room?.name ?? 'Rooms')}
-              </p>
-              {view === 'room' && room?.visibility === 'private' && (
-                <MembersPanel
-                  room={room}
-                  currentUserId={user.id}
-                  membersChangedAt={membersChangedAt}
-                />
-              )}
-              {view === 'issues' && (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={() => setIssueCreate({ open: true })}
-                >
-                  <Plus data-icon="inline-start" />
-                  New issue
-                </Button>
-              )}
-              {view === 'bulletins' && (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={() => bulletinsRef.current?.addBulletin()}
-                >
-                  <Plus data-icon="inline-start" />
-                  Add bulletin
-                </Button>
-              )}
-              {view === 'grills' && (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={() => setGrillStartOpen(true)}
-                >
-                  <Plus data-icon="inline-start" />
-                  Enter the Grill
-                </Button>
-              )}
-              {view === 'room' && (
-                <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {connection === 'connected' ? (
-                    <Wifi className="size-3.5" />
-                  ) : (
-                    <WifiOff className="size-3.5" />
-                  )}
-                  {connection}
-                </span>
-              )}
-            </>
-          )}
-        </header>
+                </p>
+                {view === 'room' && room?.visibility === 'private' && (
+                  <MembersPanel
+                    room={room}
+                    currentUserId={user.id}
+                    membersChangedAt={membersChangedAt}
+                  />
+                )}
+                {view === 'issues' && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => setIssueCreate({ open: true })}
+                  >
+                    <Plus data-icon="inline-start" />
+                    New issue
+                  </Button>
+                )}
+                {view === 'bulletins' && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => bulletinsRef.current?.addBulletin()}
+                  >
+                    <Plus data-icon="inline-start" />
+                    Add bulletin
+                  </Button>
+                )}
+                {view === 'grills' && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => setGrillStartOpen(true)}
+                  >
+                    <Plus data-icon="inline-start" />
+                    Enter the Grill
+                  </Button>
+                )}
+                {view === 'room' && (
+                  <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    {connection === 'connected' ? (
+                      <Wifi className="size-3.5" />
+                    ) : (
+                      <WifiOff className="size-3.5" />
+                    )}
+                    {connection}
+                  </span>
+                )}
+              </>
+            )}
+          </header>
+        )}
         {view === 'account' && (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <AccountSettingsPage user={user} onChangeServer={onChangeServer} />

@@ -1,17 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Dithering } from '@paper-design/shaders-react'
-import {
-  Activity,
-  CircleCheckBig,
-  CircleDot,
-  Cuboid,
-  Server,
-} from 'lucide-react'
+import { CircleCheckBig, Clock, Server, Waypoints } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
-import { AccountFace } from '#/components/avatar'
+import { AccountFace, AgentAnt } from '#/components/avatar'
 import { useTheme } from '#/components/theme-provider'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
@@ -31,6 +25,11 @@ import type { ChartConfig } from '#/components/ui/chart'
 import { Input } from '#/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '#/components/ui/tooltip'
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -42,7 +41,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '#/components/ui/alert-dialog'
-import { useIssues } from '#/features/issues/use-issues'
 import type { Author } from '#/features/rooms/types'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { authClient } from '#/lib/auth-client'
@@ -52,21 +50,26 @@ import {
   currentServerBase,
   isTauriRuntime,
 } from '#/lib/server-config'
-import { buildAccountAnalytics, countUpValue } from './account-analytics'
+import {
+  countUpValue,
+  formatRuntime,
+  useAccountAnalytics,
+} from './account-analytics'
 
 const chartConfig = {
-  opened: { label: 'Opened', color: 'var(--chart-2)' },
-  touched: { label: 'Touched', color: 'var(--primary)' },
+  delegations: { label: 'Delegations', color: 'var(--primary)' },
 } satisfies ChartConfig
 
 function AnimatedNumber({
   value,
   pending,
   reducedMotion,
+  format = (number) => number.toLocaleString(),
 }: {
   value: number
   pending: boolean
   reducedMotion: boolean
+  format?: (value: number) => string
 }) {
   const [display, setDisplay] = useState(0)
   const current = useRef(0)
@@ -91,7 +94,7 @@ function AnimatedNumber({
     return () => cancelAnimationFrame(frame)
   }, [pending, reducedMotion, value])
 
-  return pending ? '—' : display.toLocaleString()
+  return pending ? '—' : format(display)
 }
 
 export function AccountSettingsPage({
@@ -104,11 +107,11 @@ export function AccountSettingsPage({
   const queryClient = useQueryClient()
   const { theme } = useTheme()
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
-  const { data: issues = [], isPending: issuesPending } = useIssues()
-  const analytics = useMemo(
-    () => buildAccountAnalytics(issues, user.id),
-    [issues, user.id],
-  )
+  const {
+    data: analytics,
+    isPending: analyticsPending,
+    isError: analyticsError,
+  } = useAccountAnalytics(user.id)
   const [displayName, setDisplayName] = useState(user.displayName ?? '')
   const [color, setColor] = useState(user.color)
   const [hexInput, setHexInput] = useState(user.color ?? '')
@@ -207,10 +210,29 @@ export function AccountSettingsPage({
   }
 
   const metrics = [
-    { label: 'Assigned', value: analytics.assigned, icon: Cuboid },
-    { label: 'Opened', value: analytics.opened, icon: CircleDot },
-    { label: 'In motion', value: analytics.active, icon: Activity },
-    { label: 'Completed', value: analytics.completed, icon: CircleCheckBig },
+    {
+      label: 'Issues created by agents',
+      value: analytics?.agentCreatedIssues ?? 0,
+      icon: Waypoints,
+      description: 'Workspace-wide Issues whose creator is an agent.',
+    },
+    {
+      label: 'Tasks done by agents',
+      value: analytics?.agentCompletedIssues ?? 0,
+      icon: CircleCheckBig,
+      description: 'Workspace-wide Done Issues currently owned by an agent.',
+    },
+    {
+      label: 'Invocations',
+      value: analytics?.delegations ?? 0,
+      icon: AgentAnt,
+    },
+    {
+      label: 'Runtime coordinated',
+      value: analytics?.runtimeMs ?? 0,
+      icon: Clock,
+      format: formatRuntime,
+    },
   ]
 
   return (
@@ -261,120 +283,130 @@ export function AccountSettingsPage({
 
           <TabsContent value="overview" className="space-y-3">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {metrics.map(({ label, value, icon: Icon }, index) => (
-                <Card
-                  key={label}
-                  size="sm"
-                  className="gap-0 bg-card/75 py-0 shadow-sm backdrop-blur-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-500 ease-out fill-mode-backwards motion-reduce:animate-none"
-                  style={{ animationDelay: `${140 + index * 60}ms` }}
-                >
-                  <CardContent className="p-1.5 pb-0">
-                    <div className="flex min-h-20 items-center rounded-md bg-background/80 px-3 shadow-sm ring-1 ring-foreground/10">
-                      <span className="text-3xl font-semibold tracking-tight tabular-nums">
-                        <AnimatedNumber
-                          value={value}
-                          pending={issuesPending}
-                          reducedMotion={reducedMotion}
-                        />
-                      </span>
+              {metrics.map(
+                ({ label, value, icon: Icon, format, description }, index) => (
+                  <Card
+                    key={label}
+                    size="sm"
+                    className="gap-0 bg-card/75 py-0 shadow-sm backdrop-blur-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-500 ease-out fill-mode-backwards motion-reduce:animate-none"
+                    style={{ animationDelay: `${140 + index * 60}ms` }}
+                  >
+                    <CardContent className="p-1.5 pb-0">
+                      <div className="flex min-h-20 items-center rounded-md bg-background/80 px-3 shadow-sm ring-1 ring-foreground/10">
+                        <span className="text-3xl font-semibold tracking-tight tabular-nums">
+                          <AnimatedNumber
+                            value={value}
+                            pending={analyticsPending || analyticsError}
+                            reducedMotion={reducedMotion}
+                            format={format}
+                          />
+                        </span>
+                      </div>
+                    </CardContent>
+                    <div className="flex min-h-10 items-center gap-2 px-3 py-2 text-muted-foreground">
+                      <Icon className="size-3.5 shrink-0" />
+                      {description ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                              className="text-left text-xs leading-tight font-medium underline decoration-dotted underline-offset-4"
+                              />
+                            }
+                          >
+                            {label}
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            {description}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-xs leading-tight font-medium">
+                          {label}
+                        </span>
+                      )}
                     </div>
-                  </CardContent>
-                  <div className="flex items-center gap-2 px-3 py-2.5 text-muted-foreground">
-                    <Icon className="size-3.5" />
-                    <span className="text-xs font-medium">{label}</span>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                ),
+              )}
             </div>
 
             <Card className="bg-card/90 shadow-sm backdrop-blur-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-500 ease-out fill-mode-backwards [animation-delay:380ms] motion-reduce:animate-none">
               <CardHeader>
-                <CardTitle>Issue rhythm</CardTitle>
+                <CardTitle>Invocation rhythm</CardTitle>
                 <CardDescription>
-                  Issues you opened or own over the last seven days
+                  Room invocations over the last seven days
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ChartContainer
-                  config={chartConfig}
-                  className="h-[220px] w-full aspect-auto"
-                >
-                  <AreaChart
-                    accessibilityLayer
-                    data={analytics.rhythm}
-                    margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+                {analyticsError ? (
+                  <div
+                    className="grid h-[220px] place-items-center text-sm text-muted-foreground"
+                    role="alert"
                   >
-                    <defs>
-                      <linearGradient
-                        id="opened-fill"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stopColor="var(--color-opened)"
-                          stopOpacity={0.3}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor="var(--color-opened)"
-                          stopOpacity={0}
-                        />
-                      </linearGradient>
-                      <linearGradient
-                        id="touched-fill"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stopColor="var(--color-touched)"
-                          stopOpacity={0.32}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor="var(--color-touched)"
-                          stopOpacity={0}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="day"
-                      axisLine={false}
-                      tickLine={false}
-                      tickMargin={10}
-                    />
-                    <ChartTooltip
-                      cursor={false}
-                      content={<ChartTooltipContent indicator="line" />}
-                    />
-                    <Area
-                      dataKey="opened"
-                      type="monotone"
-                      fill="url(#opened-fill)"
-                      stroke="var(--color-opened)"
-                      strokeWidth={2}
-                      isAnimationActive={!reducedMotion}
-                      animationDuration={700}
-                      animationEasing="ease-out"
-                    />
-                    <Area
-                      dataKey="touched"
-                      type="monotone"
-                      fill="url(#touched-fill)"
-                      stroke="var(--color-touched)"
-                      strokeWidth={2}
-                      isAnimationActive={!reducedMotion}
-                      animationDuration={700}
-                      animationEasing="ease-out"
-                    />
-                  </AreaChart>
-                </ChartContainer>
+                    Could not load analytics.
+                  </div>
+                ) : (
+                  <ChartContainer
+                    config={chartConfig}
+                    className="h-[220px] w-full aspect-auto"
+                  >
+                    <AreaChart
+                      accessibilityLayer
+                      data={analytics?.rhythm ?? []}
+                      margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+                    >
+                      <defs>
+                        <linearGradient
+                          id="delegations-fill"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor="var(--color-delegations)"
+                            stopOpacity={0.32}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="var(--color-delegations)"
+                            stopOpacity={0}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="day"
+                        axisLine={false}
+                        tickLine={false}
+                        tickMargin={10}
+                        tickFormatter={(day: string) =>
+                          new Intl.DateTimeFormat([], {
+                            weekday: 'short',
+                            timeZone: 'UTC',
+                          }).format(new Date(`${day}T00:00:00Z`))
+                        }
+                      />
+                      <ChartTooltip
+                        cursor={false}
+                        content={<ChartTooltipContent indicator="line" />}
+                      />
+                      <Area
+                        dataKey="delegations"
+                        type="monotone"
+                        fill="url(#delegations-fill)"
+                        stroke="var(--color-delegations)"
+                        strokeWidth={2}
+                        isAnimationActive={!reducedMotion}
+                        animationDuration={700}
+                        animationEasing="ease-out"
+                      />
+                    </AreaChart>
+                  </ChartContainer>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

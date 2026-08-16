@@ -218,6 +218,20 @@
       "when": 1799000000000,
       "tag": "0030_user_color",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1800000000000,
+      "tag": "0031_account_run_analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1801000000000,
+      "tag": "0032_agent_issue_analytics",
+      "breakpoints": true
     }
   ]
 }

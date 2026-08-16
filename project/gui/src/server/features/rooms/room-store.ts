@@ -133,6 +133,14 @@ export type RoomRun = RunSummary & {
   requestedBy: RoomUser
 }
 
+export type AccountRunAnalytics = {
+  delegations: number
+  agentCreatedIssues: number
+  agentCompletedIssues: number
+  runtimeMs: number
+  rhythm: { day: string; delegations: number }[]
+}
+
 export type StoredStep = {
   id: string
   runId: string
@@ -189,6 +197,10 @@ export interface RoomStore {
     query: string
     limit?: number
   }): MessageSearchHit[]
+  getAccountRunAnalytics: (
+    accountId: string,
+    now?: number,
+  ) => AccountRunAnalytics
   listRuns(roomId: string): RoomRun[]
   createMessage(
     message: RoomMessageInput,
@@ -406,6 +418,7 @@ const decodeMessageCursor = (value: string): MessageCursor => {
 }
 
 export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
+  const dayMs = 86_400_000
   const hasFts = Boolean(
     sqlite
       .prepare(
@@ -1007,6 +1020,56 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     listRoomHistoryPage,
     listRoomHistoryAround,
     searchMessages,
+    getAccountRunAnalytics: (accountId, now = Date.now()) => {
+      const summary = sqlite
+        .prepare(
+          `SELECT COUNT(*) AS delegations,
+                  (SELECT COUNT(*) FROM issue WHERE created_by_kind = 'agent') AS agent_created_issues,
+                  (SELECT COUNT(*) FROM issue WHERE status = 'done' AND owner_kind = 'agent') AS agent_completed_issues,
+                  COALESCE(SUM(CASE
+                    WHEN room_run.state IN ('succeeded', 'failed', 'cancelled')
+                      AND room_run.started_at IS NOT NULL AND room_run.completed_at IS NOT NULL
+                      AND room_run.completed_at >= room_run.started_at
+                    THEN room_run.completed_at - room_run.started_at ELSE 0 END), 0) AS runtime_ms
+           FROM room_run WHERE room_run.requested_by_id = ?`,
+        )
+        .get(accountId) as {
+        delegations: number
+        agent_created_issues: number
+        agent_completed_issues: number
+        runtime_ms: number
+      }
+      const today = Math.floor(now / dayMs) * dayMs
+      const firstDay = today - 6 * dayMs
+      const rows = sqlite
+        .prepare(
+          `SELECT CAST(created_at / ${dayMs} AS INTEGER) * ${dayMs} AS day_start,
+                  COUNT(*) AS delegations
+           FROM room_run
+           WHERE requested_by_id = ? AND created_at >= ? AND created_at < ?
+           GROUP BY day_start ORDER BY day_start`,
+        )
+        .all(accountId, firstDay, today + dayMs) as {
+        day_start: number
+        delegations: number
+      }[]
+      const byDay = new Map(
+        rows.map(({ day_start, delegations }) => [day_start, delegations]),
+      )
+      return {
+        delegations: summary.delegations,
+        agentCreatedIssues: summary.agent_created_issues,
+        agentCompletedIssues: summary.agent_completed_issues,
+        runtimeMs: summary.runtime_ms,
+        rhythm: Array.from({ length: 7 }, (_, index) => {
+          const day = firstDay + index * dayMs
+          return {
+            day: new Date(day).toISOString().slice(0, 10),
+            delegations: byDay.get(day) ?? 0,
+          }
+        }),
+      }
+    },
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
     createMessage: (message, attachments = []) => {
       const run = () => {

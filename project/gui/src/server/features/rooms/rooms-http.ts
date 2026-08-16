@@ -164,6 +164,8 @@ export function createRoomsHttp(deps: {
     url: URL,
     user: RoomUser,
   ): Promise<Response | undefined> => {
+    if (url.pathname === '/api/account/analytics' && request.method === 'GET')
+      return json({ analytics: deps.store.getAccountRunAnalytics(user.id) })
     if (url.pathname === '/api/rooms' && request.method === 'GET')
       return json({ rooms: deps.roomsFor(user.id) })
     if (url.pathname === '/api/search/messages' && request.method === 'GET') {

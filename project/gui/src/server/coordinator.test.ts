@@ -492,6 +492,39 @@ class MemoryRoomStore implements RoomStore {
   listRuns(roomId: string) {
     return this.runs.filter((run) => run.roomId === roomId)
   }
+  getAccountRunAnalytics(accountId: string, now = Date.now()) {
+    const dayMs = 86_400_000
+    const runs = this.runs.filter((run) => run.requestedBy.id === accountId)
+    const today = Math.floor(now / dayMs) * dayMs
+    const firstDay = today - 6 * dayMs
+    return {
+      delegations: runs.length,
+      agentCreatedIssues: 0,
+      agentCompletedIssues: 0,
+      runtimeMs: runs.reduce(
+        (total, run) =>
+          total +
+          ((run.state === 'succeeded' ||
+            run.state === 'failed' ||
+            run.state === 'cancelled') &&
+          run.startedAt != null &&
+          run.completedAt != null &&
+          run.completedAt >= run.startedAt
+            ? run.completedAt - run.startedAt
+            : 0),
+        0,
+      ),
+      rhythm: Array.from({ length: 7 }, (_, index) => {
+        const day = firstDay + index * dayMs
+        return {
+          day: new Date(day).toISOString().slice(0, 10),
+          delegations: runs.filter(
+            (run) => Math.floor(run.createdAt / dayMs) * dayMs === day,
+          ).length,
+        }
+      }),
+    }
+  }
   createMessage(
     message: RoomMessageInput,
     attachments: NewRoomAttachment[] = [],
@@ -721,6 +754,67 @@ async function makeCoordinator(overrides: Partial<CoordinatorOptions> = {}) {
     base: `http://localhost:${coordinator.port}`,
   }
 }
+
+test('account analytics are scoped to the authenticated account', async () => {
+  const store = new MemoryRoomStore()
+  store.runs = [
+    {
+      id: 'mine',
+      roomId: GENERAL_ROOM_ID,
+      triggerMessageId: 'message-1',
+      requestedBy: { id: 'user-1', name: 'Ada' },
+      task: 'Mine',
+      agentId: 'researcher',
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      state: 'succeeded',
+      createdAt: Date.now(),
+      startedAt: 10,
+      completedAt: 20,
+      stdout: '',
+      stderr: '',
+    },
+    {
+      id: 'theirs',
+      roomId: GENERAL_ROOM_ID,
+      triggerMessageId: 'message-2',
+      requestedBy: { id: 'user-2', name: 'Bob' },
+      task: 'Theirs',
+      agentId: 'software-engineer',
+      provider: 'cursor',
+      model: 'composer-2.5',
+      state: 'succeeded',
+      createdAt: Date.now(),
+      stdout: '',
+      stderr: '',
+    },
+  ]
+  const { coordinator, base } = await makeCoordinator({ store })
+  try {
+    const response = await fetch(
+      `${base}/api/account/analytics?accountId=user-2`,
+      { headers: { origin: 'http://gui.test' } },
+    )
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      analytics: {
+        delegations: number
+        agentCreatedIssues: number
+        agentCompletedIssues: number
+        runtimeMs: number
+      }
+    }
+    expect(body.analytics).toMatchObject({
+      delegations: 1,
+      agentCreatedIssues: 0,
+      agentCompletedIssues: 0,
+      runtimeMs: 10,
+    })
+    expect(JSON.stringify(body)).not.toContain('theirs')
+  } finally {
+    await coordinator.stop()
+  }
+})
 
 test('two clients receive durable room messages and agent runs', async () => {
   const store = new MemoryRoomStore()

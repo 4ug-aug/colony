@@ -35,6 +35,7 @@ const SCHEMA_DDL = `
   INSERT INTO user (id, name, email, image, color, username) VALUES ('user-2', 'Bob Builder', 'bob@example.com', 'https://example.com/bob.png', '#1d4ed8', 'bob');
   CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER, edited_at INTEGER, root_id TEXT REFERENCES room_message(id));
   CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
+  CREATE TABLE issue (id TEXT PRIMARY KEY, status TEXT NOT NULL, owner_kind TEXT, created_by_kind TEXT);
   CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, room_id TEXT NOT NULL, idx INTEGER NOT NULL, kind TEXT NOT NULL, tool TEXT, call_id TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL);
   CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE cascade, kind TEXT NOT NULL, source_id TEXT NOT NULL, root_id TEXT, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
   ${FTS_DDL}
@@ -125,6 +126,92 @@ test('room store retains history and fails stale runs', () => {
     state: 'failed',
     completedAt: expect.any(Number),
   })
+  sqlite.close()
+})
+
+test('account run analytics aggregate only the requested account', () => {
+  const sqlite = new Database(':memory:')
+  sqlite.run(SCHEMA_DDL)
+  sqlite.run(
+    "INSERT INTO room (id, name, visibility) VALUES ('research', 'Research', 'public')",
+  )
+  sqlite.run(`
+    INSERT INTO issue VALUES ('agent-created-open', 'todo', 'agent', 'agent');
+    INSERT INTO issue VALUES ('agent-completed', 'done', 'agent', 'account');
+    INSERT INTO issue VALUES ('agent-created-done-by-user', 'done', 'account', 'agent');
+  `)
+  const store = createSqliteRoomStore(sqlite)
+  const day = 86_400_000
+  const now = Date.UTC(2026, 7, 16, 12)
+  store.createMessage({
+    id: 'msg-root',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Start',
+    createdAt: now - 1,
+  })
+  store.createMessage({
+    id: 'msg-reply',
+    roomId: GENERAL_ROOM_ID,
+    rootId: 'msg-root',
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Follow up',
+    createdAt: now,
+  })
+  const addRun = (overrides: Partial<RoomRun>) =>
+    store.createRun(
+      makeRun({
+        id: crypto.randomUUID(),
+        createdAt: now,
+        state: 'succeeded',
+        ...overrides,
+      }),
+    )
+
+  addRun({
+    triggerMessageId: 'msg-reply',
+    startedAt: now - 8_000,
+    completedAt: now - 3_000,
+  })
+  addRun({
+    roomId: 'research',
+    agentId: 'researcher',
+    state: 'failed',
+    createdAt: now - 2 * day,
+    startedAt: now - 12_000,
+    completedAt: now - 5_000,
+  })
+  addRun({
+    roomId: 'research',
+    agentId: 'researcher',
+    state: 'cancelled',
+    createdAt: now - 3 * day,
+  })
+  addRun({
+    state: 'running',
+    createdAt: now - 8 * day,
+    startedAt: now - 1_000,
+    completedAt: now,
+  })
+  addRun({
+    requestedBy: { id: 'user-2', name: 'Bob' },
+    agentId: 'other-agent',
+    startedAt: now - 20_000,
+    completedAt: now,
+  })
+
+  const analytics = store.getAccountRunAnalytics('user-1', now)
+  expect(analytics).toMatchObject({
+    delegations: 4,
+    agentCreatedIssues: 2,
+    agentCompletedIssues: 1,
+    runtimeMs: 12_000,
+  })
+  expect(analytics.rhythm).toHaveLength(7)
+  expect(analytics.rhythm.map(({ delegations }) => delegations)).toEqual([
+    0, 0, 0, 1, 1, 0, 1,
+  ])
+  expect(analytics.rhythm.at(-1)?.day).toBe('2026-08-16')
   sqlite.close()
 })
 
