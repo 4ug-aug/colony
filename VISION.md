@@ -1,6 +1,6 @@
-# Sweat vision
+# Colony vision
 
-Sweat is a self-hosted multiplayer workspace where people and AI agents work
+Colony is a self-hosted multiplayer workspace where people and AI agents work
 together. It should feel less like a dashboard for launching processes and
 more like a place where a team delegates work, follows it as it happens, and
 keeps the result in context.
@@ -14,7 +14,7 @@ continue the discussion when it finishes.
 
 ```text
 Person assigns work in a room
-  -> Sweat creates a bounded run from an agent definition
+  -> Colony creates a bounded run from an agent definition
   -> the run executes in an isolated sandbox
   -> progress and results appear in the room
   -> the room retains the shared record
@@ -36,7 +36,7 @@ the same run and sandbox mechanisms.
 - **Multiplayer by default.** Work belongs to shared rooms rather than a
   single user's local session.
 - **Agents are collaborators, runs are bounded.** Agents are visible in the
-  product, but execution retains Sweat's isolated run lifecycle.
+  product, but execution retains Colony's isolated run lifecycle.
 - **One server, multiple clients.** The server is authoritative for identity,
   rooms, history, runs, grants, and realtime updates.
 - **Capabilities stay narrow.** Agents reach external systems through scoped,
@@ -46,14 +46,14 @@ the same run and sandbox mechanisms.
 
 ## Client direction
 
-Sweat's intended primary daily experience is a native Tauri desktop
+Colony's intended primary daily experience is a native Tauri desktop
 application, with the browser client kept as a universally accessible
 alternative. The frontend must therefore be a static API client, not the place
 where product server logic lives.
 
 ```text
 Browser client ─┐
-                ├── HTTPS + realtime connection ──> self-hosted Sweat server
+                ├── HTTPS + realtime connection ──> self-hosted Colony server
 Tauri client ───┘                                      ├── workspace data
                                                        ├── run orchestration
                                                        └── sandbox workers
@@ -69,7 +69,7 @@ it does not load its interface from the selected server. The server remains
 authoritative for identity, database initialization and persistence, rooms,
 history, runs, and realtime updates.
 
-On initial startup, the Tauri client asks the person to choose a Sweat server
+On initial startup, the Tauri client asks the person to choose a Colony server
 and remembers that choice. It connects to one server at a time; changing server
 replaces the current selection rather than introducing a multi-server
 workspace switcher. Desktop clients accept only HTTPS server URLs. A
@@ -85,16 +85,16 @@ list of servers.
 The self-hosted server must continue running when desktop clients close. Runs
 belong to the shared workspace, not to the lifetime of a browser tab or
 desktop process. In the initial desktop slice, closing the window exits the
-client. Reopening it restores durable room and run state; keeping Sweat alive
+client. Reopening it restores durable room and run state; keeping Colony alive
 in the system tray is a later native affordance. Native notifications are also
 outside this slice. The first packaged client targets macOS only; other desktop
 platforms follow after this boundary is proven. Its deliverable is a locally
 buildable unsigned application package; signing, notarization, and release
-automation begin when Sweat is distributed to external testers.
+automation begin when Colony is distributed to external testers.
 
 ## Identity direction
 
-Each Sweat server owns its accounts and sessions through Better Auth's built-in
+Each Colony server owns its accounts and sessions through Better Auth's built-in
 email-and-password authentication. Accounts do not transfer between servers.
 The username plugin adds a workspace-unique username so a person can sign in
 with either username or email. The username is the person's primary visible
@@ -102,7 +102,7 @@ name throughout the workspace; a hovercard may show the account's display name
 and email as secondary profile details. Usernames cannot be changed in the
 Account admission slice.
 
-Deployed Sweat servers disable open registration. The operator bootstraps the
+Deployed Colony servers disable open registration. The operator bootstraps the
 workspace by retrieving a random one-time setup token from the fresh server's
 startup output. The first visitor who presents that token chooses their email,
 username, display name, and password and becomes the first workspace
@@ -122,7 +122,7 @@ Development may continue to seed reusable local accounts.
 
 Workspace invitations are unbound bearer links. Whoever possesses a valid link
 may redeem it first, so the interface warns administrators to share links
-privately; Sweat does not imply email ownership without email verification.
+privately; Colony does not imply email ownership without email verification.
 
 The first account remains the sole workspace administrator in this slice.
 Promoting or demoting additional administrators is deferred.
@@ -144,7 +144,7 @@ Workspace-wide Members and Invitations live under Workspace settings reached
 from the account menu. They remain separate from the membership controls of an
 individual private room.
 
-Sweat deliberately does not own a custom cryptographic authentication
+Colony deliberately does not own a custom cryptographic authentication
 protocol. Portable-key identity may be revisited as a separate experiment, but
 it is not part of the desktop slice.
 
@@ -180,7 +180,7 @@ administrator manage manually shared invitations and account suspension.
 
 The same React interface is now packaged in Tauri for macOS with first-launch
 server selection, native HTTP session handling, and authenticated realtime
-connections to the selected Sweat server.
+connections to the selected Colony server.
 
 The current vertical slice adds a team attention loop: people can mention
 teammates in rooms, directed attention remains visible across sessions, and
@@ -189,7 +189,7 @@ finish.
 
 ## Deliberate non-goals
 
-- Do not embed the Sweat server, database, or sandbox workers inside Tauri.
+- Do not embed the Colony server, database, or sandbox workers inside Tauri.
 - Do not create separate browser and desktop product backends.
 - Do not turn agent definitions into permanent processes merely to make them
   look present; room activity comes from bounded runs.
@@ -201,5 +201,5 @@ finish.
   single-node self-hosted product outgrows simpler storage.
 
 Buzz is an inspiration for the product experience—especially agents and
-people sharing one workspace—but Sweat keeps its own bounded-run, sandbox, and
+people sharing one workspace—but Colony keeps its own bounded-run, sandbox, and
 capability architecture.
