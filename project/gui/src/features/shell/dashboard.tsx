@@ -474,7 +474,7 @@ export function Dashboard({
               )}
               <p className="font-semibold">
                 {view === 'account'
-                  ? 'User settings'
+                  ? 'User'
                   : view === 'workspace'
                     ? 'Workspace'
                     : view === 'schedules'

@@ -18,13 +18,13 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
+  --background: oklch(0.99 0 0);
   --foreground: oklch(0.147 0.004 49.3);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.147 0.004 49.3);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.147 0.004 49.3);
-  --primary: oklch(0.214 0.009 43.1);
+  --primary: oklch(0.595 0.0724 53.97);
   --primary-foreground: oklch(0.986 0.002 67.8);
   --secondary: oklch(0.96 0.002 17.2);
   --secondary-foreground: oklch(0.214 0.009 43.1);
@@ -54,13 +54,14 @@
 }
 
 .dark {
-  --background: oklch(0.210 0 0);
+  --background: oklch(0.2576 0.0048 67.61);
   --foreground: oklch(0.986 0.002 67.8);
   --card: oklch(0.214 0.009 43.1);
   --card-foreground: oklch(0.986 0.002 67.8);
   --popover: oklch(0.214 0.009 43.1);
   --popover-foreground: oklch(0.986 0.002 67.8);
-  --primary: oklch(0.922 0.005 34.3);
+  /* --primary: oklch(0.922 0.005 34.3); */
+  --primary: oklch(0.8812 0.0265 76.78);
   --primary-foreground: oklch(0.214 0.009 43.1);
   --secondary: oklch(0.268 0.011 36.5);
   --secondary-foreground: oklch(0.986 0.002 67.8);
@@ -515,6 +516,7 @@ pre code {
   display: block;
   flex: none;
   background-color: currentColor;
+  color: var(--foreground);
   mask: url('/no-bg-ant-worker.png') center / contain no-repeat;
   -webkit-mask: url('/no-bg-ant-worker.png') center / contain no-repeat;
 }

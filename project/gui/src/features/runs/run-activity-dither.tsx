@@ -30,7 +30,7 @@ function DitherTile({
           className="absolute inset-0"
           width="100%"
           height="100%"
-          colorBack={dark ? '#1c1a19' : '#f0efe8'}
+          colorBack={dark ? '#252321' : '#f0efe8'}
           colorFront={dark ? '#dedbd2' : '#282522'}
           shape="warp"
           type="4x4"
