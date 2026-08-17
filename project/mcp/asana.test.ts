@@ -143,7 +143,10 @@ test("Asana creates tasks only in the configured project", async () => {
   });
 
   expect(requests.map(({ url, init }) => [init?.method, url])).toEqual([
-    ["POST", "https://app.asana.com/api/1.0/tasks"],
+    [
+      "POST",
+      "https://app.asana.com/api/1.0/tasks?opt_fields=gid,name,permalink_url",
+    ],
   ]);
   expect(JSON.parse(requests[0].init?.body as string)).toEqual({
     data: {

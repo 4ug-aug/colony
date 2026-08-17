@@ -286,7 +286,7 @@ export function createAsanaMcpUpstream(options: {
       }
       if (name === "asana.create_task") {
         const input = createTaskInput(args);
-        return request("/tasks", {
+        return request("/tasks?opt_fields=gid,name,permalink_url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
