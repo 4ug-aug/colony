@@ -154,6 +154,28 @@ describe('oneshotPeeks', () => {
     ])
   })
 
+  test('unwraps the single MCP text item emitted by OpenAI', () => {
+    const issue = { id: 'issue-4', number: 4, title: 'From OpenAI' }
+    expect(
+      oneshotPeeks([
+        createCall('call', 0, 'workspace_create_issue', 'c1'),
+        createResult(
+          'result',
+          1,
+          'c1',
+          JSON.stringify({ type: 'text', text: issueJson(issue) }),
+        ),
+      ]),
+    ).toEqual([
+      {
+        key: 'issue-4',
+        label: 'COL-4 From OpenAI',
+        tool: 'workspace.create_issue',
+        issueId: 'issue-4',
+      },
+    ])
+  })
+
   test('unwraps Cursor mcp envelope and toolName on mcp calls', () => {
     const issue = {
       id: '65f9ac68-47b6-4b94-be9d-24397f7ca1f3',

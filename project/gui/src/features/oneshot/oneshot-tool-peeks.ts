@@ -48,6 +48,8 @@ function unwrapMcpText(value: unknown): unknown {
   const body = outer && 'value' in outer ? outer.value : value
   const envelope = asRecord(body)
   if (envelope?.isError === true) return
+  const directText = contentText(body)
+  if (directText !== undefined) return parseJson(directText) ?? directText
   const content = envelope?.content ?? (Array.isArray(body) ? body : undefined)
   if (!Array.isArray(content) || content.length === 0) return body
   const text = contentText(content[0])
