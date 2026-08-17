@@ -4254,10 +4254,11 @@ test('Grill submit broadcasts grill.changed to other Accounts on the stream', as
 test('sandbox provider configuration accepts only the supported providers', () => {
   expect(parseSandboxProvider('apple-container')).toBe('apple-container')
   expect(parseSandboxProvider('docker')).toBe('docker')
+  expect(parseSandboxProvider('smolvm')).toBe('smolvm')
   expect(() => parseSandboxProvider(undefined)).toThrow(
-    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker',
+    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker, smolvm',
   )
   expect(() => parseSandboxProvider('podman')).toThrow(
-    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker',
+    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker, smolvm',
   )
 })

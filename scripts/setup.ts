@@ -16,7 +16,7 @@ import {
   text,
 } from "@clack/prompts";
 
-export type SandboxProvider = "apple-container" | "docker";
+export type SandboxProvider = "apple-container" | "docker" | "smolvm";
 
 type Integration = "github" | "linear" | "asana" | "outline";
 
@@ -126,9 +126,9 @@ export function setEnvValue(
 }
 
 export function defaultSandboxProvider(
-  platform: NodeJS.Platform = process.platform,
+  _platform: NodeJS.Platform = process.platform,
 ): SandboxProvider {
-  return platform === "darwin" ? "apple-container" : "docker";
+  return "smolvm";
 }
 
 export function selectUniversalDmg(
@@ -189,6 +189,7 @@ export function usesRootlessDocker(securityOptions: string): boolean {
 }
 
 async function requireRuntime(provider: SandboxProvider): Promise<boolean> {
+  if (provider === "smolvm") return false;
   if (!(await available(provider === "docker" ? "docker" : "container"))) {
     throw new Error(
       provider === "docker"
@@ -295,13 +296,16 @@ async function configureServer(path: string): Promise<void> {
   );
   const existingProvider = existing("SWEAT_SANDBOX_PROVIDER");
   const defaultProvider =
-    existingProvider === "apple-container" || existingProvider === "docker"
+    existingProvider === "apple-container" ||
+    existingProvider === "docker" ||
+    existingProvider === "smolvm"
       ? existingProvider
       : defaultSandboxProvider();
   const provider = assertNotCancelled(
     await select({
       message: "Agent sandbox",
       options: [
+        { value: "smolvm" as const, label: "smolvm" },
         { value: "apple-container" as const, label: "apple-container" },
         { value: "docker" as const, label: "docker" },
       ],

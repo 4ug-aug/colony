@@ -305,14 +305,15 @@ const send = (
   socket.send(JSON.stringify(message))
 }
 
-export type SandboxProviderName = 'apple-container' | 'docker'
+export type SandboxProviderName = 'apple-container' | 'docker' | 'smolvm'
 
 export function parseSandboxProvider(
   value: string | undefined,
 ): SandboxProviderName {
-  if (value === 'apple-container' || value === 'docker') return value
+  if (value === 'apple-container' || value === 'docker' || value === 'smolvm')
+    return value
   throw new Error(
-    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker',
+    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker, smolvm',
   )
 }
 
@@ -1135,6 +1136,7 @@ if (import.meta.main) {
     { createAdmissionStore },
     { createWorkspaceLlmConfig },
     { createWorkspaceCursorRuntimeConfig },
+    { createWorkspacePreviewConfig },
     { createWorkspaceAgentsExecutor },
     {
       createGitHubSoftwareEngineerAdapter,
@@ -1149,12 +1151,14 @@ if (import.meta.main) {
     { createAppleContainerClient },
     { createAppleContainerSandboxProvider },
     { createDockerSandboxProvider },
+    { createSmolvmSandboxProvider },
   ] = await Promise.all([
     import('../lib/auth'),
     import('./features/accounts/session-auth'),
     import('./features/accounts/admission'),
     import('./features/workspace/llm-config'),
     import('./features/workspace/cursor-runtime-config'),
+    import('./features/workspace/preview-config'),
     import('../../../agents/roster'),
     import('../../../agents/software-engineer-adapters'),
     import('../../../mcp/github'),
@@ -1162,10 +1166,12 @@ if (import.meta.main) {
     import('../../../sdk/src'),
     import('../../../providers/apple-container-sandbox'),
     import('../../../providers/docker-sandbox'),
+    import('../../../providers/smolvm-sandbox'),
   ])
   const admissionStore = createAdmissionStore(sqlite)
   const llm = createWorkspaceLlmConfig(sqlite)
   const cursorRuntime = createWorkspaceCursorRuntimeConfig(sqlite)
+  const preview = createWorkspacePreviewConfig(sqlite)
   const connections = createWorkspaceConnections(sqlite)
   const skillsDirectory = skillDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
@@ -1253,9 +1259,11 @@ if (import.meta.main) {
       ? createDockerSandboxProvider({
           ...(agentCaCertificate ? { caCertificate: agentCaCertificate } : {}),
         })
-      : createAppleContainerSandboxProvider({
-          container: createAppleContainerClient(),
-        })
+      : sandboxProviderName === 'smolvm'
+        ? createSmolvmSandboxProvider()
+        : createAppleContainerSandboxProvider({
+            container: createAppleContainerClient(),
+          })
   const control = createRunControl(
     createWorkspaceAgentsExecutor({
       sandboxProvider,
@@ -1263,6 +1271,7 @@ if (import.meta.main) {
       cursorImage: process.env.SWEAT_CURSOR_AGENT_IMAGE,
       model: () => llm.model(),
       cursor: () => cursorRuntime.cursor(),
+      getPreviewConfig: () => preview.preview(),
       attachmentSource: createRoomAttachmentSource({
         store,
         directory: attachmentsDirectory,
@@ -1543,6 +1552,7 @@ if (import.meta.main) {
       store: admissionStore,
       llm,
       cursorRuntime,
+      preview,
       skills,
       connections,
       listUsers: () => authContext.internalAdapter.listUsers(100),

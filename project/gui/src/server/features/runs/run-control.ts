@@ -19,6 +19,7 @@ export type RunSummary = Pick<
   | 'error'
   | 'stdout'
   | 'stderr'
+  | 'preview'
 > & {
   agentId: string
   provider: RunProvider
@@ -92,6 +93,7 @@ function runSummary<Input extends RunInput>(
     error,
     stdout,
     stderr,
+    preview,
     definition: { id: agentId },
   } = run
   const runtime = run.definition.runtime
@@ -108,6 +110,7 @@ function runSummary<Input extends RunInput>(
     error,
     stdout,
     stderr,
+    ...(preview ? { preview } : {}),
     agentId,
     provider:
       kind === 'cursor'

@@ -20,9 +20,9 @@ test("reads and updates env values without dropping comments or unrelated keys",
   expect(updated).toContain("OTHER=value");
 });
 
-test("defaults the sandbox to Apple Container on macOS and Docker elsewhere", () => {
-  expect(defaultSandboxProvider("darwin")).toBe("apple-container");
-  expect(defaultSandboxProvider("linux")).toBe("docker");
+test("defaults the sandbox to smolvm", () => {
+  expect(defaultSandboxProvider("darwin")).toBe("smolvm");
+  expect(defaultSandboxProvider("linux")).toBe("smolvm");
 });
 
 test("detects rootless Docker security options", () => {

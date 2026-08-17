@@ -6,10 +6,9 @@ import type {
   PublicLlmConfig,
 } from '#/server/features/workspace/llm-config'
 import type {
-  CursorModelSummary,
-  CursorRuntimeConfigInput,
-  PublicCursorRuntimeConfig,
-} from '#/server/features/workspace/cursor-runtime-config'
+  PreviewConfigInput,
+  PublicPreviewConfig,
+} from '#/server/features/workspace/preview-config'
 import type { WorkspaceSkillStore } from '#/server/features/workspace/workspace-skills'
 import type {
   ConnectionSaveInput,
@@ -58,6 +57,10 @@ export type AdmissionOptions = {
     public(): PublicCursorRuntimeConfig
     save(input: CursorRuntimeConfigInput): Promise<PublicCursorRuntimeConfig>
     listModels(): Promise<CursorModelSummary[]>
+  }
+  preview?: {
+    public(): PublicPreviewConfig
+    save(input: PreviewConfigInput): PublicPreviewConfig
   }
   skills?: WorkspaceSkillStore
   connections?: WorkspaceConnectionStore
@@ -302,6 +305,39 @@ export function createAdmissionHttpHandler(
       } catch (error) {
         console.error('Cursor model list failed:', error)
         return json({ error: 'Unable to list Cursor models' }, 400)
+      }
+    }
+
+    if (url.pathname === '/api/workspace/settings/preview' && options.preview) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      if (request.method === 'GET') return json(options.preview.public())
+      if (request.method === 'POST') {
+        const body = await readBody(request)
+        try {
+          return json(
+            options.preview.save({
+              ...(typeof body?.initCommand === 'string'
+                ? { initCommand: body.initCommand }
+                : {}),
+              ...(typeof body?.previewCommand === 'string'
+                ? { previewCommand: body.previewCommand }
+                : {}),
+              guestPort: body?.guestPort,
+              graceDurationMs: body?.graceDurationMs,
+            }),
+          )
+        } catch (error) {
+          return json(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Invalid Preview configuration',
+            },
+            400,
+          )
+        }
       }
     }
 

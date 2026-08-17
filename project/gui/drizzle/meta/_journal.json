@@ -232,6 +232,13 @@
       "when": 1801000000000,
       "tag": "0032_agent_issue_analytics",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1802000000000,
+      "tag": "0033_workspace_preview_config",
+      "breakpoints": true
     }
   ]
 }

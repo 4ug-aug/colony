@@ -111,7 +111,14 @@ agent: env
 		docker) \
 			docker build -t $(DEV_AGENT_IMAGE) project && \
 			docker build -f project/Dockerfile.cursor -t $(DEV_CURSOR_AGENT_IMAGE) project ;; \
-		*) echo "SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker"; exit 2 ;; \
+		smolvm) \
+			if command -v docker >/dev/null 2>&1; then \
+				docker build -t $(DEV_AGENT_IMAGE) project && \
+				docker build -f project/Dockerfile.cursor -t $(DEV_CURSOR_AGENT_IMAGE) project; \
+			else \
+				cd project && bun $(BUN_ENV) run agent:build && bun $(BUN_ENV) run agent:build:cursor; \
+			fi ;; \
+		*) echo "SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker, smolvm"; exit 2 ;; \
 	esac
 
 gui: env

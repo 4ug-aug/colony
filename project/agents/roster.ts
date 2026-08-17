@@ -3,6 +3,7 @@ import {
   type RunExecutor,
   type StartRunRequest,
   type PreparedWorkspace,
+  type PreviewConfiguration,
 } from "../runs";
 import {
   type AgentDefinition,
@@ -116,6 +117,7 @@ export function createWorkspaceAgentsExecutor(options: {
     close(): Promise<void>;
   };
   sandboxProvider: SandboxProvider;
+  getPreviewConfig?: () => PreviewConfiguration | undefined;
   attachmentSource?: AttachmentSource;
   skillSource?: SkillSource;
 }): WorkspaceAgentExecutor {
@@ -317,6 +319,7 @@ export function createWorkspaceAgentsExecutor(options: {
     sandboxes: options.sandboxProvider,
     runtime: createRoutingAgentRuntime({}),
     capabilities,
+    getPreviewConfig: options.getPreviewConfig,
     inputs: createRepositoryWorkspaceProvisioner({
       sources: repositories.map((repository) => repository.source),
       attachmentSource: options.attachmentSource,

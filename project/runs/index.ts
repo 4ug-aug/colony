@@ -22,6 +22,18 @@ export type RunState =
   | "failed"
   | "cancelled";
 
+export type RunPreview = {
+  url: string;
+  state: "live" | "dead";
+};
+
+export type PreviewConfiguration = {
+  initCommand?: string;
+  previewCommand: string;
+  guestPort: number;
+  graceDurationMs: number;
+};
+
 export interface RunLimits {
   maxDurationMs: number;
   maxOutputBytes: number;
@@ -50,6 +62,7 @@ export interface RunRecord<Input extends RunInput = RunInput> {
   startedAt?: number;
   completedAt?: number;
   error?: string;
+  preview?: RunPreview;
 }
 
 export interface RunStore<Input extends RunInput = RunInput> {
@@ -211,6 +224,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   store?: RunStore<Input>;
   inputs?: InputProvisioner<Input>;
   capabilities?: CapabilitySessionFactory;
+  getPreviewConfig?: () => PreviewConfiguration | undefined;
   createId?: () => string;
   now?: () => number;
 }): RunExecutor<Input> {
@@ -466,6 +480,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     let failure: string | undefined;
     let cleanupFailure: string | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let previewStarted = false;
+    let previewGraceMs = 0;
 
     try {
       workspace = (
@@ -475,10 +491,16 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         })
       )?.workspace;
       if (cancellation.has(record.id)) return;
+      const previewConfig = workspace?.git
+        ? dependencies.getPreviewConfig?.()
+        : undefined;
       const spec: SandboxSpec = {
         image: record.definition.runtime.image,
         ...(workspace
           ? { volumes: [`${workspace.path}:/work`] }
+          : {}),
+        ...(previewConfig
+          ? { publish: { guestPort: previewConfig.guestPort } }
           : {}),
       };
       sandbox = await dependencies.sandboxes.create(spec);
@@ -489,76 +511,133 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         : undefined;
       if (cancellation.has(record.id)) return;
 
-      store.update(record.id, { state: "running", startedAt: now() });
-      let stepCount = 0;
-      let stepsTruncated = false;
-      const runtime = dependencies.runtime.run(sandbox, {
-        definition: snapshot(record.definition),
-        task: record.task,
-        ...(workspace ? { workspace: "/work" } : {}),
-        ...(capabilitySession ? { capabilitySession } : {}),
-        onOutput: (chunk) => {
-          const current = store.get(record.id);
-          if (!current || terminal(current.state)) return;
-          store.update(record.id, {
-            [chunk.stream]: retainOutput(
-              current[chunk.stream] + chunk.text,
-              record.effectiveLimits.maxOutputBytes,
-            ),
+      let task = record.task;
+      if (previewConfig) {
+        if (previewConfig.initCommand) {
+          const init = await sandbox.exec({
+            command: ["sh", "-lc", previewConfig.initCommand],
+            workdir: "/work",
           });
-        },
-        onStep: (step) => {
-          if (stepsTruncated) return;
-          if (stepCount >= record.effectiveLimits.maxSteps) {
-            stepsTruncated = true;
-            const marker: Step = { kind: "message", text: "[steps truncated: reached maxSteps limit]", at: now() };
-            publishStep(record.id, marker);
-            return;
+          if (init.exitCode !== 0) {
+            const output = [init.stdout, init.stderr]
+              .filter(Boolean)
+              .join("\n")
+              .slice(-2000);
+            failure = `Preview init failed with code ${init.exitCode}${
+              output ? `:\n${output}` : ""
+            }`;
           }
-          const cap = Math.min(record.effectiveLimits.maxOutputBytes, MAX_STEP_TEXT_BYTES);
-          const bounded: Step = { ...step, text: tail(step.text, cap) };
-          stepCount++;
-          publishStep(record.id, bounded);
-        },
-      });
-      const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          cancellation.add(record.id);
-          void disposeSandbox(record.id, sandbox!).catch(() => undefined);
-          reject(new Error("Run timed out"));
-        }, record.effectiveLimits.maxDurationMs);
-      });
-      try {
-        result = await Promise.race([runtime, timeout]);
-      } catch (error) {
-        failure = errorText(error);
-      } finally {
-        if (timer) clearTimeout(timer);
+        }
+        if (!failure && !cancellation.has(record.id)) {
+          const preview = await sandbox.startPreview(
+            previewConfig.previewCommand,
+            { workdir: "/work" },
+          );
+          previewStarted = true;
+          previewGraceMs = previewConfig.graceDurationMs;
+          task = `${record.task}\n\nPreview command started:\n- ${previewConfig.previewCommand}`;
+          store.update(record.id, {
+            task,
+            preview: { url: preview.url, state: "live" },
+          });
+          void preview.exited.then(() => {
+            const current = store.get(record.id);
+            if (current?.preview?.state === "live") {
+              store.update(record.id, {
+                preview: { ...current.preview, state: "dead" },
+              });
+            }
+          });
+        }
+      }
+      if (!failure && !cancellation.has(record.id)) {
+        store.update(record.id, { state: "running", startedAt: now() });
+        let stepCount = 0;
+        let stepsTruncated = false;
+        const runtime = dependencies.runtime.run(sandbox, {
+          definition: snapshot(record.definition),
+          task,
+          ...(workspace ? { workspace: "/work" } : {}),
+          ...(capabilitySession ? { capabilitySession } : {}),
+          onOutput: (chunk) => {
+            const current = store.get(record.id);
+            if (!current || terminal(current.state)) return;
+            store.update(record.id, {
+              [chunk.stream]: retainOutput(
+                current[chunk.stream] + chunk.text,
+                record.effectiveLimits.maxOutputBytes,
+              ),
+            });
+          },
+          onStep: (step) => {
+            if (stepsTruncated) return;
+            if (stepCount >= record.effectiveLimits.maxSteps) {
+              stepsTruncated = true;
+              const marker: Step = { kind: "message", text: "[steps truncated: reached maxSteps limit]", at: now() };
+              publishStep(record.id, marker);
+              return;
+            }
+            const cap = Math.min(record.effectiveLimits.maxOutputBytes, MAX_STEP_TEXT_BYTES);
+            const bounded: Step = { ...step, text: tail(step.text, cap) };
+            stepCount++;
+            publishStep(record.id, bounded);
+          },
+        });
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            cancellation.add(record.id);
+            void disposeSandbox(record.id, sandbox!).catch(() => undefined);
+            reject(new Error("Run timed out"));
+          }, record.effectiveLimits.maxDurationMs);
+        });
+        try {
+          result = await Promise.race([runtime, timeout]);
+        } catch (error) {
+          failure = errorText(error);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
       }
     } catch (error) {
       failure = errorText(error);
     } finally {
       sandboxes.delete(record.id);
-      if (sandbox) {
-        try {
-          await disposeSandbox(record.id, sandbox);
-        } catch (error) {
-          cleanupFailure = errorText(error);
-        }
-      }
-      if (workspace) {
-        try {
-          await workspace.dispose();
-        } catch (error) {
-          cleanupFailure = errorText(error);
-        }
-      }
       if (capabilitySession) {
         try {
           await capabilitySession.revoke();
         } catch (error) {
           cleanupFailure = errorText(error);
         }
+      }
+      const delayDispose =
+        previewStarted &&
+        !cancellation.has(record.id) &&
+        !cleanupFailure;
+      const cleanup = async () => {
+        if (sandbox) {
+          try {
+            await disposeSandbox(record.id, sandbox);
+          } catch (error) {
+            if (!delayDispose) cleanupFailure = errorText(error);
+          }
+        }
+        if (workspace) {
+          try {
+            await workspace.dispose();
+          } catch (error) {
+            if (!delayDispose) cleanupFailure = errorText(error);
+          }
+        }
+      };
+      if (delayDispose) {
+        void (async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, previewGraceMs);
+          });
+          await cleanup();
+        })();
+      } else {
+        await cleanup();
       }
     }
 

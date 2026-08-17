@@ -138,6 +138,16 @@ test('admission endpoints close open signup and enforce the administrator bounda
   } = {
     configured: false,
   }
+  let preview: {
+    configured: boolean
+    previewCommand?: string
+    guestPort: number
+    graceDurationMs: number
+  } = {
+    configured: false,
+    guestPort: 3000,
+    graceDurationMs: 300000,
+  }
   const createAccount = async (
     body: Record<string, unknown>,
     role: 'admin' | 'user',
@@ -186,6 +196,20 @@ test('admission endpoints close open signup and enforce the administrator bounda
             provider: provider as 'openai' | 'custom',
             baseUrl,
             model,
+          }),
+      },
+      preview: {
+        public: () => preview,
+        save: ({ previewCommand, guestPort, graceDurationMs }) =>
+          (preview = {
+            configured: Boolean(
+              typeof previewCommand === 'string' && previewCommand.trim(),
+            ),
+            ...(typeof previewCommand === 'string' && previewCommand.trim()
+              ? { previewCommand: previewCommand.trim() }
+              : {}),
+            guestPort: Number(guestPort),
+            graceDurationMs: Number(graceDurationMs),
           }),
       },
       listUsers: async () => [
@@ -282,6 +306,29 @@ test('admission endpoints close open signup and enforce the administrator bounda
       provider: 'openai',
       baseUrl: 'https://models.example/v1',
       model: 'test-model',
+    })
+    expect(
+      (
+        await request('/api/workspace/settings/preview', {
+          headers: { cookie: 'member' },
+        })
+      ).status,
+    ).toBe(403)
+    const savedPreview = await request('/api/workspace/settings/preview', {
+      method: 'POST',
+      headers: { cookie: 'admin', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        previewCommand: 'make dev',
+        guestPort: 3000,
+        graceDurationMs: 60000,
+      }),
+    })
+    expect(savedPreview.status).toBe(200)
+    expect(await savedPreview.json()).toEqual({
+      configured: true,
+      previewCommand: 'make dev',
+      guestPort: 3000,
+      graceDurationMs: 60000,
     })
     const invitation = await request('/api/workspace/invitations', {
       method: 'POST',

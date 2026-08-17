@@ -4,6 +4,7 @@ import {
   type CommandRunner,
 } from "../sdk/src";
 import type { SandboxProvider } from "../sandboxes";
+import { allocateHostPort, previewUrl } from "../sandboxes";
 import { isAbsolute } from "node:path";
 
 const idleCommand = ["sh", "-c", "while :; do sleep 3600; done"] as const;
@@ -24,6 +25,7 @@ export function createDockerSandboxProvider(
     runner?: CommandRunner;
     createId?: () => string;
     caCertificate?: string;
+    allocatePort?: () => Promise<number> | number;
   } = {},
 ): SandboxProvider {
   if (options.caCertificate && !isAbsolute(options.caCertificate)) {
@@ -31,10 +33,14 @@ export function createDockerSandboxProvider(
   }
   const runner = options.runner ?? new BunCommandRunner("docker");
   const createId = options.createId ?? (() => `sandbox-${crypto.randomUUID()}`);
+  const allocatePort = options.allocatePort ?? allocateHostPort;
 
   return {
     async create(spec) {
       const id = createId();
+      const hostPort = spec.publish
+        ? await Promise.resolve(allocatePort())
+        : undefined;
       await checked(
         runner,
         [
@@ -44,6 +50,12 @@ export function createDockerSandboxProvider(
           "--detach",
           "--add-host",
           "host.container.internal:host-gateway",
+          ...(hostPort !== undefined && spec.publish
+            ? [
+                "--publish",
+                `127.0.0.1:${hostPort}:${spec.publish.guestPort}`,
+              ]
+            : []),
           ...(options.caCertificate
             ? ["--volume", `${options.caCertificate}:${extraCaCertificate}:ro`]
             : []),
@@ -80,6 +92,25 @@ export function createDockerSandboxProvider(
             stdout: result.stdout,
             stderr: result.stderr,
           };
+        },
+
+        async startPreview(command, previewOptions) {
+          if (hostPort === undefined) {
+            throw new Error(
+              "Sandbox was not created with a published guest port",
+            );
+          }
+          const args = ["exec"];
+          if (previewOptions?.workdir) {
+            args.push("--workdir", previewOptions.workdir);
+          }
+          args.push(id, "sh", "-lc", command);
+          const exited = runner.run(args, { stdio: "capture" }).then((result) => ({
+            exitCode: result.exitCode,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          }));
+          return { url: previewUrl(hostPort), exited };
         },
 
         async dispose() {

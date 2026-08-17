@@ -563,3 +563,270 @@ test("warm run idle TTL recycles resources", async () => {
   await waitFor(() => executor.getRun(id)?.state === "succeeded");
   expect(disposed).toBe(1);
 });
+
+const gitWorkspace = {
+  path: "/tmp/work",
+  git: {
+    repository: "acme/app",
+    baseRevision: "main",
+    baseCommit: "abc123",
+    branch: "sweat/run",
+  },
+};
+
+test("Git-workspace Preview runs init, starts Preview, and notes the command", async () => {
+  const execs: Array<readonly string[]> = [];
+  let previewCommand: string | undefined;
+  let runtimeTask: string | undefined;
+  let spec: unknown;
+  let releasePreview: (() => void) | undefined;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    getPreviewConfig: () => ({
+      initCommand: "npm install",
+      previewCommand: "make dev",
+      guestPort: 3000,
+      graceDurationMs: 20,
+    }),
+    inputs: {
+      prepare: async () => ({
+        workspace: { ...gitWorkspace, dispose: async () => {} },
+      }),
+    },
+    sandboxes: {
+      create: async (value) => {
+        spec = value;
+        return {
+          id: "sandbox",
+          exec: async (request) => {
+            execs.push(request.command);
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+          startPreview: async (command) => {
+            previewCommand = command;
+            return {
+              url: "http://127.0.0.1:49152",
+              exited: new Promise((resolve) => {
+                releasePreview = () =>
+                  resolve({ exitCode: 0, stdout: "", stderr: "" });
+              }),
+            };
+          },
+          dispose: async () => {},
+        };
+      },
+    },
+    runtime: {
+      run: async (_sandbox, request) => {
+        runtimeTask = request.task;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    createId: () => "run-preview",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "fix the bug",
+  });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(spec).toEqual({
+    image: "test:latest",
+    volumes: ["/tmp/work:/work"],
+    publish: { guestPort: 3000 },
+  });
+  expect(execs).toEqual([["sh", "-lc", "npm install"]]);
+  expect(previewCommand).toBe("make dev");
+  expect(runtimeTask).toBe(
+    "fix the bug\n\nPreview command started:\n- make dev",
+  );
+  expect(executor.getRun(id)?.preview).toEqual({
+    url: "http://127.0.0.1:49152",
+    state: "live",
+  });
+  releasePreview?.();
+  await waitFor(() => executor.getRun(id)?.preview?.state === "dead");
+});
+
+test("Preview init failure fails the run before the agent starts", async () => {
+  let ranAgent = false;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    getPreviewConfig: () => ({
+      initCommand: "false",
+      previewCommand: "make dev",
+      guestPort: 3000,
+      graceDurationMs: 0,
+    }),
+    inputs: {
+      prepare: async () => ({
+        workspace: { ...gitWorkspace, dispose: async () => {} },
+      }),
+    },
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({
+          exitCode: 1,
+          stdout: "",
+          stderr: "missing lockfile",
+        }),
+        startPreview: async () => {
+          throw new Error("must not start Preview");
+        },
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async () => {
+        ranAgent = true;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    createId: () => "run-init-fail",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "fix",
+  });
+  await waitFor(() => executor.getRun(id)?.state === "failed");
+  expect(ranAgent).toBe(false);
+  expect(executor.getRun(id)?.error).toContain("Preview init failed");
+});
+
+test("Preview grace delays dispose after success and cancel disposes immediately", async () => {
+  let disposed = 0;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    getPreviewConfig: () => ({
+      previewCommand: "make dev",
+      guestPort: 3000,
+      graceDurationMs: 40,
+    }),
+    inputs: {
+      prepare: async () => ({
+        workspace: { ...gitWorkspace, dispose: async () => {} },
+      }),
+    },
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        startPreview: async () => ({
+          url: "http://127.0.0.1:9",
+          exited: new Promise(() => {}),
+        }),
+        dispose: async () => {
+          disposed++;
+        },
+      }),
+    },
+    runtime: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+    createId: () => "run-grace",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "fix",
+  });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(disposed).toBe(0);
+  await waitFor(() => disposed === 1);
+
+  let cancelledDispose = 0;
+  let releaseRuntime!: () => void;
+  const runtimeDone = new Promise<void>((resolve) => {
+    releaseRuntime = resolve;
+  });
+  const cancelling = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    getPreviewConfig: () => ({
+      previewCommand: "make dev",
+      guestPort: 3000,
+      graceDurationMs: 60_000,
+    }),
+    inputs: {
+      prepare: async () => ({
+        workspace: { ...gitWorkspace, dispose: async () => {} },
+      }),
+    },
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        startPreview: async () => ({
+          url: "http://127.0.0.1:9",
+          exited: new Promise(() => {}),
+        }),
+        dispose: async () => {
+          cancelledDispose++;
+          releaseRuntime();
+        },
+      }),
+    },
+    runtime: {
+      run: async () => {
+        await runtimeDone;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    createId: () => "run-cancel-preview",
+  });
+  const cancelId = cancelling.startRun({
+    agentDefinitionId: "test-agent",
+    task: "stop",
+  });
+  await waitFor(() => cancelling.getRun(cancelId)?.state === "running");
+  await cancelling.cancelRun(cancelId);
+  await waitFor(() => cancelling.getRun(cancelId)?.state === "cancelled");
+  expect(cancelledDispose).toBe(1);
+});
+
+test("runs without a Git workspace skip Preview", async () => {
+  let spec: unknown;
+  let startedPreview = false;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    getPreviewConfig: () => ({
+      previewCommand: "make dev",
+      guestPort: 3000,
+      graceDurationMs: 0,
+    }),
+    inputs: {
+      prepare: async () => ({
+        workspace: { path: "/tmp/work", dispose: async () => {} },
+      }),
+    },
+    sandboxes: {
+      create: async (value) => {
+        spec = value;
+        return {
+          id: "sandbox",
+          exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+          startPreview: async () => {
+            startedPreview = true;
+            return {
+              url: "http://127.0.0.1:9",
+              exited: new Promise(() => {}),
+            };
+          },
+          dispose: async () => {},
+        };
+      },
+    },
+    runtime: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+    createId: () => "run-no-git",
+  });
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "chat",
+  });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(spec).toEqual({
+    image: "test:latest",
+    volumes: ["/tmp/work:/work"],
+  });
+  expect(startedPreview).toBe(false);
+  expect(executor.getRun(id)?.preview).toBeUndefined();
+});
