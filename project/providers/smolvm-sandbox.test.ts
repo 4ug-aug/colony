@@ -187,6 +187,8 @@ test("a published smolvm machine starts guest dockerd without a host Docker sock
   expect(execs[0]?.[0]).toBe("sh");
   expect(execs[0]?.[2]).toContain("dockerd");
   expect(execs[0]?.[2]).toContain("/storage/docker");
+  expect(execs[0]?.[2]).toContain("native.cgroupdriver=cgroupfs");
+  expect(execs[0]?.[2]).toContain("did not become ready");
   expect(execs[0]?.[2]).not.toContain("docker.sock");
 });
 
@@ -369,4 +371,133 @@ test("resolveSmolvmImage leaves registry references to crane when they are not l
       }),
     ),
   ).resolves.toBe("ghcr.io/4ug-aug/sweat-v2-agent-cursor:latest");
+});
+
+test("a smolvm machine retains init and Preview output for the Machine console", async () => {
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-1",
+    allocatePort: async () => 49152,
+    ...passthroughImage,
+    probePreview: async () => false,
+    createMachine: async () =>
+      stubMachine({
+        async exec(command, options) {
+          if (command[0] === "cat") {
+            return {
+              exitCode: 0,
+              stdout: "dockerd ready\n",
+              stderr: "",
+            };
+          }
+          options?.onOutput?.({ stream: "stdout", text: `${command.at(-1)}\n` });
+          return {
+            exitCode: 0,
+            stdout: `${command.at(-1)}\n`,
+            stderr: "",
+          };
+        },
+      }),
+  });
+
+  const sandbox = await provider.create({
+    image: "alpine:latest",
+    publish: { guestPort: 3000 },
+  });
+  await sandbox.exec({
+    command: ["sh", "-lc", "npm install"],
+    log: "init",
+  });
+  await sandbox.exec({
+    command: ["sh", "-lc", "make dev"],
+    log: "preview",
+  });
+  await sandbox.exec({ command: ["bun", "run", "agent"] });
+
+  expect(await provider.machineLogs("sandbox-1")).toEqual({
+    channels: [
+      { name: "preview", text: "make dev\n" },
+      { name: "init", text: "npm install\n" },
+      { name: "docker", text: "dockerd ready\n" },
+    ],
+  });
+  expect(await provider.machineLogs("missing")).toBeUndefined();
+  expect(await provider.listMachines()).toEqual([
+    expect.objectContaining({
+      id: "sandbox-1",
+      previewUrl: "http://127.0.0.1:49152",
+      previewReady: false,
+      previewError: expect.stringContaining("Preview failed with code 0"),
+    }),
+  ]);
+});
+
+test("a Preview command that exits is reported as a Preview error", async () => {
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-1",
+    allocatePort: async () => 49152,
+    ...passthroughImage,
+    probePreview: async () => true,
+    createMachine: async () =>
+      stubMachine({
+        async exec(command, options) {
+          if (command.some((part) => part.includes("make"))) {
+            options?.onOutput?.({
+              stream: "stderr",
+              text: "make: *** [Makefile:31: env] Error 2\n",
+            });
+            return {
+              exitCode: 2,
+              stdout: "",
+              stderr: "make: *** [Makefile:31: env] Error 2\n",
+            };
+          }
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      }),
+  });
+  const sandbox = await provider.create({
+    image: "alpine:latest",
+    publish: { guestPort: 3000 },
+  });
+  await sandbox.exec({
+    command: ["sh", "-lc", "make dev"],
+    log: "preview",
+  });
+  expect(await provider.listMachines()).toEqual([
+    expect.objectContaining({
+      previewReady: false,
+      previewError: expect.stringContaining("Error 2"),
+    }),
+  ]);
+});
+
+test("a live Preview command is not an error while it is still running", async () => {
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-1",
+    allocatePort: async () => 49152,
+    ...passthroughImage,
+    probePreview: async (url) => url === "http://127.0.0.1:49152",
+    createMachine: async () =>
+      stubMachine({
+        async exec(command) {
+          if (command.some((part) => part.includes("make")))
+            return new Promise(() => {});
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      }),
+  });
+  const sandbox = await provider.create({
+    image: "alpine:latest",
+    publish: { guestPort: 3000 },
+  });
+  void sandbox.exec({
+    command: ["sh", "-lc", "make dev"],
+    log: "preview",
+  });
+  expect(await provider.listMachines()).toEqual([
+    expect.objectContaining({
+      previewReady: true,
+    }),
+  ]);
+  expect((await provider.listMachines())[0]?.previewError).toBeUndefined();
 });

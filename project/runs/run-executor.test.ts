@@ -80,7 +80,9 @@ test("lists and publishes run transitions", async () => {
   await waitFor(() => executor.getRun(id)?.state === "succeeded");
   unsubscribe();
 
-  expect(states).toEqual(["preparing", "running", "succeeded"]);
+  expect(
+    states.filter((state, index) => state !== states[index - 1]),
+  ).toEqual(["preparing", "running", "succeeded"]);
 });
 
 test("publishes bounded output while a run is active", async () => {
@@ -574,8 +576,8 @@ const gitWorkspace = {
   },
 };
 
-test("Git-workspace Preview runs init, starts Preview, and notes its URL", async () => {
-  const execs: Array<readonly string[]> = [];
+test("Git-workspace Preview runs init, starts Preview, and notes the command", async () => {
+  const execs: Array<{ command: readonly string[]; log?: string }> = [];
   let runtimeTask: string | undefined;
   let spec: unknown;
   let releasePreview: (() => void) | undefined;
@@ -599,7 +601,10 @@ test("Git-workspace Preview runs init, starts Preview, and notes its URL", async
           id: "sandbox",
           previewUrl: "http://127.0.0.1:49152",
           exec: async (request) => {
-            execs.push(request.command);
+            execs.push({
+              command: request.command,
+              ...(request.log ? { log: request.log } : {}),
+            });
             if (!request.command.includes("make dev")) {
               return { exitCode: 0, stdout: "", stderr: "" };
             }
@@ -632,12 +637,13 @@ test("Git-workspace Preview runs init, starts Preview, and notes its URL", async
     publish: { guestPort: 3000 },
   });
   expect(execs).toEqual([
-    ["sh", "-lc", "npm install"],
-    ["sh", "-lc", "make dev"],
+    { command: ["sh", "-lc", "npm install"], log: "init" },
+    { command: ["sh", "-lc", "make dev"], log: "preview" },
   ]);
   expect(runtimeTask).toBe(
-    "fix the bug\n\nA Preview of this workspace is live at http://127.0.0.1:49152, started with: make dev",
+    "fix the bug\n\nA Preview of this workspace was started with: make dev",
   );
+  expect(runtimeTask).not.toMatch(/127\.0\.0\.1|49152|:3000/);
   // The stored task stays exactly what the caller asked for.
   expect(executor.getRun(id)?.task).toBe("fix the bug");
   expect(executor.getRun(id)?.preview).toEqual({
@@ -876,4 +882,104 @@ test("runs without a Git workspace skip Preview", async () => {
   });
   expect(execs).toEqual([]);
   expect(executor.getRun(id)?.preview).toBeUndefined();
+  expect(executor.getRun(id)?.preparation).toEqual([
+    "Prepared workspace",
+    "Created sandbox",
+  ]);
+  expect(executor.getRun(id)?.waitingOn).toBeUndefined();
 });
+
+test("Git-workspace Preview publishes waiting on and preparation", async () => {
+  let releasePrepare!: () => void;
+  const preparing = new Promise<void>((resolve) => {
+    releasePrepare = resolve;
+  });
+  let releaseSandbox!: () => void;
+  const creating = new Promise<void>((resolve) => {
+    releaseSandbox = resolve;
+  });
+  let releaseInit!: () => void;
+  const initing = new Promise<void>((resolve) => {
+    releaseInit = resolve;
+  });
+  const seen: Array<{
+    waitingOn?: string;
+    preparation?: readonly string[];
+    state: string;
+  }> = [];
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    getPreviewConfig: () => ({
+      initCommand: "npm install",
+      previewCommand: "make dev",
+      guestPort: 3000,
+      graceDurationMs: 0,
+    }),
+    inputs: {
+      prepare: async () => {
+        await preparing;
+        return { workspace: { ...gitWorkspace, dispose: async () => {} } };
+      },
+    },
+    sandboxes: {
+      create: async () => {
+        await creating;
+        return {
+          id: "sandbox",
+          previewUrl: "http://127.0.0.1:9",
+          exec: async (request) => {
+            if (request.command.includes("npm install")) {
+              await initing;
+              return { exitCode: 0, stdout: "", stderr: "" };
+            }
+            return new Promise<never>(() => {});
+          },
+          dispose: async () => {},
+        };
+      },
+    },
+    runtime: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+    createId: () => "run-wait",
+  });
+  executor.subscribe((run) => {
+    if (run.id !== "run-wait") return;
+    seen.push({
+      state: run.state,
+      ...(run.waitingOn ? { waitingOn: run.waitingOn } : {}),
+      ...(run.preparation ? { preparation: run.preparation } : {}),
+    });
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "fix",
+  });
+  await waitFor(() => executor.getRun(id)?.waitingOn === "Preparing workspace");
+  releasePrepare();
+  await waitFor(() => executor.getRun(id)?.waitingOn === "Creating sandbox");
+  expect(executor.getRun(id)?.preparation).toEqual(["Prepared workspace"]);
+  releaseSandbox();
+  await waitFor(
+    () => executor.getRun(id)?.waitingOn === "Running init: npm install",
+  );
+  expect(executor.getRun(id)?.preparation).toEqual([
+    "Prepared workspace",
+    "Created sandbox",
+  ]);
+  releaseInit();
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(seen.some((entry) => entry.waitingOn === "Starting preview: make dev")).toBe(
+    true,
+  );
+  expect(executor.getRun(id)?.waitingOn).toBeUndefined();
+  expect(executor.getRun(id)?.preparation).toEqual([
+    "Prepared workspace",
+    "Created sandbox",
+    "Ran init: npm install",
+    "Started preview: make dev",
+  ]);
+  expect(seen.some((entry) => entry.waitingOn === "Preparing workspace")).toBe(
+    true,
+  );
+});
+

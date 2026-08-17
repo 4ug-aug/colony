@@ -6,11 +6,13 @@ LABEL org.opencontainers.image.source="https://github.com/4ug-aug/sweat-v2" \
       org.opencontainers.image.version="$SWEAT_VERSION" \
       org.opencontainers.image.title="sweat-agent-cursor"
 
+COPY --from=oven/bun:1.3.5 /usr/local/bin/bun /usr/local/bin/bun
+
 WORKDIR /app
 # Docker Engine lives in the guest so `make dev` / Compose can run inside a
 # smolvm. The host Docker socket is not mounted.
 RUN apt-get update && apt-get install --yes --no-install-recommends \
-    git ca-certificates curl make \
+    git ca-certificates curl make openssl \
   && install -m 0755 -d /etc/apt/keyrings \
   && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
   && chmod a+r /etc/apt/keyrings/docker.asc \

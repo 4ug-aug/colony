@@ -43,6 +43,8 @@ const isApplePlatform = (): boolean =>
 function workingLabel(run: OneshotRun, steps: OneshotRunStep[]): string {
   const latest = steps.at(-1)
   if (latest) return stepLabel(latest)
+  if (run.waitingOn)
+    return `is ${run.waitingOn.charAt(0).toLowerCase()}${run.waitingOn.slice(1)}`
   return run.state === 'preparing' ? 'is preparing' : 'is working'
 }
 

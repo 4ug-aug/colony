@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { createRunControl } from './run-control'
+import { createRunControl, overlayLivePreparation } from './run-control'
 import type {
   WorkspaceAgentExecutor,
   WorkspaceAgentStartRunRequest,
@@ -191,4 +191,24 @@ test('passes Issue mergeRevisions on grantContext', () => {
     repositoryBase: 'sweat/issue/COL-1',
     mergeRevisions: ['sweat/run-ui', 'sweat/run-api'],
   })
+})
+
+test('overlayLivePreparation copies waiting on and preparation from the live run', () => {
+  expect(
+    overlayLivePreparation(
+      { id: 'run-1', state: 'preparing' },
+      {
+        waitingOn: 'Creating sandbox',
+        preparation: ['Prepared workspace'],
+      },
+    ),
+  ).toEqual({
+    id: 'run-1',
+    state: 'preparing',
+    waitingOn: 'Creating sandbox',
+    preparation: ['Prepared workspace'],
+  })
+  expect(
+    overlayLivePreparation({ id: 'run-1', state: 'running' }, undefined),
+  ).toEqual({ id: 'run-1', state: 'running' })
 })

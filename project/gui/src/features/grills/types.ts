@@ -139,6 +139,7 @@ export type GrillLinkedRun = {
   createdAt: number
   startedAt?: number
   completedAt?: number
+  waitingOn?: string
 }
 
 export type GrillLatestStep = {

@@ -57,7 +57,9 @@ function GrillListActivity({ grill }: { grill: GrillListItem }) {
     const stepStatus = grill.latestStep
       ? grillStepLabel(grill.latestStep)
       : state === 'preparing'
-        ? 'is preparing'
+        ? linkedRun?.waitingOn
+          ? `is ${linkedRun.waitingOn.charAt(0).toLowerCase()}${linkedRun.waitingOn.slice(1)}`
+          : 'is preparing'
         : 'waiting for frontier'
     return (
       <BrailleLoader

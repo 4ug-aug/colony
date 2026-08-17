@@ -11,6 +11,20 @@ export function createVmsHttp(control: SmolvmMachineControl) {
     if (url.pathname === '/api/vms' && request.method === 'GET')
       return json({ machines: await control.listMachines() })
 
+    const logsMatch = url.pathname.match(/^\/api\/vms\/([^/]+)\/logs$/)
+    if (logsMatch && request.method === 'GET') {
+      let id: string
+      try {
+        id = decodeURIComponent(logsMatch[1])
+      } catch {
+        return json({ error: 'Invalid machine id' }, 400)
+      }
+      const logs = await control.machineLogs(id)
+      return logs
+        ? json(logs)
+        : json({ error: 'Machine not found' }, 404)
+    }
+
     const match = url.pathname.match(/^\/api\/vms\/([^/]+)$/)
     if (match && request.method === 'DELETE') {
       let id: string

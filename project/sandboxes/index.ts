@@ -13,6 +13,8 @@ export interface ExecRequest {
   env?: Record<string, string | undefined>;
   workdir?: string;
   onOutput?: (chunk: OutputChunk) => void;
+  /** Retain this command's output on the Machine console. */
+  log?: "init" | "preview";
 }
 
 export interface ExecutionResult {

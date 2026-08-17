@@ -92,6 +92,8 @@ export type RoomRun = {
   error?: string
   stdout: string
   output?: string
+  waitingOn?: string
+  preparation?: readonly string[]
 }
 export type RoomHistoryPage = {
   messages: RoomMessage[]

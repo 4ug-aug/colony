@@ -20,10 +20,24 @@ export type RunSummary = Pick<
   | 'stdout'
   | 'stderr'
   | 'preview'
+  | 'waitingOn'
+  | 'preparation'
 > & {
   agentId: string
   provider: RunProvider
   model: string
+}
+
+export function overlayLivePreparation<T extends { id: string }>(
+  run: T,
+  live?: Pick<RunSummary, 'waitingOn' | 'preparation'>,
+): T {
+  if (!live?.waitingOn && !live?.preparation?.length) return run
+  return {
+    ...run,
+    ...(live.waitingOn !== undefined ? { waitingOn: live.waitingOn } : {}),
+    ...(live.preparation?.length ? { preparation: live.preparation } : {}),
+  }
 }
 
 export type { Step }
@@ -94,6 +108,8 @@ function runSummary<Input extends RunInput>(
     stdout,
     stderr,
     preview,
+    waitingOn,
+    preparation,
     definition: { id: agentId },
   } = run
   const runtime = run.definition.runtime
@@ -111,6 +127,8 @@ function runSummary<Input extends RunInput>(
     stdout,
     stderr,
     ...(preview ? { preview } : {}),
+    ...(waitingOn ? { waitingOn } : {}),
+    ...(preparation?.length ? { preparation } : {}),
     agentId,
     provider:
       kind === 'cursor'

@@ -231,7 +231,9 @@ export function GrillFrontierPanel({
     const activity = latestStep
       ? grillStepLabel(latestStep)
       : runState === 'preparing'
-        ? 'is preparing'
+        ? linkedRun?.waitingOn
+          ? linkedRun.waitingOn
+          : 'is preparing'
         : 'is working'
     const canReply =
       !working && !replyToGrill.isPending && Boolean(reply.trim())

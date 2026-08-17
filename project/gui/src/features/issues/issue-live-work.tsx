@@ -38,6 +38,10 @@ function toActivityRun(run: IssueRun): ActivityRun {
     ...(run.error === undefined ? {} : { error: run.error }),
     stdout: run.stdout,
     output: run.stdout,
+    ...(run.waitingOn === undefined ? {} : { waitingOn: run.waitingOn }),
+    ...(run.preparation === undefined
+      ? {}
+      : { preparation: run.preparation }),
   }
 }
 

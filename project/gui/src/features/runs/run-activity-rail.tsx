@@ -34,6 +34,8 @@ export type ActivityRun = {
   stdout: string
   output?: string
   attribution?: string
+  waitingOn?: string
+  preparation?: readonly string[]
 }
 export type TriggerMessage = { author: Person; text: string }
 
@@ -103,9 +105,11 @@ export function RunActivityContent({
           ? 'Cancelled'
           : latest
             ? stepLabel(latest)
-            : run.state === 'preparing'
-              ? 'Preparing'
-              : 'Working'
+            : run.waitingOn
+              ? run.waitingOn
+              : run.state === 'preparing'
+                ? 'Preparing'
+                : 'Working'
 
   useEffect(() => {
     const element = scrollRef.current
@@ -171,11 +175,21 @@ export function RunActivityContent({
               </Button>
             </div>
           )}
-          {!loading && !error && !groups.length && (
+          {!loading &&
+            !error &&
+            !groups.length &&
+            !run.preparation?.length && (
             <p className="text-sm text-muted-foreground">
               No activity recorded yet.
             </p>
           )}
+          {run.preparation?.length ? (
+            <ol className="mb-3 space-y-1 text-sm text-muted-foreground">
+              {run.preparation.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ol>
+          ) : null}
           <div className="space-y-3">
             {groups.map((group, index) =>
               group.kind === 'reasoning' ? (

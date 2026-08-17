@@ -19,6 +19,10 @@ import type {
   WorkspaceServerMessage,
 } from '#/server/coordinator'
 import type { RoomUser } from '#/server/features/rooms/room-store'
+import {
+  overlayLivePreparation,
+  type RunSummary,
+} from '#/server/features/runs/run-control'
 import { json, readBody } from '#/server/http/respond'
 import { matchRoute, type Route } from '#/server/http/router'
 
@@ -28,6 +32,7 @@ export function createIssuesHttp(deps: {
   agentDefinitions: () => AgentDefinitionSummary[]
   listWorkspaceUsers: () => RoomUser[]
   broadcastWorkspace: (message: WorkspaceServerMessage) => void
+  liveRun?: (id: string) => RunSummary | undefined
 }): (
   request: Request,
   url: URL,
@@ -238,7 +243,11 @@ export function createIssuesHttp(deps: {
       handle: (_request, _url, params) => {
         const resolved = requireIssue(params.ref!)
         if (!resolved.ok) return resolved.response
-        return json({ runs: deps.issueStore.listRuns(resolved.issue.id) })
+        return json({
+          runs: deps.issueStore
+            .listRuns(resolved.issue.id)
+            .map((run) => overlayLivePreparation(run, deps.liveRun?.(run.id))),
+        })
       },
     },
     {
@@ -289,7 +298,9 @@ export function createIssuesHttp(deps: {
       handle: (_request, _url, params) => {
         const run = deps.issueStore.getRun(params.runId!)
         return run
-          ? json({ run })
+          ? json({
+              run: overlayLivePreparation(run, deps.liveRun?.(run.id)),
+            })
           : json({ error: 'Run not found' }, 404)
       },
     },

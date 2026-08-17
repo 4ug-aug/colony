@@ -64,6 +64,10 @@ export interface RunRecord<Input extends RunInput = RunInput> {
   completedAt?: number;
   error?: string;
   preview?: RunPreview;
+  /** Current platform-managed work during `preparing`. Not a Step. */
+  waitingOn?: string;
+  /** Finished waiting-on work, kept after the run is `running`. */
+  preparation?: readonly string[];
 }
 
 export interface RunStore<Input extends RunInput = RunInput> {
@@ -328,7 +332,23 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
 
   const finish = (id: string, patch: Partial<RunRecord<Input>>): void => {
     const record = store.get(id);
-    if (record && !terminal(record.state)) store.update(id, patch);
+    if (record && !terminal(record.state))
+      store.update(id, { waitingOn: undefined, ...patch });
+  };
+
+  const progress = (
+    id: string,
+    waitingOn: string | undefined,
+    completed?: string,
+  ): void => {
+    const current = store.get(id);
+    if (!current) return;
+    store.update(id, {
+      waitingOn,
+      ...(completed
+        ? { preparation: [...(current.preparation ?? []), completed] }
+        : {}),
+    });
   };
 
   const clearIdle = (entry: WarmEntry): void => {
@@ -410,6 +430,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       if (!dependencies.runtime.openWarmSession) {
         throw new Error("Runtime does not support warm Grill-linked runs");
       }
+      if (dependencies.inputs?.prepare)
+        progress(record.id, "Preparing workspace");
       workspace = (
         await dependencies.inputs?.prepare(record.inputs, {
           runId: record.id,
@@ -417,6 +439,11 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         })
       )?.workspace;
       if (cancellation.has(record.id)) return;
+      progress(
+        record.id,
+        "Creating sandbox",
+        workspace ? "Prepared workspace" : undefined,
+      );
       const spec: SandboxSpec = {
         image: record.definition.runtime.image,
         ...(workspace ? { volumes: [`${workspace.path}:/work`] } : {}),
@@ -433,10 +460,12 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         : undefined;
       if (cancellation.has(record.id)) return;
 
+      progress(record.id, undefined, "Created sandbox");
       store.update(record.id, {
         state: "running",
         startedAt: now(),
         turnActive: true,
+        waitingOn: undefined,
       });
       const baseRequest = bindTurnHandlers(record, {
         definition: snapshot(record.definition),
@@ -506,6 +535,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     let previewGraceMs: number | undefined;
 
     try {
+      if (dependencies.inputs?.prepare)
+        progress(record.id, "Preparing workspace");
       workspace = (
         await dependencies.inputs?.prepare(record.inputs, {
           runId: record.id,
@@ -513,6 +544,11 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         })
       )?.workspace;
       if (cancellation.has(record.id)) return;
+      progress(
+        record.id,
+        "Creating sandbox",
+        workspace ? "Prepared workspace" : undefined,
+      );
       const previewConfig = workspace?.git
         ? dependencies.getPreviewConfig?.()
         : undefined;
@@ -537,31 +573,56 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       const previewUrl = sandbox.previewUrl;
       if (previewConfig && previewUrl) {
         if (previewConfig.initCommand) {
+          progress(
+            record.id,
+            `Running init: ${previewConfig.initCommand}`,
+            "Created sandbox",
+          );
           const init = await sandbox.exec({
             command: ["sh", "-lc", previewConfig.initCommand],
             workdir: "/work",
+            log: "init",
           });
           if (init.exitCode !== 0) failure = commandFailure("Preview init", init);
         }
         if (!failure && !cancellation.has(record.id)) {
+          progress(
+            record.id,
+            `Starting preview: ${previewConfig.previewCommand}`,
+            previewConfig.initCommand
+              ? `Ran init: ${previewConfig.initCommand}`
+              : "Created sandbox",
+          );
           // Long-running by design: the sandbox owns its lifetime, so this is
           // observed for liveness rather than awaited.
           void sandbox
             .exec({
               command: ["sh", "-lc", previewConfig.previewCommand],
               workdir: "/work",
+              log: "preview",
             })
             .catch(() => undefined)
             .then(() => markPreviewDead(record.id));
           previewGraceMs = previewConfig.graceDurationMs;
-          task = `${record.task}\n\nA Preview of this workspace is live at ${previewUrl}, started with: ${previewConfig.previewCommand}`;
+          task = `${record.task}\n\nA Preview of this workspace was started with: ${previewConfig.previewCommand}`;
+          progress(
+            record.id,
+            `Starting preview: ${previewConfig.previewCommand}`,
+            `Started preview: ${previewConfig.previewCommand}`,
+          );
           store.update(record.id, {
             preview: { url: previewUrl, state: "live" },
           });
         }
+      } else {
+        progress(record.id, undefined, "Created sandbox");
       }
       if (!failure && !cancellation.has(record.id)) {
-        store.update(record.id, { state: "running", startedAt: now() });
+        store.update(record.id, {
+          state: "running",
+          startedAt: now(),
+          waitingOn: undefined,
+        });
         let stepCount = 0;
         let stepsTruncated = false;
         const runtime = dependencies.runtime.run(sandbox, {

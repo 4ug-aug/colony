@@ -2,6 +2,7 @@ import type { ServerWebSocket } from 'bun'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import {
   createRunControl,
+  overlayLivePreparation,
   type RunControl,
   type RunSummary,
 } from './features/runs/run-control'
@@ -681,7 +682,9 @@ export function createCoordinator(options: {
           : {}),
       },
       messages: page.messages,
-      runs: page.runs,
+      runs: page.runs.map((run) =>
+        overlayLivePreparation(run, options.control.getRun(run.id)),
+      ),
       ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
       latestSteps: [
         ...options.store.latestStepsForActiveRuns(socket.data.roomId).values(),
@@ -944,6 +947,7 @@ export function createCoordinator(options: {
         agentDefinitions,
         listWorkspaceUsers: () => options.store.listWorkspaceUsers(),
         broadcastWorkspace,
+        liveRun: (id) => options.control.getRun(id),
       })
     : undefined
   const bulletinsHttp = options.bulletinStore

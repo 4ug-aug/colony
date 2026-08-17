@@ -426,6 +426,24 @@ was started — not a URL, port, or extra env.
 _Avoid_: Entrypoint (entrypoints must complete), startup script, verify
 command
 
+**waiting on**: The current platform-managed work during `preparing` — workspace
+prepare, sandbox create, optional Preview init, Preview start. It is not a
+Step. The live activity indicator shows this string until the agent runtime
+emits Steps. Cleared when the run becomes `running` or terminals.
+_Avoid_: Step, phase, status, event
+
+**preparation**: The ordered list of finished waiting-on work on a run
+(workspace prepared, sandbox created, init ran, Preview started). Kept after
+the run is `running` so activity can show that work above Steps. Not a Step
+and not a Machine console.
+_Avoid_: Step history, log, event
+
+**Machine console**: Admin-only retained output from a live smolvm sandbox:
+Preview init, the Preview command, and guest dockerd. It is not a Step, not
+Preview, and not Account-facing Run activity. Used to diagnose a Preview that
+is not yet reachable.
+_Avoid_: Step, logs (generic), serial console, smolvm serve /logs
+
 ## Core boundaries
 
 Keep these three concepts separate:
