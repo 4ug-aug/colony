@@ -21,8 +21,7 @@ test("reads and updates env values without dropping comments or unrelated keys",
 });
 
 test("defaults the sandbox to smolvm", () => {
-  expect(defaultSandboxProvider("darwin")).toBe("smolvm");
-  expect(defaultSandboxProvider("linux")).toBe("smolvm");
+  expect(defaultSandboxProvider()).toBe("smolvm");
 });
 
 test("detects rootless Docker security options", () => {

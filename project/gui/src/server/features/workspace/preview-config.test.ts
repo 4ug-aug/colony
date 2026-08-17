@@ -77,5 +77,27 @@ test('rejects an invalid guest port', () => {
       guestPort: 0,
       graceDurationMs: 1000,
     }),
-  ).toThrow('Guest port and grace duration are required')
+  ).toThrow('Guest port must be a whole number between 1 and 65535')
+})
+
+test('rejects a grace duration that would hold the sandbox for days', () => {
+  const { config } = createConfig()
+  expect(() =>
+    config.save({
+      previewCommand: 'make dev',
+      guestPort: 3000,
+      graceDurationMs: 7 * 24 * 60 * 60 * 1000,
+    }),
+  ).toThrow('Grace duration must be a whole number between 0 and 86400000')
+})
+
+test('reads numeric fields from form strings', () => {
+  const { config } = createConfig()
+  expect(
+    config.save({
+      previewCommand: 'make dev',
+      guestPort: '8080',
+      graceDurationMs: '1000',
+    }),
+  ).toMatchObject({ guestPort: 8080, graceDurationMs: 1000 })
 })

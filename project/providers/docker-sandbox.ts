@@ -4,7 +4,7 @@ import {
   type CommandRunner,
 } from "../sdk/src";
 import type { SandboxProvider } from "../sandboxes";
-import { allocateHostPort, previewUrl } from "../sandboxes";
+import { allocateHostPort, publishedPort } from "../sandboxes";
 import { isAbsolute } from "node:path";
 
 const idleCommand = ["sh", "-c", "while :; do sleep 3600; done"] as const;
@@ -25,7 +25,7 @@ export function createDockerSandboxProvider(
     runner?: CommandRunner;
     createId?: () => string;
     caCertificate?: string;
-    allocatePort?: () => Promise<number> | number;
+    allocatePort?: () => Promise<number>;
   } = {},
 ): SandboxProvider {
   if (options.caCertificate && !isAbsolute(options.caCertificate)) {
@@ -38,9 +38,7 @@ export function createDockerSandboxProvider(
   return {
     async create(spec) {
       const id = createId();
-      const hostPort = spec.publish
-        ? await Promise.resolve(allocatePort())
-        : undefined;
+      const publish = await publishedPort(spec, allocatePort);
       await checked(
         runner,
         [
@@ -50,11 +48,8 @@ export function createDockerSandboxProvider(
           "--detach",
           "--add-host",
           "host.container.internal:host-gateway",
-          ...(hostPort !== undefined && spec.publish
-            ? [
-                "--publish",
-                `127.0.0.1:${hostPort}:${spec.publish.guestPort}`,
-              ]
+          ...(publish
+            ? ["--publish", `127.0.0.1:${publish.host}:${publish.guest}`]
             : []),
           ...(options.caCertificate
             ? ["--volume", `${options.caCertificate}:${extraCaCertificate}:ro`]
@@ -69,6 +64,7 @@ export function createDockerSandboxProvider(
 
       return {
         id,
+        ...(publish ? { previewUrl: publish.url } : {}),
 
         async exec(request) {
           const args = ["exec"];
@@ -83,7 +79,8 @@ export function createDockerSandboxProvider(
           }
           if (request.workdir) args.push("--workdir", request.workdir);
           args.push(id, ...request.command);
-          const result = await checked(runner, args, {
+          // Unchecked: a non-zero command exit is reported through exitCode.
+          const result = await runner.run(args, {
             stdio: "capture",
             ...(request.onOutput ? { onOutput: request.onOutput } : {}),
           });
@@ -92,25 +89,6 @@ export function createDockerSandboxProvider(
             stdout: result.stdout,
             stderr: result.stderr,
           };
-        },
-
-        async startPreview(command, previewOptions) {
-          if (hostPort === undefined) {
-            throw new Error(
-              "Sandbox was not created with a published guest port",
-            );
-          }
-          const args = ["exec"];
-          if (previewOptions?.workdir) {
-            args.push("--workdir", previewOptions.workdir);
-          }
-          args.push(id, "sh", "-lc", command);
-          const exited = runner.run(args, { stdio: "capture" }).then((result) => ({
-            exitCode: result.exitCode,
-            stdout: result.stdout,
-            stderr: result.stderr,
-          }));
-          return { url: previewUrl(hostPort), exited };
         },
 
         async dispose() {

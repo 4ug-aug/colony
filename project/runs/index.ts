@@ -10,6 +10,7 @@ import type {
     SandboxProvider,
     SandboxSpec,
 } from "../sandboxes";
+import { commandFailure } from "../sandboxes";
 
 const snapshot = <T>(value: T): T => structuredClone(value);
 
@@ -260,6 +261,71 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     return operation;
   };
 
+  type RunResources = {
+    session?: WarmRuntimeSession;
+    sandbox?: Sandbox;
+    workspace?: PreparedInputs["workspace"];
+    capabilitySession?: CapabilitySessionBinding;
+  };
+
+  /**
+   * Releases whichever resources were handed over, in dependency order. Every
+   * step runs even if an earlier one throws; the first failure is returned so
+   * callers that surface cleanup errors can, and the rest can ignore it.
+   */
+  const release = async (
+    id: string,
+    resources: RunResources,
+  ): Promise<string | undefined> => {
+    let failure: string | undefined;
+    const attempt = async (step: () => unknown): Promise<void> => {
+      try {
+        await step();
+      } catch (error) {
+        failure ??= errorText(error);
+      }
+    };
+    const { session, sandbox, workspace, capabilitySession } = resources;
+    if (session) await attempt(() => session.dispose());
+    if (sandbox) {
+      sandboxes.delete(id);
+      await attempt(() => disposeSandbox(id, sandbox));
+    }
+    if (workspace) await attempt(() => workspace.dispose());
+    if (capabilitySession) await attempt(() => capabilitySession.revoke());
+    return failure;
+  };
+
+  const markPreviewDead = (id: string): void => {
+    const current = store.get(id);
+    if (current?.preview?.state !== "live") return;
+    store.update(id, { preview: { ...current.preview, state: "dead" } });
+  };
+
+  /**
+   * Sandboxes held open past their run so a Preview URL stays reachable.
+   * Tracked rather than detached, so `stop()` can drain the grace window
+   * instead of leaking the sandbox and its checkout on shutdown.
+   */
+  const deferredReleases = new Map<string, () => Promise<void>>();
+
+  const releaseAfter = (
+    id: string,
+    delayMs: number,
+    resources: RunResources,
+  ): void => {
+    let timer: ReturnType<typeof setTimeout>;
+    const run = async (): Promise<void> => {
+      // Map.delete reports whether we won the race with the timer.
+      if (!deferredReleases.delete(id)) return;
+      clearTimeout(timer);
+      markPreviewDead(id);
+      await release(id, resources);
+    };
+    timer = setTimeout(() => void run(), delayMs);
+    deferredReleases.set(id, run);
+  };
+
   const finish = (id: string, patch: Partial<RunRecord<Input>>): void => {
     const record = store.get(id);
     if (record && !terminal(record.state)) store.update(id, patch);
@@ -279,31 +345,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     warm.delete(id);
     clearIdle(entry);
     await entry.turnGate.catch(() => undefined);
-    try {
-      await entry.session.dispose();
-    } catch {
-      // best-effort
-    }
-    sandboxes.delete(id);
-    try {
-      await disposeSandbox(id, entry.sandbox);
-    } catch {
-      // best-effort
-    }
-    if (entry.workspace) {
-      try {
-        await entry.workspace.dispose();
-      } catch {
-        // best-effort
-      }
-    }
-    if (entry.capabilitySession) {
-      try {
-        await entry.capabilitySession.revoke();
-      } catch {
-        // best-effort
-      }
-    }
+    await release(id, entry);
     finish(id, {
       state: reason === "idle" ? "succeeded" : "cancelled",
       completedAt: now(),
@@ -447,28 +489,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         error: errorText(error),
       });
     } finally {
-      if (sandbox) {
-        sandboxes.delete(record.id);
-        try {
-          await disposeSandbox(record.id, sandbox);
-        } catch {
-          // best-effort
-        }
-      }
-      if (workspace) {
-        try {
-          await workspace.dispose();
-        } catch {
-          // best-effort
-        }
-      }
-      if (capabilitySession) {
-        try {
-          await capabilitySession.revoke();
-        } catch {
-          // best-effort
-        }
-      }
+      // Handed to `warm` on success, in which case these are already cleared.
+      await release(record.id, { sandbox, workspace, capabilitySession });
     }
   };
 
@@ -480,8 +502,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     let failure: string | undefined;
     let cleanupFailure: string | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let previewStarted = false;
-    let previewGraceMs = 0;
+    // Set only once a Preview is live; doubles as "keep the sandbox warm".
+    let previewGraceMs: number | undefined;
 
     try {
       workspace = (
@@ -512,41 +534,29 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       if (cancellation.has(record.id)) return;
 
       let task = record.task;
-      if (previewConfig) {
+      const previewUrl = sandbox.previewUrl;
+      if (previewConfig && previewUrl) {
         if (previewConfig.initCommand) {
           const init = await sandbox.exec({
             command: ["sh", "-lc", previewConfig.initCommand],
             workdir: "/work",
           });
-          if (init.exitCode !== 0) {
-            const output = [init.stdout, init.stderr]
-              .filter(Boolean)
-              .join("\n")
-              .slice(-2000);
-            failure = `Preview init failed with code ${init.exitCode}${
-              output ? `:\n${output}` : ""
-            }`;
-          }
+          if (init.exitCode !== 0) failure = commandFailure("Preview init", init);
         }
         if (!failure && !cancellation.has(record.id)) {
-          const preview = await sandbox.startPreview(
-            previewConfig.previewCommand,
-            { workdir: "/work" },
-          );
-          previewStarted = true;
+          // Long-running by design: the sandbox owns its lifetime, so this is
+          // observed for liveness rather than awaited.
+          void sandbox
+            .exec({
+              command: ["sh", "-lc", previewConfig.previewCommand],
+              workdir: "/work",
+            })
+            .catch(() => undefined)
+            .then(() => markPreviewDead(record.id));
           previewGraceMs = previewConfig.graceDurationMs;
-          task = `${record.task}\n\nPreview command started:\n- ${previewConfig.previewCommand}`;
+          task = `${record.task}\n\nA Preview of this workspace is live at ${previewUrl}, started with: ${previewConfig.previewCommand}`;
           store.update(record.id, {
-            task,
-            preview: { url: preview.url, state: "live" },
-          });
-          void preview.exited.then(() => {
-            const current = store.get(record.id);
-            if (current?.preview?.state === "live") {
-              store.update(record.id, {
-                preview: { ...current.preview, state: "dead" },
-              });
-            }
+            preview: { url: previewUrl, state: "live" },
           });
         }
       }
@@ -601,43 +611,17 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     } catch (error) {
       failure = errorText(error);
     } finally {
-      sandboxes.delete(record.id);
-      if (capabilitySession) {
-        try {
-          await capabilitySession.revoke();
-        } catch (error) {
-          cleanupFailure = errorText(error);
-        }
-      }
-      const delayDispose =
-        previewStarted &&
-        !cancellation.has(record.id) &&
-        !cleanupFailure;
-      const cleanup = async () => {
-        if (sandbox) {
-          try {
-            await disposeSandbox(record.id, sandbox);
-          } catch (error) {
-            if (!delayDispose) cleanupFailure = errorText(error);
-          }
-        }
-        if (workspace) {
-          try {
-            await workspace.dispose();
-          } catch (error) {
-            if (!delayDispose) cleanupFailure = errorText(error);
-          }
-        }
-      };
-      if (delayDispose) {
-        void (async () => {
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, previewGraceMs);
-          });
-          await cleanup();
-        })();
+      // The capability session ends with the run even when the Preview lingers.
+      cleanupFailure = await release(record.id, { capabilitySession });
+      const holdForPreview =
+        cleanupFailure || cancellation.has(record.id)
+          ? undefined
+          : previewGraceMs;
+      if (holdForPreview !== undefined) {
+        releaseAfter(record.id, holdForPreview, { sandbox, workspace });
       } else {
-        await cleanup();
+        const failed = await release(record.id, { sandbox, workspace });
+        cleanupFailure ??= failed;
       }
     }
 
@@ -720,31 +704,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         if (result.exitCode !== 0) {
           warm.delete(id);
           clearIdle(entry);
-          try {
-            await entry.session.dispose();
-          } catch {
-            // best-effort
-          }
-          sandboxes.delete(id);
-          try {
-            await disposeSandbox(id, entry.sandbox);
-          } catch {
-            // best-effort
-          }
-          if (entry.workspace) {
-            try {
-              await entry.workspace.dispose();
-            } catch {
-              // best-effort
-            }
-          }
-          if (entry.capabilitySession) {
-            try {
-              await entry.capabilitySession.revoke();
-            } catch {
-              // best-effort
-            }
-          }
+          await release(id, entry);
           finish(id, {
             state: "failed",
             completedAt: now(),
@@ -870,6 +830,10 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
           ...active.keys(),
           ...warm.keys(),
         ].map((id) => cancelRun(id)));
+        // Sandboxes still inside their Preview grace window.
+        await Promise.all(
+          [...deferredReleases.values()].map((run) => run()),
+        );
       })();
     },
   };

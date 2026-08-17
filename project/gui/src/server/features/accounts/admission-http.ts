@@ -6,6 +6,11 @@ import type {
   PublicLlmConfig,
 } from '#/server/features/workspace/llm-config'
 import type {
+  CursorModelSummary,
+  CursorRuntimeConfigInput,
+  PublicCursorRuntimeConfig,
+} from '#/server/features/workspace/cursor-runtime-config'
+import type {
   PreviewConfigInput,
   PublicPreviewConfig,
 } from '#/server/features/workspace/preview-config'
@@ -313,20 +318,8 @@ export function createAdmissionHttpHandler(
       if (user instanceof Response) return user
       if (request.method === 'GET') return json(options.preview.public())
       if (request.method === 'POST') {
-        const body = await readBody(request)
         try {
-          return json(
-            options.preview.save({
-              ...(typeof body?.initCommand === 'string'
-                ? { initCommand: body.initCommand }
-                : {}),
-              ...(typeof body?.previewCommand === 'string'
-                ? { previewCommand: body.previewCommand }
-                : {}),
-              guestPort: body?.guestPort,
-              graceDurationMs: body?.graceDurationMs,
-            }),
-          )
+          return json(options.preview.save((await readBody(request)) ?? {}))
         } catch (error) {
           return json(
             {

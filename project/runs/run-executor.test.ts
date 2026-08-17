@@ -574,9 +574,8 @@ const gitWorkspace = {
   },
 };
 
-test("Git-workspace Preview runs init, starts Preview, and notes the command", async () => {
+test("Git-workspace Preview runs init, starts Preview, and notes its URL", async () => {
   const execs: Array<readonly string[]> = [];
-  let previewCommand: string | undefined;
   let runtimeTask: string | undefined;
   let spec: unknown;
   let releasePreview: (() => void) | undefined;
@@ -598,19 +597,16 @@ test("Git-workspace Preview runs init, starts Preview, and notes the command", a
         spec = value;
         return {
           id: "sandbox",
+          previewUrl: "http://127.0.0.1:49152",
           exec: async (request) => {
             execs.push(request.command);
-            return { exitCode: 0, stdout: "", stderr: "" };
-          },
-          startPreview: async (command) => {
-            previewCommand = command;
-            return {
-              url: "http://127.0.0.1:49152",
-              exited: new Promise((resolve) => {
-                releasePreview = () =>
-                  resolve({ exitCode: 0, stdout: "", stderr: "" });
-              }),
-            };
+            if (!request.command.includes("make dev")) {
+              return { exitCode: 0, stdout: "", stderr: "" };
+            }
+            return new Promise((resolve) => {
+              releasePreview = () =>
+                resolve({ exitCode: 0, stdout: "", stderr: "" });
+            });
           },
           dispose: async () => {},
         };
@@ -635,11 +631,15 @@ test("Git-workspace Preview runs init, starts Preview, and notes the command", a
     volumes: ["/tmp/work:/work"],
     publish: { guestPort: 3000 },
   });
-  expect(execs).toEqual([["sh", "-lc", "npm install"]]);
-  expect(previewCommand).toBe("make dev");
+  expect(execs).toEqual([
+    ["sh", "-lc", "npm install"],
+    ["sh", "-lc", "make dev"],
+  ]);
   expect(runtimeTask).toBe(
-    "fix the bug\n\nPreview command started:\n- make dev",
+    "fix the bug\n\nA Preview of this workspace is live at http://127.0.0.1:49152, started with: make dev",
   );
+  // The stored task stays exactly what the caller asked for.
+  expect(executor.getRun(id)?.task).toBe("fix the bug");
   expect(executor.getRun(id)?.preview).toEqual({
     url: "http://127.0.0.1:49152",
     state: "live",
@@ -666,13 +666,12 @@ test("Preview init failure fails the run before the agent starts", async () => {
     sandboxes: {
       create: async () => ({
         id: "sandbox",
-        exec: async () => ({
-          exitCode: 1,
-          stdout: "",
-          stderr: "missing lockfile",
-        }),
-        startPreview: async () => {
-          throw new Error("must not start Preview");
+        previewUrl: "http://127.0.0.1:49152",
+        exec: async (request) => {
+          if (request.command.includes("make dev")) {
+            throw new Error("must not start Preview");
+          }
+          return { exitCode: 1, stdout: "", stderr: "missing lockfile" };
         },
         dispose: async () => {},
       }),
@@ -692,7 +691,59 @@ test("Preview init failure fails the run before the agent starts", async () => {
   });
   await waitFor(() => executor.getRun(id)?.state === "failed");
   expect(ranAgent).toBe(false);
-  expect(executor.getRun(id)?.error).toContain("Preview init failed");
+  expect(executor.getRun(id)?.error).toContain("Preview init failed with code 1");
+  // The command's own output reaches the operator, not a wrapped runner error.
+  expect(executor.getRun(id)?.error).toContain("missing lockfile");
+});
+
+test("stopping drains a Preview grace window instead of leaking the sandbox", async () => {
+  let disposed = 0;
+  let workspaceDisposed = 0;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    getPreviewConfig: () => ({
+      previewCommand: "make dev",
+      guestPort: 3000,
+      // Far longer than the test: only stop() can bring this down.
+      graceDurationMs: 600_000,
+    }),
+    inputs: {
+      prepare: async () => ({
+        workspace: {
+          ...gitWorkspace,
+          dispose: async () => {
+            workspaceDisposed++;
+          },
+        },
+      }),
+    },
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        previewUrl: "http://127.0.0.1:9",
+        exec: async (request) =>
+          request.command.includes("make dev")
+            ? new Promise<never>(() => {})
+            : { exitCode: 0, stdout: "", stderr: "" },
+        dispose: async () => {
+          disposed++;
+        },
+      }),
+    },
+    runtime: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+    createId: () => "run-stop-grace",
+  });
+
+  const id = executor.startRun({ agentDefinitionId: "test-agent", task: "fix" });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(disposed).toBe(0);
+  expect(executor.getRun(id)?.preview?.state).toBe("live");
+
+  await executor.stop();
+
+  expect(disposed).toBe(1);
+  expect(workspaceDisposed).toBe(1);
+  expect(executor.getRun(id)?.preview?.state).toBe("dead");
 });
 
 test("Preview grace delays dispose after success and cancel disposes immediately", async () => {
@@ -712,11 +763,11 @@ test("Preview grace delays dispose after success and cancel disposes immediately
     sandboxes: {
       create: async () => ({
         id: "sandbox",
-        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
-        startPreview: async () => ({
-          url: "http://127.0.0.1:9",
-          exited: new Promise(() => {}),
-        }),
+        previewUrl: "http://127.0.0.1:9",
+        exec: async (request) =>
+          request.command.includes("make dev")
+            ? new Promise<never>(() => {})
+            : { exitCode: 0, stdout: "", stderr: "" },
         dispose: async () => {
           disposed++;
         },
@@ -754,11 +805,11 @@ test("Preview grace delays dispose after success and cancel disposes immediately
     sandboxes: {
       create: async () => ({
         id: "sandbox",
-        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
-        startPreview: async () => ({
-          url: "http://127.0.0.1:9",
-          exited: new Promise(() => {}),
-        }),
+        previewUrl: "http://127.0.0.1:9",
+        exec: async (request) =>
+          request.command.includes("make dev")
+            ? new Promise<never>(() => {})
+            : { exitCode: 0, stdout: "", stderr: "" },
         dispose: async () => {
           cancelledDispose++;
           releaseRuntime();
@@ -785,7 +836,7 @@ test("Preview grace delays dispose after success and cancel disposes immediately
 
 test("runs without a Git workspace skip Preview", async () => {
   let spec: unknown;
-  let startedPreview = false;
+  const execs: Array<readonly string[]> = [];
   const executor = createRunExecutor({
     definitions: createInMemoryAgentDefinitionResolver([definition]),
     getPreviewConfig: () => ({
@@ -803,13 +854,9 @@ test("runs without a Git workspace skip Preview", async () => {
         spec = value;
         return {
           id: "sandbox",
-          exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
-          startPreview: async () => {
-            startedPreview = true;
-            return {
-              url: "http://127.0.0.1:9",
-              exited: new Promise(() => {}),
-            };
+          exec: async (request) => {
+            execs.push(request.command);
+            return { exitCode: 0, stdout: "", stderr: "" };
           },
           dispose: async () => {},
         };
@@ -827,6 +874,6 @@ test("runs without a Git workspace skip Preview", async () => {
     image: "test:latest",
     volumes: ["/tmp/work:/work"],
   });
-  expect(startedPreview).toBe(false);
+  expect(execs).toEqual([]);
   expect(executor.getRun(id)?.preview).toBeUndefined();
 });

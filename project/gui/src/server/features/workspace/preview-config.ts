@@ -1,11 +1,7 @@
 import type { TransactionalSqlite } from '#/server/secret-box'
+import type { PreviewConfiguration } from '../../../../../runs'
 
-export type PreviewConfiguration = {
-  initCommand?: string
-  previewCommand: string
-  guestPort: number
-  graceDurationMs: number
-}
+export type { PreviewConfiguration }
 
 export type PublicPreviewConfig = {
   configured: boolean
@@ -15,12 +11,8 @@ export type PublicPreviewConfig = {
   graceDurationMs: number
 }
 
-export type PreviewConfigInput = {
-  initCommand?: string
-  previewCommand?: string
-  guestPort: unknown
-  graceDurationMs: unknown
-}
+/** The raw request body: this store is the validating boundary. */
+export type PreviewConfigInput = Record<string, unknown>
 
 type StoredConfig = {
   init_command: string | null
@@ -31,6 +23,8 @@ type StoredConfig = {
 
 export const DEFAULT_PREVIEW_GUEST_PORT = 3000
 export const DEFAULT_PREVIEW_GRACE_MS = 5 * 60 * 1000
+/** A sandbox held past this is a leak, not a Preview. */
+export const MAX_PREVIEW_GRACE_MS = 24 * 60 * 60 * 1000
 
 const optionalCommand = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined
@@ -38,24 +32,23 @@ const optionalCommand = (value: unknown): string | undefined => {
   return trimmed ? trimmed : undefined
 }
 
-const guestPort = (value: unknown): number | undefined => {
-  const port =
+/** Reads a bounded integer, naming the field so a rejection can explain itself. */
+const boundedInteger = (
+  field: string,
+  value: unknown,
+  min: number,
+  max: number,
+): number => {
+  const parsed =
     typeof value === 'number'
       ? value
       : typeof value === 'string' && value.trim()
         ? Number(value)
         : Number.NaN
-  return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : undefined
-}
-
-const graceDurationMs = (value: unknown): number | undefined => {
-  const ms =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string' && value.trim()
-        ? Number(value)
-        : Number.NaN
-  return Number.isInteger(ms) && ms >= 0 ? ms : undefined
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${field} must be a whole number between ${min} and ${max}`)
+  }
+  return parsed
 }
 
 const toPublic = (row: StoredConfig | undefined): PublicPreviewConfig => {
@@ -84,11 +77,13 @@ export function createWorkspacePreviewConfig(sqlite: TransactionalSqlite) {
       return toPublic(read())
     },
     save(input: PreviewConfigInput): PublicPreviewConfig {
-      const port = guestPort(input.guestPort)
-      const grace = graceDurationMs(input.graceDurationMs)
-      if (port === undefined || grace === undefined) {
-        throw new Error('Guest port and grace duration are required')
-      }
+      const port = boundedInteger('Guest port', input.guestPort, 1, 65535)
+      const grace = boundedInteger(
+        'Grace duration',
+        input.graceDurationMs,
+        0,
+        MAX_PREVIEW_GRACE_MS,
+      )
       const initCommand = optionalCommand(input.initCommand) ?? null
       const previewCommand = optionalCommand(input.previewCommand) ?? null
       sqlite

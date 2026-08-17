@@ -11,5 +11,7 @@
       "allowImportingTsExtensions": true,
       "types": ["bun", "node"]
     },
+    // Sources are reached transitively through index.ts. Tests are not checked:
+    // widening to "./**/*.ts" is the goal, but 8 test files fail it today.
     "include": ["./*"]
   }

@@ -32,6 +32,7 @@ import {
   type GrillMaterializeFile,
   type GrillProposedIssue,
 } from "../mcp/workspace-grill";
+import { commandFailure } from "../sandboxes";
 import { STEP_TEXT_LIMIT } from "../runtime/step";
 import { rosterParticipant } from "./roster-meta";
 
@@ -280,14 +281,8 @@ export function createGitHubSoftwareEngineerAdapter(options: {
                     workdir: "/work",
                   });
                   if (result.exitCode === 0) return;
-                  const output = [result.stdout, result.stderr]
-                    .filter(Boolean)
-                    .join("\n")
-                    .slice(-STEP_TEXT_LIMIT);
                   throw new Error(
-                    `Verification failed with code ${result.exitCode}${
-                      output ? `:\n${output}` : ""
-                    }`,
+                    commandFailure("Verification", result, STEP_TEXT_LIMIT),
                   );
                 },
               });

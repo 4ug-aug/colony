@@ -125,9 +125,8 @@ export function setEnvValue(
   return `${lines.join("\n")}\n`;
 }
 
-export function defaultSandboxProvider(
-  _platform: NodeJS.Platform = process.platform,
-): SandboxProvider {
+/** smolvm runs the same on every host, so the platform no longer decides. */
+export function defaultSandboxProvider(): SandboxProvider {
   return "smolvm";
 }
 

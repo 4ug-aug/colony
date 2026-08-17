@@ -119,8 +119,8 @@ function PreviewForm({
       <h2 className="font-semibold">Preview</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Optional init, then a long-running bring-up command for Git-workspace
-        runs. Accounts can open the forwarded guest port after the agent
-        starts.
+        runs. The forwarded guest port is recorded on the run and stays up for
+        the grace period after it ends.
       </p>
       {formError && (
         <p className="mt-2 text-sm text-destructive" role="alert">
