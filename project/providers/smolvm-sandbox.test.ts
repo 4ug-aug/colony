@@ -1,21 +1,19 @@
 import { expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
-import type {
-  ExecEvent,
-  ExecOptions,
-  MachineConfig,
-} from "smolmachines";
-import type { SmolMachine } from "./smolvm-sandbox";
+import type { ExecutionResult } from "../sandboxes";
+import type { MachineConfig, SmolMachine } from "./smolvm-sandbox";
 import {
+  createSmolvmMachine,
   createSmolvmSandboxProvider,
   resolveSmolvmImage,
+  smolvmCreateFlags,
 } from "./smolvm-sandbox";
 
 const passthroughImage = {
   resolveImage: async (image: string) => image,
 };
 
-const succeeds = async () => ({
+const succeeds = async (): Promise<ExecutionResult> => ({
   exitCode: 0,
   stdout: "",
   stderr: "",
@@ -23,14 +21,13 @@ const succeeds = async () => ({
 
 const stubMachine = (overrides: Partial<SmolMachine> = {}): SmolMachine => ({
   exec: succeeds,
-  async *execStream() {},
   async delete() {},
   ...overrides,
 });
 
 test("a smolvm machine behaves as a sandbox", async () => {
   const configs: MachineConfig[] = [];
-  const execs: Array<{ command: string[]; options?: ExecOptions }> = [];
+  const execs: Array<Parameters<SmolMachine["exec"]>> = [];
   const chunks: Array<{ stream: "stdout" | "stderr"; text: string }> = [];
   let deletes = 0;
   const provider = createSmolvmSandboxProvider({
@@ -40,14 +37,10 @@ test("a smolvm machine behaves as a sandbox", async () => {
       configs.push(config);
       return stubMachine({
         async exec(command, options) {
-          execs.push({ command, options });
-          return succeeds();
-        },
-        async *execStream(command, options) {
-          execs.push({ command, options });
-          yield { kind: "stdout", data: "hello\n" } satisfies ExecEvent;
-          yield { kind: "stderr", data: "warning\n" } satisfies ExecEvent;
-          yield { kind: "exit", exitCode: 0 } satisfies ExecEvent;
+          execs.push([command, options]);
+          options?.onOutput?.({ stream: "stdout", text: "hello\n" });
+          options?.onOutput?.({ stream: "stderr", text: "warning\n" });
+          return { exitCode: 0, stdout: "hello\n", stderr: "warning\n" };
         },
         async delete() {
           deletes += 1;
@@ -73,16 +66,16 @@ test("a smolvm machine behaves as a sandbox", async () => {
     {
       name: "sandbox-1",
       image: "alpine:latest",
-      resources: { network: true },
+      network: true,
       mounts: [{ source: "/tmp/work", target: "/work", readOnly: false }],
     },
   ]);
-  expect(execs).toEqual([
-    {
-      command: ["echo", "hello"],
-      options: { env: { MODEL: "test" }, workdir: "/work" },
-    },
-  ]);
+  expect(execs).toHaveLength(1);
+  expect(execs[0]?.[0]).toEqual(["echo", "hello"]);
+  expect(execs[0]?.[1]).toMatchObject({
+    env: { MODEL: "test" },
+    workdir: "/work",
+  });
   expect(result).toEqual({
     exitCode: 0,
     stdout: "hello\n",
@@ -240,6 +233,92 @@ test("smolvm create boots a local image archive instead of a registry pull", asy
 
   await provider.create({ image: "sweat-agent-cursor:latest" });
   expect(configs[0]?.image).toBe("/tmp/colony-smolvm-images/cursor.tar");
+});
+
+test("machine settings become smolvm create flags", () => {
+  expect(
+    smolvmCreateFlags({
+      name: "sandbox-1",
+      image: "/tmp/cursor.tar",
+      network: true,
+      mounts: [{ source: "/tmp/work", target: "/work", readOnly: false }],
+      ports: [{ host: 49152, guest: 3000 }],
+    }),
+  ).toEqual(["--net", "-v", "/tmp/work:/work", "-p", "49152:3000"]);
+  expect(
+    smolvmCreateFlags({ name: "sandbox-1", image: "alpine", network: false }),
+  ).toEqual([]);
+});
+
+const cliConfig: MachineConfig = {
+  name: "sandbox-1",
+  image: "/tmp/cursor.tar",
+  network: true,
+};
+
+test("a CLI-backed machine creates, starts, execs and deletes through smolvm", async () => {
+  const commands: string[][] = [];
+  const machine = await createSmolvmMachine(cliConfig, async (command) => {
+    commands.push([...command]);
+    return { exitCode: 0, stdout: "", stderr: "" };
+  });
+  await machine.exec(["bun", "run", "agent"], {
+    env: { MODEL: "test" },
+    workdir: "/work",
+  });
+  await machine.delete();
+
+  expect(commands).toEqual([
+    [
+      "smolvm",
+      "machine",
+      "create",
+      "--name",
+      "sandbox-1",
+      "--image",
+      "/tmp/cursor.tar",
+      "--net",
+    ],
+    ["smolvm", "machine", "start", "--name", "sandbox-1"],
+    [
+      "smolvm",
+      "machine",
+      "exec",
+      "--stream",
+      "--name",
+      "sandbox-1",
+      "--workdir",
+      "/work",
+      "--env",
+      "MODEL=test",
+      "--",
+      "bun",
+      "run",
+      "agent",
+    ],
+    ["smolvm", "machine", "delete", "--name", "sandbox-1", "-f"],
+  ]);
+});
+
+test("a machine that fails to start is deleted instead of left behind", async () => {
+  const commands: string[][] = [];
+  await expect(
+    createSmolvmMachine(cliConfig, async (command) => {
+      commands.push([...command]);
+      return command[2] === "start"
+        ? { exitCode: 1, stdout: "", stderr: "no such image" }
+        : { exitCode: 0, stdout: "", stderr: "" };
+    }),
+  ).rejects.toThrow(/no such image/);
+
+  expect(commands.at(-1)).toEqual([
+    "smolvm",
+    "machine",
+    "delete",
+    "--name",
+    "sandbox-1",
+    "-f",
+  ]);
 });
 
 test("resolveSmolvmImage exports a local Docker tag to a tar archive", async () => {
