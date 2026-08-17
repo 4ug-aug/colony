@@ -32,6 +32,7 @@ const views: DashboardView[] = [
   'bulletins',
   'docs',
   'grills',
+  'vms',
 ]
 
 function parseSurface(value: unknown): DashboardSideSurface | undefined {

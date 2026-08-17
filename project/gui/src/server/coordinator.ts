@@ -89,6 +89,8 @@ import { createRoomsHttp } from './features/rooms/rooms-http'
 import { createMembersHttp } from './features/rooms/members-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
 import { createOneshotSession } from './features/oneshots/oneshot-session'
+import { createVmsHttp } from './features/vms/vms-http'
+import type { SmolvmMachineControl } from '../../../providers/smolvm-sandbox'
 
 export { allowedOrigin }
 
@@ -346,6 +348,7 @@ export function createCoordinator(options: {
     maybeStartForOwner: (issueId: string) => { issue: Issue; run?: IssueRun }
   }
   agentDefinitions?: () => AgentDefinitionSummary[]
+  vmControl?: SmolvmMachineControl
 }) {
   const attachmentsDirectory =
     options.attachmentDirectory ??
@@ -986,6 +989,9 @@ export function createCoordinator(options: {
     broadcastRoom,
     broadcastAttention: (userId, roomId) => broadcastAttention(userId, roomId),
   })
+  const vmsHttp = options.vmControl
+    ? createVmsHttp(options.vmControl)
+    : undefined
   const server = Bun.serve<SocketData>({
     port: options.port ?? 3001,
     async fetch(request, server) {
@@ -1071,6 +1077,7 @@ export function createCoordinator(options: {
       if (url.pathname === '/api/agent-definitions' && request.method === 'GET')
         return cors(json({ agents: agentDefinitions() }))
       const handled =
+        (vmsHttp ? await vmsHttp(request, url, user) : undefined) ??
         (schedulesHttp ? await schedulesHttp(request, url, user) : undefined) ??
         (issuesHttp ? await issuesHttp(request, url, user) : undefined) ??
         (bulletinsHttp ? await bulletinsHttp(request, url, user) : undefined) ??
@@ -1254,13 +1261,15 @@ if (import.meta.main) {
       'http://0.0.0.0',
       process.env.SWEAT_MCP_HOST ?? 'http://host.container.internal',
     )
+  const smolvmProvider =
+    sandboxProviderName === 'smolvm' ? createSmolvmSandboxProvider() : undefined
   const sandboxProvider =
     sandboxProviderName === 'docker'
       ? createDockerSandboxProvider({
           ...(agentCaCertificate ? { caCertificate: agentCaCertificate } : {}),
         })
-      : sandboxProviderName === 'smolvm'
-        ? createSmolvmSandboxProvider()
+      : smolvmProvider
+        ? smolvmProvider
         : createAppleContainerSandboxProvider({
             container: createAppleContainerClient(),
           })
@@ -1482,6 +1491,7 @@ if (import.meta.main) {
   )
   const coordinator = createCoordinator({
     control,
+    ...(smolvmProvider ? { vmControl: smolvmProvider } : {}),
     store,
     messages,
     authenticator: betterAuthSessionAuthenticator,

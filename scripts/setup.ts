@@ -188,14 +188,7 @@ export function usesRootlessDocker(securityOptions: string): boolean {
 }
 
 async function requireRuntime(provider: SandboxProvider): Promise<boolean> {
-  if (provider === "smolvm") {
-    if (!(await available("smolvm"))) {
-      throw new Error(
-        "The smolvm CLI is required. Install it from https://github.com/smol-machines/smol and rerun make setup.",
-      );
-    }
-    return false;
-  }
+  if (provider === "smolvm") return false;
   if (!(await available(provider === "docker" ? "docker" : "container"))) {
     throw new Error(
       provider === "docker"

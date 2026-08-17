@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # smolvm machines are driven through the CLI, not the SDK
+
+Superseded when the provider returned to the embedded `smolmachines` SDK.
 
 The smolvm adapter of ADR 0024 creates, execs and deletes microVMs by running
 the `smolvm` binary, rather than embedding the `smolmachines` Node SDK. The

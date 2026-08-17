@@ -43,6 +43,7 @@ import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
 import { SchedulesPage } from '#/features/schedules/schedules-page'
 import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
+import { VmsPage } from '#/features/vms/vms-page'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
@@ -56,6 +57,7 @@ import {
   Lock,
   Plus,
   Settings,
+  Server,
   StickyNote,
   Wifi,
   WifiOff,
@@ -436,6 +438,9 @@ export function Dashboard({
         onOpenBulletins={() => openView('bulletins')}
         onOpenDocs={() => openView('docs')}
         onOpenGrills={() => openView('grills')}
+        onOpenVms={() => {
+          if (user.role === 'admin') openView('vms')
+        }}
         user={user}
       />
       <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
@@ -465,6 +470,8 @@ export function Dashboard({
                   <FileText className="size-4 text-muted-foreground" />
                 ) : view === 'grills' ? (
                   <Flame className="size-4 text-muted-foreground" />
+                ) : view === 'vms' ? (
+                  <Server className="size-4 text-muted-foreground" />
                 ) : room?.visibility === 'private' ? (
                   <Lock className="size-4 text-muted-foreground" />
                 ) : (
@@ -483,7 +490,9 @@ export function Dashboard({
                             ? 'Docs'
                             : view === 'grills'
                               ? 'Grills'
-                              : (room?.name ?? 'Rooms')}
+                              : view === 'vms'
+                                ? 'Machines'
+                                : (room?.name ?? 'Rooms')}
                 </p>
                 {view === 'room' && room?.visibility === 'private' && (
                   <MembersPanel
@@ -589,6 +598,7 @@ export function Dashboard({
             />
           </div>
         )}
+        {view === 'vms' && user.role === 'admin' && <VmsPage />}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
             <ResizablePanelGroup className="min-h-0 min-w-0 flex-1">

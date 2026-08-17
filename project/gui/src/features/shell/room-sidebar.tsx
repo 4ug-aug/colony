@@ -74,6 +74,7 @@ import {
   StickyNote,
   ScrollText,
   Settings,
+  Server,
   Trash2,
 } from 'lucide-react'
 import type { ReactNode, SubmitEvent } from 'react'
@@ -105,6 +106,7 @@ export type DashboardView =
   | 'bulletins'
   | 'docs'
   | 'grills'
+  | 'vms'
 
 /**
  * A sidebar section that remembers whether it is expanded. Sections stay
@@ -372,6 +374,7 @@ export function RoomSidebar({
   onOpenBulletins,
   onOpenDocs,
   onOpenGrills,
+  onOpenVms,
   user,
 }: {
   rooms: Room[]
@@ -390,6 +393,7 @@ export function RoomSidebar({
   onOpenBulletins: () => void
   onOpenDocs: () => void
   onOpenGrills: () => void
+  onOpenVms: () => void
   user: Author
 }) {
   const { data: agents = [] } = useAgentDefinitions()
@@ -660,6 +664,18 @@ export function RoomSidebar({
                   <span>Schedules</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {user.role === 'admin' && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip="Running machines"
+                    isActive={view === 'vms'}
+                    onClick={onOpenVms}
+                  >
+                    <Server />
+                    <span>Machines</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               {user.role === 'admin' && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
