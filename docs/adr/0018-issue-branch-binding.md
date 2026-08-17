@@ -15,4 +15,9 @@ one inheritance rule. We also rejected treating the Issue branch as only a
 start snapshot while still PRing into the repository default: that skips the
 integration line the binding is meant to provide. A child run in a tree with
 no branch binds `sweat/issue/COL-N` on the root so siblings share a line;
-landing that line to the default base remains out of band.
+landing that line to the default base remains out of band. An Issue integrate
+run prepares its Git workspace from that line merged with each direct child's
+published head (the child's own Issue branch). If the heads do not merge
+cleanly, the run fails. The agent still opens one pull request into the line;
+we rejected merging child pull requests on GitHub or landing child commits
+onto the remote Issue branch before the agent works.

@@ -47,6 +47,7 @@ export type RunStartContext<Output> =
       issueId: string
       agentDefinitionId?: string
       repositoryBase?: string
+      mergeRevisions?: string[]
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
   | {
@@ -164,6 +165,9 @@ function grantContextFrom<Output>(
     agentDefinitionId,
     ...(context.repositoryBase
       ? { repositoryBase: context.repositoryBase }
+      : {}),
+    ...(context.mergeRevisions?.length
+      ? { mergeRevisions: context.mergeRevisions }
       : {}),
   }
 }

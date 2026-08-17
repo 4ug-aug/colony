@@ -15,6 +15,8 @@ export interface RepositoryInput extends RunInput {
   provider: string;
   repository: string;
   revision: string;
+  /** Extra heads to merge onto `revision` during checkout (Issue integrate). */
+  mergeRevisions?: string[];
 }
 
 export interface AttachmentInput extends RunInput {
@@ -138,6 +140,14 @@ async function initializeGitWorkspace(
   directory: string,
   branch: string,
 ): Promise<string> {
+  if (await Bun.file(join(directory, ".git", "HEAD")).exists()) {
+    await git(directory, ["checkout", "-B", branch]);
+    await git(directory, ["config", "user.name", "Colony Agent"]);
+    await git(directory, ["config", "user.email", "agent@colony.local"]);
+    await git(directory, ["config", "commit.gpgsign", "false"]);
+    await addWorkspaceExcludes(directory);
+    return (await git(directory, ["rev-list", "--max-parents=0", "HEAD"])).trim();
+  }
   await git(directory, ["init", "--initial-branch", branch]);
   await git(directory, ["config", "user.name", "Colony Agent"]);
   await git(directory, ["config", "user.email", "agent@colony.local"]);

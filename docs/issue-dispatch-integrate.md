@@ -30,6 +30,10 @@ There is no agent chat: related agents read the same Issue tree.
 9. **A child coding run shares the tree's Issue branch.** If the root has
    none, Colony binds `sweat/issue/COL-N` and children PR into that line,
    not the repository default.
+10. **An Issue integrate run's Git workspace is the parent Issue branch plus
+    each direct child's published head.** If those heads do not merge cleanly,
+    the run fails. The agent works on the combined tree and opens one PR into
+    the line.
 
 Grandchildren do not settle a grandparent. Nested trees integrate from the
 leaves up.
@@ -46,7 +50,7 @@ flowchart TD
   wait --> settled{"Every direct child<br/>In review or Done?"}
   settled -->|no: a child failed| blocked["That child stays In progress<br/>Assign or Start run again"]
   blocked --> childRuns
-  settled -->|yes| integrate["Issue integrate run on the parent<br/>Task includes child Deliverables"]
+  settled -->|yes| integrate["Issue integrate run on the parent<br/>Workspace is line plus child heads"]
   integrate --> finish
 ```
 
@@ -75,9 +79,10 @@ and `/api/auth/login` land on `feat/auth`.” COL-3 reads that and builds the
 form against it.
 
 **Integrate.** COL-2 and COL-3 set themselves In review. Colony starts a new
-run on COL-1. That Task says this run is to integrate direct children and
-includes both Deliverables. `antboy` wires UI to API, then sets COL-1 In
-review. Ada reviews. Nothing auto-Dones.
+run on COL-1. The Git workspace is the Issue branch plus both children's
+published heads. That Task says this run is to integrate direct children and
+includes both Deliverables. `antboy` wires UI to API, opens one PR into the
+line, then sets COL-1 In review. Ada reviews. Nothing auto-Dones.
 
 If COL-2’s run fails, COL-2 stays In progress. COL-1 waits. Ada or an agent
 Start run / re-assigns COL-2. Integrate does not fire until every direct child

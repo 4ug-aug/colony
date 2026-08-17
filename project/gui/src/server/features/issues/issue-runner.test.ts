@@ -501,6 +501,79 @@ test('startRun includes children in the parent task', () => {
   expect(control.starts[0]?.task).toContain('Child work')
 })
 
+test('integrate startRun passes child own branches as mergeRevisions', () => {
+  const parent = baseIssue({
+    id: 'parent',
+    number: 1,
+    title: 'Add auth',
+    status: 'in_progress',
+    owner: { kind: 'agent', id: 'antboy' },
+    branch: 'sweat/issue/COL-1',
+    effectiveBranch: 'sweat/issue/COL-1',
+  })
+  const childUi = baseIssue({
+    id: 'child-ui',
+    number: 2,
+    parentId: 'parent',
+    title: 'Login UI',
+    status: 'in_review',
+    branch: 'sweat/run-ui',
+    effectiveBranch: 'sweat/run-ui',
+  })
+  const childApi = baseIssue({
+    id: 'child-api',
+    number: 3,
+    parentId: 'parent',
+    title: 'Session API',
+    status: 'done',
+    branch: 'sweat/run-api',
+    effectiveBranch: 'sweat/run-api',
+  })
+  const docs = baseIssue({
+    id: 'child-docs',
+    number: 4,
+    parentId: 'parent',
+    title: 'Docs',
+    status: 'in_review',
+    effectiveBranch: 'sweat/issue/COL-1',
+  })
+  const store = fakeStore(parent, [childApi, docs, childUi])
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.startRun('parent')
+  expect(control.starts[0]?.context).toMatchObject({
+    issueId: 'parent',
+    repositoryBase: 'sweat/issue/COL-1',
+    mergeRevisions: ['sweat/run-ui', 'sweat/run-api'],
+  })
+})
+
+test('parent dispatch does not pass mergeRevisions while children are unsettled', () => {
+  const parent = baseIssue({
+    id: 'parent',
+    number: 1,
+    owner: { kind: 'agent', id: 'antboy' },
+    branch: 'sweat/issue/COL-1',
+    effectiveBranch: 'sweat/issue/COL-1',
+  })
+  const child = baseIssue({
+    id: 'child',
+    number: 2,
+    parentId: 'parent',
+    status: 'todo',
+    branch: 'sweat/run-child',
+    effectiveBranch: 'sweat/run-child',
+    owner: { kind: 'agent', id: 'software-engineer' },
+  })
+  const store = fakeStore(parent, [child])
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.startRun('parent')
+  expect(
+    (control.starts[0]?.context as { mergeRevisions?: string[] }).mergeRevisions,
+  ).toBeUndefined()
+})
+
 test('succeeded run overwrites Issue Deliverable', () => {
   const store = fakeStore(baseIssue({ owner: { kind: 'agent', id: 'antboy' } }))
   const listeners: Array<(run: RunSummary) => void> = []

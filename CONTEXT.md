@@ -280,7 +280,9 @@ run kind. The trigger is that settlement (or the parent run ending if children
 already settled), not a standing retry while the parent stays agent-owned. A
 failed child stays In progress and idle until someone assigns or Start run; it
 blocks integrate. The parent may create further child Issues during the run;
-it cannot settle until every direct child is In review or Done.
+it cannot settle until every direct child is In review or Done. Its Git
+workspace is the parent Issue branch plus each direct child's published head;
+if those heads do not merge cleanly, the run fails.
 _Avoid_: Follow-up run, warm run, coordinator run, subagent run, parent cover
 
 **Issue Deliverable**: The durable text on an Issue that holds the latest
@@ -311,7 +313,9 @@ repository default base. When an Issue-linked run successfully creates a pull
 request and the Issue has no own Issue branch yet, the platform binds that run
 branch onto the Issue so the work is discoverable from the Issue; an existing
 binding (including a Code Grill session branch or the platform root line) is
-left unchanged.
+left unchanged. That own binding is the Issue's published head. An Issue
+integrate run prepares from the parent's Issue branch merged with each direct
+child's published head, not from inherited effective branches.
 _Avoid_: Run branch, sweat/<runId>, PR branch (as synonyms for this binding)
 
 **Issue tools**: First-party agent tools for reading and writing Colony Issues.

@@ -105,6 +105,63 @@ test("a repository input is checked out into a disposable workspace", async () =
   expect(removed).toBe(prepared.workspace?.path);
 });
 
+test("prepare keeps checkout git history and uses the line commit as baseCommit", async () => {
+  const provisioner = createRepositoryWorkspaceProvisioner({
+    sources: [
+      {
+        provider: "github",
+        checkout: async (_input, directory) => {
+          await Bun.write(join(directory, "README.md"), "line\n");
+          await git(directory, ["init", "--initial-branch", "line"]);
+          await git(directory, ["config", "user.name", "Colony Agent"]);
+          await git(directory, ["config", "user.email", "agent@colony.local"]);
+          await git(directory, ["config", "commit.gpgsign", "false"]);
+          await git(directory, ["add", "--all"]);
+          await git(directory, ["commit", "--quiet", "--message", "Colony line"]);
+          await Bun.write(join(directory, "child.ts"), "child\n");
+          await git(directory, ["add", "--all"]);
+          await git(directory, ["commit", "--quiet", "--message", "Child head"]);
+          return { revision: "line-sha" };
+        },
+      },
+    ],
+    createDirectory: async () => mkdtemp(join(tmpdir(), "sweat-run-")),
+    removeDirectory: async (directory) =>
+      rm(directory, { force: true, recursive: true }),
+  });
+
+  const prepared = await provisioner.prepare(
+    [
+      {
+        type: "repository",
+        provider: "github",
+        repository: "acme/product",
+        revision: "sweat/issue/COL-1",
+        mergeRevisions: ["sweat/child-1"],
+      },
+    ],
+    { runId: "run-integrate" },
+  );
+  const workspace = prepared.workspace!;
+  const root = (await git(workspace.path, ["rev-list", "--max-parents=0", "HEAD"]))
+    .stdout.trim();
+  const head = (await git(workspace.path, ["rev-parse", "HEAD"])).stdout.trim();
+  expect(workspace.git).toMatchObject({
+    repository: "acme/product",
+    baseRevision: "line-sha",
+    baseCommit: root,
+    branch: "sweat/run-integrate",
+  });
+  expect(head).not.toBe(root);
+  expect(
+    (await git(workspace.path, ["ls-tree", "--name-only", "HEAD"])).stdout,
+  ).toContain("child.ts");
+  expect(
+    (await git(workspace.path, ["branch", "--show-current"])).stdout.trim(),
+  ).toBe("sweat/run-integrate");
+  await workspace.dispose();
+});
+
 test("a repository provisioner validates its own input fields", async () => {
   const provisioner = createRepositoryWorkspaceProvisioner({ sources: [] });
 

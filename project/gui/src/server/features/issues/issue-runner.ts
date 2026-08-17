@@ -167,11 +167,24 @@ export function createIssueRunner(options: {
       ? options.store.getIssue(issue.parentId)
       : undefined
     const children = options.store.listChildIssues(issue.id)
+    const integrating =
+      children.length > 0 && children.every((child) => settled(child.status))
+    const mergeRevisions = integrating
+      ? children
+          .slice()
+          .sort((a, b) => a.number - b.number)
+          .flatMap((child) =>
+            child.branch && child.branch !== repositoryBase
+              ? [child.branch]
+              : [],
+          )
+      : []
     const task = buildIssueRunTask(issue, parent, children)
     return options.control.start(task, {
       issueId: issue.id,
       agentDefinitionId,
       ...(repositoryBase ? { repositoryBase } : {}),
+      ...(mergeRevisions.length ? { mergeRevisions } : {}),
       onCreate: (summary) => {
         const created = options.store.createRun({
           ...summary,

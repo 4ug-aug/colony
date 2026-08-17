@@ -169,3 +169,26 @@ test('passes oneshot context and optional repositoryBase', () => {
     repositoryBase: 'feat/login',
   })
 })
+
+test('passes Issue mergeRevisions on grantContext', () => {
+  let request: WorkspaceAgentStartRunRequest | undefined
+  const control = createRunControl(
+    captureExecutor((value) => {
+      request = value
+    }),
+  )
+
+  control.start('integrate children', {
+    issueId: 'issue-1',
+    repositoryBase: 'sweat/issue/COL-1',
+    mergeRevisions: ['sweat/run-ui', 'sweat/run-api'],
+    onCreate: () => true,
+  })
+
+  expect(request?.grantContext).toEqual({
+    issueId: 'issue-1',
+    agentDefinitionId: 'software-engineer',
+    repositoryBase: 'sweat/issue/COL-1',
+    mergeRevisions: ['sweat/run-ui', 'sweat/run-api'],
+  })
+})

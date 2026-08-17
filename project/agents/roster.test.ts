@@ -191,6 +191,84 @@ test("Issue repositoryBase overrides repository checkout revision", async () => 
   expect(checkedOutRevision).toBe("feat/initiative");
 });
 
+test("Issue mergeRevisions are passed to repository checkout", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  let checkedOut: { revision?: string; mergeRevisions?: string[] } | undefined;
+  const adapter: WorkspaceAgentAdapter = {
+    repository: {
+      input: {
+        type: "repository",
+        provider: "github",
+        repository: "acme/widgets",
+        revision: "main",
+      },
+      source: {
+        provider: "github",
+        async checkout(input, directory) {
+          checkedOut = {
+            revision: input.revision,
+            mergeRevisions: input.mergeRevisions,
+          };
+          await writeFile(`${directory}/README.md`, "widgets");
+          return { revision: input.revision };
+        },
+      },
+    },
+  };
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    cursorImage: "sweat-agent-cursor:test",
+    image: "sweat-agent:test",
+    adapters: [adapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-merge",
+    }),
+  });
+
+  const id = executor.startRun({
+    task: "Integrate children",
+    agentDefinitionId: SOFTWARE_ENGINEER_ID,
+    grantContext: {
+      issueId: "issue-1",
+      repositoryBase: "sweat/issue/COL-1",
+      mergeRevisions: ["sweat/run-ui", "sweat/run-api"],
+    },
+  });
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+    await Bun.sleep(0);
+  }
+
+  const run = executor.getRun(id)!;
+  expect(run.inputs).toEqual([
+    {
+      type: "repository",
+      provider: "github",
+      repository: "acme/widgets",
+      revision: "sweat/issue/COL-1",
+      mergeRevisions: ["sweat/run-ui", "sweat/run-api"],
+    },
+  ]);
+  expect(checkedOut).toEqual({
+    revision: "sweat/issue/COL-1",
+    mergeRevisions: ["sweat/run-ui", "sweat/run-api"],
+  });
+});
+
 test("antboy resolves to openai-agents without repository inputs or github tools", async () => {
   const runner: CommandRunner = {
     async run(args, options): Promise<CommandResult> {

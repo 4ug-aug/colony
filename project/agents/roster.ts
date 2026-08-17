@@ -363,14 +363,17 @@ export function createWorkspaceAgentsExecutor(options: {
             .join("\n")}`
         : "";
       const repoInputs = person.includeRepository
-        ? repositories.map((repository) =>
-            grantContext.repositoryBase
+        ? repositories.map((repository) => {
+            const input = grantContext.repositoryBase
               ? {
                   ...repository.input,
                   revision: grantContext.repositoryBase,
                 }
-              : repository.input,
-          )
+              : repository.input;
+            return grantContext.mergeRevisions?.length
+              ? { ...input, mergeRevisions: grantContext.mergeRevisions }
+              : input;
+          })
         : [];
       return executor.startRun({
         ...runRequest,

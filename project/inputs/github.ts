@@ -1,5 +1,6 @@
 import { Octokit } from "octokit";
-import { rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RepositoryCheckoutSource } from "./repository";
 
@@ -10,6 +11,7 @@ function repositoryParts(repository: string): { owner: string; repo: string } {
 }
 
 const issueLinePrefix = "sweat/issue/";
+const lineBranch = "line";
 
 function statusOf(error: unknown): number | undefined {
   if (
@@ -30,6 +32,33 @@ function archiveBody(value: unknown): Blob {
   throw new Error("GitHub archive response is not binary data");
 }
 
+async function git(directory: string, args: readonly string[]): Promise<string> {
+  const process = Bun.spawn(["git", "-C", directory, ...args], {
+    env: { PATH: Bun.env.PATH },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    process.exited,
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+  ]);
+  if (exitCode) throw new Error(stderr.trim() || `git ${args[0]} failed`);
+  return stdout;
+}
+
+async function replaceWorktree(directory: string, source: string): Promise<void> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.name === ".git") continue;
+    await rm(join(directory, entry.name), { recursive: true, force: true });
+  }
+  for (const entry of await readdir(source, { withFileTypes: true })) {
+    await cp(join(source, entry.name), join(directory, entry.name), {
+      recursive: true,
+    });
+  }
+}
+
 export function createGitHubRepositoryCheckoutSource(options: {
   octokit: Octokit;
   /** Workspace default base; used to mint a missing `sweat/issue/*` ref. */
@@ -48,47 +77,91 @@ export function createGitHubRepositoryCheckoutSource(options: {
     provider: "github",
     async checkout(input, directory) {
       const repository = repositoryParts(input.repository);
-      let sha: string;
-      try {
-        sha = (
-          await options.octokit.rest.repos.getCommit({
-            ...repository,
-            ref: input.revision,
-          })
-        ).data.sha;
-      } catch (error) {
-        if (
-          statusOf(error) !== 404 ||
-          !input.revision.startsWith(issueLinePrefix) ||
-          !options.fallbackRevision
-        )
-          throw error;
-        sha = (
-          await options.octokit.rest.repos.getCommit({
-            ...repository,
-            ref: options.fallbackRevision,
-          })
-        ).data.sha;
+      const commitSha = async (ref: string, mintLine: boolean): Promise<string> => {
         try {
-          await options.octokit.rest.git.createRef({
-            ...repository,
-            ref: `refs/heads/${input.revision}`,
-            sha,
-          });
-        } catch (created) {
-          if (statusOf(created) !== 422) throw created;
+          return (
+            await options.octokit.rest.repos.getCommit({
+              ...repository,
+              ref,
+            })
+          ).data.sha;
+        } catch (error) {
+          if (
+            !mintLine ||
+            statusOf(error) !== 404 ||
+            !ref.startsWith(issueLinePrefix) ||
+            !options.fallbackRevision
+          )
+            throw error;
+          const sha = (
+            await options.octokit.rest.repos.getCommit({
+              ...repository,
+              ref: options.fallbackRevision,
+            })
+          ).data.sha;
+          try {
+            await options.octokit.rest.git.createRef({
+              ...repository,
+              ref: `refs/heads/${ref}`,
+              sha,
+            });
+          } catch (created) {
+            if (statusOf(created) !== 422) throw created;
+          }
+          return sha;
         }
-      }
-      const archive = join(directory, "repository.tar.gz");
-      const response = await options.octokit.rest.repos.downloadTarballArchive({
-        ...repository,
-        ref: sha,
-      });
-      await Bun.write(archive, archiveBody(response.data));
-      try {
-        await extract(archive, directory);
-      } finally {
-        await rm(archive, { force: true });
+      };
+      const extractRef = async (sha: string, into: string): Promise<void> => {
+        const archive = join(into, "repository.tar.gz");
+        const response = await options.octokit.rest.repos.downloadTarballArchive({
+          ...repository,
+          ref: sha,
+        });
+        await Bun.write(archive, archiveBody(response.data));
+        try {
+          await extract(archive, into);
+        } finally {
+          await rm(archive, { force: true });
+        }
+      };
+
+      const sha = await commitSha(input.revision, true);
+      await extractRef(sha, directory);
+      const mergeRevisions = (input.mergeRevisions ?? []).filter(
+        (ref) => ref && ref !== input.revision,
+      );
+      if (!mergeRevisions.length) return { revision: sha };
+
+      await git(directory, ["init", "--initial-branch", lineBranch]);
+      await git(directory, ["config", "user.name", "Colony Agent"]);
+      await git(directory, ["config", "user.email", "agent@colony.local"]);
+      await git(directory, ["config", "commit.gpgsign", "false"]);
+      await git(directory, ["add", "--all"]);
+      await git(directory, ["commit", "--quiet", "--message", "Colony line"]);
+      const parent = (await git(directory, ["rev-parse", "HEAD"])).trim();
+
+      for (const [index, ref] of mergeRevisions.entries()) {
+        const headSha = await commitSha(ref, false);
+        const headDir = await mkdtemp(join(tmpdir(), "sweat-merge-head-"));
+        try {
+          await extractRef(headSha, headDir);
+          const branch = `merge/${index}`;
+          await git(directory, ["checkout", "-B", branch, parent]);
+          await replaceWorktree(directory, headDir);
+          await git(directory, ["add", "--all"]);
+          if ((await git(directory, ["status", "--porcelain"])).trim()) {
+            await git(directory, [
+              "commit",
+              "--quiet",
+              "--message",
+              `Child head ${ref}`,
+            ]);
+          }
+          await git(directory, ["checkout", "-q", lineBranch]);
+          await git(directory, ["merge", "--no-edit", branch]);
+        } finally {
+          await rm(headDir, { recursive: true, force: true });
+        }
       }
       return { revision: sha };
     },
