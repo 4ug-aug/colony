@@ -10,11 +10,13 @@ export type OneshotToolPeek = {
   href?: string
 }
 
-type PeekHandler = (
-  input: { args: string; result: string },
-) => Omit<OneshotToolPeek, 'tool'> | null
+type PeekHandler = (input: {
+  args: string
+  result: string
+}) => Omit<OneshotToolPeek, 'tool'> | null
 
 const handlers: Record<string, PeekHandler> = {
+  'asana.create_task': createdAsanaTaskPeek,
   'workspace.create_issue': createdIssuePeek,
 }
 
@@ -46,6 +48,8 @@ function unwrapMcpText(value: unknown): unknown {
   const body = outer && 'value' in outer ? outer.value : value
   const envelope = asRecord(body)
   if (envelope?.isError === true) return
+  const directText = contentText(body)
+  if (directText !== undefined) return parseJson(directText) ?? directText
   const content = envelope?.content ?? (Array.isArray(body) ? body : undefined)
   if (!Array.isArray(content) || content.length === 0) return body
   const text = contentText(content[0])
@@ -53,7 +57,9 @@ function unwrapMcpText(value: unknown): unknown {
   return parseJson(text) ?? text
 }
 
-function createdIssuePeek(input: { result: string }): Omit<OneshotToolPeek, 'tool'> | null {
+function createdIssuePeek(input: {
+  result: string
+}): Omit<OneshotToolPeek, 'tool'> | null {
   const parsed = parseJson(input.result)
   if (parsed === undefined) return null
   const issue = unwrapMcpText(parsed)
@@ -71,6 +77,24 @@ function createdIssuePeek(input: { result: string }): Omit<OneshotToolPeek, 'too
   }
 }
 
+function createdAsanaTaskPeek(input: {
+  result: string
+}): Omit<OneshotToolPeek, 'tool'> | null {
+  const parsed = parseJson(input.result)
+  if (parsed === undefined) return null
+  const task = asRecord(asRecord(unwrapMcpText(parsed))?.data)
+  if (!task) return null
+  const { gid, name, permalink_url: permalink } = task
+  if (typeof gid !== 'string' || !gid.trim()) return null
+  if (typeof name !== 'string' || !name.trim()) return null
+  const href =
+    typeof permalink === 'string' &&
+    /^https:\/\/app\.asana\.com\//.test(permalink)
+      ? permalink
+      : undefined
+  return { key: gid.trim(), label: name.trim(), ...(href ? { href } : {}) }
+}
+
 function toolNameFromStep(step: Step): string {
   const fallback = step.tool ?? ''
   if (!step.text.trim()) return fallback
@@ -84,13 +108,12 @@ function toolNameFromStep(step: Step): string {
   return fallback
 }
 
-/** OpenAI sanitizes `workspace.create_issue` to `workspace_create_issue`. */
+/** OpenAI sanitizes namespace dots to underscores. */
 function normalizeToolName(name: string): string {
-  const trimmed = name.trim().toLowerCase()
-  if (!trimmed || trimmed.includes('.')) return trimmed
-  const index = trimmed.indexOf('_')
-  if (index <= 0) return trimmed
-  return `${trimmed.slice(0, index)}.${trimmed.slice(index + 1)}`
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/^([^._]+)_/, '$1.')
 }
 
 export function oneshotPeeks(steps: Step[]): OneshotToolPeek[] {

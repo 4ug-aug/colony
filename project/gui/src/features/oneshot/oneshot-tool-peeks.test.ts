@@ -11,9 +11,8 @@ const step = (
   ...values,
 })
 
-const issueJson = (
-  issue: { id: string; number: number; title: string },
-) => JSON.stringify(issue, null, 2)
+const issueJson = (issue: { id: string; number: number; title: string }) =>
+  JSON.stringify(issue, null, 2)
 
 const createCall = (
   id: string,
@@ -77,6 +76,33 @@ describe('oneshotPeeks', () => {
     ).toEqual([peek])
   })
 
+  test('successful Asana create_task peeks link to the created task', () => {
+    expect(
+      oneshotPeeks([
+        createCall('call', 0, 'asana_create_task', 'c1'),
+        createResult(
+          'result',
+          1,
+          'c1',
+          JSON.stringify({
+            data: {
+              gid: 'task-1',
+              name: 'Ship it',
+              permalink_url: 'https://app.asana.com/0/1/task-1',
+            },
+          }),
+        ),
+      ]),
+    ).toEqual([
+      {
+        key: 'task-1',
+        label: 'Ship it',
+        tool: 'asana.create_task',
+        href: 'https://app.asana.com/0/1/task-1',
+      },
+    ])
+  })
+
   test('reads toolName from call args when step.tool is missing', () => {
     expect(
       oneshotPeeks([
@@ -124,6 +150,28 @@ describe('oneshotPeeks', () => {
         label: 'COL-3 Wrapped',
         tool: 'workspace.create_issue',
         issueId: 'issue-3',
+      },
+    ])
+  })
+
+  test('unwraps the single MCP text item emitted by OpenAI', () => {
+    const issue = { id: 'issue-4', number: 4, title: 'From OpenAI' }
+    expect(
+      oneshotPeeks([
+        createCall('call', 0, 'workspace_create_issue', 'c1'),
+        createResult(
+          'result',
+          1,
+          'c1',
+          JSON.stringify({ type: 'text', text: issueJson(issue) }),
+        ),
+      ]),
+    ).toEqual([
+      {
+        key: 'issue-4',
+        label: 'COL-4 From OpenAI',
+        tool: 'workspace.create_issue',
+        issueId: 'issue-4',
       },
     ])
   })
@@ -177,7 +225,12 @@ describe('oneshotPeeks', () => {
     expect(
       oneshotPeeks([
         createCall('call', 0, 'workspace.create_issue', 'c1'),
-        createResult('result', 1, 'c1', "Tool 'workspace.create_issue' not found."),
+        createResult(
+          'result',
+          1,
+          'c1',
+          "Tool 'workspace.create_issue' not found.",
+        ),
       ]),
     ).toEqual([])
     expect(
