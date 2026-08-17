@@ -1,22 +1,18 @@
+import type { Subprocess } from "bun";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import type {
-  ExecEvent,
-  ExecOptions,
-  ExecResult,
-  MachineConfig,
-} from "smolmachines";
-import type { ExecutionResult, SandboxProvider } from "../sandboxes";
-import { allocateHostPort, publishedPort } from "../sandboxes";
+  ExecutionResult,
+  OutputChunk,
+  SandboxProvider,
+} from "../sandboxes";
+import { allocateHostPort, commandFailure, publishedPort } from "../sandboxes";
 
-type CapturedCommand = {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-};
-
-type RunCommand = (command: readonly string[]) => Promise<CapturedCommand>;
+type RunCommand = (
+  command: readonly string[],
+  onOutput?: (chunk: OutputChunk) => void,
+) => Promise<ExecutionResult>;
 
 const localImageDir = join(tmpdir(), "colony-smolvm-images");
 
@@ -41,26 +37,40 @@ function hasRegistryHost(image: string): boolean {
   return host.includes(".") || host.includes(":") || host === "localhost";
 }
 
-async function runCommand(command: readonly string[]): Promise<CapturedCommand> {
+/** Captures a host command's output, streaming it as it arrives when asked. */
+async function runCommand(
+  command: readonly string[],
+  onOutput?: (chunk: OutputChunk) => void,
+): Promise<ExecutionResult> {
+  let child: Subprocess<"ignore", "pipe", "pipe">;
   try {
-    const process = Bun.spawn([...command], {
+    child = Bun.spawn([...command], {
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
     });
-    const [exitCode, stdout, stderr] = await Promise.all([
-      process.exited,
-      new Response(process.stdout).text(),
-      new Response(process.stderr).text(),
-    ]);
-    return { exitCode, stdout, stderr };
   } catch {
-    return {
-      exitCode: 127,
-      stdout: "",
-      stderr: `${command[0]} is not available`,
-    };
+    return { exitCode: 127, stdout: "", stderr: `${command[0]} is not available` };
   }
+  const read = async (
+    stream: ReadableStream<Uint8Array>,
+    name: "stdout" | "stderr",
+  ): Promise<string> => {
+    const decoder = new TextDecoder();
+    let text = "";
+    for await (const chunk of stream) {
+      const part = decoder.decode(chunk, { stream: true });
+      text += part;
+      onOutput?.({ stream: name, text: part });
+    }
+    return text;
+  };
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    read(child.stdout, "stdout"),
+    read(child.stderr, "stderr"),
+  ]);
+  return { exitCode, stdout, stderr };
 }
 
 const imageExporters: ReadonlyArray<{
@@ -141,18 +151,101 @@ const guestDockerInit = [
   "exit 0",
 ].join("\n");
 
-type SmolMachine = {
+export type MachineConfig = {
+  name: string;
+  image: string;
+  network: boolean;
+  mounts?: ReadonlyArray<{ source: string; target: string; readOnly: boolean }>;
+  ports?: ReadonlyArray<{ host: number; guest: number }>;
+};
+
+export type SmolMachine = {
   exec(
-    command: string[],
-    opts?: ExecOptions,
-  ): Promise<Pick<ExecResult, "exitCode" | "stdout" | "stderr">>;
-  execStream(command: string[], opts?: ExecOptions): AsyncIterable<ExecEvent>;
+    command: readonly string[],
+    options?: {
+      env?: Record<string, string>;
+      workdir?: string;
+      onOutput?: (chunk: OutputChunk) => void;
+    },
+  ): Promise<ExecutionResult>;
   delete(): Promise<void>;
 };
 
-async function createLocalMachine(config: MachineConfig): Promise<SmolMachine> {
-  const { Machine } = await import("smolmachines");
-  return Machine.create(config, { target: "local" });
+/** The machine settings smolvm takes as `machine create` flags. */
+export function smolvmCreateFlags(config: MachineConfig): string[] {
+  return [
+    ...(config.network ? ["--net"] : []),
+    ...(config.mounts ?? []).flatMap((mount) => [
+      "-v",
+      `${mount.source}:${mount.target}${mount.readOnly ? ":ro" : ""}`,
+    ]),
+    ...(config.ports ?? []).flatMap((port) => [
+      "-p",
+      `${port.host}:${port.guest}`,
+    ]),
+  ];
+}
+
+/**
+ * Machines are driven through the smolvm CLI rather than the smolmachines SDK:
+ * the SDK parses `image` as a registry reference (so a `docker save` archive
+ * never boots) and its create/connect block until every published port accepts
+ * a connection — which a Preview port only does once the Preview command runs.
+ * See docs/adr/0026-smolvm-cli-machine-lifecycle.md.
+ */
+export async function createSmolvmMachine(
+  config: MachineConfig,
+  run: RunCommand = runCommand,
+): Promise<SmolMachine> {
+  const smolvm = async (...args: string[]): Promise<ExecutionResult> => {
+    const result = await run(["smolvm", ...args]);
+    if (result.exitCode !== 0) {
+      throw new Error(commandFailure(`smolvm ${args.join(" ")}`, result));
+    }
+    return result;
+  };
+  const { name } = config;
+
+  await smolvm(
+    "machine",
+    "create",
+    "--name",
+    name,
+    "--image",
+    config.image,
+    ...smolvmCreateFlags(config),
+  );
+  try {
+    await smolvm("machine", "start", "--name", name);
+  } catch (error) {
+    await run(["smolvm", "machine", "delete", "--name", name, "-f"]);
+    throw error;
+  }
+
+  return {
+    exec(command, options = {}) {
+      return run(
+        [
+          "smolvm",
+          "machine",
+          "exec",
+          "--name",
+          name,
+          ...(options.workdir ? ["--workdir", options.workdir] : []),
+          ...Object.entries(options.env ?? {}).flatMap(([key, value]) => [
+            "--env",
+            `${key}=${value}`,
+          ]),
+          "--",
+          ...command,
+        ],
+        options.onOutput,
+      );
+    },
+    async delete() {
+      await smolvm("machine", "delete", "--name", name, "-f");
+    },
+  };
 }
 
 function envVars(
@@ -175,37 +268,6 @@ function mount(volume: string) {
   };
 }
 
-async function execute(
-  machine: SmolMachine,
-  command: string[],
-  opts: ExecOptions | undefined,
-  onOutput?: (chunk: { stream: "stdout" | "stderr"; text: string }) => void,
-): Promise<ExecutionResult> {
-  if (!onOutput) {
-    const result = await machine.exec(command, opts);
-    return {
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
-    };
-  }
-  let stdout = "";
-  let stderr = "";
-  let exitCode = 0;
-  for await (const event of machine.execStream(command, opts)) {
-    if (event.kind === "stdout" || event.kind === "stderr") {
-      onOutput({ stream: event.kind, text: event.data });
-      if (event.kind === "stdout") stdout += event.data;
-      else stderr += event.data;
-    } else if (event.kind === "exit") {
-      exitCode = event.exitCode;
-    } else if (event.kind === "error") {
-      throw new Error(event.message);
-    }
-  }
-  return { exitCode, stdout, stderr };
-}
-
 export function createSmolvmSandboxProvider(
   options: {
     createMachine?: (config: MachineConfig) => Promise<SmolMachine>;
@@ -214,7 +276,7 @@ export function createSmolvmSandboxProvider(
     resolveImage?: (image: string) => Promise<string>;
   } = {},
 ): SandboxProvider {
-  const createMachine = options.createMachine ?? createLocalMachine;
+  const createMachine = options.createMachine ?? createSmolvmMachine;
   const createId = options.createId ?? (() => `sandbox-${crypto.randomUUID()}`);
   const allocatePort = options.allocatePort ?? allocateHostPort;
   const resolveImage = options.resolveImage ?? resolveSmolvmImage;
@@ -241,15 +303,11 @@ export function createSmolvmSandboxProvider(
 
         async exec(request) {
           const env = envVars(request.env);
-          return execute(
-            machine,
-            [...request.command],
-            {
-              ...(env ? { env } : {}),
-              ...(request.workdir ? { workdir: request.workdir } : {}),
-            },
-            request.onOutput,
-          );
+          return machine.exec(request.command, {
+            ...(env ? { env } : {}),
+            ...(request.workdir ? { workdir: request.workdir } : {}),
+            ...(request.onOutput ? { onOutput: request.onOutput } : {}),
+          });
         },
 
         async dispose() {

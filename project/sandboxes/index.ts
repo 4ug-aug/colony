@@ -6,11 +6,13 @@ export interface SandboxSpec {
   publish?: { guestPort: number };
 }
 
+export type OutputChunk = { stream: "stdout" | "stderr"; text: string };
+
 export interface ExecRequest {
   command: readonly string[];
   env?: Record<string, string | undefined>;
   workdir?: string;
-  onOutput?: (chunk: { stream: "stdout" | "stderr"; text: string }) => void;
+  onOutput?: (chunk: OutputChunk) => void;
 }
 
 export interface ExecutionResult {
