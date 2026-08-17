@@ -1,18 +1,18 @@
-# Sweat context
+# Colony context
 
-Sweat is an agent orchestration platform that customers can run in their own
+Colony is an agent orchestration platform that customers can run in their own
 infrastructure. It creates on-demand, isolated agent workers for many roles;
 software engineering is one possible role, not the platform's default shape.
 
 ## Language
 
-**Sweat server**: A self-hosted deployment authoritative for one workspace,
-including its identity, rooms, history, and runs. A client connects to a Sweat
+**Colony server**: A self-hosted deployment authoritative for one workspace,
+including its identity, rooms, history, and runs. A client connects to a Colony
 server; it does not own the workspace.
 _Avoid_: Backend, instance
 
-**Account**: A person's server-local identity and credentials on one Sweat
-server. Accounts do not transfer between Sweat servers.
+**Account**: A person's server-local identity and credentials on one Colony
+server. Accounts do not transfer between Colony servers.
 _Avoid_: Global identity, identity key
 
 **Username**: A workspace-unique handle associated with an account, used for
@@ -375,8 +375,8 @@ _Avoid_: Sandbox provider, agent runtime kind, Cursor runtime
 
 **Agent runtime kind**: Which in-sandbox agent loop a person uses — currently
 `cursor` (Cursor local SDK) or `openai-agents` (OpenAI Agents SDK against a
-model endpoint). Declared on the agent definition with an explicit container
-image; credentials are resolved by composition from workspace settings, never
+model endpoint). Declared on the agent definition with an explicit image;
+credentials are resolved by composition from workspace settings, never
 stored on the definition.
 _Avoid_: Sandbox provider, model endpoint, LLM provider (UI label for model endpoint config)
 
@@ -403,6 +403,29 @@ steps never carry technical credentials (the model API key or MCP session
 token), and step payloads are bounded and truncated like retained output. See
 [ADR 0003](docs/adr/0003-structured-step-stream-over-container-stdout.md).
 
+**Preview**: A run-scoped HTTP surface for Accounts, forwarded from the
+workspace-configured guest port on that run's sandbox. It is not a Step, not
+an agent tool, and not the agent's narrative stream. It exists only while the
+sandbox is up, including a grace interval after a succeeded or failed run;
+cancellation disposes immediately. See
+[ADR 0025](docs/adr/0025-git-workspace-preview.md).
+_Avoid_: App stream, agent preview, live URL, startup script, entrypoint
+
+**Preview configuration**: Workspace-owned administrator settings for Preview:
+an optional finite init command, a Preview command, a guest port, and a grace
+duration. Applied only when a run's entrypoints prepared a Git workspace and a
+Preview command is set; otherwise the run skips Preview.
+_Avoid_: Startup script, Smolfile, software-engineer settings, agent
+definition config
+
+**Preview command**: The long-running bring-up process started from Preview
+configuration after entrypoints complete. The agent loop starts without
+waiting for it to become reachable. If it exits, Preview is dead and the run
+continues. The agent is told only via an auditable Task note that this command
+was started — not a URL, port, or extra env.
+_Avoid_: Entrypoint (entrypoints must complete), startup script, verify
+command
+
 ## Core boundaries
 
 Keep these three concepts separate:
@@ -415,7 +438,7 @@ Sandbox            -> where does it execute?
 
 An **agent definition** is one person in the workspace (for example
 `software-engineer` or `antboy`). It defines that person's system instructions,
-requested capabilities, **agent runtime kind**, explicit container image, and
+requested capabilities, **agent runtime kind**, explicit image, and
 execution limits. It does not hold provider credentials or choose run inputs.
 
 **software-engineer**: The coding person. Runtime kind `cursor`, with GitHub
@@ -432,16 +455,24 @@ context.
 
 A **sandbox** is a generic, disposable execution environment. It starts in
 `/work`, which is empty unless a run deliberately prepares inputs there. It
-must not assume a repository or GitHub.
+must not assume a repository or GitHub. When a Preview is started, the sandbox
+stays up through Preview grace after the run succeeds or fails; a cancelled
+run disposes immediately.
 
 **Sandbox provider**: The explicitly deployment-selected adapter that creates,
 executes within, and disposes of a sandbox. It fulfils the same sandbox launch
-contract regardless of the container technology underneath.
+contract regardless of the technology underneath (microVM or container). The
+operator selects among `smolvm` (the default), `apple-container`, and
+`docker`. Preview — bring-up, port forward, grace — is part of that contract.
+Docker-in-VM is how the smolvm adapter lets a Git-workspace person's image run
+the project's own containers. See
+[ADR 0007](docs/adr/0007-compose-sandbox-provider-explicitly.md) and
+[ADR 0024](docs/adr/0024-smolvm-default-sandbox-provider.md).
 _Avoid_: Runtime, agent provider, agent runtime kind
 
 ## Runtime and models
 
-The agent reasoning loop runs inside the disposable sandbox container. Each
+The agent reasoning loop runs inside the disposable sandbox. Each
 person declares an **agent runtime kind** and an explicit image; composition
 injects the matching workspace credentials. Do not duplicate a person merely to
 select a different engine. See
@@ -462,8 +493,9 @@ stays Cursor-hosted.
 The sandbox launch contract is deliberately small: task, agent definition and
 instructions, runtime credentials for that kind, an optional scoped MCP session,
 and `/work` as its current directory. It does not receive Run IDs, repository or
-provider details, or upstream provider credentials. Runtime API keys and the MCP
-session token are technical credentials; tool subprocesses must not inherit them.
+provider details, upstream provider credentials, or a Preview URL. Runtime API
+keys and the MCP session token are technical credentials; tool subprocesses
+must not inherit them.
 
 ## Roles and capabilities
 
@@ -489,6 +521,9 @@ database query result, or no input at all.
 
 Entrypoints are invoked by the orchestrator, not exposed as agent tools. They
 are parameterized, auditable, and must complete before the role runtime starts.
+The optional finite init from Preview configuration is an entrypoint; failure
+fails the run. The Preview command is not an entrypoint: it stays up for the
+sandbox lifetime and does not gate the agent loop.
 
 Every agent runtime starts in `/work`; entrypoints prepare any filesystem
 inputs directly beneath it. `/work` is disposable staging: an agent may hand
@@ -510,29 +545,31 @@ outputs only when another run must reliably consume a prior run's result.
 
 ## Software-engineer repository runs
 
-A **Git workspace** is the software-engineer role's prepared repository input:
-a Git working directory seeded at the resolved base revision. The sandbox may
-inspect, edit, test, create local branches, and commit, but receives no Git
-provider credential. A GitHub capability adapter accepts only a clean `HEAD`
-descended from that base, publishes it under the platform-assigned remote run
-branch, and opens its pull request in the scoped repository.
+A **Git workspace** is a prepared repository input: a Git working directory
+seeded at the resolved base revision. Today only software-engineer runs
+receive one. The sandbox may inspect, edit, test, create local branches, and
+commit, but receives no Git provider credential. A GitHub capability adapter
+accepts only a clean `HEAD` descended from that base, publishes it under the
+platform-assigned remote run branch, and opens its pull request in the scoped
+repository.
 
 ## Sub-agents
 
 SDK handoffs can delegate work within an agent runtime. True isolated
 sub-agents are platform-managed jobs: assigning (or creating) a child Issue to
 an agent definition is that request, and the orchestrator starts a new
-Issue-linked run in its own sandbox. An agent must not receive raw
-container-daemon access. In-sandbox SDK subagents are not a substitute for
-child Issue-linked runs.
+Issue-linked run in its own sandbox. An agent must not receive the host
+sandbox daemon. Nested Docker inside a sandbox is the project's runtime for
+Preview, not Colony sandbox control. In-sandbox SDK subagents are not a
+substitute for child Issue-linked runs.
 
 The platform controls budgets, allowed roles, nesting depth, credentials, and
 network policy. Tool subprocesses must not inherit model API credentials.
 
 ## MCP capabilities
 
-MCP access is a platform service, not bespoke container setup. Every agent
-container uses the same generic runtime and connects to one platform-managed
+MCP access is a platform service, not bespoke sandbox setup. Every agent
+sandbox uses the same generic runtime and connects to one platform-managed
 MCP gateway.
 
 Keep these separate:
@@ -551,11 +588,11 @@ is Configured and linked to the agent definition. When a run is created, the
 platform resolves role requests, Connection links, and task context into a
 narrow, expiring grant.
 
-At container spawn, the orchestrator creates an MCP session from that grant and
+At sandbox spawn, the orchestrator creates an MCP session from that grant and
 provides the generic runtime with the gateway endpoint and a short-lived run
 credential. Provider credentials remain in the platform gateway, never in the
-agent container. Revoke the MCP session when the run completes, expires, or the
-container is removed.
+agent sandbox. Revoke the MCP session when the run terminals; the sandbox may
+still remain for Preview grace.
 
 The initial tools should remain provider-specific (for example, Linear issue
 tools). Add a cross-provider task-management abstraction only when multiple
