@@ -231,6 +231,7 @@ test("a CLI-backed machine creates, starts, execs and deletes through smolvm", a
       "smolvm",
       "machine",
       "exec",
+      "--stream",
       "--name",
       "sandbox-1",
       "--workdir",

@@ -229,6 +229,7 @@ export async function createSmolvmMachine(
           "smolvm",
           "machine",
           "exec",
+          "--stream",
           "--name",
           name,
           ...(options.workdir ? ["--workdir", options.workdir] : []),
