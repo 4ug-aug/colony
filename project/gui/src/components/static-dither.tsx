@@ -15,6 +15,7 @@ export function StaticDither({ speed = 0, lightOpacity = 0.16, darkOpacity = 0.1
     <div
       className={`pointer-events-none absolute inset-0 opacity-[${lightOpacity}] dark:opacity-[${darkOpacity}]`}
       aria-hidden="true"
+      style={{ opacity: lightOpacity, '--dark:opacity': darkOpacity } as React.CSSProperties}
     >
       <Dithering
         className="absolute inset-0"
