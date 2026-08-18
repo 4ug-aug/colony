@@ -32,8 +32,9 @@ test("an Apple container behaves as a sandbox", async () => {
   const result = await sandbox.exec({ command: ["echo", "hello"] });
   await sandbox.dispose();
 
-  expect({ id: sandbox.id, result, calls }).toEqual({
+  expect({ id: sandbox.id, hostGateway: sandbox.hostGateway, result, calls }).toEqual({
     id: "sandbox-1",
+    hostGateway: "host.container.internal",
     result: { exitCode: 0, stdout: "hello\n", stderr: "" },
     calls: [
       {

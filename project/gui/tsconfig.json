@@ -2,13 +2,13 @@
   "include": ["**/*.ts", "**/*.tsx", "eslint.config.js", "prettier.config.js", "vite.config.js"],
   
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ES2023",
     "jsx": "react-jsx",
     "module": "ESNext",
     "paths": {
       "#/*": ["./src/*"]
     },
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["vite/client", "bun"],
 
     /* Bundler mode */

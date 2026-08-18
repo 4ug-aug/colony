@@ -45,8 +45,9 @@ test("a Docker container behaves as a sandbox", async () => {
   });
   await sandbox.dispose();
 
-  expect({ id: sandbox.id, result, chunks, calls }).toEqual({
+  expect({ id: sandbox.id, hostGateway: sandbox.hostGateway, result, chunks, calls }).toEqual({
     id: "sandbox-1",
+    hostGateway: "host.container.internal",
     result: {
       exitCode: 0,
       stdout: "hello\n",

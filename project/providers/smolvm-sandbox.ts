@@ -294,6 +294,42 @@ export function smolvmCreateFlags(config: MachineConfig): string[] {
 }
 
 /**
+ * Default IPv4 gateway from a Linux `/proc/net/route` table. Little-endian
+ * hex, same layout the kernel writes; virtio-net and TSI both publish one.
+ */
+export function parseDefaultGateway(table: string): string | undefined {
+  for (const line of table.split(/\r?\n/).slice(1)) {
+    const columns = line.trim().split(/\s+/);
+    const destination = columns[1];
+    const gateway = columns[2];
+    if (destination !== "00000000" || !gateway || gateway === "00000000") {
+      continue;
+    }
+    const value = Number.parseInt(gateway, 16);
+    if (!Number.isFinite(value)) continue;
+    return [
+      value & 255,
+      (value >> 8) & 255,
+      (value >> 16) & 255,
+      (value >> 24) & 255,
+    ].join(".");
+  }
+  return undefined;
+}
+
+async function guestDefaultGateway(
+  machine: SmolMachine,
+): Promise<string | undefined> {
+  try {
+    const result = await machine.exec(["cat", "/proc/net/route"]);
+    if (result.exitCode !== 0) return undefined;
+    return parseDefaultGateway(result.stdout);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The SDK parses local archives as registry references and waits for Preview
  * ports before their workload starts, so Colony drives smolvm through its CLI.
  */
@@ -502,6 +538,7 @@ export function createSmolvmSandboxProvider(
       };
       const machine = await createMachine(config);
       if (publish) await machine.exec(["sh", "-c", guestDockerInit]);
+      const hostGateway = await guestDefaultGateway(machine);
       let disposal: Promise<void> | undefined;
       const dispose = async () => {
         disposal ??= machine
@@ -528,6 +565,7 @@ export function createSmolvmSandboxProvider(
       return {
         id,
         ...(publish ? { previewUrl: publish.url } : {}),
+        ...(hostGateway ? { hostGateway } : {}),
 
         async exec(request) {
           const env = envVars(request.env);

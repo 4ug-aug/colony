@@ -333,25 +333,49 @@ export function parseSandboxProvider(
   return parseProvider('SWEAT_SANDBOX_PROVIDER', SANDBOX_PROVIDERS, value)
 }
 
-/**
- * Which container runtime boots the persons that get no repository. Only asked
- * for when the sandbox provider is the microVM; otherwise it is that provider.
- */
-/** The host's first non-loopback IPv4, which is the address a guest can route to. */
+type HostAddress = { family: string | number; internal: boolean; address: string }
+
+/** Hypervisor, VPN, and peer-to-peer nics a guest cannot use as "the LAN". */
+const VIRTUAL_NIC =
+  /^(lo|bridge|vmenet|vmnet|utun|awdl|llw|gif|stf|anpi|ap|vnic|docker|cni|flannel|tailscale|zt)/i
+
+const isIpv4 = (address: HostAddress) =>
+  !address.internal && (address.family === 'IPv4' || address.family === 4)
+
+const nics = (
+  interfaces: NodeJS.Dict<HostAddress[]>,
+  allow: (name: string, address: HostAddress) => boolean,
+): string | undefined =>
+  Object.entries(interfaces)
+    .flatMap(([name, addresses]) =>
+      (addresses ?? [])
+        .filter((address) => allow(name, address))
+        .map((address) => address.address),
+    )
+    .at(0)
+
+/** The host IPv4 a LAN guest can route to, skipping vmnet/bridge/VPN nics. */
 export function hostLanAddress(
-  interfaces: NodeJS.Dict<{ family: string; internal: boolean; address: string }[]> = networkInterfaces(),
+  interfaces: NodeJS.Dict<HostAddress[]> = networkInterfaces(),
 ): string | undefined {
-  return Object.values(interfaces)
-    .flatMap((addresses) => addresses ?? [])
-    .find((address) => address.family === 'IPv4' && !address.internal)?.address
+  return (
+    nics(
+      interfaces,
+      (name, address) =>
+        isIpv4(address) && /^(en|eth|wlan)\d+$/i.test(name),
+    ) ??
+    nics(
+      interfaces,
+      (name, address) => isIpv4(address) && !VIRTUAL_NIC.test(name),
+    ) ??
+    nics(interfaces, (_name, address) => isIpv4(address))
+  )
 }
 
 /**
- * Where a sandbox guest reaches this coordinator's capability endpoint.
- * `host.container.internal` is a container DNS name that does not resolve
- * inside a microVM, and smolvm's own gateway address depends on a network
- * backend that publishing a Preview port silently switches. The host's LAN
- * address is the one route every sandbox kind can take.
+ * Fallback host a guest should use when the sandbox did not report its own
+ * gateway. `host.container.internal` is a container DNS name that does not
+ * resolve inside a microVM; the host's LAN address is the last shared route.
  */
 export function capabilityHost(
   configured: string | undefined,
@@ -363,6 +387,31 @@ export function capabilityHost(
   return 'http://host.container.internal'
 }
 
+/** Rewrite a 0.0.0.0 listen URL to the host the guest can actually reach. */
+export function advertisedCapabilityUrl(listenUrl: string, host: string): string {
+  const listen = new URL(listenUrl)
+  const advertised = new URL(host.includes('://') ? host : `http://${host}`)
+  listen.protocol = advertised.protocol
+  listen.hostname = advertised.hostname
+  return listen.href.replace(/\/$/, '')
+}
+
+/** Prefer the sandbox's own host gateway; fall back to the process-wide host. */
+export function capabilityUrlForSandbox(
+  listenUrl: string,
+  sandbox: { hostGateway?: string } | undefined,
+  fallbackHost: string,
+): string {
+  return advertisedCapabilityUrl(
+    listenUrl,
+    sandbox?.hostGateway ?? fallbackHost,
+  )
+}
+
+/**
+ * Which container runtime boots the persons that get no repository. Only asked
+ * for when the sandbox provider is the microVM; otherwise it is that provider.
+ */
 export function parseContainerProvider(
   value: string | undefined,
   sandbox: SandboxProviderName,
@@ -1316,13 +1365,12 @@ if (import.meta.main) {
   const attachmentsDirectory = attachmentDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
   )
-  const mcpHost = capabilityHost(
-    process.env.SWEAT_MCP_HOST,
-    sandboxProviderName,
-    hostLanAddress(),
-  )
-  const capabilityUrl = (u: string): string =>
-    u.replace('http://0.0.0.0', mcpHost)
+  const fallbackMcpHost = () =>
+    capabilityHost(
+      process.env.SWEAT_MCP_HOST,
+      sandboxProviderName,
+      hostLanAddress(),
+    )
   const smolvmProvider =
     sandboxProviderName === 'smolvm' ? createSmolvmSandboxProvider() : undefined
   const containerProvider =
@@ -1541,12 +1589,19 @@ if (import.meta.main) {
             ]
           : []),
       ],
-      createCapabilityEndpoint: (gateway) => {
+      createCapabilityEndpoint: (gateway, context) => {
         const server = createMcpGatewayHttpServer({
           gateway,
           hostname: '0.0.0.0',
         })
-        return { url: capabilityUrl(server.url), close: server.close }
+        return {
+          url: capabilityUrlForSandbox(
+            server.url,
+            context.sandbox,
+            fallbackMcpHost(),
+          ),
+          close: server.close,
+        }
       },
     }),
   )

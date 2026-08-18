@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Dithering } from '@paper-design/shaders-react'
 import { Box, CircleCheckBig, Clock, Waypoints } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { AccountFace, AgentAnt } from '#/components/avatar'
-import { useTheme } from '#/components/theme-provider'
+import { StaticDither } from '#/components/static-dither'
 import { Button } from '#/components/ui/button'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import {
@@ -105,7 +104,6 @@ export function AccountSettingsPage({
   onChangeServer: () => void
 }) {
   const queryClient = useQueryClient()
-  const { theme } = useTheme()
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const {
     data: analytics,
@@ -124,10 +122,6 @@ export function AccountSettingsPage({
   const [error, setError] = useState<string>()
   const [version, setVersion] = useState<string>()
   const preview = { ...user, displayName, color }
-  const dark =
-    theme === 'dark' ||
-    (theme === 'system' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches)
   const saveProfile = useMutation({
     mutationFn: async () => {
       const parsed = hexInput.trim() ? parseAccountColor(hexInput) : undefined
@@ -237,23 +231,7 @@ export function AccountSettingsPage({
 
   return (
     <div className="relative min-h-full overflow-hidden bg-muted/30">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.16] dark:opacity-[0.1]"
-        aria-hidden="true"
-      >
-        <Dithering
-          className="absolute inset-0"
-          width="100%"
-          height="100%"
-          colorBack={dark ? '#252321' : '#f0efe8'}
-          colorFront={dark ? '#dedbd2' : '#282522'}
-          shape="warp"
-          type="4x4"
-          size={2.5}
-          scale={1}
-          speed={0}
-        />
-      </div>
+      <StaticDither />
 
       <main className="relative mx-auto w-full max-w-3xl space-y-4 p-4 sm:p-6 lg:p-8">
         <Card className="bg-card/90 shadow-sm backdrop-blur-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-300 ease-out fill-mode-backwards motion-reduce:animate-none">

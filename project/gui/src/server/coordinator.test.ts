@@ -8,7 +8,9 @@ import {
   allowedOrigin,
   createCoordinator,
   mintRealtimeTicket,
+  advertisedCapabilityUrl,
   capabilityHost,
+  capabilityUrlForSandbox,
   hostLanAddress,
   parseContainerProvider,
   parseSandboxProvider,
@@ -4295,6 +4297,58 @@ test('the advertised host address skips loopback and IPv6 interfaces', () => {
     }),
   ).toBe('192.168.52.103')
   expect(hostLanAddress({ lo0: undefined })).toBeUndefined()
+})
+
+test('the advertised host address prefers a physical nic over a hypervisor bridge', () => {
+  expect(
+    hostLanAddress({
+      lo0: [{ family: 'IPv4', internal: true, address: '127.0.0.1' }],
+      bridge100: [
+        { family: 'IPv4', internal: false, address: '192.168.64.1' },
+      ],
+      en0: [{ family: 'IPv4', internal: false, address: '192.168.1.47' }],
+    }),
+  ).toBe('192.168.1.47')
+})
+
+test('the advertised host address accepts numeric address families', () => {
+  expect(
+    hostLanAddress({
+      en0: [{ family: 4, internal: false, address: '10.0.0.8' }],
+    }),
+  ).toBe('10.0.0.8')
+})
+
+test('a listen URL is rewritten to the guest-reachable host without dropping the port', () => {
+  expect(
+    advertisedCapabilityUrl(
+      'http://0.0.0.0:54167/mcp',
+      'http://192.168.1.47',
+    ),
+  ).toBe('http://192.168.1.47:54167/mcp')
+  expect(
+    advertisedCapabilityUrl(
+      'http://0.0.0.0:54167/mcp',
+      'host.container.internal',
+    ),
+  ).toBe('http://host.container.internal:54167/mcp')
+})
+
+test('a sandbox host gateway wins over the process-wide MCP host', () => {
+  expect(
+    capabilityUrlForSandbox(
+      'http://0.0.0.0:54167/mcp',
+      { hostGateway: '192.168.64.1' },
+      'http://192.168.1.47',
+    ),
+  ).toBe('http://192.168.64.1:54167/mcp')
+  expect(
+    capabilityUrlForSandbox(
+      'http://0.0.0.0:54167/mcp',
+      {},
+      'http://host.container.internal',
+    ),
+  ).toBe('http://host.container.internal:54167/mcp')
 })
 
 test('a container provider is only configured when the sandbox is a microVM', () => {

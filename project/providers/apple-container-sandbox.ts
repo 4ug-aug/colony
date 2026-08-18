@@ -44,6 +44,7 @@ export function createAppleContainerSandboxProvider(options: {
 
       return {
         id,
+        hostGateway: "host.container.internal",
         ...(publish ? { previewUrl: publish.url } : {}),
 
         exec(request) {

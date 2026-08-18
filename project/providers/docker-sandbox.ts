@@ -64,6 +64,7 @@ export function createDockerSandboxProvider(
 
       return {
         id,
+        hostGateway: "host.container.internal",
         ...(publish ? { previewUrl: publish.url } : {}),
 
         async exec(request) {

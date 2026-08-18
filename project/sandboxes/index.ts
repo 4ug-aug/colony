@@ -32,6 +32,13 @@ export interface Sandbox {
    */
   readonly previewUrl?: string;
   /**
+   * Hostname the guest uses to reach host-bound ports (the MCP gateway).
+   * Container guests use `host.container.internal`; a microVM uses the
+   * default-route gateway it actually has, which changes with the network
+   * backend publishing a Preview port selects.
+   */
+  readonly hostGateway?: string;
+  /**
    * Runs to completion and reports `exitCode`. A non-zero exit is a result,
    * not a throw — only the sandbox itself failing rejects.
    */

@@ -1,3 +1,4 @@
+import { StaticDither } from '#/components/static-dither'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -244,10 +245,10 @@ function MachinePreviewBody({
   if (machine.previewUrl)
     return (
       <div
-        className="absolute inset-0 grid place-items-center bg-muted/50"
+        className="absolute inset-0 grid place-items-center overflow-hidden"
         role="status"
       >
-        <BrailleLoader text="Waiting for Preview" />
+        <StaticDither speed={0.35} />
       </div>
     )
   return (
@@ -259,11 +260,13 @@ function MachinePreviewBody({
 
 function MachinePreviewFill({ machine }: { machine: Machine }) {
   return (
-    <div className="relative size-full min-h-0 overflow-hidden bg-background">
-      <MachinePreviewBody
-        machine={machine}
-        iframeClassName="absolute inset-0 size-full bg-white"
-      />
+    <div className="size-full min-h-0 p-3">
+      <div className="relative size-full min-h-0 overflow-hidden rounded-md bg-background shadow-sm ring-1 ring-foreground/10">
+        <MachinePreviewBody
+          machine={machine}
+          iframeClassName="absolute inset-0 size-full bg-white"
+        />
+      </div>
     </div>
   )
 }
@@ -318,7 +321,7 @@ function MachineConsole({ id }: { id: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 space-y-2 border-b px-4 py-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold">
           Machine console
         </h3>
         <div className="relative">
@@ -580,8 +583,7 @@ export function VmsPage({
             <Badge variant="secondary">{machines.length} live</Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Live smolvm sandboxes on this Colony server. Refreshes every 2
-            seconds.
+            Live VM sandboxes on this Colony server.
           </p>
         </div>
 
@@ -601,7 +603,7 @@ export function VmsPage({
           </div>
         )}
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-3 md:grid-cols-2 sm:grid-cols-1">
           {machines.map((machine) => (
             <MachineCard
               key={machine.id}

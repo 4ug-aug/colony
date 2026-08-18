@@ -7,6 +7,7 @@ import type { MachineConfig, SmolMachine } from "./smolvm-sandbox";
 import {
   createSmolvmMachine,
   createSmolvmSandboxProvider,
+  parseDefaultGateway,
   probePreviewUrl,
   resolveSmolvmImage,
   smolvmCreateFlags,
@@ -56,6 +57,20 @@ const row = (overrides: MachineRow = {}): MachineRow => ({
   ...overrides,
 });
 
+const DEFAULT_ROUTE = [
+  "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT",
+  "eth0\t00000000\t0102A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0",
+].join("\n");
+
+test("a Linux route table yields the default IPv4 gateway", () => {
+  expect(parseDefaultGateway(DEFAULT_ROUTE)).toBe("192.168.2.1");
+  expect(
+    parseDefaultGateway(
+      "Iface Destination Gateway Flags\neth0 0101A8C0 00000000 0001\n",
+    ),
+  ).toBeUndefined();
+});
+
 test("a smolvm machine behaves as a sandbox", async () => {
   const configs: MachineConfig[] = [];
   const execs: Array<Parameters<SmolMachine["exec"]>> = [];
@@ -69,6 +84,9 @@ test("a smolvm machine behaves as a sandbox", async () => {
       return stubMachine({
         async exec(command, options) {
           execs.push([command, options]);
+          if (command[0] === "cat") {
+            return { exitCode: 0, stdout: DEFAULT_ROUTE, stderr: "" };
+          }
           options?.onOutput?.({ stream: "stdout", text: "hello\n" });
           options?.onOutput?.({ stream: "stderr", text: "warning\n" });
           return { exitCode: 0, stdout: "hello\n", stderr: "warning\n" };
@@ -93,6 +111,7 @@ test("a smolvm machine behaves as a sandbox", async () => {
   await sandbox.dispose();
 
   expect(sandbox.id).toBe("sandbox-1");
+  expect(sandbox.hostGateway).toBe("192.168.2.1");
   expect(configs).toEqual([
     {
       name: "sandbox-1",
@@ -101,9 +120,10 @@ test("a smolvm machine behaves as a sandbox", async () => {
       mounts: [{ source: "/tmp/work", target: "/work", readOnly: false }],
     },
   ]);
-  expect(execs).toHaveLength(1);
-  expect(execs[0]?.[0]).toEqual(["echo", "hello"]);
-  expect(execs[0]?.[1]).toMatchObject({
+  expect(execs).toHaveLength(2);
+  expect(execs[0]?.[0]).toEqual(["cat", "/proc/net/route"]);
+  expect(execs[1]?.[0]).toEqual(["echo", "hello"]);
+  expect(execs[1]?.[1]).toMatchObject({
     env: { MODEL: "test" },
     workdir: "/work",
   });
@@ -259,6 +279,7 @@ test("a published smolvm machine starts guest dockerd without a host Docker sock
   expect(execs[0]?.[2]).toContain("native.cgroupdriver=cgroupfs");
   expect(execs[0]?.[2]).toContain("did not become ready");
   expect(execs[0]?.[2]).not.toContain("docker.sock");
+  expect(execs[1]).toEqual(["cat", "/proc/net/route"]);
 });
 
 test("a smolvm machine without a Preview port does not boot dockerd", async () => {
@@ -266,7 +287,7 @@ test("a smolvm machine without a Preview port does not boot dockerd", async () =
 
   await recordingProvider(execs).create({ image: "sweat-agent-cursor:latest" });
 
-  expect(execs).toEqual([]);
+  expect(execs).toEqual([["cat", "/proc/net/route"]]);
 });
 
 test("a smolvm machine publishes a guest port and exposes its Preview URL", async () => {

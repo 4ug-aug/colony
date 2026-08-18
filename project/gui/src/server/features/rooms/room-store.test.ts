@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { migratedDatabase } from '#/server/test-db'
 import {
   createSqliteRoomStore,
   GENERAL_ROOM_ID,
@@ -7,39 +8,22 @@ import {
   type StoredStep,
 } from './room-store'
 
-const FTS_DDL = `
-  CREATE VIRTUAL TABLE room_message_fts USING fts5(
-    text,
-    content='room_message',
-    content_rowid='rowid'
-  );
-  CREATE TRIGGER room_message_ai AFTER INSERT ON room_message BEGIN
-    INSERT INTO room_message_fts(rowid, text) VALUES (new.rowid, new.text);
-  END;
-  CREATE TRIGGER room_message_ad AFTER DELETE ON room_message BEGIN
-    INSERT INTO room_message_fts(room_message_fts, rowid, text) VALUES('delete', old.rowid, old.text);
-  END;
-  CREATE TRIGGER room_message_au AFTER UPDATE OF text ON room_message BEGIN
-    INSERT INTO room_message_fts(room_message_fts, rowid, text) VALUES('delete', old.rowid, old.text);
-    INSERT INTO room_message_fts(rowid, text) VALUES (new.rowid, new.text);
-  END;
-`
+function database(): Database {
+  const sqlite = migratedDatabase()
+  sqlite.run(`
+    INSERT INTO user (id, name, email, image, color, username) VALUES
+      ('user-1', 'Ada Lovelace', 'ada@example.com', NULL, NULL, 'ada'),
+      ('user-2', 'Bob Builder', 'bob@example.com', 'https://example.com/bob.png', '#1d4ed8', 'bob');
+  `)
+  return sqlite
+}
 
-const SCHEMA_DDL = `
-  CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
-  INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
-  CREATE TABLE room_member (room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
-  CREATE INDEX room_member_user_idx ON room_member (user_id);
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, color TEXT, username TEXT, banned INTEGER);
-  INSERT INTO user (id, name, email, image, color, username) VALUES ('user-1', 'Ada Lovelace', 'ada@example.com', NULL, NULL, 'ada');
-  INSERT INTO user (id, name, email, image, color, username) VALUES ('user-2', 'Bob Builder', 'bob@example.com', 'https://example.com/bob.png', '#1d4ed8', 'bob');
-  CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER, edited_at INTEGER, root_id TEXT REFERENCES room_message(id));
-  CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
-  CREATE TABLE issue (id TEXT PRIMARY KEY, status TEXT NOT NULL, owner_kind TEXT, created_by_kind TEXT);
-  CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, room_id TEXT NOT NULL, idx INTEGER NOT NULL, kind TEXT NOT NULL, tool TEXT, call_id TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL);
-  CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade, recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE cascade, kind TEXT NOT NULL, source_id TEXT NOT NULL, root_id TEXT, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
-  ${FTS_DDL}
-`
+function seedMessages(sqlite: Database, ...ids: readonly string[]): void {
+  const insert = sqlite.prepare(
+    "INSERT INTO room_message (id, room_id, author_id, author_name, text, created_at) VALUES (?, 'general', 'user-1', 'Ada', 'root', 0)",
+  )
+  for (const id of ids) insert.run(id)
+}
 
 function makeRun(overrides: Partial<RoomRun> = {}): RoomRun {
   return {
@@ -74,15 +58,7 @@ function makeStep(overrides: Partial<StoredStep> = {}): StoredStep {
 }
 
 test('room store retains history and fails stale runs', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(`
-    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
-    INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
-    CREATE TABLE room_member (room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
-    CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT);
-    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER, edited_at INTEGER);
-    CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
-  `)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'message-1',
@@ -110,7 +86,13 @@ test('room store retains history and fails stale runs', () => {
     {
       id: 'message-1',
       roomId: GENERAL_ROOM_ID,
-      author: { kind: 'user', id: 'user-1', name: 'Ada' },
+      author: {
+        kind: 'user',
+        id: 'user-1',
+        name: 'Ada',
+        displayName: 'Ada Lovelace',
+        email: 'ada@example.com',
+      },
       text: 'Please help',
       createdAt: 1,
       attachments: [],
@@ -134,16 +116,18 @@ test('room store retains history and fails stale runs', () => {
 })
 
 test('account run analytics aggregate only the requested account', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   sqlite.run(
     "INSERT INTO room (id, name, visibility) VALUES ('research', 'Research', 'public')",
   )
   sqlite.run(`
-    INSERT INTO issue VALUES ('agent-created-open', 'todo', 'agent', 'agent');
-    INSERT INTO issue VALUES ('agent-completed', 'done', 'agent', 'account');
-    INSERT INTO issue VALUES ('agent-created-done-by-user', 'done', 'account', 'agent');
+    INSERT INTO issue (id, number, title, status, priority, created_at, updated_at, owner_kind, owner_id, created_by_kind)
+    VALUES
+      ('agent-created-open', 1, 'Open', 'todo', 'none', 0, 0, 'agent', 'software-engineer', 'agent'),
+      ('agent-completed', 2, 'Completed', 'done', 'none', 0, 0, 'agent', 'software-engineer', 'account'),
+      ('agent-created-done-by-user', 3, 'Done by user', 'done', 'none', 0, 0, 'account', 'user-1', 'agent');
   `)
+  seedMessages(sqlite, 'msg-1')
   const store = createSqliteRoomStore(sqlite)
   const day = 86_400_000
   const now = Date.UTC(2026, 7, 16, 12)
@@ -220,8 +204,7 @@ test('account run analytics aggregate only the requested account', () => {
 })
 
 test('room history pages newest messages and follows an opaque cursor', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   for (const [id, createdAt] of [
     ['msg-1', 1],
@@ -260,15 +243,7 @@ test('room history pages newest messages and follows an opaque cursor', () => {
 })
 
 test('room messages expose attachment metadata without storage details', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(`${SCHEMA_DDL}
-    CREATE TABLE room_attachment (
-      id TEXT PRIMARY KEY, message_id TEXT NOT NULL REFERENCES room_message(id) ON DELETE CASCADE,
-      filename TEXT NOT NULL, content_type TEXT NOT NULL, byte_size INTEGER NOT NULL,
-      sha256 TEXT NOT NULL, storage_key TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL
-    );
-    CREATE INDEX room_attachment_message_idx ON room_attachment(message_id);
-  `)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage(
     {
@@ -319,16 +294,7 @@ test('room messages expose attachment metadata without storage details', () => {
 })
 
 test('room store creates ordered, isolated rooms', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(`
-    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
-    CREATE UNIQUE INDEX room_name_nocase_unique ON room (name COLLATE NOCASE);
-    INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
-    CREATE TABLE room_member (room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
-    CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT);
-    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER, edited_at INTEGER);
-    CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
-  `)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   expect(
     store.createRoom({ id: 'zebra', name: 'Zebra', visibility: 'public' }),
@@ -392,8 +358,7 @@ test('room store creates ordered, isolated rooms', () => {
 })
 
 test('appendStep then listSteps returns steps ordered by idx', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'msg-1',
@@ -434,8 +399,7 @@ test('appendStep then listSteps returns steps ordered by idx', () => {
 })
 
 test('latestStepsForActiveRuns returns max-idx step per active run only', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'msg-1',
@@ -517,8 +481,7 @@ test('latestStepsForActiveRuns returns max-idx step per active run only', () => 
 })
 
 test('listSteps is scoped to its run', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'msg-1',
@@ -553,8 +516,7 @@ test('listSteps is scoped to its run', () => {
 })
 
 test('creating a private room seeds the owner as a member', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({
@@ -573,8 +535,7 @@ test('creating a private room seeds the owner as a member', () => {
 })
 
 test('creating a public room does not seed any member', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({
@@ -590,11 +551,10 @@ test('creating a public room does not seed any member', () => {
 })
 
 test('canAccessRoom — public room is accessible by any user', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
-  // general is public and seeded in SCHEMA_DDL
+  // general is public and seeded by the first migration
   expect(store.canAccessRoom(GENERAL_ROOM_ID, 'user-1')).toBe(true)
   expect(store.canAccessRoom(GENERAL_ROOM_ID, 'user-2')).toBe(true)
   expect(store.canAccessRoom(GENERAL_ROOM_ID, 'stranger')).toBe(true)
@@ -603,8 +563,7 @@ test('canAccessRoom — public room is accessible by any user', () => {
 })
 
 test('canAccessRoom — private room only allows members', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({
@@ -622,8 +581,7 @@ test('canAccessRoom — private room only allows members', () => {
 })
 
 test('canAccessRoom — missing room returns false', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   expect(store.canAccessRoom('no-such-room', 'user-1')).toBe(false)
@@ -632,8 +590,7 @@ test('canAccessRoom — missing room returns false', () => {
 })
 
 test('listRoomsForUser hides private rooms you are not in', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({ id: 'pub', name: 'Public Room', visibility: 'public' })
@@ -668,8 +625,7 @@ test('listRoomsForUser hides private rooms you are not in', () => {
 })
 
 test('listRoomsForUser keeps General first', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({ id: 'aaa', name: 'AAA', visibility: 'public' })
@@ -682,8 +638,7 @@ test('listRoomsForUser keeps General first', () => {
 })
 
 test('addMember is idempotent', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({
@@ -707,8 +662,7 @@ test('addMember is idempotent', () => {
 })
 
 test('removeMember removes the member', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({
@@ -737,8 +691,7 @@ test('removeMember removes the member', () => {
 })
 
 test('isOwner returns true only for the creator', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({
@@ -756,14 +709,13 @@ test('isOwner returns true only for the creator', () => {
 })
 
 test('deleteRoom removes the room and its records', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(`
-    PRAGMA foreign_keys = ON;
-    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
-    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES room(id) ON DELETE cascade);
-    INSERT INTO room VALUES ('room-1', 'Room', 'public', 'user-1');
-    INSERT INTO room_message VALUES ('message-1', 'room-1');
-  `)
+  const sqlite = database()
+  sqlite.run(
+    "INSERT INTO room (id, name, visibility, created_by) VALUES ('room-1', 'Room', 'public', 'user-1')",
+  )
+  sqlite.run(
+    "INSERT INTO room_message (id, room_id, author_id, author_name, text, created_at) VALUES ('message-1', 'room-1', 'user-1', 'Ada', 'hi', 0)",
+  )
   const store = createSqliteRoomStore(sqlite)
 
   expect(store.deleteRoom('room-1')).toBe(true)
@@ -777,8 +729,7 @@ test('deleteRoom removes the room and its records', () => {
 })
 
 test('member and message profiles use username with durable secondary details', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   store.createRoom({
@@ -830,8 +781,7 @@ test('member and message profiles use username with durable secondary details', 
 })
 
 test('listWorkspaceUsers returns all users ordered by name', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
 
   const users = store.listWorkspaceUsers()
@@ -846,8 +796,7 @@ test('listWorkspaceUsers returns all users ordered by name', () => {
 })
 
 test('mentionable accounts are active and scoped to the room', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   sqlite.run(`
     INSERT INTO user (id, name, username, banned)
     VALUES ('user-3', 'Suspended', 'suspended', 1);
@@ -878,9 +827,7 @@ test('mentionable accounts are active and scoped to the room', () => {
 })
 
 test('attention is idempotent, countable, and acknowledged per room', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run('PRAGMA foreign_keys = ON;')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'message-1',
@@ -928,8 +875,8 @@ test('attention is idempotent, countable, and acknowledged per room', () => {
 })
 
 test('thread_reply attention is idempotent per (recipient, root, source) and does not pollute mention lookups', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
+  seedMessages(sqlite, 'root-1')
   const store = createSqliteRoomStore(sqlite)
   const attention = {
     id: 'attention-thread-1',
@@ -954,8 +901,8 @@ test('thread_reply attention is idempotent per (recipient, root, source) and doe
 })
 
 test('acknowledgeRoomAttention leaves thread_reply attention untouched while clearing mention and run_terminal', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
+  seedMessages(sqlite, 'root-1')
   const store = createSqliteRoomStore(sqlite)
   store.createAttention({
     id: 'attention-mention',
@@ -987,8 +934,8 @@ test('acknowledgeRoomAttention leaves thread_reply attention untouched while cle
 })
 
 test('acknowledgeThreadAttention clears only the matching root, not other threads or room-level attention', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
+  seedMessages(sqlite, 'root-a', 'root-b')
   const store = createSqliteRoomStore(sqlite)
   store.createAttention({
     id: 'attention-mention',
@@ -1031,8 +978,8 @@ test('acknowledgeThreadAttention clears only the matching root, not other thread
 })
 
 test('listOpenThreadAttentionRootIds returns distinct unacked thread roots and ignores room-level ack', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
+  seedMessages(sqlite, 'root-a', 'root-b', 'root-c')
   const store = createSqliteRoomStore(sqlite)
   store.createAttention({
     id: 'attention-mention',
@@ -1097,8 +1044,7 @@ test('listOpenThreadAttentionRootIds returns distinct unacked thread roots and i
 })
 
 test('room store updates message text and editedAt in place', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'message-1',
@@ -1132,8 +1078,7 @@ test('room store updates message text and editedAt in place', () => {
 })
 
 test('searchMessages matches across accessible rooms only', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createRoom({
     id: 'private-1',
@@ -1187,8 +1132,7 @@ test('searchMessages matches across accessible rooms only', () => {
 })
 
 test('searchMessages tags thread-reply hits with their root id, flat hits without one', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1221,8 +1165,7 @@ test('searchMessages tags thread-reply hits with their root id, flat hits withou
 })
 
 test('searchMessages stays in sync after edit and delete', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'msg-1',
@@ -1256,8 +1199,7 @@ test('searchMessages stays in sync after edit and delete', () => {
 })
 
 test('searchMessages stays in sync after a reply is edited, keeping its root id', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1296,8 +1238,7 @@ test('searchMessages stays in sync after a reply is edited, keeping its root id'
 })
 
 test('flat listMessages excludes replies while a reply is created against its root', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1327,8 +1268,7 @@ test('flat listMessages excludes replies while a reply is created against its ro
 })
 
 test('getThread returns the complete root and chronological replies, excluded from flat history', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1368,8 +1308,7 @@ test('getThread returns the complete root and chronological replies, excluded fr
 })
 
 test('getThread includes a succeeded run result as a chronological, non-message reply and excludes failed/cancelled runs and Run Activity', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1428,8 +1367,7 @@ test('getThread includes a succeeded run result as a chronological, non-message 
 })
 
 test('listThreadParticipantIds returns the root author and distinct reply authors, excluding agents', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1477,8 +1415,7 @@ test('listThreadParticipantIds returns the root author and distinct reply author
 })
 
 test('canReplyTo accepts a same-room top-level message and rejects invalid, cross-room, and nested roots', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createRoom({ id: 'other', name: 'Other', visibility: 'public' })
   store.createMessage({
@@ -1513,8 +1450,7 @@ test('canReplyTo accepts a same-room top-level message and rejects invalid, cros
 })
 
 test('root summary derives reply count, recent participants, and latest-reply time; excludes the root itself', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1556,8 +1492,7 @@ test('root summary derives reply count, recent participants, and latest-reply ti
 })
 
 test('root summary counts a succeeded run result as a reply and orders participants by recency; failed/cancelled/active runs are excluded', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1608,8 +1543,7 @@ test('root summary counts a succeeded run result as a reply and orders participa
 })
 
 test('a run triggered by a reply (an in-thread invocation) is attributed to the thread root in getThread results and the root summary', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1661,8 +1595,7 @@ test('a run triggered by a reply (an in-thread invocation) is attributed to the 
 })
 
 test('latestMessageFromOther excludes thread replies from the flat unread marker', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   store.createMessage({
     id: 'root-1',
@@ -1702,8 +1635,7 @@ test('latestMessageFromOther excludes thread replies from the flat unread marker
 })
 
 test('listRoomHistoryAround returns a window centered on the target', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.run(SCHEMA_DDL)
+  const sqlite = database()
   const store = createSqliteRoomStore(sqlite)
   for (const [id, createdAt] of [
     ['msg-1', 1],

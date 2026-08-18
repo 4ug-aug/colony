@@ -47,7 +47,7 @@ const defaultLimits = {
 
 export interface AgentCapabilityContext {
   workspace?: PreparedWorkspace;
-  sandbox?: Pick<Sandbox, "exec">;
+  sandbox?: Pick<Sandbox, "exec" | "hostGateway">;
   grantContext?: AgentGrantContext;
 }
 
@@ -112,7 +112,10 @@ export function createWorkspaceAgentsExecutor(options: {
   connectionAdapters?: (
     agentDefinitionId: string,
   ) => readonly WorkspaceAgentAdapter[];
-  createCapabilityEndpoint?: (gateway: ReturnType<typeof createMcpGateway>) => {
+  createCapabilityEndpoint?: (
+    gateway: ReturnType<typeof createMcpGateway>,
+    context: AgentCapabilityContext,
+  ) => {
     url: string;
     close(): Promise<void>;
   };

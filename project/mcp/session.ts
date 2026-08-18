@@ -13,7 +13,7 @@ export interface CapabilitySessionBinding {
 
 export type CapabilitySessionContext = {
   workspace?: PreparedWorkspace;
-  sandbox?: Pick<Sandbox, "exec">;
+  sandbox?: Pick<Sandbox, "exec" | "hostGateway">;
   grantContext?: AgentGrantContext;
 };
 
@@ -30,7 +30,10 @@ export function createCapabilitySessionFactory(options: {
     context: CapabilitySessionContext & { grant: McpGrant },
   ) => McpGateway;
   url?: string;
-  createEndpoint?: (gateway: McpGateway) => { url: string; close(): Promise<void> };
+  createEndpoint?: (
+    gateway: McpGateway,
+    context: CapabilitySessionContext,
+  ) => { url: string; close(): Promise<void> };
 }): CapabilitySessionFactory {
   if (!options.gateway && !options.createGateway) {
     throw new Error("An MCP gateway or gateway factory is required");
@@ -45,7 +48,7 @@ export function createCapabilitySessionFactory(options: {
         options.createGateway?.({ grant, workspace, sandbox, grantContext }) ??
         options.gateway!;
       const session = gateway.createSession(grant);
-      const endpoint = options.createEndpoint?.(gateway);
+      const endpoint = options.createEndpoint?.(gateway, context);
       try {
         await gateway.listTools(session.token);
       } catch (error) {
