@@ -654,3 +654,45 @@ test("a live Preview command is not an error while it is still running", async (
   ]);
   expect((await provider.listMachines())[0]?.previewError).toBeUndefined();
 });
+
+test("execMachine runs sh -lc in /work", async () => {
+  const commands: string[][] = [];
+  const provider = createSmolvmSandboxProvider({
+    run: async (command) => {
+      commands.push([...command]);
+      const name = command[command.indexOf("--name") + 1];
+      const script = command.at(-1);
+      if (name === "ghost")
+        return { exitCode: 1, stdout: "", stderr: "vm not found" };
+      if (script === "false")
+        return { exitCode: 1, stdout: "", stderr: "nope" };
+      return { exitCode: 0, stdout: "ok\n", stderr: "" };
+    },
+  });
+
+  expect(await provider.execMachine("sandbox-1", "ls")).toEqual({
+    exitCode: 0,
+    stdout: "ok\n",
+    stderr: "",
+  });
+  expect(commands[0]).toEqual([
+    "smolvm",
+    "machine",
+    "exec",
+    "--stream",
+    "--name",
+    "sandbox-1",
+    "--workdir",
+    "/work",
+    "--",
+    "sh",
+    "-lc",
+    "ls",
+  ]);
+  expect(await provider.execMachine("ghost", "ls")).toBeUndefined();
+  expect(await provider.execMachine("sandbox-1", "false")).toEqual({
+    exitCode: 1,
+    stdout: "",
+    stderr: "nope",
+  });
+});

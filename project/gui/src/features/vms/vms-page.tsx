@@ -71,6 +71,13 @@ const channelLabel: Record<string, string> = {
   docker: 'Container',
 }
 
+type ShellEntry = {
+  command: string
+  exitCode: number
+  stdout: string
+  stderr: string
+}
+
 function dockerRunning(text: string) {
   return text.includes('API listen on /var/run/docker.sock')
 }
@@ -294,7 +301,98 @@ function MachinePreviewThumbnail({ machine }: { machine: Machine }) {
   )
 }
 
+function Prompt({ children }: { children?: string }) {
+  return (
+    <p>
+      <span className="text-muted-foreground">/work $</span>
+      {children ? ` ${children}` : null}
+    </p>
+  )
+}
+
+function MachineShell({ id }: { id: string }) {
+  const [command, setCommand] = useState('')
+  const [entries, setEntries] = useState<ShellEntry[]>([])
+  const exec = useMutation({
+    mutationFn: (next: string) =>
+      apiJsonBody<Omit<ShellEntry, 'command'>>(
+        `/api/vms/${encodeURIComponent(id)}/exec`,
+        'POST',
+        { command: next },
+        'Could not exec',
+      ),
+    onSuccess: (result, next) => {
+      setEntries((current) => [...current, { command: next, ...result }])
+    },
+  })
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-muted/50 m-2 border border-foreground/10 rounded-md">
+      <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-3 py-3">
+        <div className="font-mono text-xs leading-5">
+          <ol className="space-y-3">
+            {entries.map((entry, index) => (
+              <li key={index}>
+                <Prompt>{entry.command}</Prompt>
+                {entry.stdout ? (
+                  <pre className="mt-1 whitespace-pre-wrap break-all">
+                    {entry.stdout}
+                  </pre>
+                ) : null}
+                {entry.stderr ? (
+                  <pre className="mt-1 whitespace-pre-wrap break-all text-destructive">
+                    {entry.stderr}
+                  </pre>
+                ) : null}
+                {entry.exitCode !== 0 && (
+                  <p className="mt-1 text-destructive">exit {entry.exitCode}</p>
+                )}
+              </li>
+            ))}
+          </ol>
+          {exec.isPending && exec.variables && (
+            <div className="mt-3">
+              <Prompt>{exec.variables}</Prompt>
+              <p className="mt-1 text-muted-foreground" role="status">
+                <BrailleLoader text="Running" />
+              </p>
+            </div>
+          )}
+          {exec.error && (
+            <p className="mt-3 break-all text-destructive" role="alert">
+              {exec.error instanceof Error
+                ? exec.error.message
+                : 'Could not exec'}
+            </p>
+          )}
+          <form
+            className="mt-3 flex items-baseline gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const next = command.trim()
+              if (!next || exec.isPending) return
+              setCommand('')
+              exec.mutate(next)
+            }}
+          >
+            <span className="shrink-0 text-muted-foreground">/work $</span>
+            <input
+              value={command}
+              onChange={(event) => setCommand(event.target.value)}
+              className="min-w-0 flex-1 bg-transparent caret-foreground outline-none disabled:opacity-50"
+              disabled={exec.isPending}
+              aria-label="Command in /work"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MachineConsole({ id }: { id: string }) {
+  const [tab, setTab] = useState('init')
   const [search, setSearch] = useState('')
   const deferredSearch = useDeferredValue(search)
   const { data, error, isPending } = useQuery({
@@ -324,28 +422,30 @@ function MachineConsole({ id }: { id: string }) {
         <h3 className="text-xs font-semibold">
           Machine console
         </h3>
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search console…"
-            className="h-8 pr-8 pl-8 text-sm"
-            aria-label="Search Machine console"
-          />
-          {search && (
-            <Button
-              type="button"
-              size="icon-xs"
-              variant="ghost"
-              className="absolute top-1/2 right-1 -translate-y-1/2"
-              aria-label="Clear search"
-              onClick={() => setSearch('')}
-            >
-              <X />
-            </Button>
-          )}
-        </div>
+        {tab !== 'shell' && (
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search console…"
+              className="h-8 pr-8 pl-8 text-sm"
+              aria-label="Search Machine console"
+            />
+            {search && (
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                className="absolute top-1/2 right-1 -translate-y-1/2"
+                aria-label="Clear search"
+                onClick={() => setSearch('')}
+              >
+                <X />
+              </Button>
+            )}
+          </div>
+        )}
       </div>
       {isPending && !data && (
         <p className="px-4 py-3 text-sm text-muted-foreground" role="status">
@@ -364,7 +464,8 @@ function MachineConsole({ id }: { id: string }) {
       )}
       {channels && (
         <Tabs
-          defaultValue="init"
+          value={tab}
+          onValueChange={setTab}
           className="min-h-0 flex-1 gap-0 overflow-hidden"
         >
           <div className="shrink-0 px-4 pt-3">
@@ -377,6 +478,7 @@ function MachineConsole({ id }: { id: string }) {
                   )}
                 </TabsTrigger>
               ))}
+              <TabsTrigger value="shell">Shell</TabsTrigger>
             </TabsList>
           </div>
           {channels.map((channel) => (
@@ -394,6 +496,12 @@ function MachineConsole({ id }: { id: string }) {
               )}
             </TabsContent>
           ))}
+          <TabsContent
+            value="shell"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            <MachineShell id={id} />
+          </TabsContent>
         </Tabs>
       )}
     </div>

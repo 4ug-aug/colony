@@ -5,10 +5,11 @@ import {
   createRunStepStore,
   failStaleRuns,
   runStep,
-  STALE_RUN_ERROR,
-  type RunStepTable,
-  type RunTable,
+  STALE_RUN_ERROR
+  
+  
 } from './run-storage'
+import type {RunStepTable, RunTable} from './run-storage';
 
 /** Every step table this store is pointed at in production, with its run table. */
 const stepTables: readonly (readonly [RunStepTable, RunTable])[] = [
@@ -98,8 +99,8 @@ for (const [stepTable, runTable] of stepTables) {
     store.appendStep(runStep('run-1', 0, { kind: 'message', text: 'hi', at: 5 }))
     const [step] = store.listSteps('run-1')
     expect(step).toMatchObject({ runId: 'run-1', idx: 0, text: 'hi', at: 5 })
-    expect('tool' in step!).toBe(false)
-    expect('callId' in step!).toBe(false)
+    expect('tool' in step).toBe(false)
+    expect('callId' in step).toBe(false)
     sqlite.close()
   })
 

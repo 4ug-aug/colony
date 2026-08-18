@@ -1,4 +1,5 @@
-import { migratedDatabase } from '#/server/test-db'
+import type { Database } from 'bun:sqlite'
+import { migratedDatabase, seedAccounts } from '#/server/test-db'
 import { expect, test } from 'bun:test'
 import { createServer } from 'node:net'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
@@ -14,32 +15,32 @@ import {
   hostLanAddress,
   parseContainerProvider,
   parseSandboxProvider,
-  verifyRealtimeTicket,
-  type SessionAuthenticator,
+  verifyRealtimeTicket
+  
 } from './coordinator'
+import type {SessionAuthenticator} from './coordinator';
 import {
-  createRunControl,
-  type RunControl,
-  type RunSummary,
-  type Step,
+  createRunControl
+  
+  
+  
 } from './features/runs/run-control'
+import type {RunControl, RunSummary, Step} from './features/runs/run-control';
 import type { AttachmentInput } from '../../../inputs/repository'
 import { createWorkspaceAgentsExecutor } from '../../../agents/roster'
 import { createAppleContainerClient } from '../../../sdk/src'
 import { createAppleContainerSandboxProvider } from '../../../providers/apple-container-sandbox'
 import {
-  GENERAL_ROOM_ID,
-  type RoomMessage,
-  type RoomAttention,
-  type NewRoomAttachment,
-  type RoomMessageInput,
-  type StoredRoomAttachment,
-  type RoomRun,
-  type RoomSummary,
-  type RoomStore,
-  type RoomUser,
-  type StoredStep,
+  createSqliteRoomStore,
+  GENERAL_ROOM_ID
+  
+  
+  
+  
+  
+  
 } from './features/rooms/room-store'
+import type {RoomMessage, RoomRun, RoomSummary, RoomStore, RoomUser, StoredStep} from './features/rooms/room-store';
 import { createRoomMessageHub } from './features/rooms/room-hub'
 import { createRoomAttachmentSource } from './features/rooms/attachments'
 import { createSqliteGrillStore } from './features/grills/grill-store'
@@ -148,542 +149,29 @@ class FakeRunControl implements RunControl {
     for (const listener of this.listeners) listener(run)
   }
 }
-type MemberRow = {
-  roomId: string
-  userId: string
-  addedBy: string
-  addedAt: number
+type TestRoomStore = RoomStore & {
+  /** The database behind the store, for the other stores a test wires up. */
+  sqlite: Database
+  /** Seeds the real `user` table these accounts are read back from. */
+  seedAccounts: (accounts: readonly RoomUser[]) => void
 }
-class MemoryRoomStore implements RoomStore {
-  rooms: RoomSummary[] = [
-    { id: GENERAL_ROOM_ID, name: 'General', visibility: 'public' },
-  ]
-  messages: RoomMessage[] = []
-  runs: RoomRun[] = []
-  steps: StoredStep[] = []
-  attentions: (RoomAttention & { acknowledgedAt?: number })[] = []
-  members: MemberRow[] = []
-  workspaceUsers: RoomUser[] = []
-  attachments: StoredRoomAttachment[] = []
-  listRooms() {
-    return this.rooms
-  }
-  getRoom(id: string) {
-    return this.rooms.find((room) => room.id === id)
-  }
-  createRoom(room: {
-    id: string
-    name: string
-    visibility: 'public' | 'private'
-    createdBy?: string
-  }) {
-    if (
-      this.rooms.some(
-        (item) => item.name.toLowerCase() === room.name.toLowerCase(),
-      )
-    )
-      return false
-    this.rooms.push({
-      id: room.id,
-      name: room.name,
-      visibility: room.visibility,
-      ...(room.createdBy ? { createdBy: room.createdBy } : {}),
-    })
-    if (room.visibility === 'private' && room.createdBy) {
-      this.members.push({
-        roomId: room.id,
-        userId: room.createdBy,
-        addedBy: room.createdBy,
-        addedAt: Date.now(),
-      })
-    }
-    return true
-  }
-  deleteRoom(roomId: string) {
-    const exists = this.rooms.some((room) => room.id === roomId)
-    this.rooms = this.rooms.filter((room) => room.id !== roomId)
-    this.members = this.members.filter((member) => member.roomId !== roomId)
-    this.attentions = this.attentions.filter(
-      (attention) => attention.roomId !== roomId,
-    )
-    this.attachments = this.attachments.filter(
-      (attachment) => attachment.roomId !== roomId,
-    )
-    return exists
-  }
-  listAttachmentStorageKeys(roomId: string) {
-    return this.attachments
-      .filter((attachment) => attachment.roomId === roomId)
-      .map((attachment) => attachment.storageKey)
-  }
-  getAttachment(id: string) {
-    return this.attachments.find((attachment) => attachment.id === id)
-  }
-  canAccessRoom(roomId: string, userId: string): boolean {
-    const room = this.rooms.find((r) => r.id === roomId)
-    if (!room) return false
-    if (room.visibility === 'public') return true
-    return this.members.some((m) => m.roomId === roomId && m.userId === userId)
-  }
-  listRoomsForUser(userId: string): RoomSummary[] {
-    return this.rooms.filter(
-      (r) =>
-        r.visibility === 'public' ||
-        this.members.some((m) => m.roomId === r.id && m.userId === userId),
-    )
-  }
-  listMembers(roomId: string): RoomUser[] {
-    return this.members
-      .filter((m) => m.roomId === roomId)
-      .map((m) => ({ id: m.userId, name: m.userId }))
-  }
-  isOwner(roomId: string, userId: string): boolean {
-    const room = this.rooms.find((r) => r.id === roomId)
-    return room?.createdBy === userId
-  }
-  addMember(roomId: string, userId: string, addedBy: string): void {
-    if (!this.members.some((m) => m.roomId === roomId && m.userId === userId))
-      this.members.push({ roomId, userId, addedBy, addedAt: Date.now() })
-  }
-  removeMember(roomId: string, userId: string): void {
-    this.members = this.members.filter(
-      (m) => !(m.roomId === roomId && m.userId === userId),
-    )
-    this.attentions = this.attentions.filter(
-      (attention) =>
-        attention.roomId !== roomId || attention.recipientId !== userId,
-    )
-  }
-  listWorkspaceUsers() {
-    return this.workspaceUsers
-  }
-  listMentionableAccounts(roomId: string) {
-    const room = this.getRoom(roomId)
-    if (!room) return []
-    return this.workspaceUsers.filter(
-      (user) =>
-        !user.banned &&
-        (room.visibility === 'public' ||
-          this.members.some(
-            (member) => member.roomId === roomId && member.userId === user.id,
-          )),
-    )
-  }
-  // A run's trigger may itself be a reply (an in-thread invocation), so its
-  // result belongs to that reply's thread root, not its own trigger id.
-  effectiveRootFor(triggerMessageId: string): string {
-    const trigger = this.messages.find(
-      (message) => message.id === triggerMessageId,
-    )
-    return trigger?.rootId ?? triggerMessageId
-  }
-  decorateRoots(list: RoomMessage[]): RoomMessage[] {
-    return list.map((message) => {
-      if (message.rootId != null) return message
-      const replies: { author: { id: string; name: string }; createdAt: number }[] =
-        [
-          ...this.messages
-            .filter((reply) => reply.rootId === message.id)
-            .map((reply) => ({
-              author: { id: reply.author.id, name: reply.author.name },
-              createdAt: reply.createdAt,
-            })),
-          ...this.runs
-            .filter(
-              (run) =>
-                this.effectiveRootFor(run.triggerMessageId) === message.id &&
-                run.state === 'succeeded',
-            )
-            .map((run) => ({
-              author: { id: run.agentId, name: run.agentId },
-              createdAt: run.completedAt ?? run.createdAt,
-            })),
-        ].sort((a, b) => b.createdAt - a.createdAt)
-      if (!replies.length) return message
-      const participants: { id: string; name: string }[] = []
-      for (const reply of replies) {
-        if (
-          !participants.some((participant) => participant.id === reply.author.id)
-        )
-          participants.push(reply.author)
-        if (participants.length >= 3) break
-      }
-      return {
-        ...message,
-        replySummary: {
-          replyCount: replies.length,
-          participants,
-          latestReplyAt: replies[0]!.createdAt,
-        },
-      }
-    })
-  }
-  listMessages(roomId: string) {
-    return this.decorateRoots(
-      this.messages.filter(
-        (message) => message.roomId === roomId && message.rootId == null,
-      ),
-    )
-  }
-  canReplyTo(roomId: string, rootId: string) {
-    return this.messages.some(
-      (message) =>
-        message.roomId === roomId &&
-        message.id === rootId &&
-        message.rootId == null,
-    )
-  }
-  getThread(roomId: string, rootId: string) {
-    const root = this.messages.find(
-      (message) =>
-        message.roomId === roomId &&
-        message.id === rootId &&
-        message.rootId == null,
-    )
-    if (!root) return undefined
-    const replies = this.messages
-      .filter(
-        (message) => message.roomId === roomId && message.rootId === rootId,
-      )
-      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
-    const results = this.runs
-      .filter(
-        (run) =>
-          run.roomId === roomId &&
-          this.effectiveRootFor(run.triggerMessageId) === rootId &&
-          run.state === 'succeeded',
-      )
-      .map((run) => ({
-        id: run.id,
-        agentId: run.agentId,
-        text: run.stdout,
-        createdAt: run.completedAt ?? run.createdAt,
-      }))
-      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
-    return { root: this.decorateRoots([root])[0]!, replies, results }
-  }
-  listThreadParticipantIds(roomId: string, rootId: string) {
-    const ids = new Set(
-      this.messages
-        .filter(
-          (message) =>
-            message.roomId === roomId &&
-            message.author.kind === 'user' &&
-            (message.id === rootId || message.rootId === rootId),
-        )
-        .map((message) => message.author.id),
-    )
-    return [...ids].sort()
-  }
-  latestMessageFromOther(roomId: string, userId: string) {
-    const message = this.listMessages(roomId)
-      .filter((message) => message.author.id !== userId)
-      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
-      .at(0)
-    return message
-      ? {
-          id: message.id,
-          createdAt: message.createdAt,
-          authorId: message.author.id,
-        }
-      : undefined
-  }
-  listRoomHistoryPage(
-    roomId: string,
-    options: { limit: number; cursor?: string },
-  ) {
-    const before = options.cursor
-      ? (JSON.parse(
-          Buffer.from(options.cursor, 'base64url').toString('utf8'),
-        ) as { createdAt: number; id: string })
-      : undefined
-    const sorted = this.listMessages(roomId)
-      .filter(
-        (message) =>
-          !before ||
-          message.createdAt < before.createdAt ||
-          (message.createdAt === before.createdAt && message.id < before.id),
-      )
-      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
-    const rows = sorted.slice(0, options.limit)
-    const ids = new Set(rows.map(({ id }) => id))
-    const runs = this.listRuns(roomId).filter(
-      (run) =>
-        ids.has(run.triggerMessageId) ||
-        ['preparing', 'running'].includes(run.state),
-    )
-    return {
-      messages: rows.reverse(),
-      runs: runs.sort(
-        (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-      ),
-      ...(sorted.length > options.limit && rows.length
-        ? {
-            nextCursor: Buffer.from(
-              JSON.stringify({
-                createdAt: rows[0]!.createdAt,
-                id: rows[0]!.id,
-              }),
-            ).toString('base64url'),
-          }
-        : {}),
-    }
-  }
-  listRoomHistoryAround(
-    roomId: string,
-    options: { messageId: string; limit: number },
-  ) {
-    const messages = this.listMessages(roomId).sort(
-      (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-    )
-    const index = messages.findIndex(
-      (message) => message.id === options.messageId,
-    )
-    if (index < 0) throw new Error('Message not found')
-    const limit = Math.max(1, Math.min(100, Math.floor(options.limit)))
-    let start = Math.max(0, index - Math.floor((limit - 1) / 2))
-    let end = Math.min(messages.length, start + limit)
-    start = Math.max(0, end - limit)
-    const page = messages.slice(start, end)
-    const ids = new Set(page.map(({ id }) => id))
-    const runs = this.listRuns(roomId).filter(
-      (run) =>
-        ids.has(run.triggerMessageId) ||
-        ['preparing', 'running'].includes(run.state),
-    )
-    const oldest = page[0]
-    return {
-      messages: page,
-      runs: runs.sort(
-        (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-      ),
-      ...(start > 0 && oldest
-        ? {
-            nextCursor: Buffer.from(
-              JSON.stringify({
-                createdAt: oldest.createdAt,
-                id: oldest.id,
-              }),
-            ).toString('base64url'),
-          }
-        : {}),
-    }
-  }
-  searchMessages(input: { userId: string; query: string; limit?: number }) {
-    const query = input.query.trim().toLowerCase()
-    if (query.length < 2) return []
-    const limit = Math.max(1, Math.min(50, Math.floor(input.limit ?? 20)))
-    const accessible = new Set(
-      this.listRoomsForUser(input.userId).map((room) => room.id),
-    )
-    return this.messages
-      .filter(
-        (message) =>
-          accessible.has(message.roomId) &&
-          message.text.toLowerCase().includes(query),
-      )
-      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
-      .slice(0, limit)
-      .map((message) => ({
-        messageId: message.id,
-        roomId: message.roomId,
-        roomName: this.getRoom(message.roomId)?.name ?? message.roomId,
-        author: message.author,
-        text: message.text,
-        createdAt: message.createdAt,
-        ...(message.rootId != null ? { rootId: message.rootId } : {}),
-      }))
-  }
-  listRuns(roomId: string) {
-    return this.runs.filter((run) => run.roomId === roomId)
-  }
-  getAccountRunAnalytics(accountId: string, now = Date.now()) {
-    const dayMs = 86_400_000
-    const runs = this.runs.filter((run) => run.requestedBy.id === accountId)
-    const today = Math.floor(now / dayMs) * dayMs
-    const firstDay = today - 6 * dayMs
-    return {
-      delegations: runs.length,
-      agentCreatedIssues: 0,
-      agentCompletedIssues: 0,
-      runtimeMs: runs.reduce(
-        (total, run) =>
-          total +
-          ((run.state === 'succeeded' ||
-            run.state === 'failed' ||
-            run.state === 'cancelled') &&
-          run.startedAt != null &&
-          run.completedAt != null &&
-          run.completedAt >= run.startedAt
-            ? run.completedAt - run.startedAt
-            : 0),
-        0,
-      ),
-      rhythm: Array.from({ length: 7 }, (_, index) => {
-        const day = firstDay + index * dayMs
-        return {
-          day: new Date(day).toISOString().slice(0, 10),
-          delegations: runs.filter(
-            (run) => Math.floor(run.createdAt / dayMs) * dayMs === day,
-          ).length,
-        }
-      }),
-    }
-  }
-  createMessage(
-    message: RoomMessageInput,
-    attachments: NewRoomAttachment[] = [],
-  ) {
-    this.messages.push({ ...message, attachments: message.attachments ?? [] })
-    this.attachments.push(
-      ...attachments.map((attachment) => ({
-        ...attachment,
-        roomId: message.roomId,
-      })),
-    )
-  }
-  getMessage(roomId: string, messageId: string) {
-    return this.messages.find(
-      (message) => message.roomId === roomId && message.id === messageId,
-    )
-  }
-  updateMessageText(input: {
-    id: string
-    roomId: string
-    text: string
-    editedAt: number
-  }) {
-    const index = this.messages.findIndex(
-      (message) => message.roomId === input.roomId && message.id === input.id,
-    )
-    if (index < 0) return undefined
-    const current = this.messages[index]!
-    const updated = {
-      ...current,
-      text: input.text,
-      editedAt: input.editedAt,
-    }
-    this.messages[index] = updated
-    return updated
-  }
-  createAttention(attention: RoomAttention) {
-    if (
-      this.attentions.some(
-        (item) =>
-          item.recipientId === attention.recipientId &&
-          item.kind === attention.kind &&
-          item.sourceId === attention.sourceId,
-      )
-    )
-      return false
-    this.attentions.push(attention)
-    return true
-  }
-  listMentionRecipientIds(messageId: string) {
-    return this.attentions
-      .filter(
-        (attention) =>
-          attention.kind === 'mention' && attention.sourceId === messageId,
-      )
-      .map(({ recipientId }) => recipientId)
-      .sort()
-  }
-  listAttentionCounts(userId: string, kind?: RoomAttention['kind']) {
-    const counts = new Map<string, number>()
-    for (const attention of this.attentions) {
-      if (
-        attention.recipientId !== userId ||
-        (kind !== undefined && attention.kind !== kind) ||
-        attention.acknowledgedAt !== undefined ||
-        !this.canAccessRoom(attention.roomId, userId)
-      )
-        continue
-      counts.set(attention.roomId, (counts.get(attention.roomId) ?? 0) + 1)
-    }
-    return counts
-  }
-  listOpenThreadAttentionRootIds(userId: string, roomId: string) {
-    return [
-      ...new Set(
-        this.attentions.flatMap((attention) =>
-          attention.recipientId === userId &&
-          attention.roomId === roomId &&
-          attention.kind === 'thread_reply' &&
-          attention.acknowledgedAt === undefined &&
-          attention.rootId
-            ? [attention.rootId]
-            : [],
-        ),
-      ),
-    ].sort()
-  }
-  acknowledgeRoomAttention(roomId: string, userId: string, at: number) {
-    this.attentions = this.attentions.map((attention) =>
-      attention.roomId === roomId &&
-      attention.recipientId === userId &&
-      attention.acknowledgedAt === undefined &&
-      attention.kind !== 'thread_reply'
-        ? { ...attention, acknowledgedAt: at }
-        : attention,
-    )
-  }
-  acknowledgeThreadAttention(
-    roomId: string,
-    rootId: string,
-    userId: string,
-    at: number,
-  ) {
-    this.attentions = this.attentions.map((attention) =>
-      attention.roomId === roomId &&
-      attention.rootId === rootId &&
-      attention.recipientId === userId &&
-      attention.acknowledgedAt === undefined &&
-      attention.kind === 'thread_reply'
-        ? { ...attention, acknowledgedAt: at }
-        : attention,
-    )
-  }
-  createRun(run: RoomRun) {
-    this.runs.push(run)
-  }
-  updateRun(run: RoomRun) {
-    this.runs = this.runs.map((item) => (item.id === run.id ? run : item))
-  }
-  failStaleRuns() {
-    return []
-  }
-  getRun(id: string) {
-    return this.runs.find((run) => run.id === id)
-  }
-  appendStep(step: StoredStep) {
-    this.steps.push(step)
-  }
-  listSteps(runId: string) {
-    return this.steps
-      .filter((s) => s.runId === runId)
-      .sort((a, b) => a.idx - b.idx)
-  }
-  latestStepsForActiveRuns(roomId: string) {
-    const map = new Map<string, StoredStep>()
-    const activeRunIds = new Set(
-      this.runs
-        .filter(
-          (r) =>
-            r.roomId === roomId &&
-            (r.state === 'preparing' || r.state === 'running'),
-        )
-        .map((r) => r.id),
-    )
-    for (const step of this.steps) {
-      if (!activeRunIds.has(step.runId)) continue
-      const existing = map.get(step.runId)
-      if (!existing || step.idx > existing.idx) map.set(step.runId, step)
-    }
-    return map
-  }
+
+/** The account `authorized` signs in as, so stores and sessions cannot drift. */
+const signedIn: RoomUser = { id: 'user-1', name: 'Ada' }
+
+/** The real sqlite store on a migrated database, with `signedIn` seeded. */
+function roomStore(): TestRoomStore {
+  const sqlite = migratedDatabase()
+  const store = Object.assign(createSqliteRoomStore(sqlite), {
+    sqlite,
+    seedAccounts: (accounts: readonly RoomUser[]) =>
+      seedAccounts(sqlite, accounts),
+  })
+  store.seedAccounts([signedIn])
+  return store
 }
 const authorized: SessionAuthenticator = {
-  authenticate: async () => ({ id: 'user-1', name: 'Ada' }),
+  authenticate: async () => signedIn,
 }
 const port = (): Promise<number> =>
   new Promise((resolve, reject) => {
@@ -700,7 +188,7 @@ const port = (): Promise<number> =>
   })
 type TestSocket = {
   socket: WebSocket
-  next(): Promise<Record<string, unknown>>
+  next: () => Promise<Record<string, unknown>>
 }
 const expectNoEvent = async (socket: TestSocket): Promise<void> => {
   const received = await Promise.race([
@@ -738,7 +226,7 @@ const open = (url: string) =>
 type CoordinatorOptions = Parameters<typeof createCoordinator>[0]
 
 async function makeCoordinator(overrides: Partial<CoordinatorOptions> = {}) {
-  const store = overrides.store ?? new MemoryRoomStore()
+  const store = overrides.store ?? roomStore()
   const control = overrides.control ?? new FakeRunControl()
   const messages = overrides.messages ?? createRoomMessageHub(store)
   const coordinator = createCoordinator({
@@ -761,8 +249,23 @@ async function makeCoordinator(overrides: Partial<CoordinatorOptions> = {}) {
 }
 
 test('account analytics are scoped to the authenticated account', async () => {
-  const store = new MemoryRoomStore()
-  store.runs = [
+  const store = roomStore()
+  store.seedAccounts([
+    { id: 'user-1', name: 'Ada' },
+    { id: 'user-2', name: 'Bob' },
+  ])
+  for (const [id, author] of [
+    ['message-1', { id: 'user-1', name: 'Ada' }],
+    ['message-2', { id: 'user-2', name: 'Bob' }],
+  ] as const)
+    store.createMessage({
+      id,
+      roomId: GENERAL_ROOM_ID,
+      author: { kind: 'user', ...author },
+      text: 'Start',
+      createdAt: 1,
+    })
+  for (const run of [
     {
       id: 'mine',
       roomId: GENERAL_ROOM_ID,
@@ -793,7 +296,8 @@ test('account analytics are scoped to the authenticated account', async () => {
       stdout: '',
       stderr: '',
     },
-  ]
+  ] satisfies RoomRun[])
+    store.createRun(run)
   const { coordinator, base } = await makeCoordinator({ store })
   try {
     const response = await fetch(
@@ -822,7 +326,7 @@ test('account analytics are scoped to the authenticated account', async () => {
 })
 
 test('two clients receive durable room messages and agent runs', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const { coordinator, base } = await makeCoordinator({
@@ -861,8 +365,8 @@ test('two clients receive durable room messages and agent runs', async () => {
     expect((await messageB).type).toBe('message.created')
     const run = ((await response.json()) as { run: RoomRun }).run
     expect(run.task).toBe('Fix it')
-    expect(store.messages).toHaveLength(1)
-    expect(store.runs).toHaveLength(1)
+    expect(store.listMessages(GENERAL_ROOM_ID)).toHaveLength(1)
+    expect(store.listRuns(GENERAL_ROOM_ID)).toHaveLength(1)
     expect(await a.next()).toMatchObject({
       type: 'run.changed',
       run: { id: run.id, state: 'preparing' },
@@ -895,7 +399,7 @@ test('two clients receive durable room messages and agent runs', async () => {
       body: JSON.stringify({ text: '@software-engineer ' }),
     })
     expect(emptyTask.status).toBe(400)
-    expect(store.messages).toHaveLength(1)
+    expect(store.listMessages(GENERAL_ROOM_ID)).toHaveLength(1)
     const inline = await fetch(`${base}/api/rooms/general/messages`, {
       method: 'POST',
       headers: {
@@ -926,7 +430,7 @@ test('two clients receive durable room messages and agent runs', async () => {
 
 test('agentReady gates software-engineer on Cursor and antboy on LLM', async () => {
   const control = new FakeRunControl()
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const ready = new Set<string>()
   const coordinator = createCoordinator({
     control,
@@ -980,7 +484,7 @@ test('agentReady gates software-engineer on Cursor and antboy on LLM', async () 
       {
         task: 'Help with the task',
         roomId: GENERAL_ROOM_ID,
-        rootId: store.messages[0]!.id,
+        rootId: store.listMessages(GENERAL_ROOM_ID)[0].id,
         agentDefinitionId: 'antboy',
         attachments: [],
       },
@@ -991,7 +495,7 @@ test('agentReady gates software-engineer on Cursor and antboy on LLM', async () 
 })
 
 test('room history is paginated over HTTP and in the realtime snapshot', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   for (let index = 0; index < 51; index++)
     store.createMessage({
       id: `message-${index}`,
@@ -1047,7 +551,7 @@ test('room history is paginated over HTTP and in the realtime snapshot', async (
 })
 
 test('message search and around-history are available over HTTP', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   store.createRoom({
     id: 'private-1',
     name: 'Private',
@@ -1126,11 +630,11 @@ test('message search and around-history are available over HTTP', async () => {
 })
 
 test('message search over HTTP tags threaded hits with their root id and still excludes inaccessible private rooms', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -1213,7 +717,7 @@ test('message search over HTTP tags threaded hits with their root id and still e
 
 test('multipart messages persist attachment metadata and serve authorized bytes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sweat-attachments-'))
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
     store,
@@ -1269,7 +773,7 @@ test('multipart messages persist attachment metadata and serve authorized bytes'
       roomId: GENERAL_ROOM_ID,
       filename: '.._avatar.png',
       byteSize: 8,
-      sha256: store.attachments[0]!.sha256,
+      sha256: store.getAttachment(attachmentId)!.sha256,
     })
     expect(prepared?.bytes).toEqual(
       new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -1305,7 +809,7 @@ test('multipart messages persist attachment metadata and serve authorized bytes'
 
 test('a multipart software-engineer message is durable and forwards only its descriptors', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sweat-agent-attachments-'))
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const coordinator = createCoordinator({
     control,
@@ -1329,14 +833,16 @@ test('a multipart software-engineer message is durable and forwards only its des
     })
 
     expect(response.status).toBe(202)
-    expect(store.messages).toHaveLength(1)
-    expect(store.runs).toHaveLength(1)
-    const attachment = store.attachments[0]!
+    expect(store.listMessages(GENERAL_ROOM_ID)).toHaveLength(1)
+    expect(store.listRuns(GENERAL_ROOM_ID)).toHaveLength(1)
+    const attachment = store.getAttachment(
+      store.listMessages(GENERAL_ROOM_ID)[0].attachments[0].id,
+    )!
     expect(control.requests).toEqual([
       {
         task: 'Review this brief',
         roomId: GENERAL_ROOM_ID,
-        rootId: store.messages[0]!.id,
+        rootId: store.listMessages(GENERAL_ROOM_ID)[0].id,
         agentDefinitionId: 'software-engineer',
         attachments: [
           {
@@ -1367,7 +873,7 @@ test('a multipart software-engineer message is durable and forwards only its des
         })
       ).status,
     ).toBe(400)
-    expect(store.messages).toHaveLength(1)
+    expect(store.listMessages(GENERAL_ROOM_ID)).toHaveLength(1)
 
     const later = await fetch(`${base}/api/rooms/general/messages`, {
       method: 'POST',
@@ -1387,7 +893,7 @@ test('a multipart software-engineer message is durable and forwards only its des
 
 test('an attachment preparation failure leaves the durable message and failed run', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sweat-agent-failure-'))
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const containerCalls: string[][] = []
   const control = createRunControl(
     createWorkspaceAgentsExecutor({
@@ -1428,12 +934,12 @@ test('an attachment preparation failure leaves the durable message and failed ru
     })
 
     expect(response.status).toBe(202)
-    const run = store.runs[0]!
+    const run = store.listRuns(GENERAL_ROOM_ID)[0]
     while (store.getRun(run.id)?.state === 'preparing') await Bun.sleep(0)
-    expect(store.messages).toHaveLength(1)
+    expect(store.listMessages(GENERAL_ROOM_ID)).toHaveLength(1)
     expect(store.getRun(run.id)).toMatchObject({
       state: 'failed',
-      error: `Attachment unavailable: ${store.attachments[0]!.id}`,
+      error: `Attachment unavailable: ${store.listMessages(GENERAL_ROOM_ID)[0].attachments[0].id}`,
     })
     expect(containerCalls).toEqual([])
   } finally {
@@ -1448,8 +954,8 @@ test('mentions and terminal runs create durable directed attention', async () =>
     { id: 'user-1', name: 'ada', username: 'ada' },
     { id: 'user-2', name: 'bob', username: 'bob' },
   ]
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = users
+  const store = roomStore()
+  store.seedAccounts(users)
   const control = new FakeRunControl()
   const coordinator = createCoordinator({
     control,
@@ -1563,14 +1069,14 @@ test('mentions and terminal runs create durable directed attention', async () =>
 })
 
 test('a reply creates Thread Attention for the root author and prior participants, excluding the reply author and agents', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const users: RoomUser[] = [
     { id: 'user-1', name: 'ada', username: 'ada' },
     { id: 'user-2', name: 'bob', username: 'bob' },
     { id: 'user-3', name: 'cara', username: 'cara' },
   ]
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = users
+  store.seedAccounts(users)
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: {
@@ -1645,7 +1151,7 @@ test('a reply creates Thread Attention for the root author and prior participant
     ).toBeUndefined()
 
     // An agent reply must never receive Thread Attention.
-    store.messages.push({
+    store.createMessage({
       id: 'agent-reply',
       roomId: GENERAL_ROOM_ID,
       author: { kind: 'agent', id: 'software-engineer', name: 'SWE' },
@@ -1667,13 +1173,13 @@ test('a reply creates Thread Attention for the root author and prior participant
 })
 
 test('room and workspace snapshots include threadAttentionRootIds for the recipient', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const users: RoomUser[] = [
     { id: 'user-1', name: 'ada', username: 'ada' },
     { id: 'user-2', name: 'bob', username: 'bob' },
   ]
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = users
+  store.seedAccounts(users)
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: {
@@ -1728,13 +1234,13 @@ test('room and workspace snapshots include threadAttentionRootIds for the recipi
 })
 
 test('opening the target thread acknowledges only its Thread Attention, leaving other threads and room-level attention untouched', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const users: RoomUser[] = [
     { id: 'user-1', name: 'ada', username: 'ada' },
     { id: 'user-2', name: 'bob', username: 'bob' },
   ]
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = users
+  store.seedAccounts(users)
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: {
@@ -1806,8 +1312,8 @@ test('opening the target thread acknowledges only its Thread Attention, leaving 
 })
 
 test('a failed run triggered from within a thread reply carries the thread rootId on its terminal Attention', async () => {
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
+  const store = roomStore()
+  store.seedAccounts([{ id: 'user-1', name: 'ada', username: 'ada' }])
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
@@ -1871,13 +1377,13 @@ test('a failed run triggered from within a thread reply carries the thread rootI
 })
 
 test('a successful Room-linked run creates Thread Attention for Account participants without counting failure paths', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const users: RoomUser[] = [
     { id: 'user-1', name: 'ada', username: 'ada' },
     { id: 'user-2', name: 'bob', username: 'bob' },
   ]
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = users
+  store.seedAccounts(users)
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({
     store,
@@ -1962,8 +1468,8 @@ test('a successful Room-linked run creates Thread Attention for Account particip
 })
 
 test('failed and cancelled runs notify their requester', async () => {
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
+  const store = roomStore()
+  store.seedAccounts([{ id: 'user-1', name: 'ada', username: 'ada' }])
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   const start = async (task: string) => {
@@ -1995,8 +1501,8 @@ test('failed and cancelled runs notify their requester', async () => {
 })
 
 test('rooms are created once and streams stay isolated', async () => {
+  const store = roomStore()
   const control = new FakeRunControl()
-  const store = new MemoryRoomStore()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
     const general = await open(
@@ -2103,7 +1609,7 @@ test('rooms are created once and streams stay isolated', async () => {
 })
 
 test('room endpoints require a session', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
     store,
@@ -2128,7 +1634,7 @@ test('room endpoints require a session', async () => {
 
 test('only a room creator or administrator can delete it', async () => {
   let currentUser: RoomUser = { id: 'user-1', name: 'Owner' }
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
     store,
@@ -2180,7 +1686,7 @@ test('only a room creator or administrator can delete it', async () => {
 })
 
 test('localhost Vite ports are allowed when the configured GUI is localhost', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const coordinator = createCoordinator({
     control: new FakeRunControl(),
     store,
@@ -2215,8 +1721,8 @@ test('localhost Vite ports are allowed when the configured GUI is localhost', as
 })
 
 test('hub post by non-HTTP caller broadcasts message.created to subscribed socket', async () => {
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [{ id: 'user-1', name: 'ada', username: 'ada' }]
+  const store = roomStore()
+  store.seedAccounts([{ id: 'user-1', name: 'ada', username: 'ada' }])
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const { coordinator, base } = await makeCoordinator({
@@ -2264,7 +1770,7 @@ test('hub post by non-HTTP caller broadcasts message.created to subscribed socke
 })
 
 test('agent-authored hub post does NOT create a run', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const { coordinator, base } = await makeCoordinator({
@@ -2291,7 +1797,7 @@ test('agent-authored hub post does NOT create a run', async () => {
     expect(event.type).toBe('message.created')
     // No run should be created by an agent hub post
     expect(control.listRuns()).toHaveLength(0)
-    expect(store.runs).toHaveLength(0)
+    expect(store.listRuns(GENERAL_ROOM_ID)).toHaveLength(0)
     await expectNoEvent(socket)
     socket.socket.close()
   } finally {
@@ -2300,7 +1806,7 @@ test('agent-authored hub post does NOT create a run', async () => {
 })
 
 test('step events are persisted and broadcast as run.step to room sockets', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const { coordinator, base } = await makeCoordinator({
@@ -2330,7 +1836,7 @@ test('step events are persisted and broadcast as run.step to room sockets', asyn
       },
       body: JSON.stringify({ name: 'Other' }),
     })
-    const otherRoom = store.rooms.find((r) => r.name === 'Other')!
+    const otherRoom = store.listRooms().find((entry) => entry.name === 'Other')!
 
     // Open two sockets: one in general room, one in other room
     const general = await open(
@@ -2395,7 +1901,7 @@ test('step events are persisted and broadcast as run.step to room sockets', asyn
 })
 
 test('room.snapshot includes latestSteps for active runs', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const { coordinator, base } = await makeCoordinator({
@@ -2443,7 +1949,7 @@ test('room.snapshot includes latestSteps for active runs', async () => {
 })
 
 test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched run, 401 without auth', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const { coordinator, base } = await makeCoordinator({
@@ -2496,8 +2002,8 @@ test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched ru
     // No auth — use unauthenticated coordinator
     const noAuthCoord = createCoordinator({
       control: new FakeRunControl(),
-      store: new MemoryRoomStore(),
-      messages: createRoomMessageHub(new MemoryRoomStore()),
+      store: roomStore(),
+      messages: createRoomMessageHub(roomStore()),
       authenticator: { authenticate: async () => undefined },
       authHandler: async () => new Response('ok'),
       origin: 'http://gui.test',
@@ -2523,12 +2029,12 @@ test('GET /runs/:runId/steps returns step history, 404 for unknown/mismatched ru
 })
 
 test('non-member gets 404 on all private room endpoints', async () => {
+  const store = roomStore()
   // user-1 creates a private room; user-2 is not a member
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const { coordinator, base } = await makeCoordinator({
@@ -2608,11 +2114,11 @@ test('non-member gets 404 on all private room endpoints', async () => {
 })
 
 test('member of private room can access its endpoints', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
   const { coordinator, base } = await makeCoordinator({
@@ -2664,11 +2170,11 @@ test('member of private room can access its endpoints', async () => {
 })
 
 test('GET /api/rooms omits private rooms the user is not in but includes public ones', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -2718,11 +2224,11 @@ test('GET /api/rooms omits private rooms the user is not in but includes public 
 })
 
 test('POST /api/rooms with private visibility does not emit room.created globally; public does', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -2781,7 +2287,7 @@ test('POST /api/rooms with private visibility does not emit room.created globall
 })
 
 test('POST /api/rooms with invalid visibility returns 400', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const { coordinator, base } = await makeCoordinator({ store })
   try {
     const resp = await fetch(`${base}/api/rooms`, {
@@ -2801,11 +2307,11 @@ test('POST /api/rooms with invalid visibility returns 400', async () => {
 })
 
 test('GET /api/workspace/members returns seeded workspace users', async () => {
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  const store = roomStore()
+  store.seedAccounts([
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({ store })
   try {
     const resp = await fetch(`${base}/api/workspace/members`, {
@@ -2822,15 +2328,15 @@ test('GET /api/workspace/members returns seeded workspace users', async () => {
 })
 
 test('GET /api/rooms/:id/members returns members for an accessible room', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  store.seedAccounts([
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -2869,15 +2375,15 @@ test('GET /api/rooms/:id/members returns members for an accessible room', async 
 })
 
 test('non-member POST /api/rooms/:id/members returns 404', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  store.seedAccounts([
     { id: 'user-1', name: 'Alice' },
     { id: 'user-3', name: 'Carol' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -2910,11 +2416,11 @@ test('non-member POST /api/rooms/:id/members returns 404', async () => {
 })
 
 test('POST /api/rooms/:id/members on a public room returns 400', async () => {
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  const store = roomStore()
+  store.seedAccounts([
     { id: 'user-1', name: 'Ada' },
     { id: 'user-2', name: 'Bob' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({ store })
   try {
     const created = await fetch(`${base}/api/rooms`, {
@@ -2944,8 +2450,8 @@ test('POST /api/rooms/:id/members on a public room returns 400', async () => {
 })
 
 test('POST /api/rooms/:id/members with unknown userId returns 400', async () => {
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [{ id: 'user-1', name: 'Ada' }]
+  const store = roomStore()
+  store.seedAccounts([{ id: 'user-1', name: 'Ada' }])
   const { coordinator, base } = await makeCoordinator({ store })
   try {
     const created = await fetch(`${base}/api/rooms`, {
@@ -2975,15 +2481,15 @@ test('POST /api/rooms/:id/members with unknown userId returns 400', async () => 
 })
 
 test('member adds a workspace user; added user socket gets room.created; room socket gets room.members.changed', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  store.seedAccounts([
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -3050,15 +2556,15 @@ test('member adds a workspace user; added user socket gets room.created; room so
 })
 
 test('owner removes another member; removed user gets room.removed; room socket gets room.members.changed', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  store.seedAccounts([
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -3129,16 +2635,16 @@ test('owner removes another member; removed user gets room.removed; room socket 
 })
 
 test('non-owner removing another member returns 403', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  store.seedAccounts([
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
     { id: 'user-3', name: 'Carol' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -3173,15 +2679,15 @@ test('non-owner removing another member returns 403', async () => {
 })
 
 test('member removing themselves (leave) is allowed and gets room.removed', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  store.seedAccounts([
     { id: 'user-1', name: 'Alice' },
     { id: 'user-2', name: 'Bob' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -3227,7 +2733,7 @@ test('member removing themselves (leave) is allowed and gets room.removed', asyn
 
     // user-2 is no longer a member
     expect(
-      store.members.some((m) => m.roomId === room.id && m.userId === 'user-2'),
+      store.listMembers(room.id).some((member) => member.id === 'user-2'),
     ).toBe(false)
 
     user2Socket.socket.close()
@@ -3264,8 +2770,8 @@ test('PATCH edits own message text without starting runs or creating attention',
     { id: 'user-1', name: 'ada', username: 'ada' },
     { id: 'user-2', name: 'bob', username: 'bob' },
   ]
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = users
+  const store = roomStore()
+  store.seedAccounts(users)
   const control = new FakeRunControl()
   const coordinator = createCoordinator({
     control,
@@ -3307,7 +2813,8 @@ test('PATCH edits own message text without starting runs or creating attention',
       kind: 'mention',
     })
     expect(await reviewer.next()).toMatchObject({ type: 'message.created' })
-    const attentionAfterCreate = store.attentions.length
+    const attentionAfterCreate =
+      store.listAttentionCounts('user-2').get(GENERAL_ROOM_ID) ?? 0
     const runCount = control.requests.length
 
     const updatedEvent = room.next()
@@ -3335,16 +2842,18 @@ test('PATCH edits own message text without starting runs or creating attention',
       },
     })
     await expectNoEvent(reviewer)
-    expect(store.attentions).toHaveLength(attentionAfterCreate)
+    expect(store.listAttentionCounts('user-2').get(GENERAL_ROOM_ID) ?? 0).toBe(
+      attentionAfterCreate,
+    )
     expect(control.requests).toHaveLength(runCount)
-    expect(store.messages[0]!.text).toBe('Edited note mentioning @bob again')
+    expect(store.listMessages(GENERAL_ROOM_ID)[0].text).toBe('Edited note mentioning @bob again')
   } finally {
     coordinator.stop()
   }
 })
 
 test('PATCH rejects empty text, other authors, and missing messages', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const messages = createRoomMessageHub(store)
   const mine = messages.postMessage({
     roomId: GENERAL_ROOM_ID,
@@ -3408,7 +2917,7 @@ test('PATCH rejects empty text, other authors, and missing messages', async () =
 })
 
 test('POST reply is linked to its root, excluded from flat history, and returned by GET thread with a derived summary', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const { coordinator, base } = await makeCoordinator({ store })
   try {
     const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
@@ -3477,7 +2986,7 @@ test('POST reply is linked to its root, excluded from flat history, and returned
 })
 
 test('a top-level mention run is bound to its trigger as the invocation root, and its successful result is routed into the thread without duplicating as a Room message', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
@@ -3555,7 +3064,7 @@ test('a top-level mention run is bound to its trigger as the invocation root, an
 })
 
 test('failed and cancelled runs create no thread reply or count increment, keeping their inspectable capsule off the reply count', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
@@ -3618,7 +3127,7 @@ test('failed and cancelled runs create no thread reply or count increment, keepi
 })
 
 test('an agent mention in a Thread reply starts one fresh run bound to the thread root, with the capsule attached to the reply', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
@@ -3672,7 +3181,7 @@ test('an agent mention in a Thread reply starts one fresh run bound to the threa
 })
 
 test('a reply without a recognized agent mention posts normally and starts no run', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
@@ -3706,7 +3215,7 @@ test('a reply without a recognized agent mention posts normally and starts no ru
 })
 
 test("a successful run from a reply mention counts as a thread reply and is included in the root's summary, without duplicating as a Room message", async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
@@ -3772,7 +3281,7 @@ test("a successful run from a reply mention counts as a thread reply and is incl
 })
 
 test('a failed run from a reply mention creates no thread reply and does not inflate the reply count', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
@@ -3824,7 +3333,7 @@ test('a failed run from a reply mention creates no thread reply and does not inf
 })
 
 test('two separate reply mentions on the same thread run concurrently — no per-thread or per-agent lock', async () => {
-  const store = new MemoryRoomStore()
+  const store = roomStore()
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({ store, control })
   try {
@@ -3887,11 +3396,11 @@ test('two separate reply mentions on the same thread run concurrently — no per
 })
 
 test('POST reply rejects an invalid, cross-room, or nested rootId; GET thread 404s for unknown roots and private-room non-members', async () => {
+  const store = roomStore()
   let currentUser = 'user-1'
   const swappable: SessionAuthenticator = {
     authenticate: async () => ({ id: currentUser, name: currentUser }),
   }
-  const store = new MemoryRoomStore()
   const { coordinator, base } = await makeCoordinator({
     store,
     authenticator: swappable,
@@ -3989,8 +3498,8 @@ test('verifyRealtimeTicket rejects tampered and malformed tickets', () => {
 })
 
 test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edits', async () => {
-  const sqlite = migratedDatabase()
-  const grillStore = createSqliteGrillStore(sqlite, {
+  const store = roomStore()
+  const grillStore = createSqliteGrillStore(store.sqlite, {
     hasGuidanceSkill: () => true,
   })
   grillStore.createGrill({
@@ -4006,11 +3515,10 @@ test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edi
     { questions: [{ id: 'q1', prompt: 'Ship it?' }], drafts: {} },
     2,
   )
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  store.seedAccounts([
     { id: 'user-1', name: 'Ada' },
     { id: 'user-2', name: 'Grace' },
-  ]
+  ])
   const control = new FakeRunControl()
   const { coordinator, base } = await makeCoordinator({
     store,
@@ -4110,12 +3618,12 @@ test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edi
   })
   grace.socket.close()
   await coordinator.stop()
-  sqlite.close()
+  store.sqlite.close()
 })
 
 test('Grill submit broadcasts grill.changed to other Accounts on the stream', async () => {
-  const sqlite = migratedDatabase()
-  const grillStore = createSqliteGrillStore(sqlite, {
+  const store = roomStore()
+  const grillStore = createSqliteGrillStore(store.sqlite, {
     hasGuidanceSkill: () => true,
   })
   grillStore.createGrill({
@@ -4131,11 +3639,10 @@ test('Grill submit broadcasts grill.changed to other Accounts on the stream', as
     { questions: [{ id: 'q1', prompt: 'Ship it?' }], drafts: { q1: 'Yes' } },
     2,
   )
-  const store = new MemoryRoomStore()
-  store.workspaceUsers = [
+  store.seedAccounts([
     { id: 'user-1', name: 'Ada' },
     { id: 'user-2', name: 'Grace' },
-  ]
+  ])
   const { coordinator, base } = await makeCoordinator({ store, grillStore })
   const wsBase = base.replace(/^http/, 'ws')
   const ada = await open(
@@ -4193,7 +3700,7 @@ test('Grill submit broadcasts grill.changed to other Accounts on the stream', as
   ada.socket.close()
   grace.socket.close()
   await coordinator.stop()
-  sqlite.close()
+  store.sqlite.close()
 })
 
 test('sandbox provider configuration accepts only the supported providers', () => {

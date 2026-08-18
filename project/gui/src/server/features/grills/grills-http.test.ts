@@ -1,4 +1,4 @@
-import { migratedDatabase } from '#/server/test-db'
+import { migratedDatabase, seedAccounts } from '#/server/test-db'
 import { expect, test } from 'bun:test'
 import { createSqliteGrillStore } from './grill-store'
 import { createGrillsHttp } from './grills-http'
@@ -22,10 +22,7 @@ function harness(
   },
 ) {
   const sqlite = migratedDatabase()
-  sqlite.exec(`
-    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
-    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
-  `)
+  seedAccounts(sqlite, ['ada', 'grace'])
   const grillStore = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: () => hasGuidanceSkill,
     defaultRepository: 'acme/sweat',
@@ -272,10 +269,7 @@ test('POST /api/grills/:id/complete persists General Grill Doc', async () => {
 
 test('GET /api/grills includes linked-run activity when present', async () => {
   const sqlite = migratedDatabase()
-  sqlite.exec(`
-    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
-    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
-  `)
+  seedAccounts(sqlite, ['ada', 'grace'])
   const grillStore = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: () => true,
     defaultRepository: 'acme/sweat',
@@ -335,10 +329,7 @@ test('GET /api/grills includes linked-run activity when present', async () => {
 
 test('POST /api/grills/:id/reply follows up when frontier is empty', async () => {
   const sqlite = migratedDatabase()
-  sqlite.exec(`
-    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
-    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
-  `)
+  seedAccounts(sqlite, ['ada', 'grace'])
   const grillStore = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: () => true,
     defaultRepository: 'acme/sweat',
@@ -463,10 +454,7 @@ test('POST /api/grills/:id/reply follows up when frontier is empty', async () =>
 
 test('POST /run appends the Grill turn contract so questions must use tools', async () => {
   const sqlite = migratedDatabase()
-  sqlite.exec(`
-    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
-    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
-  `)
+  seedAccounts(sqlite, ['ada', 'grace'])
   const grillStore = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: () => true,
     defaultRepository: 'acme/sweat',

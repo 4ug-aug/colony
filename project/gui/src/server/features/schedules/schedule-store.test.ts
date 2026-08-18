@@ -1,4 +1,4 @@
-import { migratedDatabase } from '#/server/test-db'
+import { migratedDatabase, seedAccounts } from '#/server/test-db'
 import { expect, test } from 'bun:test'
 import {
   createSqliteScheduleStore,
@@ -27,9 +27,7 @@ const run = (
 
 test('schedule store enforces one active run and advances automatic cadence transactionally', () => {
   const sqlite = migratedDatabase()
-  sqlite.exec(`
-    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
-  `)
+  seedAccounts(sqlite, ['ada'])
   const store = createSqliteScheduleStore(sqlite)
   store.createSchedule({
     id: 'schedule-1',

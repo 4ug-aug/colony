@@ -1,6 +1,15 @@
 import type { SmolvmMachineControl } from '../../../../../providers/smolvm-sandbox'
 import type { RoomUser } from '../rooms/room-store'
-import { json } from '../../http/respond'
+import { json, readBody } from '../../http/respond'
+
+function machineId(raw: string | undefined) {
+  if (!raw) return undefined
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return undefined
+  }
+}
 
 export function createVmsHttp(control: SmolvmMachineControl) {
   return async (request: Request, url: URL, user: RoomUser) => {
@@ -13,26 +22,42 @@ export function createVmsHttp(control: SmolvmMachineControl) {
 
     const logsMatch = url.pathname.match(/^\/api\/vms\/([^/]+)\/logs$/)
     if (logsMatch && request.method === 'GET') {
-      let id: string
-      try {
-        id = decodeURIComponent(logsMatch[1])
-      } catch {
-        return json({ error: 'Invalid machine id' }, 400)
-      }
+      const id = machineId(logsMatch[1])
+      if (!id) return json({ error: 'Invalid machine id' }, 400)
       const logs = await control.machineLogs(id)
       return logs
         ? json(logs)
         : json({ error: 'Machine not found' }, 404)
     }
 
+    const execMatch = url.pathname.match(/^\/api\/vms\/([^/]+)\/exec$/)
+    if (execMatch && request.method === 'POST') {
+      const id = machineId(execMatch[1])
+      if (!id) return json({ error: 'Invalid machine id' }, 400)
+      const body = await readBody(request)
+      const command =
+        typeof body?.command === 'string' ? body.command.trim() : ''
+      if (!command) return json({ error: 'Command required' }, 400)
+      try {
+        const result = await control.execMachine(id, command)
+        return result
+          ? json(result)
+          : json({ error: 'Machine not found' }, 404)
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error ? error.message : 'Could not exec',
+          },
+          502,
+        )
+      }
+    }
+
     const match = url.pathname.match(/^\/api\/vms\/([^/]+)$/)
     if (match && request.method === 'DELETE') {
-      let id: string
-      try {
-        id = decodeURIComponent(match[1])
-      } catch {
-        return json({ error: 'Invalid machine id' }, 400)
-      }
+      const id = machineId(match[1])
+      if (!id) return json({ error: 'Invalid machine id' }, 400)
       try {
         return (await control.nukeMachine(id))
           ? json({ id })

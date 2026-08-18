@@ -1,4 +1,4 @@
-import { migratedDatabase } from '#/server/test-db'
+import { migratedDatabase, seedAccounts } from '#/server/test-db'
 import { expect, test } from 'bun:test'
 import { createSqliteBulletinStore } from './bulletin-store'
 import { createBulletinsHttp } from './bulletins-http'
@@ -10,9 +10,7 @@ const ada: RoomUser = { id: 'ada', name: 'Ada' }
 
 function harness() {
   const sqlite = migratedDatabase()
-  sqlite.exec(`
-    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
-  `)
+  seedAccounts(sqlite, ['ada'])
   const bulletinStore = createSqliteBulletinStore(sqlite)
   const broadcasts: WorkspaceServerMessage[] = []
   const handle = createBulletinsHttp({

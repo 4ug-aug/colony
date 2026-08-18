@@ -1,7 +1,5 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { createSqliteIssueStore } from './issue-store'
 import { createIssueRunner } from './issue-runner'
 import { createIssuesHttp } from './issues-http'
@@ -12,46 +10,10 @@ import type {
 } from '#/server/coordinator'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 
-const migration = [
-  readFileSync(
-    fileURLToPath(new URL('../../../../drizzle/0016_issues.sql', import.meta.url)),
-    'utf8',
-  ),
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../../drizzle/0017_issue_deliverable.sql', import.meta.url),
-    ),
-    'utf8',
-  ),
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../../drizzle/0018_issue_run_steps.sql', import.meta.url),
-    ),
-    'utf8',
-  ),
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../../drizzle/0024_issue_branch.sql', import.meta.url),
-    ),
-    'utf8',
-  ),
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../../drizzle/0029_issue_created_by.sql', import.meta.url),
-    ),
-    'utf8',
-  ),
-].join('\n--> statement-breakpoint\n')
-
 const ada: RoomUser = { id: 'ada', name: 'Ada' }
 
 function harness() {
-  const sqlite = new Database(':memory:')
-  sqlite.exec('PRAGMA foreign_keys = ON')
-  for (const statement of migration.split('--> statement-breakpoint')) {
-    const sql = statement.trim()
-    if (sql) sqlite.exec(sql)
-  }
+  const sqlite = migratedDatabase()
   const issueStore = createSqliteIssueStore(sqlite)
   const broadcasts: WorkspaceServerMessage[] = []
   const issueRunner = createIssueRunner({
@@ -199,7 +161,7 @@ test('PATCH last child to In review starts a parent integrate run when the paren
     title: 'Add auth',
     owner: { kind: 'agent', id: 'antboy' },
   })
-  const dispatch = issueStore.listRuns(parent.body.issue.id)[0]!
+  const dispatch = issueStore.listRuns(parent.body.issue.id)[0]
   issueStore.updateRun({ ...dispatch, state: 'succeeded' })
 
   const ui = await call('POST', '/api/issues', {

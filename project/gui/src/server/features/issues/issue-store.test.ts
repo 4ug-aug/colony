@@ -1,60 +1,19 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import {
   buildIssueRunTask,
   createSqliteIssueStore,
   formatIssueId,
   parseIssueRef,
-  resolveIssue,
-  type Issue,
+  resolveIssue
+  
 } from './issue-store'
-
-const migration = [
-  readFileSync(
-    fileURLToPath(new URL('../../../../drizzle/0016_issues.sql', import.meta.url)),
-    'utf8',
-  ),
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../../drizzle/0017_issue_deliverable.sql', import.meta.url),
-    ),
-    'utf8',
-  ),
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../../drizzle/0018_issue_run_steps.sql', import.meta.url),
-    ),
-    'utf8',
-  ),
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../../drizzle/0024_issue_branch.sql', import.meta.url),
-    ),
-    'utf8',
-  ),
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../../drizzle/0029_issue_created_by.sql', import.meta.url),
-    ),
-    'utf8',
-  ),
-].join('\n--> statement-breakpoint\n')
-
-const applyMigration = (sqlite: Database) => {
-  sqlite.exec('PRAGMA foreign_keys = ON')
-  for (const statement of migration.split('--> statement-breakpoint')) {
-    const sql = statement.trim()
-    if (sql) sqlite.exec(sql)
-  }
-}
+import type {Issue} from './issue-store';
 
 const ada = { kind: 'account' as const, id: 'ada' }
 
 test('issue store allocates COL numbers and accepts legacy SWE references', () => {
-  const sqlite = new Database(':memory:')
-  applyMigration(sqlite)
+  const sqlite = migratedDatabase()
   const store = createSqliteIssueStore(sqlite)
 
   const parent = store.createIssue({
@@ -182,8 +141,7 @@ test('issue store allocates COL numbers and accepts legacy SWE references', () =
 })
 
 test('getIssue includes direct children with live related work; list omits children', () => {
-  const sqlite = new Database(':memory:')
-  applyMigration(sqlite)
+  const sqlite = migratedDatabase()
   const store = createSqliteIssueStore(sqlite)
   const parent = store.createIssue({
     id: 'parent',
@@ -274,8 +232,7 @@ test('getIssue includes direct children with live related work; list omits child
 })
 
 test('deleteIssue removes the issue, cascades runs, and orphans children', () => {
-  const sqlite = new Database(':memory:')
-  applyMigration(sqlite)
+  const sqlite = migratedDatabase()
   const store = createSqliteIssueStore(sqlite)
   const parent = store.createIssue({
     id: 'parent',
@@ -313,8 +270,7 @@ test('deleteIssue removes the issue, cascades runs, and orphans children', () =>
 })
 
 test('issue store rejects parent cycles and oversized descriptions', () => {
-  const sqlite = new Database(':memory:')
-  applyMigration(sqlite)
+  const sqlite = migratedDatabase()
   const store = createSqliteIssueStore(sqlite)
   const a = store.createIssue({
     id: 'a',
@@ -345,8 +301,7 @@ test('issue store rejects parent cycles and oversized descriptions', () => {
 })
 
 test('issue branch binding resolves own and inherited effectiveBranch', () => {
-  const sqlite = new Database(':memory:')
-  applyMigration(sqlite)
+  const sqlite = migratedDatabase()
   const store = createSqliteIssueStore(sqlite, 'acme/widgets')
 
   const parent = store.createIssue({
@@ -408,7 +363,7 @@ test('issue branch binding resolves own and inherited effectiveBranch', () => {
 
   const childTask = buildIssueRunTask(
     store.getIssue(child.id)!,
-    store.getIssue(parent.id)!,
+    store.getIssue(parent.id),
   )
   expect(childTask).toContain('Branch: feat/parent')
 
@@ -424,8 +379,7 @@ test('issue branch binding resolves own and inherited effectiveBranch', () => {
 })
 
 test('issue store retains createdBy for account and agent creators', () => {
-  const sqlite = new Database(':memory:')
-  applyMigration(sqlite)
+  const sqlite = migratedDatabase()
   sqlite
     .prepare(
       `INSERT INTO issue (
@@ -495,8 +449,7 @@ const taskIssue = (overrides: Partial<Issue> = {}): Issue => ({
 })
 
 test('updateIssue rejects In review and Done while a direct child is open', () => {
-  const sqlite = new Database(':memory:')
-  applyMigration(sqlite)
+  const sqlite = migratedDatabase()
   const store = createSqliteIssueStore(sqlite)
   const parent = store.createIssue({
     id: 'parent',

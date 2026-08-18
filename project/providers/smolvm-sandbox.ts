@@ -265,6 +265,7 @@ export type SmolvmMachineControl = {
   listMachines(): Promise<SmolvmMachineStatus[]>;
   nukeMachine(id: string): Promise<boolean>;
   machineLogs(id: string): Promise<SmolvmMachineLogs | undefined>;
+  execMachine(id: string, command: string): Promise<ExecutionResult | undefined>;
 };
 
 /** The per-machine facts `smolvm machine ls` cannot report. */
@@ -522,6 +523,26 @@ export function createSmolvmSandboxProvider(
           },
         ],
       };
+    },
+
+    async execMachine(id, command) {
+      const result = await run([
+        "smolvm",
+        "machine",
+        "exec",
+        "--stream",
+        "--name",
+        id,
+        "--workdir",
+        "/work",
+        "--",
+        "sh",
+        "-lc",
+        command,
+      ]);
+      if (smolvmAlreadyGone(`${result.stdout}\n${result.stderr}`))
+        return undefined;
+      return result;
     },
 
     async create(spec) {

@@ -10,7 +10,9 @@ test('admin can save, link, and clear workspace connections over HTTP', async ()
   process.env.BETTER_AUTH_SECRET = 'test-secret'
   try {
     const sqlite = migratedDatabase()
-    sqlite.query('INSERT INTO user (id) VALUES (?)').run('admin')
+    sqlite
+      .query('INSERT INTO user (id, name, email) VALUES (?, ?, ?)')
+      .run('admin', 'Admin', 'admin@example.com')
     const connections = createWorkspaceConnections(sqlite)
     const handler = createAdmissionHttpHandler({
       store: createAdmissionStore(sqlite),

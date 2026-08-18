@@ -1,4 +1,4 @@
-import { migratedDatabase } from '#/server/test-db'
+import { migratedDatabase, seedAccounts } from '#/server/test-db'
 import { expect, test } from 'bun:test'
 import { clampNormalized, createSqliteBulletinStore } from './bulletin-store'
 
@@ -12,10 +12,7 @@ test('clampNormalized keeps values in unit interval', () => {
 
 test('bulletin store creates, updates, moves, and deletes', () => {
   const sqlite = migratedDatabase()
-  sqlite.exec(`
-    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
-    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
-  `)
+  seedAccounts(sqlite, ['ada', 'grace'])
   const store = createSqliteBulletinStore(sqlite)
 
   const created = store.createBulletin({
@@ -49,10 +46,7 @@ test('bulletin store creates, updates, moves, and deletes', () => {
 
 test('bulletin poll records, replaces, and retracts votes', () => {
   const sqlite = migratedDatabase()
-  sqlite.exec(`
-    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
-    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
-  `)
+  seedAccounts(sqlite, ['ada', 'grace'])
   const store = createSqliteBulletinStore(sqlite)
 
   store.createBulletin({
