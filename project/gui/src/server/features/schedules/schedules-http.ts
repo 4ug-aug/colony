@@ -12,6 +12,10 @@ import {
   ScheduleActiveRunError,
   type ScheduleRunner,
 } from './schedule-runner'
+import {
+  overlayLivePreparation,
+  type RunSummary,
+} from '#/server/features/runs/run-control'
 import { json, readBody } from '#/server/http/respond'
 
 export function createSchedulesHttp(deps: {
@@ -19,6 +23,7 @@ export function createSchedulesHttp(deps: {
   scheduleRunner?: ScheduleRunner
   agentDefinitions: () => AgentDefinitionSummary[]
   broadcastWorkspace: (message: WorkspaceServerMessage) => void
+  liveRun?: (id: string) => RunSummary | undefined
 }): (
   request: Request,
   url: URL,
@@ -179,11 +184,15 @@ export function createSchedulesHttp(deps: {
       if (!deps.scheduleStore.getSchedule(runsRoute[1]!))
         return json({ error: 'Schedule not found' }, 404)
       try {
+        const page = deps.scheduleStore.listRuns(runsRoute[1]!, {
+          limit: Number(url.searchParams.get('limit') ?? 50),
+          cursor: url.searchParams.get('cursor') ?? undefined,
+        })
         return json({
-          ...deps.scheduleStore.listRuns(runsRoute[1]!, {
-            limit: Number(url.searchParams.get('limit') ?? 50),
-            cursor: url.searchParams.get('cursor') ?? undefined,
-          }),
+          ...page,
+          runs: page.runs.map((run) =>
+            overlayLivePreparation(run, deps.liveRun?.(run.id)),
+          ),
         })
       } catch (error) {
         return json(
@@ -223,7 +232,9 @@ export function createSchedulesHttp(deps: {
     if (scheduleRunRoute && request.method === 'GET') {
       const run = deps.scheduleStore.getRun(scheduleRunRoute[1]!)
       return run
-        ? json({ run })
+        ? json({
+            run: overlayLivePreparation(run, deps.liveRun?.(run.id)),
+          })
         : json({ error: 'Run not found' }, 404)
     }
     const scheduleRunCancel = url.pathname.match(

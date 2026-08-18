@@ -28,3 +28,7 @@ Use the standard triage vocabulary. See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 This is a single-context repository. See `docs/agents/domain.md`.
+
+### Design
+
+UI work follows the Colony styleguide. See `docs/design/styleguide.md`.

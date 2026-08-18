@@ -1,3 +1,5 @@
+import type { LiveRunFacts } from '#/server/features/runs/run-control'
+
 export type AgentDefinition = {
   id: string
   name: string
@@ -35,4 +37,4 @@ export type ScheduleRun = {
   createdAt: number
   completedAt?: number
   error?: string
-}
+} & Partial<LiveRunFacts>

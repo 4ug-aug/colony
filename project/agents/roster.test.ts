@@ -805,7 +805,9 @@ test("Grill-linked runs grant Grill tools and read-only workspace Docs", async (
     grantContext: { grillId: "grill-1" },
   });
   const run = executor.getRun(id)!;
-  expect(run.definition.instructions).toContain("You are leading a Grill.");
+  expect(run.definition.instructions).toContain(
+    "You are leading a Grilling session.",
+  );
   expect(run.definition.instructions).not.toContain("Room");
   expect(run.capabilityGrant?.tools).toEqual([
     "workspace.list_docs",

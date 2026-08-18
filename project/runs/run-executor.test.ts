@@ -102,9 +102,11 @@ test("publishes bounded output while a run is active", async () => {
   const id = executor.startRun({ agentDefinitionId: "test-agent", task: "stream" });
   await waitFor(() => executor.getRun(id)?.stdout === "working");
   expect(executor.getRun(id)?.state).toBe("running");
+  expect(executor.getRun(id)?.sandboxId).toBe("sandbox");
   release();
   await waitFor(() => executor.getRun(id)?.state === "succeeded");
   expect(executor.getRun(id)?.stdout).toBe("working done");
+  expect(executor.getRun(id)?.sandboxId).toBeUndefined();
 });
 
 test("successful workspace runs retain bounded tails and clean resources", async () => {
@@ -983,3 +985,74 @@ test("Git-workspace Preview publishes waiting on and preparation", async () => {
   );
 });
 
+
+test("a Git workspace tells the person its repository, base commit, and branch", async () => {
+  let instructions: string | undefined;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    inputs: {
+      prepare: async () => ({
+        workspace: { ...gitWorkspace, dispose: async () => {} },
+      }),
+    },
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async (_sandbox, request) => {
+        instructions = request.definition.instructions;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    createId: () => "run-workspace-facts",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "fix the bug",
+  });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(instructions).toContain("acme/app");
+  expect(instructions).toContain("upstream commit main");
+  expect(instructions).toContain("local branch sweat/run");
+  expect(instructions).toContain("committed as abc123");
+  // The stored definition keeps the role's own instructions.
+  expect(executor.getRun(id)?.definition.instructions).not.toContain("acme/app");
+});
+
+test("a run without a Git checkout is told nothing about a repository", async () => {
+  let instructions: string | undefined;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    inputs: {
+      prepare: async () => ({
+        workspace: { path: "/tmp/work", dispose: async () => {} },
+      }),
+    },
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async (_sandbox, request) => {
+        instructions = request.definition.instructions;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    createId: () => "run-no-checkout",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "fix the bug",
+  });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(instructions).not.toContain("Workspace: the Git repository");
+});

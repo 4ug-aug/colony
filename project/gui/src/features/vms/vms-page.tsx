@@ -208,57 +208,87 @@ function NukeMachineButton({
   )
 }
 
-function MachinePreview({
+/** Preview, or why there isn't one yet. Both surfaces fill their own frame. */
+function MachinePreviewBody({
   machine,
-  fill,
+  iframeClassName,
 }: {
   machine: Machine
-  fill?: boolean
+  iframeClassName: string
 }) {
-  const frame = (
-    <div
-      className={
-        fill
-          ? 'relative size-full min-h-0 overflow-hidden bg-background'
-          : 'relative aspect-video overflow-hidden rounded-md bg-background shadow-sm ring-1 ring-foreground/10'
-      }
-    >
-      {machine.previewError ? (
-        <div
-          className="absolute inset-0 flex flex-col gap-2 overflow-hidden p-4"
-          role="alert"
-        >
-          <p className="flex items-center gap-2 text-sm font-medium text-destructive">
-            <CircleX className="size-4 shrink-0" />
-            Preview failed
-          </p>
-          <pre className="min-h-0 flex-1 overflow-auto text-xs leading-5 whitespace-pre-wrap text-destructive/90">
-            {machine.previewError}
-          </pre>
-        </div>
-      ) : machine.previewUrl && machine.previewReady ? (
-        <iframe
-          key={machine.previewUrl}
-          src={previewIframeSrc(machine.previewUrl, window.location.hostname)}
-          title={`${machine.id} Preview`}
-          className="absolute inset-0 size-full bg-white"
-          sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
-        />
-      ) : machine.previewUrl ? (
-        <div
-          className="absolute inset-0 grid place-items-center bg-muted/50"
-          role="status"
-        >
-          <BrailleLoader text="Waiting for Preview" />
-        </div>
-      ) : (
-        <div className="absolute inset-0 grid place-items-center bg-muted/50">
-          <p className="text-sm text-muted-foreground">No Preview</p>
-        </div>
-      )}
+  if (machine.previewError)
+    return (
+      <div
+        className="absolute inset-0 flex flex-col gap-2 overflow-hidden p-4"
+        role="alert"
+      >
+        <p className="flex items-center gap-2 text-sm font-medium text-destructive">
+          <CircleX className="size-4 shrink-0" />
+          Preview failed
+        </p>
+        <pre className="min-h-0 flex-1 overflow-auto text-xs leading-5 whitespace-pre-wrap text-destructive/90">
+          {machine.previewError}
+        </pre>
+      </div>
+    )
+  if (machine.previewUrl && machine.previewReady)
+    return (
+      <iframe
+        key={machine.previewUrl}
+        src={previewIframeSrc(machine.previewUrl, window.location.hostname)}
+        title={`${machine.id} Preview`}
+        className={iframeClassName}
+        sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
+      />
+    )
+  if (machine.previewUrl)
+    return (
+      <div
+        className="absolute inset-0 grid place-items-center bg-muted/50"
+        role="status"
+      >
+        <BrailleLoader text="Waiting for Preview" />
+      </div>
+    )
+  return (
+    <div className="absolute inset-0 grid place-items-center bg-muted/50">
+      <p className="text-sm text-muted-foreground">No Preview</p>
     </div>
   )
-  return fill ? frame : <div className="px-3">{frame}</div>
+}
+
+function MachinePreviewFill({ machine }: { machine: Machine }) {
+  return (
+    <div className="relative size-full min-h-0 overflow-hidden bg-background">
+      <MachinePreviewBody
+        machine={machine}
+        iframeClassName="absolute inset-0 size-full bg-white"
+      />
+    </div>
+  )
+}
+
+/**
+ * Card thumbnail. The iframe renders at a 1280x800 desktop viewport and is
+ * scaled to the card, so Preview is shown zoomed out rather than cropped.
+ * Length / length: `scale()` needs a number, and `100cqi / 1280px` is one.
+ */
+function MachinePreviewThumbnail({ machine }: { machine: Machine }) {
+  return (
+    <div className="px-3">
+      <div className="@container relative aspect-[16/10] overflow-hidden rounded-md bg-background shadow-sm ring-1 ring-foreground/10">
+        <MachinePreviewBody
+          machine={machine}
+          iframeClassName="pointer-events-none absolute top-0 left-0 h-[800px] w-[1280px] origin-top-left [transform:scale(calc(100cqi/1280px))] bg-white"
+        />
+        <div className="pointer-events-none absolute inset-0 grid place-items-center transition-colors group-hover/card:bg-background/40">
+          <span className="rounded-md bg-background/90 px-2 py-1 text-xs font-medium opacity-0 shadow-sm ring-1 ring-foreground/10 transition-opacity group-hover/card:opacity-100">
+            Open machine
+          </span>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function MachineConsole({ id }: { id: string }) {
@@ -371,7 +401,7 @@ function MachineDetail({ machine }: { machine: Machine }) {
   return (
     <div className="flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 basis-3/5">
-        <MachinePreview machine={machine} fill />
+        <MachinePreviewFill machine={machine} />
       </div>
       <div className="min-h-0 min-w-0 basis-2/5 border-l">
         <MachineConsole id={machine.id} />
@@ -391,23 +421,20 @@ function MachineCard({
     <Card className="relative shadow-sm transition-shadow hover:ring-foreground/20">
       <button
         type="button"
-        className="absolute inset-0 z-0 cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className="absolute inset-0 z-10 cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         aria-label={`Open ${machine.id}`}
         onClick={onOpen}
       />
-      {machine.previewUrl && <MachinePreview machine={machine} />}
+      {machine.previewUrl && <MachinePreviewThumbnail machine={machine} />}
       <CardHeader className="relative">
         <CardTitle className="flex min-w-0 items-center gap-2">
-          <span
-            className={`size-2 shrink-0 rounded-full ${running(machine.state) ? 'bg-green-500' : 'bg-amber-500'}`}
-          />
           <span className="truncate font-mono">{machine.id}</span>
           <Badge variant={running(machine.state) ? 'success' : 'secondary'}>
             {machine.state}
           </Badge>
         </CardTitle>
         <CardDescription className="truncate">{machine.image}</CardDescription>
-        <CardAction className="relative z-10 flex gap-1">
+        <CardAction className="relative z-20 flex gap-1">
           {machine.previewUrl && (
             <Button
               size="icon-sm"
@@ -476,7 +503,7 @@ export function MachineSessionHeader({
         <ArrowLeft data-icon="inline-start" />
         Machines
       </Button>
-      <p className="max-w-xs min-w-0 break-all font-mono text-sm font-semibold">
+      <p className="min-w-0 truncate font-mono text-sm font-semibold">
         {machineId}
       </p>
       {machine && (

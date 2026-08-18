@@ -3,7 +3,7 @@ import type { SubmitEvent } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Dithering } from '@paper-design/shaders-react'
-import { CircleCheckBig, Clock, Server, Waypoints } from 'lucide-react'
+import { Box, CircleCheckBig, Clock, Waypoints } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { AccountFace, AgentAnt } from '#/components/avatar'
 import { useTheme } from '#/components/theme-provider'
@@ -596,7 +596,7 @@ export function AccountSettingsPage({
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogMedia>
-                            <Server />
+                            <Box />
                           </AlertDialogMedia>
                           <AlertDialogTitle>Change server?</AlertDialogTitle>
                           <AlertDialogDescription>

@@ -22,12 +22,14 @@ export function IssuesPage({
   onCreateOpenChange,
   selectedId,
   onSelectedIdChange,
+  onOpenMachine,
 }: {
   createOpen: boolean
   createStatus?: IssueStatus
   onCreateOpenChange: (open: boolean, status?: IssueStatus) => void
   selectedId?: string
   onSelectedIdChange: (id: string | undefined) => void
+  onOpenMachine?: (sandboxId: string) => void
 }) {
   const { data: session } = authClient.useSession()
   const accountId = session?.user.id
@@ -116,6 +118,7 @@ export function IssuesPage({
           onBack={() => onSelectedIdChange(undefined)}
           onOpenIssue={onSelectedIdChange}
           onAddSubIssue={(parentId) => openCreate(undefined, parentId)}
+          onOpenMachine={onOpenMachine}
         />
         <IssueCreateDialog
           open={createOpen}

@@ -38,14 +38,19 @@ function toActivityRun(run: IssueRun): ActivityRun {
     ...(run.error === undefined ? {} : { error: run.error }),
     stdout: run.stdout,
     output: run.stdout,
-    ...(run.waitingOn === undefined ? {} : { waitingOn: run.waitingOn }),
-    ...(run.preparation === undefined
-      ? {}
-      : { preparation: run.preparation }),
+    waitingOn: run.waitingOn,
+    preparation: run.preparation,
+    sandboxId: run.sandboxId,
   }
 }
 
-export function IssueLiveWork({ run }: { run: IssueRun }) {
+export function IssueLiveWork({
+  run,
+  onOpenMachine,
+}: {
+  run: IssueRun
+  onOpenMachine?: (sandboxId: string) => void
+}) {
   const {
     data: steps = [],
     isPending,
@@ -87,6 +92,7 @@ export function IssueLiveWork({ run }: { run: IssueRun }) {
         }
         onRetry={() => void refetch()}
         onCancel={() => void cancel()}
+        onOpenMachine={onOpenMachine}
       />
     </div>
   )

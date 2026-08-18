@@ -258,11 +258,13 @@ export function IssueDetailPage({
   onBack,
   onOpenIssue,
   onAddSubIssue,
+  onOpenMachine,
 }: {
   issueId: string
   onBack: () => void
   onOpenIssue: (issueId: string) => void
   onAddSubIssue: (parentId: string) => void
+  onOpenMachine?: (sandboxId: string) => void
 }) {
   const { issue, isPending, isError, error } = useIssue(issueId)
   const { data: issues = [] } = useIssues()
@@ -413,7 +415,10 @@ export function IssueDetailPage({
               </TabsContent>
               <TabsContent value="live-work">
                 {liveWorkRun ? (
-                  <IssueLiveWork run={liveWorkRun} />
+                  <IssueLiveWork
+                    run={liveWorkRun}
+                    onOpenMachine={onOpenMachine}
+                  />
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     No runs yet. Start a run from the sidebar to watch live

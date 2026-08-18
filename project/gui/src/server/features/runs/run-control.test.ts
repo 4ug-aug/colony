@@ -193,13 +193,14 @@ test('passes Issue mergeRevisions on grantContext', () => {
   })
 })
 
-test('overlayLivePreparation copies waiting on and preparation from the live run', () => {
+test('overlayLivePreparation copies waiting on, preparation, and sandbox id from the live run', () => {
   expect(
     overlayLivePreparation(
       { id: 'run-1', state: 'preparing' },
       {
         waitingOn: 'Creating sandbox',
         preparation: ['Prepared workspace'],
+        sandboxId: 'sandbox-1',
       },
     ),
   ).toEqual({
@@ -207,6 +208,7 @@ test('overlayLivePreparation copies waiting on and preparation from the live run
     state: 'preparing',
     waitingOn: 'Creating sandbox',
     preparation: ['Prepared workspace'],
+    sandboxId: 'sandbox-1',
   })
   expect(
     overlayLivePreparation({ id: 'run-1', state: 'running' }, undefined),

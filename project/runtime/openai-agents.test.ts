@@ -611,6 +611,21 @@ test("the runtime allows a coding task to exceed the SDK's ten-turn default", as
   expect(calls).toBe(12);
 });
 
+/**
+ * The agents SDK reports MCP connection failures straight to `console.error`
+ * before rethrowing, and its logger has no off switch. Keeps an expected
+ * failure from printing a stack trace over passing test output.
+ */
+async function quietly<T>(body: () => Promise<T>): Promise<T> {
+  const error = console.error;
+  console.error = () => {};
+  try {
+    return await body();
+  } finally {
+    console.error = error;
+  }
+}
+
 test("the runtime fails when its capability server is unreachable", async () => {
   let modelCalls = 0;
   const client = new OpenAI({
@@ -633,26 +648,28 @@ test("the runtime fails when its capability server is unreachable", async () => 
     },
   });
 
-  await expect(runAgent(
-    {
-      task: "Read the issue.",
-      instructions: "Use tools when needed.",
-      agentId: "software-engineer",
-      model: {
-        baseUrl: "https://models.example/v1",
-        apiKey: "test-key",
-        model: "test-model",
+  await quietly(() =>
+    expect(runAgent(
+      {
+        task: "Read the issue.",
+        instructions: "Use tools when needed.",
+        agentId: "software-engineer",
+        model: {
+          baseUrl: "https://models.example/v1",
+          apiKey: "test-key",
+          model: "test-model",
+        },
+        capabilitySession: {
+          url: "http://127.0.0.1:1/mcp",
+          token: "test-token",
+          expiresAt: new Date(Date.now() + 60_000),
+          allowedTools: ["get_issue"],
+          revoke: () => {},
+        },
       },
-      capabilitySession: {
-        url: "http://127.0.0.1:1/mcp",
-        token: "test-token",
-        expiresAt: new Date(Date.now() + 60_000),
-        allowedTools: ["get_issue"],
-        revoke: () => {},
-      },
-    },
-    { model: new OpenAIChatCompletionsModel(client, "test-model") },
-  )).rejects.toThrow();
+      { model: new OpenAIChatCompletionsModel(client, "test-model") },
+    )).rejects.toThrow()
+  );
   expect(modelCalls).toBe(0);
 });
 

@@ -36,6 +36,7 @@ export type ActivityRun = {
   attribution?: string
   waitingOn?: string
   preparation?: readonly string[]
+  sandboxId?: string
 }
 export type TriggerMessage = { author: Person; text: string }
 
@@ -75,6 +76,7 @@ export function RunActivityContent({
   onRetry,
   onClose,
   onCancel,
+  onOpenMachine,
   attribution,
 }: {
   run: ActivityRun
@@ -85,6 +87,7 @@ export function RunActivityContent({
   onRetry: () => void
   onClose?: () => void
   onCancel: () => void
+  onOpenMachine?: (sandboxId: string) => void
   attribution?: string
 }) {
   const { data: agents = [] } = useAgentDefinitions()
@@ -94,6 +97,7 @@ export function RunActivityContent({
   const scrollRef = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
   const followLive = useRef(!terminal(run.state))
+  const sandboxId = run.sandboxId
   const groups = useMemo(() => groupActivity(pairSteps(steps)), [steps])
   const latest = steps.at(-1)
   const status =
@@ -128,6 +132,11 @@ export function RunActivityContent({
         skills={skills}
         onClose={onClose}
         onCancel={onCancel}
+        onOpenMachine={
+          onOpenMachine && sandboxId
+            ? () => onOpenMachine(sandboxId)
+            : undefined
+        }
       />
       <div
         ref={scrollRef}
@@ -262,6 +271,7 @@ export function RunActivityRail({
   liveSteps,
   onClose,
   onCancel,
+  onOpenMachine,
   stepsPath,
   variant = 'rail',
   exiting = false,
@@ -272,6 +282,7 @@ export function RunActivityRail({
   liveSteps: Step[]
   onClose: () => void
   onCancel: () => void
+  onOpenMachine?: (sandboxId: string) => void
   stepsPath?: string
   variant?: 'rail' | 'inline'
   /** Playing the exit transition before the next surface enters (never stacked). */
@@ -328,6 +339,7 @@ export function RunActivityRail({
       onRetry={() => setReload((value) => value + 1)}
       onClose={variant === 'inline' ? undefined : onClose}
       onCancel={onCancel}
+      onOpenMachine={onOpenMachine}
       attribution={run.attribution}
     />
   )

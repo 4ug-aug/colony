@@ -1,5 +1,5 @@
 import { Dithering } from '@paper-design/shaders-react'
-import { X } from 'lucide-react'
+import { Box, X } from 'lucide-react'
 import { ProviderIcon } from '#/components/provider-icon'
 import { useTheme } from '#/components/theme-provider'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
@@ -59,6 +59,7 @@ export function RunActivitySplitHeader({
   skills = [],
   onClose,
   onCancel,
+  onOpenMachine,
 }: {
   agent: string
   provider: RuntimeProvider
@@ -68,6 +69,7 @@ export function RunActivitySplitHeader({
   skills?: readonly { name: string; description: string }[]
   onClose?: () => void
   onCancel: () => void
+  onOpenMachine?: () => void
 }) {
   return (
     <header className="shrink-0 border-b p-3">
@@ -90,6 +92,17 @@ export function RunActivitySplitHeader({
               </p>
             )}
           </div>
+          {onOpenMachine ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={onOpenMachine}
+            >
+              <Box data-icon="inline-start" />
+              Machine
+            </Button>
+          ) : null}
           {!terminal(state) && (
             <Button type="button" variant="ghost" size="xs" onClick={onCancel}>
               Cancel

@@ -988,6 +988,7 @@ export function createCoordinator(options: {
         scheduleRunner,
         agentDefinitions,
         broadcastWorkspace,
+        liveRun: (id) => options.control.getRun(id),
       })
     : undefined
   const issuesHttp = options.issueStore

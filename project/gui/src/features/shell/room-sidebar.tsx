@@ -74,7 +74,7 @@ import {
   StickyNote,
   ScrollText,
   Settings,
-  Server,
+  Box,
   Trash2,
 } from 'lucide-react'
 import type { ReactNode, SubmitEvent } from 'react'
@@ -671,7 +671,7 @@ export function RoomSidebar({
                     isActive={view === 'vms'}
                     onClick={onOpenVms}
                   >
-                    <Server />
+                    <Box />
                     <span>Machines</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

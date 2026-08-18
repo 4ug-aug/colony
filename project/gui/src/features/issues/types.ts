@@ -1,12 +1,17 @@
+import type { LiveRunFacts } from '#/server/features/runs/run-control'
+import type { IssueRun as StoredIssueRun } from '#/server/features/issues/issue-model'
+
 export type {
   Issue,
   IssueActor,
   IssueChild,
   IssueOwner,
   IssuePriority,
-  IssueRun,
   IssueStatus,
 } from '#/server/features/issues/issue-model'
+
+/** As served: the stored run plus whatever the executor is live-overlaying. */
+export type IssueRun = StoredIssueRun & Partial<LiveRunFacts>
 export {
   ISSUE_PRIORITIES,
   ISSUE_STATUSES,

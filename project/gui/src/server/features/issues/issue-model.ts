@@ -82,8 +82,6 @@ export type IssueRun = {
   error?: string
   stdout: string
   stderr: string
-  waitingOn?: string
-  preparation?: readonly string[]
 }
 
 export function formatIssueId(number: number): string {

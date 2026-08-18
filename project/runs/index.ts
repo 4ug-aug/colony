@@ -11,8 +11,23 @@ import type {
     SandboxSpec,
 } from "../sandboxes";
 import { commandFailure } from "../sandboxes";
+import type { WorkspaceCheckout } from "./environment";
+import { instructionsForEnvironment } from "./environment";
 
 const snapshot = <T>(value: T): T => structuredClone(value);
+
+/**
+ * Environment facts a person cannot read off its definition. Known only once
+ * inputs are prepared, so they ride the dispatched definition rather than the
+ * role, and never reach the stored one.
+ */
+const withEnvironment = <Definition extends { instructions: string }>(
+  definition: Definition,
+  workspace: PreparedWorkspace | undefined,
+): Definition => ({
+  ...definition,
+  instructions: `${definition.instructions}\n\n${instructionsForEnvironment(workspace?.git)}`,
+});
 
 export type { Step, StepKind } from "../runtime/step";
 
@@ -68,6 +83,8 @@ export interface RunRecord<Input extends RunInput = RunInput> {
   waitingOn?: string;
   /** Finished waiting-on work, kept after the run is `running`. */
   preparation?: readonly string[];
+  /** Live sandbox id while the sandbox exists, including Preview grace. */
+  sandboxId?: string;
 }
 
 export interface RunStore<Input extends RunInput = RunInput> {
@@ -182,12 +199,7 @@ export interface PreparedInputs {
 export interface PreparedWorkspace {
   path: string;
   dispose(): Promise<void>;
-  git?: {
-    repository: string;
-    baseRevision: string;
-    baseCommit: string;
-    branch: string;
-  };
+  git?: WorkspaceCheckout;
 }
 
 export interface InputProvisioner<Input extends RunInput> {
@@ -297,6 +309,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     if (session) await attempt(() => session.dispose());
     if (sandbox) {
       sandboxes.delete(id);
+      if (store.get(id)?.sandboxId) store.update(id, { sandboxId: undefined });
       await attempt(() => disposeSandbox(id, sandbox));
     }
     if (workspace) await attempt(() => workspace.dispose());
@@ -454,6 +467,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       };
       sandbox = await sandboxFor(record.definition).create(spec);
       sandboxes.set(record.id, sandbox);
+      store.update(record.id, { sandboxId: sandbox.id });
       if (cancellation.has(record.id)) return;
       capabilitySession = record.capabilityGrant
         ? await dependencies.capabilities?.create(record.capabilityGrant, {
@@ -472,7 +486,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         waitingOn: undefined,
       });
       const baseRequest = bindTurnHandlers(record, {
-        definition: snapshot(record.definition),
+        definition: withEnvironment(snapshot(record.definition), workspace),
         ...(workspace ? { workspace: "/work" } : {}),
         ...(capabilitySession ? { capabilitySession } : {}),
       });
@@ -567,6 +581,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       };
       sandbox = await sandboxFor(record.definition).create(spec);
       sandboxes.set(record.id, sandbox);
+      store.update(record.id, { sandboxId: sandbox.id });
       if (cancellation.has(record.id)) return;
       capabilitySession = record.capabilityGrant
         ? await dependencies.capabilities?.create(record.capabilityGrant, { workspace, sandbox, grantContext: record.grantContext })
@@ -638,7 +653,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         let stepCount = 0;
         let stepsTruncated = false;
         const runtime = dependencies.runtime.run(sandbox, {
-          definition: snapshot(record.definition),
+          definition: withEnvironment(snapshot(record.definition), workspace),
           task,
           ...(workspace ? { workspace: "/work" } : {}),
           ...(capabilitySession ? { capabilitySession } : {}),

@@ -1,4 +1,5 @@
 import type { Step } from '#/features/runs/step-label'
+import type { LiveRunFacts } from '#/server/features/runs/run-control'
 
 export type Author = {
   id: string
@@ -92,9 +93,7 @@ export type RoomRun = {
   error?: string
   stdout: string
   output?: string
-  waitingOn?: string
-  preparation?: readonly string[]
-}
+} & Partial<LiveRunFacts>
 export type RoomHistoryPage = {
   messages: RoomMessage[]
   runs: RoomRun[]

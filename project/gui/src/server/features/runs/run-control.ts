@@ -22,21 +22,33 @@ export type RunSummary = Pick<
   | 'preview'
   | 'waitingOn'
   | 'preparation'
+  | 'sandboxId'
 > & {
   agentId: string
   provider: RunProvider
   model: string
 }
 
+/**
+ * Run facts that live only in the executor, never in a store. Stored models do
+ * not declare them; `overlayLivePreparation` adds them to the response instead.
+ */
+export type LiveRunFacts = Pick<
+  RunSummary,
+  'waitingOn' | 'preparation' | 'sandboxId'
+>
+
 export function overlayLivePreparation<T extends { id: string }>(
   run: T,
-  live?: Pick<RunSummary, 'waitingOn' | 'preparation'>,
-): T {
-  if (!live?.waitingOn && !live?.preparation?.length) return run
+  live?: LiveRunFacts,
+): T & Partial<LiveRunFacts> {
+  if (!live?.waitingOn && !live?.preparation?.length && !live?.sandboxId)
+    return run
   return {
     ...run,
     ...(live.waitingOn !== undefined ? { waitingOn: live.waitingOn } : {}),
     ...(live.preparation?.length ? { preparation: live.preparation } : {}),
+    ...(live.sandboxId ? { sandboxId: live.sandboxId } : {}),
   }
 }
 
@@ -92,9 +104,7 @@ export interface RunControl {
   stop(): Promise<void>
 }
 
-function runSummary<Input extends RunInput>(
-  run: RunRecord<Input>,
-): RunSummary {
+function runSummary<Input extends RunInput>(run: RunRecord<Input>): RunSummary {
   const {
     id,
     task,
@@ -110,6 +120,7 @@ function runSummary<Input extends RunInput>(
     preview,
     waitingOn,
     preparation,
+    sandboxId,
     definition: { id: agentId },
   } = run
   const runtime = run.definition.runtime
@@ -129,6 +140,7 @@ function runSummary<Input extends RunInput>(
     ...(preview ? { preview } : {}),
     ...(waitingOn ? { waitingOn } : {}),
     ...(preparation?.length ? { preparation } : {}),
+    ...(sandboxId ? { sandboxId } : {}),
     agentId,
     provider:
       kind === 'cursor'

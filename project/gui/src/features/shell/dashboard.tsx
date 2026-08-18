@@ -42,13 +42,14 @@ import { useRooms } from '#/features/rooms/use-rooms'
 import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
 import { SchedulesPage } from '#/features/schedules/schedules-page'
-import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
 import { MachineSessionHeader, VmsPage } from '#/features/vms/vms-page'
+import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import {
   ArrowDown,
+  Box,
   CalendarClock,
   Cuboid,
   FileText,
@@ -57,7 +58,6 @@ import {
   Lock,
   Plus,
   Settings,
-  Server,
   StickyNote,
   Wifi,
   WifiOff,
@@ -195,6 +195,10 @@ export function Dashboard({
       ...(next === 'room' && room ? { id: room.id } : {}),
     })
   }
+  const openMachine =
+    user.role === 'admin'
+      ? (sandboxId: string) => navigate({ view: 'vms', id: sandboxId })
+      : undefined
   const openDoc = (docId: string) => {
     navigate({ view: 'docs', id: docId })
   }
@@ -477,7 +481,7 @@ export function Dashboard({
                 ) : view === 'grills' ? (
                   <Flame className="size-4 text-muted-foreground" />
                 ) : view === 'vms' ? (
-                  <Server className="size-4 text-muted-foreground" />
+                  <Box className="size-4 text-muted-foreground" />
                 ) : room?.visibility === 'private' ? (
                   <Lock className="size-4 text-muted-foreground" />
                 ) : (
@@ -564,7 +568,7 @@ export function Dashboard({
             <WorkspaceSettingsPage currentUserId={user.id} />
           </div>
         )}
-        {view === 'schedules' && <SchedulesPage />}
+        {view === 'schedules' && <SchedulesPage onOpenMachine={openMachine} />}
         {view === 'issues' && (
           <IssuesPage
             createOpen={issueCreate.open}
@@ -576,6 +580,7 @@ export function Dashboard({
             onSelectedIdChange={(id) =>
               navigate({ view: 'issues', ...(id ? { id } : {}) })
             }
+            onOpenMachine={openMachine}
           />
         )}
         {view === 'bulletins' && (
@@ -788,6 +793,7 @@ export function Dashboard({
                 liveSteps={liveStepsByRun.get(activeRun.id) ?? []}
                 onClose={closeSideSurface}
                 onCancel={() => void cancel(activeRun.id)}
+                onOpenMachine={openMachine}
                 exiting={surfaceExiting}
                 onExited={() => setTransition(finishThreadExit)}
               />

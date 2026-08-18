@@ -56,7 +56,11 @@ const runBadgeVariant = (state: string) =>
 const errorMessage = (reason: unknown) =>
   reason instanceof Error ? reason.message : 'Please try again.'
 
-export function SchedulesPage() {
+export function SchedulesPage({
+  onOpenMachine,
+}: {
+  onOpenMachine?: (sandboxId: string) => void
+}) {
   const {
     schedules,
     agents,
@@ -501,6 +505,7 @@ export function SchedulesPage() {
               selectedSchedule.name,
             )
           }
+          onOpenMachine={onOpenMachine}
         />
       )}
     </div>
