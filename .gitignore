@@ -18,6 +18,7 @@ node_modules/
 skills-lock.json
 attachments/
 project/gui/skills/
+.scratch/
 
 .sqlite*
 
