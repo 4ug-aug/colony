@@ -224,7 +224,8 @@ const MAX_STEP_TEXT_BYTES = 16 * 1024;
 
 export function createRunExecutor<Input extends RunInput = never>(dependencies: {
   definitions: AgentDefinitionResolver;
-  sandboxes: SandboxProvider;
+  /** One provider, or a choice per person — a microVM costs more than a container. */
+  sandboxes: SandboxProvider | ((definition: AgentDefinition) => SandboxProvider);
   runtime: AgentProvider;
   store?: RunStore<Input>;
   inputs?: InputProvisioner<Input>;
@@ -233,6 +234,9 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   createId?: () => string;
   now?: () => number;
 }): RunExecutor<Input> {
+  const { sandboxes: configured } = dependencies;
+  const sandboxFor: (definition: AgentDefinition) => SandboxProvider =
+    typeof configured === "function" ? configured : () => configured;
   const store: RunStore<Input> = dependencies.store ?? new InMemoryRunStore<Input>();
   const createId = dependencies.createId ?? (() => crypto.randomUUID());
   const now = dependencies.now ?? Date.now;
@@ -448,7 +452,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         image: record.definition.runtime.image,
         ...(workspace ? { volumes: [`${workspace.path}:/work`] } : {}),
       };
-      sandbox = await dependencies.sandboxes.create(spec);
+      sandbox = await sandboxFor(record.definition).create(spec);
       sandboxes.set(record.id, sandbox);
       if (cancellation.has(record.id)) return;
       capabilitySession = record.capabilityGrant
@@ -561,7 +565,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
           ? { publish: { guestPort: previewConfig.guestPort } }
           : {}),
       };
-      sandbox = await dependencies.sandboxes.create(spec);
+      sandbox = await sandboxFor(record.definition).create(spec);
       sandboxes.set(record.id, sandbox);
       if (cancellation.has(record.id)) return;
       capabilitySession = record.capabilityGrant

@@ -17,6 +17,8 @@ import {
 } from "@clack/prompts";
 
 export type SandboxProvider = "apple-container" | "docker" | "smolvm";
+/** Boots the persons that get no repository checkout; a microVM cannot. */
+export type ContainerProvider = Exclude<SandboxProvider, "smolvm">;
 
 type Integration = "github" | "linear" | "asana" | "outline";
 
@@ -128,6 +130,18 @@ export function setEnvValue(
 /** smolvm runs the same on every host, so the platform no longer decides. */
 export function defaultSandboxProvider(): SandboxProvider {
   return "smolvm";
+}
+
+export function isSandboxProvider(
+  value: string | undefined,
+): value is SandboxProvider {
+  return value === "smolvm" || isContainerProvider(value);
+}
+
+export function isContainerProvider(
+  value: string | undefined,
+): value is ContainerProvider {
+  return value === "apple-container" || value === "docker";
 }
 
 export function selectUniversalDmg(
@@ -286,35 +300,47 @@ async function configureServer(path: string): Promise<void> {
     existing("SWEAT_GUI_ORIGIN") ?? "tauri://localhost",
     (value) => (value.trim() ? undefined : "GUI origin is required"),
   );
+  const containerOptions = [
+    { value: "apple-container" as const, label: "apple-container" },
+    { value: "docker" as const, label: "docker" },
+  ];
   const existingProvider = existing("SWEAT_SANDBOX_PROVIDER");
-  const defaultProvider =
-    existingProvider === "apple-container" ||
-    existingProvider === "docker" ||
-    existingProvider === "smolvm"
-      ? existingProvider
-      : defaultSandboxProvider();
   const provider = assertNotCancelled(
     await select({
       message: "Agent sandbox",
-      options: [
-        { value: "smolvm" as const, label: "smolvm" },
-        { value: "apple-container" as const, label: "apple-container" },
-        { value: "docker" as const, label: "docker" },
-      ],
-      initialValue: defaultProvider,
+      options: [{ value: "smolvm" as const, label: "smolvm" }, ...containerOptions],
+      initialValue: isSandboxProvider(existingProvider)
+        ? existingProvider
+        : defaultSandboxProvider(),
     }),
   );
+  // Only the microVM needs a second runtime: it cannot cheaply boot a person
+  // that gets no repository checkout, so those keep booting as containers.
+  const existingContainer = existing("SWEAT_CONTAINER_PROVIDER");
+  const container: ContainerProvider =
+    provider === "smolvm"
+      ? assertNotCancelled(
+          await select({
+            message: "Sandbox for people without a repository",
+            options: containerOptions,
+            initialValue: isContainerProvider(existingContainer)
+              ? existingContainer
+              : "docker",
+          }),
+        )
+      : provider;
 
   document = setEnvValue(document, "BETTER_AUTH_SECRET", secretValue);
   document = setEnvValue(document, "BETTER_AUTH_URL", authUrl.trim());
   document = setEnvValue(document, "SWEAT_GUI_ORIGIN", guiOrigin.trim());
   document = setEnvValue(document, "SWEAT_SANDBOX_PROVIDER", provider);
+  document = setEnvValue(document, "SWEAT_CONTAINER_PROVIDER", container);
   document = setEnvValue(
     document,
     "SWEAT_AGENT_IMAGE",
     existing("SWEAT_AGENT_IMAGE") ?? defaultAgentImage,
   );
-  if (provider === "docker") {
+  if (container === "docker") {
     const configuredCaCertificate = (
       await askText(
         "Agent CA certificate bundle (optional)",
@@ -408,7 +434,11 @@ async function configureServer(path: string): Promise<void> {
   const preparing = spinner();
   preparing.start("Preparing agent runtime...");
   try {
-    const rootlessDocker = await requireRuntime(provider);
+    const rootlessDocker = (
+      await Promise.all(
+        [...new Set<SandboxProvider>([provider, container])].map(requireRuntime),
+      )
+    ).some(Boolean);
     if (rootlessDocker) {
       await configureRootlessDocker();
       document = setEnvValue(

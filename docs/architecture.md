@@ -148,6 +148,8 @@ the session when a run ends.
 - Gateway HTTP/MCP transport.
 - Run scheduler, capability-grant policy, and resource-level authorization.
 - Sub-agent scheduling and shared artifact handoff.
+- Sandbox egress allowlisting and a TLS capability endpoint (see
+  [sandbox hardening](sandbox-hardening.md)).
 
 ## Current delivered slice
 

@@ -105,20 +105,17 @@ reset-admin-password: env
 agent: env
 	@provider="$${SWEAT_SANDBOX_PROVIDER:-$$(sed -n 's/^SWEAT_SANDBOX_PROVIDER=//p' "$(ENV_FILE)" | tail -n 1)}"; \
 	provider="$${provider#\"}"; provider="$${provider%\"}"; \
+	if [ "$$provider" = smolvm ]; then \
+		provider="$${SWEAT_CONTAINER_PROVIDER:-$$(sed -n 's/^SWEAT_CONTAINER_PROVIDER=//p' "$(ENV_FILE)" | tail -n 1)}"; \
+		provider="$${provider#\"}"; provider="$${provider%\"}"; \
+	fi; \
 	case "$$provider" in \
 		apple-container) \
 			cd project && bun $(BUN_ENV) run agent:build && bun $(BUN_ENV) run agent:build:cursor ;; \
 		docker) \
 			docker build -t $(DEV_AGENT_IMAGE) project && \
 			docker build -f project/Dockerfile.cursor -t $(DEV_CURSOR_AGENT_IMAGE) project ;; \
-		smolvm) \
-			if command -v docker >/dev/null 2>&1; then \
-				docker build -t $(DEV_AGENT_IMAGE) project && \
-				docker build -f project/Dockerfile.cursor -t $(DEV_CURSOR_AGENT_IMAGE) project; \
-			else \
-				cd project && bun $(BUN_ENV) run agent:build && bun $(BUN_ENV) run agent:build:cursor; \
-			fi ;; \
-		*) echo "SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker, smolvm"; exit 2 ;; \
+		*) echo "SWEAT_CONTAINER_PROVIDER must be set to one of: apple-container, docker"; exit 2 ;; \
 	esac
 
 gui: env

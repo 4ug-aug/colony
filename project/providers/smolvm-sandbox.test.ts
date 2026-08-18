@@ -29,6 +29,33 @@ const stubMachine = (overrides: Partial<SmolMachine> = {}): SmolMachine => ({
   ...overrides,
 });
 
+type MachineRow = Partial<{
+  name: string;
+  state: string;
+  image: string;
+  created_at: number;
+  mounts: number;
+  network: boolean;
+}>;
+
+/** Stands in for the smolvm CLI, which owns the machine list the console shows. */
+const cli = (...rows: MachineRow[]) => ({
+  run: async (command: readonly string[]): Promise<ExecutionResult> =>
+    command[2] === "ls"
+      ? { exitCode: 0, stdout: JSON.stringify(rows), stderr: "" }
+      : succeeds(),
+});
+
+const row = (overrides: MachineRow = {}): MachineRow => ({
+  name: "sandbox-1",
+  state: "running",
+  image: "local:deadbeef",
+  created_at: 1_700_000_000,
+  mounts: 1,
+  network: true,
+  ...overrides,
+});
+
 test("a smolvm machine behaves as a sandbox", async () => {
   const configs: MachineConfig[] = [];
   const execs: Array<Parameters<SmolMachine["exec"]>> = [];
@@ -112,44 +139,78 @@ test("disposing a smolvm sandbox twice only removes it once", async () => {
   expect(deletes).toBe(1);
 });
 
-test("the control pane lists and nukes live machines", async () => {
+test("the control pane reports CLI state and the Colony image tag", async () => {
   let deletes = 0;
   const provider = createSmolvmSandboxProvider({
     createId: () => "sandbox-1",
     ...passthroughImage,
+    ...cli(
+      row(),
+      row({ name: "stray", state: "stopped", created_at: 1_700_000_009 }),
+    ),
     createMachine: async () =>
       stubMachine({
-        state: async () => "running",
         async delete() {
           deletes += 1;
         },
       }),
   });
 
-  const sandbox = await provider.create({
+  await provider.create({
     image: "alpine:latest",
     volumes: ["/tmp/work:/work"],
   });
 
   expect(await provider.listMachines()).toEqual([
+    // Newest first, ahead of the row the CLI happened to list first. A machine
+    // this process never created still shows up, and can be nuked.
+    expect.objectContaining({
+      id: "stray",
+      state: "stopped",
+      image: "local:deadbeef",
+    }),
     expect.objectContaining({
       id: "sandbox-1",
       state: "running",
       image: "alpine:latest",
+      createdAt: 1_700_000_000_000,
       mounts: 1,
       network: true,
     }),
   ]);
   expect(await provider.nukeMachine("sandbox-1")).toBe(true);
-  expect(await provider.listMachines()).toEqual([]);
-  await sandbox.dispose();
   expect(deletes).toBe(1);
+});
+
+test("nuking a machine this process does not own goes to the CLI", async () => {
+  const commands: string[][] = [];
+  const provider = createSmolvmSandboxProvider({
+    ...passthroughImage,
+    run: async (command) => {
+      commands.push([...command]);
+      return command.includes("ghost")
+        ? { exitCode: 1, stdout: "", stderr: "vm not found" }
+        : { exitCode: 0, stdout: "", stderr: "" };
+    },
+  });
+
+  expect(await provider.nukeMachine("stray")).toBe(true);
+  expect(await provider.nukeMachine("ghost")).toBe(false);
+  expect(commands[0]).toEqual([
+    "smolvm",
+    "machine",
+    "delete",
+    "--name",
+    "stray",
+    "-f",
+  ]);
 });
 
 test("a failed nuke leaves the machine visible for retry", async () => {
   const provider = createSmolvmSandboxProvider({
     createId: () => "sandbox-1",
     ...passthroughImage,
+    ...cli(row()),
     createMachine: async () =>
       stubMachine({
         async delete() {
@@ -162,7 +223,9 @@ test("a failed nuke leaves the machine visible for retry", async () => {
   await expect(provider.nukeMachine("sandbox-1")).rejects.toThrow(
     "still running",
   );
-  expect(await provider.listMachines()).toHaveLength(1);
+  expect(await provider.listMachines()).toEqual([
+    expect.objectContaining({ id: "sandbox-1", image: "alpine:latest" }),
+  ]);
 });
 
 function recordingProvider(execs: string[][]) {
@@ -445,6 +508,7 @@ test("a smolvm machine retains init and Preview output for the Machine console",
     allocatePort: async () => 49152,
     ...passthroughImage,
     probePreview: async () => false,
+    ...cli(row()),
     createMachine: async () =>
       stubMachine({
         async exec(command, options) {
@@ -503,6 +567,7 @@ test("a Preview command that exits is reported as a Preview error", async () => 
     allocatePort: async () => 49152,
     ...passthroughImage,
     probePreview: async () => true,
+    ...cli(row()),
     createMachine: async () =>
       stubMachine({
         async exec(command, options) {
@@ -543,6 +608,7 @@ test("a live Preview command is not an error while it is still running", async (
     allocatePort: async () => 49152,
     ...passthroughImage,
     probePreview: async (url) => url === "http://127.0.0.1:49152",
+    ...cli(row()),
     createMachine: async () =>
       stubMachine({
         async exec(command) {

@@ -30,4 +30,8 @@ COPY runtime/step.ts /app/runtime/step.ts
 COPY runtime/cursor-sdk.ts /app/runtime/cursor-sdk.ts
 COPY runtime/cursor-cli.ts /app/runtime/cursor-cli.ts
 
+# The workspace is a host bind mount, so /work keeps the host's uid while the
+# agent runs as root. Without this git refuses the repo as "dubious ownership".
+RUN git config --system --add safe.directory /work
+
 WORKDIR /work

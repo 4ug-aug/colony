@@ -1,5 +1,6 @@
 import type { ServerWebSocket } from 'bun'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { networkInterfaces } from 'node:os'
 import {
   createRunControl,
   overlayLivePreparation,
@@ -308,16 +309,65 @@ const send = (
   socket.send(JSON.stringify(message))
 }
 
-export type SandboxProviderName = 'apple-container' | 'docker' | 'smolvm'
+const CONTAINER_PROVIDERS = ['apple-container', 'docker'] as const
+const SANDBOX_PROVIDERS = [...CONTAINER_PROVIDERS, 'smolvm'] as const
+
+export type SandboxProviderName = (typeof SANDBOX_PROVIDERS)[number]
+/** A microVM cannot boot a person that gets no repository checkout cheaply. */
+export type ContainerProviderName = (typeof CONTAINER_PROVIDERS)[number]
+
+function parseProvider<Name extends SandboxProviderName>(
+  variable: string,
+  accepted: readonly Name[],
+  value: string | undefined,
+): Name {
+  const name = accepted.find((candidate) => candidate === value)
+  if (name) return name
+  throw new Error(`${variable} must be set to one of: ${accepted.join(', ')}`)
+}
 
 export function parseSandboxProvider(
   value: string | undefined,
 ): SandboxProviderName {
-  if (value === 'apple-container' || value === 'docker' || value === 'smolvm')
-    return value
-  throw new Error(
-    'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker, smolvm',
-  )
+  return parseProvider('SWEAT_SANDBOX_PROVIDER', SANDBOX_PROVIDERS, value)
+}
+
+/**
+ * Which container runtime boots the persons that get no repository. Only asked
+ * for when the sandbox provider is the microVM; otherwise it is that provider.
+ */
+/** The host's first non-loopback IPv4, which is the address a guest can route to. */
+export function hostLanAddress(
+  interfaces: NodeJS.Dict<{ family: string; internal: boolean; address: string }[]> = networkInterfaces(),
+): string | undefined {
+  return Object.values(interfaces)
+    .flatMap((addresses) => addresses ?? [])
+    .find((address) => address.family === 'IPv4' && !address.internal)?.address
+}
+
+/**
+ * Where a sandbox guest reaches this coordinator's capability endpoint.
+ * `host.container.internal` is a container DNS name that does not resolve
+ * inside a microVM, and smolvm's own gateway address depends on a network
+ * backend that publishing a Preview port silently switches. The host's LAN
+ * address is the one route every sandbox kind can take.
+ */
+export function capabilityHost(
+  configured: string | undefined,
+  sandbox: SandboxProviderName,
+  lanAddress: string | undefined,
+): string {
+  if (configured) return configured
+  if (sandbox === 'smolvm' && lanAddress) return `http://${lanAddress}`
+  return 'http://host.container.internal'
+}
+
+export function parseContainerProvider(
+  value: string | undefined,
+  sandbox: SandboxProviderName,
+): ContainerProviderName {
+  if (sandbox !== 'smolvm') return sandbox
+  return parseProvider('SWEAT_CONTAINER_PROVIDER', CONTAINER_PROVIDERS, value)
 }
 
 export function createCoordinator(options: {
@@ -1135,6 +1185,10 @@ if (import.meta.main) {
   const sandboxProviderName = parseSandboxProvider(
     process.env.SWEAT_SANDBOX_PROVIDER,
   )
+  const containerProviderName = parseContainerProvider(
+    process.env.SWEAT_CONTAINER_PROVIDER,
+    sandboxProviderName,
+  )
   const { fileURLToPath } = await import('node:url')
   // Load the database first: auth and the session authenticator both depend on it.
   const { migrateDatabase, sqlite } = await import('../lib/database')
@@ -1267,26 +1321,27 @@ if (import.meta.main) {
   const attachmentsDirectory = attachmentDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
   )
+  const mcpHost = capabilityHost(
+    process.env.SWEAT_MCP_HOST,
+    sandboxProviderName,
+    hostLanAddress(),
+  )
   const capabilityUrl = (u: string): string =>
-    u.replace(
-      'http://0.0.0.0',
-      process.env.SWEAT_MCP_HOST ?? 'http://host.container.internal',
-    )
+    u.replace('http://0.0.0.0', mcpHost)
   const smolvmProvider =
     sandboxProviderName === 'smolvm' ? createSmolvmSandboxProvider() : undefined
-  const sandboxProvider =
-    sandboxProviderName === 'docker'
+  const containerProvider =
+    containerProviderName === 'docker'
       ? createDockerSandboxProvider({
           ...(agentCaCertificate ? { caCertificate: agentCaCertificate } : {}),
         })
-      : smolvmProvider
-        ? smolvmProvider
-        : createAppleContainerSandboxProvider({
-            container: createAppleContainerClient(),
-          })
+      : createAppleContainerSandboxProvider({
+          container: createAppleContainerClient(),
+        })
   const control = createRunControl(
     createWorkspaceAgentsExecutor({
-      sandboxProvider,
+      sandboxProvider: smolvmProvider ?? containerProvider,
+      containerProvider,
       image: process.env.SWEAT_AGENT_IMAGE,
       cursorImage: process.env.SWEAT_CURSOR_AGENT_IMAGE,
       model: () => llm.model(),

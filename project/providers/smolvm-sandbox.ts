@@ -3,6 +3,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import type {
+  ExecRequest,
   ExecutionResult,
   OutputChunk,
   SandboxProvider,
@@ -200,7 +201,6 @@ export type SmolMachine = {
       onOutput?: (chunk: OutputChunk) => void;
     },
   ): Promise<ExecutionResult>;
-  state?(): Promise<string>;
   delete(): Promise<void>;
 };
 
@@ -211,6 +211,32 @@ export type MachineConfig = {
   mounts?: ReadonlyArray<{ source: string; target: string; readOnly: boolean }>;
   ports?: ReadonlyArray<{ host: number; guest: number }>;
 };
+
+/** The fields Colony reads off a `smolvm machine ls --json` row. */
+type MachineListEntry = { name: string } & Partial<{
+  state: string;
+  image: string;
+  created_at: number;
+  mounts: number;
+  network: boolean;
+}>;
+
+/** Newest first, then by name: the CLI's own order reshuffles between polls. */
+function parseMachineList(stdout: string): MachineListEntry[] {
+  try {
+    const rows: unknown = JSON.parse(stdout);
+    if (!Array.isArray(rows)) return [];
+    return (rows as MachineListEntry[])
+      .filter((row) => typeof row?.name === "string")
+      .sort(
+        (left, right) =>
+          (right.created_at ?? 0) - (left.created_at ?? 0) ||
+          left.name.localeCompare(right.name),
+      );
+  } catch {
+    return [];
+  }
+}
 
 export type SmolvmMachineStatus = {
   id: string;
@@ -224,7 +250,7 @@ export type SmolvmMachineStatus = {
   previewError?: string;
 };
 
-export type MachineLogChannelName = "docker" | "init" | "preview";
+export type MachineLogChannelName = NonNullable<ExecRequest["log"]> | "docker";
 
 export type MachineLogChannel = {
   name: MachineLogChannelName;
@@ -241,9 +267,14 @@ export type SmolvmMachineControl = {
   machineLogs(id: string): Promise<SmolvmMachineLogs | undefined>;
 };
 
-type ManagedMachine = Omit<SmolvmMachineStatus, "state" | "previewReady"> & {
+/** The per-machine facts `smolvm machine ls` cannot report. */
+type ManagedMachine = {
   machine: SmolMachine;
   dispose(): Promise<void>;
+  /** The Colony tag, which the CLI only knows as a `local:<digest>` archive. */
+  image: string;
+  previewUrl?: string;
+  previewError?: string;
   logs: { init?: string; preview?: string };
 };
 
@@ -279,24 +310,26 @@ function smolvmAlreadyGone(text: string): boolean {
   return /vm not found|no such machine/i.test(text);
 }
 
+/** Resolves false when the machine was already gone, true when this call removed it. */
 async function deleteSmolvmMachine(
   name: string,
   run: RunCommand,
-): Promise<void> {
+): Promise<boolean> {
   const args = ["smolvm", "machine", "delete", "--name", name, "-f"] as const;
+  const fail = (result: ExecutionResult): never => {
+    throw new Error(commandFailure(`smolvm ${args.slice(1).join(" ")}`, result));
+  };
   const result = await run(args);
   const output = `${result.stdout}\n${result.stderr}`;
-  if (result.exitCode === 0 || smolvmAlreadyGone(output)) return;
+  if (result.exitCode === 0) return true;
+  if (smolvmAlreadyGone(output)) return false;
   const leftover = leftoverVmDataDir(output);
-  if (!leftover) {
-    throw new Error(commandFailure(`smolvm ${args.slice(1).join(" ")}`, result));
-  }
+  if (!leftover) return fail(result);
   await rm(leftover, { recursive: true, force: true });
   const retry = await run(args);
-  const retryOutput = `${retry.stdout}\n${retry.stderr}`;
-  if (retry.exitCode !== 0 && !smolvmAlreadyGone(retryOutput)) {
-    throw new Error(commandFailure(`smolvm ${args.slice(1).join(" ")}`, retry));
-  }
+  if (retry.exitCode === 0) return true;
+  if (smolvmAlreadyGone(`${retry.stdout}\n${retry.stderr}`)) return false;
+  return fail(retry);
 }
 
 export async function createSmolvmMachine(
@@ -382,6 +415,7 @@ export function createSmolvmSandboxProvider(
     allocatePort?: () => Promise<number>;
     resolveImage?: (image: string) => Promise<string>;
     probePreview?: (url: string) => Promise<boolean>;
+    run?: RunCommand;
   } = {},
 ): SandboxProvider & SmolvmMachineControl {
   const createMachine = options.createMachine ?? createSmolvmMachine;
@@ -389,34 +423,51 @@ export function createSmolvmSandboxProvider(
   const allocatePort = options.allocatePort ?? allocateHostPort;
   const resolveImage = options.resolveImage ?? resolveSmolvmImage;
   const probePreview = options.probePreview ?? probePreviewUrl;
+  const run = options.run ?? runCommand;
   const machines = new Map<string, ManagedMachine>();
 
   return {
+    /**
+     * The CLI is the source of truth, so the console also shows machines this
+     * process never created — strays a crashed coordinator left behind.
+     */
     async listMachines() {
+      const listed = await run(["smolvm", "machine", "ls", "--json"]);
+      if (listed.exitCode !== 0) return [];
       return Promise.all(
-        [...machines.values()].map(
-          async ({ machine, dispose: _, logs: _logs, ...entry }) => ({
-            ...entry,
-            state: machine.state
-              ? await machine.state().catch(() => "unknown")
-              : "running",
-            ...(entry.previewUrl
+        parseMachineList(listed.stdout).map(async (entry) => {
+          const id = entry.name;
+          const managed = machines.get(id);
+          return {
+            id,
+            state: entry.state ?? "unknown",
+            image: managed?.image ?? entry.image ?? "",
+            createdAt: (entry.created_at ?? 0) * 1000,
+            mounts: entry.mounts ?? 0,
+            network: entry.network ?? false,
+            ...(managed?.previewUrl
               ? {
+                  previewUrl: managed.previewUrl,
                   previewReady:
-                    !entry.previewError &&
-                    (await probePreview(entry.previewUrl)),
+                    !managed.previewError &&
+                    (await probePreview(managed.previewUrl)),
                 }
               : {}),
-          }),
-        ),
+            ...(managed?.previewError
+              ? { previewError: managed.previewError }
+              : {}),
+          };
+        }),
       );
     },
 
     async nukeMachine(id) {
       const entry = machines.get(id);
-      if (!entry) return false;
-      await entry.dispose();
-      return true;
+      if (entry) {
+        await entry.dispose();
+        return true;
+      }
+      return deleteSmolvmMachine(id, run);
     },
 
     async machineLogs(id) {
@@ -466,14 +517,10 @@ export function createSmolvmSandboxProvider(
       };
       const logs: { init?: string; preview?: string } = {};
       const entry: ManagedMachine = {
-        id,
-        image: spec.image,
-        createdAt: Date.now(),
-        mounts: config.mounts?.length ?? 0,
-        network: config.network,
-        ...(publish ? { previewUrl: publish.url } : {}),
         machine,
         dispose,
+        image: spec.image,
+        ...(publish ? { previewUrl: publish.url } : {}),
         logs,
       };
       machines.set(id, entry);
@@ -485,15 +532,16 @@ export function createSmolvmSandboxProvider(
         async exec(request) {
           const env = envVars(request.env);
           const channel = request.log;
-          let captured = "";
+          let streamed = false;
+          const retain = (text: string): void => {
+            if (!channel || !text) return;
+            logs[channel] = tailLog(`${logs[channel] ?? ""}${text}`);
+          };
           const onOutput =
             channel || request.onOutput
               ? (chunk: OutputChunk) => {
-                  captured += chunk.text;
-                  if (channel)
-                    logs[channel] = tailLog(
-                      `${logs[channel] ?? ""}${chunk.text}`,
-                    );
+                  streamed = true;
+                  retain(chunk.text);
                   request.onOutput?.(chunk);
                 }
               : undefined;
@@ -508,10 +556,8 @@ export function createSmolvmSandboxProvider(
             }
             throw error;
           });
-          if (channel) {
-            const text = captured || `${result.stdout}${result.stderr}`;
-            if (text) logs[channel] = tailLog(text);
-          }
+          // A machine that does not stream still has output worth keeping.
+          if (!streamed) retain(`${result.stdout}${result.stderr}`);
           if (channel === "preview") {
             entry.previewError = commandFailure("Preview", {
               exitCode: result.exitCode,

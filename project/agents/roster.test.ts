@@ -874,3 +874,32 @@ test("client-safe roster presentation never reaches role instructions", async ()
   await visit(Bun.resolveSync("./roster-people.ts", import.meta.dir));
   expect(seen.size).toBeGreaterThan(1);
 });
+
+test("only people who get a repository checkout boot the microVM", async () => {
+  const booted: string[] = [];
+  const provider = (name: string) => ({
+    create: async () => {
+      booted.push(name);
+      return {
+        id: name,
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      };
+    },
+  });
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    sandboxProvider: provider("microvm"),
+    containerProvider: provider("container"),
+  });
+
+  for (const person of [SOFTWARE_ENGINEER_ID, ANTBOY_ID]) {
+    const id = executor.startRun({ task: "work", agentDefinitionId: person });
+    while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+      await Bun.sleep(0);
+    }
+  }
+
+  expect(booted).toEqual(["microvm", "container"]);
+});

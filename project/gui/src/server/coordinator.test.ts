@@ -8,6 +8,9 @@ import {
   allowedOrigin,
   createCoordinator,
   mintRealtimeTicket,
+  capabilityHost,
+  hostLanAddress,
+  parseContainerProvider,
   parseSandboxProvider,
   verifyRealtimeTicket,
   type SessionAuthenticator,
@@ -4260,5 +4263,52 @@ test('sandbox provider configuration accepts only the supported providers', () =
   )
   expect(() => parseSandboxProvider('podman')).toThrow(
     'SWEAT_SANDBOX_PROVIDER must be set to one of: apple-container, docker, smolvm',
+  )
+})
+
+test('a microVM guest is told the host LAN address, not a container DNS name', () => {
+  // host.container.internal does not resolve in a microVM, and smolvm's gateway
+  // address changes with the network backend that publishing a port switches.
+  expect(capabilityHost(undefined, 'smolvm', '192.168.1.20')).toBe(
+    'http://192.168.1.20',
+  )
+  expect(capabilityHost(undefined, 'docker', '192.168.1.20')).toBe(
+    'http://host.container.internal',
+  )
+  // An offline host has no routable address to advertise.
+  expect(capabilityHost(undefined, 'smolvm', undefined)).toBe(
+    'http://host.container.internal',
+  )
+  expect(capabilityHost('http://10.0.0.5', 'smolvm', '192.168.1.20')).toBe(
+    'http://10.0.0.5',
+  )
+})
+
+test('the advertised host address skips loopback and IPv6 interfaces', () => {
+  expect(
+    hostLanAddress({
+      lo0: [{ family: 'IPv4', internal: true, address: '127.0.0.1' }],
+      en0: [
+        { family: 'IPv6', internal: false, address: 'fe80::1' },
+        { family: 'IPv4', internal: false, address: '192.168.52.103' },
+      ],
+    }),
+  ).toBe('192.168.52.103')
+  expect(hostLanAddress({ lo0: undefined })).toBeUndefined()
+})
+
+test('a container provider is only configured when the sandbox is a microVM', () => {
+  expect(parseContainerProvider(undefined, 'docker')).toBe('docker')
+  expect(parseContainerProvider('docker', 'apple-container')).toBe(
+    'apple-container',
+  )
+  expect(parseContainerProvider('apple-container', 'smolvm')).toBe(
+    'apple-container',
+  )
+  expect(() => parseContainerProvider(undefined, 'smolvm')).toThrow(
+    'SWEAT_CONTAINER_PROVIDER must be set to one of: apple-container, docker',
+  )
+  expect(() => parseContainerProvider('smolvm', 'smolvm')).toThrow(
+    'SWEAT_CONTAINER_PROVIDER must be set to one of: apple-container, docker',
   )
 })
