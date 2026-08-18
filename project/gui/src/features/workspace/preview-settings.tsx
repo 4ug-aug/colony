@@ -118,9 +118,9 @@ function PreviewForm({
     <section className="border-b pb-4">
       <h2 className="font-semibold">Preview</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Optional init, then a long-running bring-up command for Git-workspace
-        runs. The forwarded guest port is recorded on the run and stays up for
-        the grace period after it ends.
+        Init must finish (pull, install). Preview is the long-running HTTP
+        server. Guest port must match the listen port. Docker in the VM
+        should use host networking.
       </p>
       {formError && (
         <p className="mt-2 text-sm text-destructive" role="alert">
@@ -128,36 +128,50 @@ function PreviewForm({
         </p>
       )}
       <div className="mt-4 grid max-w-xl gap-3">
-        <Input
-          aria-label="Init command"
-          disabled={busy}
-          onChange={(event) => setInitCommand(event.target.value)}
-          placeholder="npm install (optional)"
-          value={initCommand}
-        />
-        <Input
-          aria-label="Preview command"
-          disabled={busy}
-          onChange={(event) => setPreviewCommand(event.target.value)}
-          placeholder="make dev"
-          value={previewCommand}
-        />
-        <Input
-          aria-label="Guest port"
-          disabled={busy}
-          onChange={(event) => setGuestPort(event.target.value)}
-          placeholder="3000"
-          type="number"
-          value={guestPort}
-        />
-        <Input
-          aria-label="Preview grace seconds"
-          disabled={busy}
-          onChange={(event) => setGraceSeconds(event.target.value)}
-          placeholder="300"
-          type="number"
-          value={graceSeconds}
-        />
+        <label className="grid gap-1">
+          <span className="text-sm font-medium">Init command</span>
+          <span className="text-xs text-muted-foreground">
+            Optional. Runs to completion in /work before Preview starts.
+          </span>
+          <Input
+            disabled={busy}
+            onChange={(event) => setInitCommand(event.target.value)}
+            placeholder="docker pull nginx:alpine"
+            value={initCommand}
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-sm font-medium">Preview command</span>
+          <span className="text-xs text-muted-foreground">
+            Long-running. nginx on host networking listens on guest port 80.
+          </span>
+          <Input
+            disabled={busy}
+            onChange={(event) => setPreviewCommand(event.target.value)}
+            placeholder="docker run --rm --network=host nginx:alpine"
+            value={previewCommand}
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-sm font-medium">Guest port</span>
+          <Input
+            disabled={busy}
+            onChange={(event) => setGuestPort(event.target.value)}
+            placeholder="80"
+            type="number"
+            value={guestPort}
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-sm font-medium">Preview grace seconds</span>
+          <Input
+            disabled={busy}
+            onChange={(event) => setGraceSeconds(event.target.value)}
+            placeholder="300"
+            type="number"
+            value={graceSeconds}
+          />
+        </label>
         <div className="flex items-center gap-3">
           <Button disabled={busy} onClick={() => save.mutate()}>
             {save.isPending ? <BrailleLoader text="Saving" /> : 'Save Preview'}

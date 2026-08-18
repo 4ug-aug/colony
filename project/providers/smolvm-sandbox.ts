@@ -1,6 +1,5 @@
 import type { Subprocess } from "bun";
-import { mkdir } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import type {
@@ -22,32 +21,26 @@ function tailLog(text: string): string {
   return text.length <= LOG_TAIL ? text : text.slice(-LOG_TAIL);
 }
 
-/** True when the forwarded Preview host port accepts a TCP connection. */
-export function probePreviewUrl(
+/** True when the forwarded Preview URL answers HTTP, not merely TCP. */
+export async function probePreviewUrl(
   url: string,
-  timeoutMs = 250,
+  timeoutMs = 750,
 ): Promise<boolean> {
-  let parsed: URL;
   try {
-    parsed = new URL(url);
+    new URL(url);
   } catch {
-    return Promise.resolve(false);
+    return false;
   }
-  const port = Number(parsed.port);
-  if (!parsed.hostname || !Number.isFinite(port) || port <= 0)
-    return Promise.resolve(false);
-  return new Promise((resolve) => {
-    const socket = createConnection({ host: parsed.hostname, port });
-    const done = (ok: boolean) => {
-      socket.removeAllListeners();
-      socket.destroy();
-      resolve(ok);
-    };
-    socket.setTimeout(timeoutMs);
-    socket.once("connect", () => done(true));
-    socket.once("timeout", () => done(false));
-    socket.once("error", () => done(false));
-  });
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return response.status > 0;
+  } catch {
+    return false;
+  }
 }
 
 function isLocalImageSource(image: string): boolean {
@@ -176,6 +169,12 @@ export async function resolveSmolvmImage(
  * a plain agent run should not pay a daemon start plus readiness poll.
  */
 const guestDockerInit = [
+  // bun's default hardlink/clonefile backends hang on the /work bind mount.
+  "if command -v bun >/dev/null 2>&1; then",
+  "  mkdir -p /storage/bun",
+  "  printf '%s\\n' '[install]' 'backend = \"copyfile\"' 'cache = \"/storage/bun\"' > /root/.bunfig.toml",
+  "fi",
+  "echo 'precedence :ffff:0:0/96  100' >> /etc/gai.conf",
   "command -v dockerd >/dev/null 2>&1 || exit 0",
   "mkdir -p /storage/docker /var/lib/docker",
   "mount --bind /storage/docker /var/lib/docker || true",
@@ -267,6 +266,39 @@ export function smolvmCreateFlags(config: MachineConfig): string[] {
  * The SDK parses local archives as registry references and waits for Preview
  * ports before their workload starts, so Colony drives smolvm through its CLI.
  */
+function leftoverVmDataDir(text: string): string | undefined {
+  const match = text.match(
+    /delete machine data: (\/[^\n:]+): Directory not empty/,
+  );
+  const dir = match?.[1];
+  if (!dir?.includes("/smolvm/vms/") || dir.includes("..")) return undefined;
+  return dir;
+}
+
+function smolvmAlreadyGone(text: string): boolean {
+  return /vm not found|no such machine/i.test(text);
+}
+
+async function deleteSmolvmMachine(
+  name: string,
+  run: RunCommand,
+): Promise<void> {
+  const args = ["smolvm", "machine", "delete", "--name", name, "-f"] as const;
+  const result = await run(args);
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (result.exitCode === 0 || smolvmAlreadyGone(output)) return;
+  const leftover = leftoverVmDataDir(output);
+  if (!leftover) {
+    throw new Error(commandFailure(`smolvm ${args.slice(1).join(" ")}`, result));
+  }
+  await rm(leftover, { recursive: true, force: true });
+  const retry = await run(args);
+  const retryOutput = `${retry.stdout}\n${retry.stderr}`;
+  if (retry.exitCode !== 0 && !smolvmAlreadyGone(retryOutput)) {
+    throw new Error(commandFailure(`smolvm ${args.slice(1).join(" ")}`, retry));
+  }
+}
+
 export async function createSmolvmMachine(
   config: MachineConfig,
   run: RunCommand = runCommand,
@@ -292,7 +324,7 @@ export async function createSmolvmMachine(
   try {
     await smolvm("machine", "start", "--name", name);
   } catch (error) {
-    await run(["smolvm", "machine", "delete", "--name", name, "-f"]);
+    await deleteSmolvmMachine(name, run).catch(() => undefined);
     throw error;
   }
 
@@ -318,7 +350,7 @@ export async function createSmolvmMachine(
       );
     },
     async delete() {
-      await smolvm("machine", "delete", "--name", name, "-f");
+      await deleteSmolvmMachine(name, run);
     },
   };
 }

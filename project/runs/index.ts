@@ -582,6 +582,14 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
             command: ["sh", "-lc", previewConfig.initCommand],
             workdir: "/work",
             log: "init",
+            onOutput: (chunk) => {
+              const line = chunk.text
+                .split(/\r?\n/)
+                .map((part) => part.trim())
+                .findLast(Boolean);
+              if (line)
+                progress(record.id, `Running init: ${line.slice(0, 160)}`);
+            },
           });
           if (init.exitCode !== 0) failure = commandFailure("Preview init", init);
         }

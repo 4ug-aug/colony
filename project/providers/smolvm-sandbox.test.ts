@@ -1,13 +1,17 @@
 import { expect, test } from "bun:test";
-import { writeFile } from "node:fs/promises";
+import { writeFile, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ExecutionResult } from "../sandboxes";
 import type { MachineConfig, SmolMachine } from "./smolvm-sandbox";
 import {
   createSmolvmMachine,
   createSmolvmSandboxProvider,
+  probePreviewUrl,
   resolveSmolvmImage,
   smolvmCreateFlags,
 } from "./smolvm-sandbox";
+import { allocateHostPort } from "../sandboxes";
 
 const passthroughImage = {
   resolveImage: async (image: string) => image,
@@ -185,6 +189,8 @@ test("a published smolvm machine starts guest dockerd without a host Docker sock
   });
 
   expect(execs[0]?.[0]).toBe("sh");
+  expect(execs[0]?.[2]).toContain("backend = \"copyfile\"");
+  expect(execs[0]?.[2]).toContain("/storage/bun");
   expect(execs[0]?.[2]).toContain("dockerd");
   expect(execs[0]?.[2]).toContain("/storage/docker");
   expect(execs[0]?.[2]).toContain("native.cgroupdriver=cgroupfs");
@@ -250,6 +256,23 @@ test("machine settings become smolvm create flags", () => {
   expect(
     smolvmCreateFlags({ name: "sandbox-1", image: "alpine", network: false }),
   ).toEqual([]);
+});
+
+test("Preview is ready only when the host URL answers HTTP", async () => {
+  const port = await allocateHostPort();
+  const url = `http://127.0.0.1:${port}`;
+  expect(await probePreviewUrl(url)).toBe(false);
+  const server = Bun.serve({
+    port,
+    fetch() {
+      return new Response("ok");
+    },
+  });
+  try {
+    expect(await probePreviewUrl(url)).toBe(true);
+  } finally {
+    await server.stop(true);
+  }
 });
 
 const cliConfig: MachineConfig = {
@@ -321,6 +344,49 @@ test("a machine that fails to start is deleted instead of left behind", async ()
     "sandbox-1",
     "-f",
   ]);
+});
+
+test("a machine whose smolvm data directory is not empty is force-removed", async () => {
+  const leftover = join(
+    tmpdir(),
+    `colony-smolvm-vms-${crypto.randomUUID()}`,
+    "smolvm",
+    "vms",
+    "8ff950cb92be49cc",
+  );
+  await mkdir(leftover, { recursive: true });
+  await writeFile(join(leftover, "disk.img"), "busy");
+  let deletes = 0;
+  const machine = await createSmolvmMachine(cliConfig, async (command) => {
+    if (command[2] === "delete") {
+      deletes += 1;
+      if (deletes === 1) {
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: `storage operation failed: delete machine data: ${leftover}: Directory not empty (os error 66)`,
+        };
+      }
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  });
+  await machine.delete();
+  expect(deletes).toBe(2);
+  expect(await Bun.file(join(leftover, "disk.img")).exists()).toBe(false);
+});
+
+test("deleting an already-removed smolvm machine succeeds", async () => {
+  const machine = await createSmolvmMachine(cliConfig, async (command) => {
+    if (command[2] === "delete") {
+      return {
+        exitCode: 1,
+        stdout: "",
+        stderr: "Error: vm not found: sandbox-1",
+      };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  });
+  await machine.delete();
 });
 
 test("resolveSmolvmImage exports a local Docker tag to a tar archive", async () => {

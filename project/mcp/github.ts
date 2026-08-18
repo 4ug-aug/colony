@@ -378,14 +378,10 @@ export async function createGitHubAppInstallationClient(options: {
     .getInstallationOctokit(options.installationId);
 }
 
-export async function createGitHubCliClient(): Promise<Octokit> {
-  const process = Bun.spawn(["gh", "auth", "token"], { stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout] = await Promise.all([
-    process.exited,
-    new Response(process.stdout).text(),
-  ]);
-  if (exitCode || !stdout.trim()) throw new Error("GitHub CLI authentication is required");
-  return new Octokit({ auth: stdout.trim() });
+export function createGitHubTokenClient(token: string): Octokit {
+  const auth = token.trim();
+  if (!auth) throw new Error("GitHub token is required");
+  return new Octokit({ auth });
 }
 
 export async function publishGitHubBranchFiles(options: {

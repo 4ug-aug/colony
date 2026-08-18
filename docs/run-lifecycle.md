@@ -73,7 +73,7 @@ test prepared files; it does not decide how they were acquired.
 V1 has zero or one workspace. A provisioner materializes it in a temporary host
 directory, then the sandbox provider bind mounts that directory at `/work`.
 For example, the GitHub repository provisioner resolves a revision with the
-deployment's GitHub App client before extracting files. After the sandbox is
+deployment's token-authenticated Octokit client before extracting files. After the sandbox is
 disposed, Sweat removes the host workspace. Credentials are never mounted into
 the sandbox.
 

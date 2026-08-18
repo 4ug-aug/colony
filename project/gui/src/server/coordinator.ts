@@ -1157,7 +1157,7 @@ if (import.meta.main) {
       createWorkspaceGrillAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
-    { createGitHubCliClient, publishGitHubBranchFiles },
+    { createGitHubTokenClient, publishGitHubBranchFiles },
     { createMcpGatewayHttpServer },
     { createAppleContainerClient },
     { createAppleContainerSandboxProvider },
@@ -1201,7 +1201,14 @@ if (import.meta.main) {
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
   const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
-  const github = githubRepository ? await createGitHubCliClient() : undefined
+  if (githubRepository && !process.env.SWEAT_GITHUB_TOKEN?.trim()) {
+    throw new Error(
+      'SWEAT_GITHUB_TOKEN is required when SWEAT_GITHUB_REPOSITORY is set. See docs/github-token.md.',
+    )
+  }
+  const github = githubRepository
+    ? createGitHubTokenClient(process.env.SWEAT_GITHUB_TOKEN ?? '')
+    : undefined
   const grillStore = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: (agentDefinitionId) =>
       skills.listAttachedSkillIds(agentDefinitionId).length > 0,

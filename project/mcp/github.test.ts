@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Octokit } from "octokit";
 import { STEP_TEXT_LIMIT } from "../runtime/step";
-import { createGitHubMcpGateway } from "./github";
+import { createGitHubMcpGateway, createGitHubTokenClient } from "./github";
 
 async function git(directory: string, args: readonly string[]): Promise<string> {
   const process = Bun.spawn(["git", "-C", directory, ...args], { stdout: "pipe", stderr: "pipe" });
@@ -556,4 +556,10 @@ test("GitHub get_pull_request returns metadata and changed files without a patch
       base: { ref: "main", sha: "def" },
       files: [{ path: "compose.yml", status: "M" }],
     });
+});
+
+test("createGitHubTokenClient requires a non-empty token", () => {
+  expect(createGitHubTokenClient("github_pat_test")).toBeInstanceOf(Octokit);
+  expect(() => createGitHubTokenClient("")).toThrow("GitHub token is required");
+  expect(() => createGitHubTokenClient("  ")).toThrow("GitHub token is required");
 });

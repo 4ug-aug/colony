@@ -232,20 +232,6 @@ async function configureRootlessDocker(): Promise<void> {
   await run("systemctl", ["--user", "restart", "docker"]);
 }
 
-async function requireGitHubCli(): Promise<void> {
-  if (!(await available("gh")))
-    throw new Error(
-      "GitHub CLI is required. Install it from https://cli.github.com/ and rerun make setup.",
-    );
-  try {
-    await run("gh", ["auth", "status"]);
-  } catch {
-    throw new Error(
-      "Authenticate GitHub CLI with `gh auth login`, then rerun make setup.",
-    );
-  }
-}
-
 async function readOptional(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, "utf8");
@@ -354,7 +340,7 @@ async function configureServer(path: string): Promise<void> {
     await multiselect({
       message: "Optional integrations",
       options: [
-        { value: "github" as const, label: "GitHub", hint: "repo + base branch" },
+        { value: "github" as const, label: "GitHub", hint: "repo + token" },
         { value: "linear" as const, label: "Linear", hint: "MCP API key" },
       ],
       initialValues: initialIntegrations,
@@ -365,7 +351,10 @@ async function configureServer(path: string): Promise<void> {
   const useLinear = integrations.includes("linear");
 
   if (useGitHub) {
-    await requireGitHubCli();
+    note(
+      "Create a fine-grained personal access token with Contents (read/write), Pull requests (read/write), and Checks (read). Guide: docs/github-token.md",
+      "GitHub token",
+    );
     document = setEnvValue(
       document,
       "SWEAT_GITHUB_REPOSITORY",
@@ -389,6 +378,15 @@ async function configureServer(path: string): Promise<void> {
         )
       ).trim(),
     );
+    const githubToken = await askSecret(
+      "GitHub personal access token",
+      existing("SWEAT_GITHUB_TOKEN"),
+    );
+    if (!githubToken)
+      throw new Error(
+        "A GitHub personal access token is required when GitHub is selected.",
+      );
+    document = setEnvValue(document, "SWEAT_GITHUB_TOKEN", githubToken);
     const verify = (
       await askText(
         "Verification command (optional)",

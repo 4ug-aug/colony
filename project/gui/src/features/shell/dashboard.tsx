@@ -43,7 +43,7 @@ import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
 import { SchedulesPage } from '#/features/schedules/schedules-page'
 import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
-import { VmsPage } from '#/features/vms/vms-page'
+import { MachineSessionHeader, VmsPage } from '#/features/vms/vms-page'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
@@ -134,6 +134,7 @@ export function Dashboard({
   const selectedIssueId = view === 'issues' ? location.id : undefined
   const selectedDocId = view === 'docs' ? location.id : undefined
   const selectedGrillId = view === 'grills' ? location.id : undefined
+  const selectedMachineId = view === 'vms' ? location.id : undefined
   const selectRef = useRef(select)
   selectRef.current = select
 
@@ -456,6 +457,11 @@ export function Dashboard({
                 docId={selectedDocId}
                 onBack={() => navigate({ view: 'docs' })}
               />
+            ) : view === 'vms' && selectedMachineId ? (
+              <MachineSessionHeader
+                machineId={selectedMachineId}
+                onBack={() => navigate({ view: 'vms' })}
+              />
             ) : (
               <>
                 {view === 'workspace' ? (
@@ -598,7 +604,16 @@ export function Dashboard({
             />
           </div>
         )}
-        {view === 'vms' && user.role === 'admin' && <VmsPage />}
+        {view === 'vms' && user.role === 'admin' && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <VmsPage
+              selectedId={selectedMachineId}
+              onSelectedIdChange={(id) =>
+                navigate({ view: 'vms', ...(id ? { id } : {}) })
+              }
+            />
+          </div>
+        )}
         {view === 'room' && (
           <div className="flex min-h-0 flex-1">
             <ResizablePanelGroup className="min-h-0 min-w-0 flex-1">

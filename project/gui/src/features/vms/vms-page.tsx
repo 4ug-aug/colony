@@ -7,6 +7,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from '#/components/ui/alert-dialog'
 import { Badge } from '#/components/ui/badge'
 import { BrailleLoader } from '#/components/ui/braille-loader'
@@ -19,18 +20,29 @@ import {
   CardHeader,
   CardTitle,
 } from '#/components/ui/card'
+import { Input } from '#/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  ArrowLeft,
   CircleX,
   ExternalLink,
   HardDrive,
   Network,
-  ScrollText,
+  Search,
   Skull,
   Timer,
+  X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useDeferredValue, useState } from 'react'
+import {
+  filterMachineLog,
+  formatLogTime,
+  parseMachineLog,
+  type MachineLogLine,
+} from './machine-log'
+import { previewIframeSrc } from './preview-frame'
 
 type Machine = {
   id: string
@@ -51,17 +63,207 @@ type MachineLogs = {
 const queryKey = ['vms'] as const
 const running = (state: string) => state === 'running' || state === 'started'
 
+const channelOrder = ['init', 'preview', 'docker'] as const
 const channelLabel: Record<string, string> = {
-  preview: 'Preview',
   init: 'Init',
-  docker: 'Docker',
+  preview: 'Preview',
+  docker: 'Container',
 }
 
 function dockerRunning(text: string) {
   return text.includes('API listen on /var/run/docker.sock')
 }
 
-function MachineConsole({ id, open }: { id: string; open: boolean }) {
+function logLevelClass(level: string) {
+  const name = level.toLowerCase()
+  if (name === 'error' || name === 'fatal' || name === 'panic')
+    return 'text-destructive'
+  if (name === 'warning' || name === 'warn')
+    return 'text-amber-600 dark:text-amber-400'
+  return 'text-muted-foreground'
+}
+
+function LogLines({ lines }: { lines: MachineLogLine[] }) {
+  return (
+    <ol className="space-y-1 font-mono text-xs leading-5">
+      {lines.map((line, index) => (
+        <li key={index} className="flex gap-2">
+          {line.time && (
+            <time
+              className="shrink-0 text-muted-foreground tabular-nums"
+              dateTime={line.time}
+            >
+              {formatLogTime(line.time)}
+            </time>
+          )}
+          {line.level && (
+            <span className={`w-12 shrink-0 ${logLevelClass(line.level)}`}>
+              {line.level}
+            </span>
+          )}
+          <span className="min-w-0 break-all">{line.message}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function useMachines() {
+  return useQuery({
+    queryKey,
+    queryFn: () =>
+      apiJson<{ machines: Machine[] }>(
+        '/api/vms',
+        undefined,
+        'Could not load machines',
+      ),
+    refetchInterval: 2_000,
+  })
+}
+
+function useNukeMachine(onNuked?: (id: string) => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiJsonBody<{ id: string }>(
+        `/api/vms/${encodeURIComponent(id)}`,
+        'DELETE',
+        undefined,
+        'Could not nuke machine',
+      ),
+    onSuccess: ({ id }) => {
+      queryClient.setQueryData<{ machines: Machine[] }>(
+        queryKey,
+        (current) => ({
+          machines:
+            current?.machines.filter((machine) => machine.id !== id) ?? [],
+        }),
+      )
+      onNuked?.(id)
+    },
+  })
+}
+
+function NukeMachineButton({
+  machine,
+  onNuked,
+  stopPropagation,
+}: {
+  machine: Machine
+  onNuked?: () => void
+  stopPropagation?: boolean
+}) {
+  const nuke = useNukeMachine(() => onNuked?.())
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            aria-label={`Nuke ${machine.id}`}
+            onClick={
+              stopPropagation ? (event) => event.stopPropagation() : undefined
+            }
+          />
+        }
+      >
+        <Skull />
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        onClick={
+          stopPropagation ? (event) => event.stopPropagation() : undefined
+        }
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>Nuke this machine?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This immediately stops {machine.id} and deletes its VM storage. The
+            active run will fail.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {nuke.error && (
+          <p className="text-xs break-all text-destructive" role="alert">
+            {nuke.error instanceof Error
+              ? nuke.error.message
+              : 'Could not nuke machine'}
+          </p>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={nuke.isPending}>
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={nuke.isPending}
+            onClick={() => nuke.mutate(machine.id)}
+          >
+            {nuke.isPending ? <BrailleLoader text="Nuking" /> : 'Nuke machine'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function MachinePreview({
+  machine,
+  fill,
+}: {
+  machine: Machine
+  fill?: boolean
+}) {
+  const frame = (
+    <div
+      className={
+        fill
+          ? 'relative size-full min-h-0 overflow-hidden bg-background'
+          : 'relative aspect-video overflow-hidden rounded-md bg-background shadow-sm ring-1 ring-foreground/10'
+      }
+    >
+      {machine.previewError ? (
+        <div
+          className="absolute inset-0 flex flex-col gap-2 overflow-hidden p-4"
+          role="alert"
+        >
+          <p className="flex items-center gap-2 text-sm font-medium text-destructive">
+            <CircleX className="size-4 shrink-0" />
+            Preview failed
+          </p>
+          <pre className="min-h-0 flex-1 overflow-auto text-xs leading-5 whitespace-pre-wrap text-destructive/90">
+            {machine.previewError}
+          </pre>
+        </div>
+      ) : machine.previewUrl && machine.previewReady ? (
+        <iframe
+          key={machine.previewUrl}
+          src={previewIframeSrc(machine.previewUrl, window.location.hostname)}
+          title={`${machine.id} Preview`}
+          className="absolute inset-0 size-full bg-white"
+          sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
+        />
+      ) : machine.previewUrl ? (
+        <div
+          className="absolute inset-0 grid place-items-center bg-muted/50"
+          role="status"
+        >
+          <BrailleLoader text="Waiting for Preview" />
+        </div>
+      ) : (
+        <div className="absolute inset-0 grid place-items-center bg-muted/50">
+          <p className="text-sm text-muted-foreground">No Preview</p>
+        </div>
+      )}
+    </div>
+  )
+  return fill ? frame : <div className="px-3">{frame}</div>
+}
+
+function MachineConsole({ id }: { id: string }) {
+  const [search, setSearch] = useState('')
+  const deferredSearch = useDeferredValue(search)
   const { data, error, isPending } = useQuery({
     queryKey: ['vms', id, 'logs'],
     queryFn: () =>
@@ -70,89 +272,131 @@ function MachineConsole({ id, open }: { id: string; open: boolean }) {
         undefined,
         'Could not load machine logs',
       ),
-    enabled: open,
-    refetchInterval: open ? 2_000 : false,
+    refetchInterval: 2_000,
   })
-  if (!open) return null
+  const channels = data?.channels
+    .map((channel) => ({
+      ...channel,
+      lines: filterMachineLog(parseMachineLog(channel.text), deferredSearch),
+    }))
+    .sort(
+      (a, b) =>
+        channelOrder.indexOf(a.name as (typeof channelOrder)[number]) -
+        channelOrder.indexOf(b.name as (typeof channelOrder)[number]),
+    )
+  const searching = deferredSearch.trim().length > 0
   return (
-    <div className="border-t px-6 py-3">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Machine console
-      </h3>
-      {isPending && (
-        <p className="text-sm text-muted-foreground" role="status">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 space-y-2 border-b px-4 py-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Machine console
+        </h3>
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search console…"
+            className="h-8 pr-8 pl-8 text-sm"
+            aria-label="Search Machine console"
+          />
+          {search && (
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost"
+              className="absolute top-1/2 right-1 -translate-y-1/2"
+              aria-label="Clear search"
+              onClick={() => setSearch('')}
+            >
+              <X />
+            </Button>
+          )}
+        </div>
+      </div>
+      {isPending && !data && (
+        <p className="px-4 py-3 text-sm text-muted-foreground" role="status">
           <BrailleLoader text="Loading logs" />
         </p>
       )}
       {error && (
-        <p className="text-sm text-destructive" role="alert">
+        <p
+          className="px-4 py-3 text-sm break-all text-destructive"
+          role="alert"
+        >
           {error instanceof Error
             ? error.message
             : 'Could not load machine logs'}
         </p>
       )}
-      {data?.channels.map((channel) => (
-        <section key={channel.name} className="mb-3 last:mb-0">
-          <h4 className="mb-1 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            {channelLabel[channel.name] ?? channel.name}
-            {channel.name === 'docker' && dockerRunning(channel.text) && (
-              <Badge variant="success">running</Badge>
-            )}
-          </h4>
-          <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 text-xs leading-5">
-            {channel.text.trim() || 'No output yet.'}
-          </pre>
-        </section>
-      ))}
+      {channels && (
+        <Tabs
+          defaultValue="init"
+          className="min-h-0 flex-1 gap-0 overflow-hidden"
+        >
+          <div className="shrink-0 px-4 pt-3">
+            <TabsList className="w-full">
+              {channels.map((channel) => (
+                <TabsTrigger key={channel.name} value={channel.name}>
+                  {channelLabel[channel.name] ?? channel.name}
+                  {channel.name === 'docker' && dockerRunning(channel.text) && (
+                    <Badge variant="success">running</Badge>
+                  )}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+          {channels.map((channel) => (
+            <TabsContent
+              key={channel.name}
+              value={channel.name}
+              className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+            >
+              {channel.lines.length ? (
+                <LogLines lines={channel.lines} />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {searching ? 'No matching lines.' : 'No output yet.'}
+                </p>
+              )}
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
+    </div>
+  )
+}
+
+function MachineDetail({ machine }: { machine: Machine }) {
+  return (
+    <div className="flex min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 basis-3/5">
+        <MachinePreview machine={machine} fill />
+      </div>
+      <div className="min-h-0 min-w-0 basis-2/5 border-l">
+        <MachineConsole id={machine.id} />
+      </div>
     </div>
   )
 }
 
 function MachineCard({
   machine,
-  onNuke,
+  onOpen,
 }: {
   machine: Machine
-  onNuke: () => void
+  onOpen: () => void
 }) {
-  const [consoleOpen, setConsoleOpen] = useState(false)
   return (
-    <Card className="shadow-sm">
-      {machine.previewUrl && (
-        <div className="px-3">
-          <div className="relative aspect-video overflow-hidden rounded-md bg-background shadow-sm ring-1 ring-foreground/10">
-            {machine.previewError ? (
-              <div
-                className="absolute inset-0 flex flex-col gap-2 overflow-hidden p-4"
-                role="alert"
-              >
-                <p className="flex items-center gap-2 text-sm font-medium text-destructive">
-                  <CircleX className="size-4 shrink-0" />
-                  Preview failed
-                </p>
-                <pre className="min-h-0 flex-1 overflow-auto text-xs leading-5 whitespace-pre-wrap text-destructive/90">
-                  {machine.previewError}
-                </pre>
-              </div>
-            ) : machine.previewReady ? (
-              <iframe
-                src={machine.previewUrl}
-                title={`${machine.id} Preview`}
-                className="absolute inset-0 size-full"
-                sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
-              />
-            ) : (
-              <div
-                className="absolute inset-0 grid place-items-center bg-muted/50"
-                role="status"
-              >
-                <BrailleLoader text="Waiting for Preview" />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      <CardHeader>
+    <Card className="relative shadow-sm transition-shadow hover:ring-foreground/20">
+      <button
+        type="button"
+        className="absolute inset-0 z-0 cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        aria-label={`Open ${machine.id}`}
+        onClick={onOpen}
+      />
+      {machine.previewUrl && <MachinePreview machine={machine} />}
+      <CardHeader className="relative">
         <CardTitle className="flex min-w-0 items-center gap-2">
           <span
             className={`size-2 shrink-0 rounded-full ${running(machine.state) ? 'bg-green-500' : 'bg-amber-500'}`}
@@ -163,16 +407,7 @@ function MachineCard({
           </Badge>
         </CardTitle>
         <CardDescription className="truncate">{machine.image}</CardDescription>
-        <CardAction className="flex gap-1">
-          <Button
-            size="icon-sm"
-            variant={consoleOpen ? 'secondary' : 'ghost'}
-            aria-label={`${consoleOpen ? 'Hide' : 'Show'} ${machine.id} logs`}
-            aria-pressed={consoleOpen}
-            onClick={() => setConsoleOpen((open) => !open)}
-          >
-            <ScrollText />
-          </Button>
+        <CardAction className="relative z-10 flex gap-1">
           {machine.previewUrl && (
             <Button
               size="icon-sm"
@@ -183,21 +418,14 @@ function MachineCard({
                   href={machine.previewUrl}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={(event) => event.stopPropagation()}
                 />
               }
             >
               <ExternalLink />
             </Button>
           )}
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            aria-label={`Nuke ${machine.id}`}
-            onClick={onNuke}
-          >
-            <Skull />
-          </Button>
+          <NukeMachineButton machine={machine} stopPropagation />
         </CardAction>
       </CardHeader>
       <CardContent>
@@ -229,43 +457,85 @@ function MachineCard({
           </div>
         </dl>
       </CardContent>
-      <MachineConsole id={machine.id} open={consoleOpen} />
     </Card>
   )
 }
 
-export function VmsPage() {
-  const queryClient = useQueryClient()
-  const [selected, setSelected] = useState<Machine>()
-  const { data, isPending, error } = useQuery({
-    queryKey,
-    queryFn: () =>
-      apiJson<{ machines: Machine[] }>(
-        '/api/vms',
-        undefined,
-        'Could not load machines',
-      ),
-    refetchInterval: 2_000,
-  })
-  const nuke = useMutation({
-    mutationFn: (id: string) =>
-      apiJsonBody<{ id: string }>(
-        `/api/vms/${encodeURIComponent(id)}`,
-        'DELETE',
-        undefined,
-        'Could not nuke machine',
-      ),
-    onSuccess: ({ id }) => {
-      queryClient.setQueryData<{ machines: Machine[] }>(
-        queryKey,
-        (current) => ({
-          machines:
-            current?.machines.filter((machine) => machine.id !== id) ?? [],
-        }),
+export function MachineSessionHeader({
+  machineId,
+  onBack,
+}: {
+  machineId: string
+  onBack: () => void
+}) {
+  const { data } = useMachines()
+  const machine = data?.machines.find((item) => item.id === machineId)
+  return (
+    <>
+      <Button type="button" size="sm" variant="ghost" onClick={onBack}>
+        <ArrowLeft data-icon="inline-start" />
+        Machines
+      </Button>
+      <p className="max-w-xs min-w-0 break-all font-mono text-sm font-semibold">
+        {machineId}
+      </p>
+      {machine && (
+        <Badge
+          className="shrink-0"
+          variant={running(machine.state) ? 'success' : 'secondary'}
+        >
+          {machine.state}
+        </Badge>
+      )}
+      <div className="ml-auto flex items-center gap-1">
+        {machine?.previewUrl && (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={`Open ${machine.id} Preview`}
+            render={
+              <a href={machine.previewUrl} target="_blank" rel="noreferrer" />
+            }
+          >
+            <ExternalLink />
+          </Button>
+        )}
+        {machine && <NukeMachineButton machine={machine} onNuked={onBack} />}
+      </div>
+    </>
+  )
+}
+
+export function VmsPage({
+  selectedId,
+  onSelectedIdChange,
+}: {
+  selectedId?: string
+  onSelectedIdChange: (id: string | undefined) => void
+}) {
+  const { data, isPending, error } = useMachines()
+  const machines = data?.machines ?? []
+
+  if (selectedId) {
+    const machine = machines.find((item) => item.id === selectedId)
+    if (isPending && !data)
+      return (
+        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+          <BrailleLoader text="Loading machine" />
+        </div>
       )
-      setSelected(undefined)
-    },
-  })
+    if (!machine)
+      return (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+          <HardDrive className="size-8 text-muted-foreground" />
+          <p className="text-sm font-medium">
+            This machine is no longer running
+          </p>
+          <p className="text-xs text-muted-foreground">{selectedId}</p>
+        </div>
+      )
+    return <MachineDetail machine={machine} />
+  }
 
   if (isPending)
     return (
@@ -273,8 +543,6 @@ export function VmsPage() {
         <BrailleLoader text="Loading machines" />
       </div>
     )
-
-  const machines = data?.machines ?? []
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto">
@@ -311,49 +579,11 @@ export function VmsPage() {
             <MachineCard
               key={machine.id}
               machine={machine}
-              onNuke={() => setSelected(machine)}
+              onOpen={() => onSelectedIdChange(machine.id)}
             />
           ))}
         </div>
       </div>
-
-      <AlertDialog
-        open={Boolean(selected)}
-        onOpenChange={(open) => !open && setSelected(undefined)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Nuke this machine?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This immediately stops {selected?.id} and deletes its VM storage.
-              The active run will fail.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {nuke.error && (
-            <p className="text-xs text-destructive" role="alert">
-              {nuke.error instanceof Error
-                ? nuke.error.message
-                : 'Could not nuke machine'}
-            </p>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={nuke.isPending}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={nuke.isPending}
-              onClick={() => selected && nuke.mutate(selected.id)}
-            >
-              {nuke.isPending ? (
-                <BrailleLoader text="Nuking" />
-              ) : (
-                'Nuke machine'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </main>
   )
 }

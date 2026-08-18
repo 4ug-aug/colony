@@ -115,8 +115,9 @@ invite-only workspace. Use `make dev-seeded` for two reusable local accounts,
 or `make server` and `make gui` separately to exercise the desktop boundary.
 Run `make help` for every development command.
 
-To enable repository-backed software-engineer runs, authenticate the host
-GitHub CLI and set `SWEAT_GITHUB_REPOSITORY`. Set `SWEAT_VERIFY_COMMAND` to
+To enable repository-backed software-engineer runs, set `SWEAT_GITHUB_REPOSITORY`
+and a fine-grained personal access token as `SWEAT_GITHUB_TOKEN`. See
+[docs/github-token.md](docs/github-token.md). Set `SWEAT_VERIFY_COMMAND` to
 allow verified pull-request publishing.
 
 Configure Asana, Outline, and Grafana under **Workspace → Connections** after
