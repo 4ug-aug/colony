@@ -1,7 +1,8 @@
 import type { Subprocess } from "bun";
+import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import type {
   ExecRequest,
   ExecutionResult,
@@ -166,8 +167,8 @@ export async function resolveSmolvmImage(
 
 /**
  * Guest dockerd on the VM ext4 disk. Does not expose the socket to the host.
- * Only booted for published sandboxes, whose Preview command may run Compose —
- * a plain agent run should not pay a daemon start plus readiness poll.
+ * Runs once on the golden, so every clone inherits a daemon that is already up:
+ * a Preview command may run Compose, and nobody pays the readiness poll.
  */
 const guestDockerInit = [
   // bun's default hardlink/clonefile backends hang on the /work bind mount.
@@ -210,7 +211,50 @@ export type MachineConfig = {
   network: boolean;
   mounts?: ReadonlyArray<{ source: string; target: string; readOnly: boolean }>;
   ports?: ReadonlyArray<{ host: number; guest: number }>;
+  /** Start as a fork base: memfd-backed guest RAM plus a control socket. */
+  forkable?: boolean;
 };
+
+/** Where a golden mounts the directory holding every run's workspace. */
+export const guestWorkspacesRoot = "/mnt/ws";
+
+/** Goldens are named, not labelled: `machine fork` takes no `--label`. */
+const goldenPrefix = "colony-golden-";
+
+export function goldenMachineName(image: string, workspacesRoot: string): string {
+  const key = createHash("sha256")
+    .update(`${image}\0${workspacesRoot}`)
+    .digest("hex")
+    .slice(0, 12);
+  return `${goldenPrefix}${key}`;
+}
+
+export function isGoldenMachine(name: string): boolean {
+  return name.startsWith(goldenPrefix);
+}
+
+/**
+ * A clone inherits the golden's one mount — `machine fork` takes no `-v` — so
+ * every clone can see every run's workspace through it. Bind this clone's own
+ * directory onto the target the caller asked for, then cover the shared root
+ * with an empty tmpfs so the siblings are unreachable from inside the guest.
+ * Mounts are per-VM kernel state, so this is private to the clone.
+ *
+ * ponytail: guest-side, so root in the guest could unmount it. Host-enforced
+ * isolation needs a per-clone mount, which `fork` cannot do; revisit if smolvm
+ * gains `fork -v`.
+ */
+export function guestMountIsolation(
+  mounts: ReadonlyArray<{ source: string; target: string }>,
+): string {
+  return [
+    ...mounts.flatMap((mount) => [
+      `mkdir -p ${mount.target}`,
+      `mount -o bind ${guestWorkspacesRoot}/${basename(mount.source)} ${mount.target}`,
+    ]),
+    `mount -t tmpfs none ${guestWorkspacesRoot}`,
+  ].join("\n");
+}
 
 /** The fields Colony reads off a `smolvm machine ls --json` row. */
 type MachineListEntry = { name: string } & Partial<{
@@ -248,6 +292,8 @@ export type SmolvmMachineStatus = {
   previewUrl?: string;
   previewReady?: boolean;
   previewError?: string;
+  /** A fork base rather than a sandbox: shared by every run of one image. */
+  golden?: boolean;
 };
 
 export type MachineLogChannelName = NonNullable<ExecRequest["log"]> | "docker";
@@ -266,6 +312,14 @@ export type SmolvmMachineControl = {
   nukeMachine(id: string): Promise<boolean>;
   machineLogs(id: string): Promise<SmolvmMachineLogs | undefined>;
   execMachine(id: string, command: string): Promise<ExecutionResult | undefined>;
+};
+
+/**
+ * Fork bases outlive the runs that used them, so the process that booted them
+ * has to reap them. Separate from the console's surface, which never needs it.
+ */
+export type SmolvmGoldens = {
+  disposeGoldens(): Promise<void>;
 };
 
 /** The per-machine facts `smolvm machine ls` cannot report. */
@@ -392,12 +446,23 @@ export async function createSmolvmMachine(
     ...smolvmCreateFlags(config),
   );
   try {
-    await smolvm("machine", "start", "--name", name);
+    await smolvm(
+      "machine",
+      "start",
+      "--name",
+      name,
+      ...(config.forkable ? ["--forkable"] : []),
+    );
   } catch (error) {
     await deleteSmolvmMachine(name, run).catch(() => undefined);
     throw error;
   }
 
+  return smolvmMachineHandle(name, run);
+}
+
+/** `exec` and `delete` against a named machine, however that machine was made. */
+function smolvmMachineHandle(name: string, run: RunCommand): SmolMachine {
   return {
     exec(command, options = {}) {
       return run(
@@ -423,6 +488,33 @@ export async function createSmolvmMachine(
       await deleteSmolvmMachine(name, run);
     },
   };
+}
+
+/**
+ * Copy-on-write clone of a running forkable golden: live RAM and disks, so the
+ * clone starts with the golden's dockerd already up. Ports must be pinned here
+ * or smolvm remaps the golden's forwards, and the golden publishes none.
+ */
+export async function forkSmolvmMachine(
+  golden: string,
+  name: string,
+  ports: ReadonlyArray<{ host: number; guest: number }> = [],
+  run: RunCommand = runCommand,
+): Promise<SmolMachine> {
+  const args = [
+    "machine",
+    "fork",
+    "--golden",
+    golden,
+    "--name",
+    name,
+    ...ports.flatMap((port) => ["-p", `${port.host}:${port.guest}`]),
+  ];
+  const result = await run(["smolvm", ...args]);
+  if (result.exitCode !== 0) {
+    throw new Error(commandFailure(`smolvm ${args.join(" ")}`, result));
+  }
+  return smolvmMachineHandle(name, run);
 }
 
 function envVars(
@@ -452,16 +544,117 @@ export function createSmolvmSandboxProvider(
     allocatePort?: () => Promise<number>;
     resolveImage?: (image: string) => Promise<string>;
     probePreview?: (url: string) => Promise<boolean>;
+    forkMachine?: (
+      golden: string,
+      name: string,
+      ports: ReadonlyArray<{ host: number; guest: number }>,
+    ) => Promise<SmolMachine>;
     run?: RunCommand;
   } = {},
-): SandboxProvider & SmolvmMachineControl {
+): SandboxProvider & SmolvmMachineControl & SmolvmGoldens {
   const createMachine = options.createMachine ?? createSmolvmMachine;
   const createId = options.createId ?? (() => `sandbox-${crypto.randomUUID()}`);
   const allocatePort = options.allocatePort ?? allocateHostPort;
   const resolveImage = options.resolveImage ?? resolveSmolvmImage;
   const probePreview = options.probePreview ?? probePreviewUrl;
   const run = options.run ?? runCommand;
+  const forkMachine =
+    options.forkMachine ??
+    ((golden, name, ports) => forkSmolvmMachine(golden, name, ports, run));
   const machines = new Map<string, ManagedMachine>();
+  /** One golden per resolved image and workspaces root — the two things its
+   *  mounts depend on. Memoised as a Promise so concurrent runs share one boot. */
+  const goldens = new Map<string, Promise<SmolMachine>>();
+
+  const golden = (
+    image: string,
+    workspacesRoot: string,
+  ): Promise<SmolMachine> => {
+    const name = goldenMachineName(image, workspacesRoot);
+    const existing = goldens.get(name);
+    if (existing) return existing;
+    const booting = (async () => {
+      // A golden from a previous coordinator is frozen and cannot be forked again.
+      await deleteSmolvmMachine(name, run).catch(() => undefined);
+      const machine = await createMachine({
+        name,
+        image,
+        network: true,
+        forkable: true,
+        ...(workspacesRoot
+          ? {
+              mounts: [
+                {
+                  source: workspacesRoot,
+                  target: guestWorkspacesRoot,
+                  readOnly: false,
+                },
+              ],
+            }
+          : {}),
+      });
+      await machine.exec(["sh", "-c", guestDockerInit]);
+      return machine;
+    })().catch((error: unknown) => {
+      goldens.delete(name);
+      throw error;
+    });
+    goldens.set(name, booting);
+    return booting;
+  };
+
+  /**
+   * A clone of this image's golden, or — when anything about forking fails — a
+   * machine booted the old way so a run never dies for want of a fork.
+   *
+   * ponytail: the fallback re-boots per sandbox and loses the speed win. It
+   * exists because forking is a host capability the operator did not opt into;
+   * drop it once smolvm forking is a stated requirement of `make setup`.
+   */
+  const forkFromGolden = async (sandbox: {
+    id: string;
+    image: string;
+    mounts?: ReadonlyArray<{ source: string; target: string; readOnly: boolean }>;
+    ports: ReadonlyArray<{ host: number; guest: number }>;
+  }): Promise<SmolMachine> => {
+    const { id, image, mounts, ports } = sandbox;
+    const roots = new Set((mounts ?? []).map((entry) => dirname(entry.source)));
+    const bootDirectly = async (): Promise<SmolMachine> => {
+      const machine = await createMachine({
+        name: id,
+        image,
+        network: true,
+        ...(mounts ? { mounts } : {}),
+        ...(ports.length ? { ports } : {}),
+      });
+      if (ports.length) await machine.exec(["sh", "-c", guestDockerInit]);
+      return machine;
+    };
+    // Every mount must sit under one root for the golden's single mount to cover
+    // them, and `machine fork` cannot add one.
+    if (roots.size > 1) return bootDirectly();
+    const workspacesRoot = [...roots][0] ?? "";
+    let clone: SmolMachine;
+    try {
+      await golden(image, workspacesRoot);
+      clone = await forkMachine(
+        goldenMachineName(image, workspacesRoot),
+        id,
+        ports,
+      );
+    } catch (error) {
+      process.stderr.write(
+        `smolvm fork unavailable, booting ${id} directly: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`,
+      );
+      return bootDirectly();
+    }
+    if (mounts?.length) {
+      await clone.exec(["sh", "-c", guestMountIsolation(mounts)]);
+    }
+    return clone;
+  };
 
   return {
     /**
@@ -493,6 +686,7 @@ export function createSmolvmSandboxProvider(
             ...(managed?.previewError
               ? { previewError: managed.previewError }
               : {}),
+            ...(isGoldenMachine(id) ? { golden: true } : {}),
           };
         }),
       );
@@ -504,7 +698,20 @@ export function createSmolvmSandboxProvider(
         await entry.dispose();
         return true;
       }
+      // Deleting a golden is safe: live clones keep running, including their
+      // mount. The next run boots a fresh one.
+      goldens.delete(id);
       return deleteSmolvmMachine(id, run);
+    },
+
+    async disposeGoldens() {
+      const booted = [...goldens.keys()];
+      goldens.clear();
+      await Promise.all(
+        booted.map((name) =>
+          deleteSmolvmMachine(name, run).catch(() => undefined),
+        ),
+      );
     },
 
     async machineLogs(id) {
@@ -548,17 +755,12 @@ export function createSmolvmSandboxProvider(
     async create(spec) {
       const id = createId();
       const publish = await publishedPort(spec, allocatePort);
-      const config: MachineConfig = {
-        name: id,
-        image: await resolveImage(spec.image),
-        network: true,
-        ...(spec.volumes ? { mounts: spec.volumes.map(mount) } : {}),
-        ...(publish
-          ? { ports: [{ host: publish.host, guest: publish.guest }] }
-          : {}),
-      };
-      const machine = await createMachine(config);
-      if (publish) await machine.exec(["sh", "-c", guestDockerInit]);
+      const image = await resolveImage(spec.image);
+      const mounts = spec.volumes?.map(mount);
+      const ports = publish
+        ? [{ host: publish.host, guest: publish.guest }]
+        : [];
+      const machine = await forkFromGolden({ id, image, mounts, ports });
       const hostGateway = await guestDefaultGateway(machine);
       let disposal: Promise<void> | undefined;
       const dispose = async () => {
