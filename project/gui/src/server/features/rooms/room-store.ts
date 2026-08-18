@@ -1,5 +1,6 @@
 import type { RunState } from '../../../../../runs'
 import type { RunSummary } from '#/server/features/runs/run-control'
+import { failStaleRuns, type RunStep } from '#/server/features/runs/run-storage'
 import type { Sqlite } from '#/server/sqlite'
 
 export const GENERAL_ROOM_ID = 'general' as const
@@ -141,17 +142,8 @@ export type AccountRunAnalytics = {
   rhythm: { day: string; delegations: number }[]
 }
 
-export type StoredStep = {
-  id: string
-  runId: string
-  roomId: string
-  idx: number
-  kind: 'message' | 'tool_call' | 'tool_result'
-  tool?: string
-  callId?: string
-  text: string
-  createdAt: number
-}
+/** A run step plus the Room it belongs to — `run_step` denormalises `room_id`. */
+export type StoredStep = RunStep & { roomId: string }
 
 export interface RoomStore {
   listRooms(): RoomSummary[]
@@ -370,6 +362,7 @@ const stepFrom = (row: StepRow): StoredStep => ({
   ...(row.call_id != null ? { callId: row.call_id } : {}),
   text: row.text,
   createdAt: row.created_at,
+  at: row.created_at,
 })
 const runFrom = (row: RunRow): RoomRun => ({
   id: row.id,
@@ -1261,16 +1254,10 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           run.roomId,
         )
     },
-    failStaleRuns: () => {
-      sqlite
-        .prepare(
-          "UPDATE room_run SET state = 'failed', error = 'Server restarted before the run completed.', completed_at = ? WHERE state IN ('preparing', 'running')",
-        )
-        .run(Date.now())
-      return selectRuns(
-        "WHERE state = 'failed' AND error = 'Server restarted before the run completed.'",
-      )
-    },
+    failStaleRuns: () =>
+      failStaleRuns(sqlite, 'room_run', Date.now()).flatMap((id) =>
+        selectRuns('WHERE id = ?', id),
+      ),
     getRun: (id) => selectRuns('WHERE id = ?', id).at(0),
     appendStep: (step) => {
       sqlite

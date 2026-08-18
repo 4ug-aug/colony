@@ -1,12 +1,7 @@
-import type { Step } from '../../../../../runs'
 import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
+import { runStep, type RunStep } from '#/server/features/runs/run-storage'
 
-export type OneshotRunStep = Step & {
-  id: string
-  runId: string
-  idx: number
-  createdAt: number
-}
+export type { RunStep as OneshotRunStep } from '#/server/features/runs/run-storage'
 
 export type OneshotRun = RunSummary & {
   oneshotId: string
@@ -31,7 +26,7 @@ export type OneshotSession = {
   cancel(runId: string, accountId: string): Promise<OneshotRun | undefined>
   discard(runId: string, accountId: string): Promise<OneshotRun | undefined>
   get(runId: string, accountId: string): OneshotRun | undefined
-  listSteps(runId: string, accountId: string): OneshotRunStep[] | undefined
+  listSteps(runId: string, accountId: string): RunStep[] | undefined
   activeForAccount(accountId: string): OneshotRun | undefined
   stop(): void
 }
@@ -43,7 +38,7 @@ export function createOneshotSession(options: {
   control: RunControl
 }): OneshotSession {
   const runs = new Map<string, OneshotRun>()
-  const steps = new Map<string, OneshotRunStep[]>()
+  const steps = new Map<string, RunStep[]>()
   const startingAccounts = new Set<string>()
 
   const getForAccount = (runId: string, accountId: string) => {
@@ -69,17 +64,7 @@ export function createOneshotSession(options: {
     if (!runs.has(runId)) return
     const list = steps.get(runId)
     if (!list) return
-    list.push({
-      id: crypto.randomUUID(),
-      runId,
-      idx: list.length,
-      kind: step.kind,
-      ...(step.tool === undefined ? {} : { tool: step.tool }),
-      ...(step.callId === undefined ? {} : { callId: step.callId }),
-      text: step.text,
-      createdAt: step.at,
-      at: step.at,
-    })
+    list.push(runStep(runId, list.length, step))
   })
 
   return {

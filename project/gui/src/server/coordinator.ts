@@ -7,6 +7,7 @@ import {
   type RunControl,
   type RunSummary,
 } from './features/runs/run-control'
+import { runStep } from './features/runs/run-storage'
 import {
   createSqliteRoomStore,
   type RoomMessage,
@@ -956,15 +957,8 @@ export function createCoordinator(options: {
     const idx = stepIndex.get(runId) ?? 0
     stepIndex.set(runId, idx + 1)
     const stored: StoredStep = {
-      id: crypto.randomUUID(),
-      runId,
+      ...runStep(runId, idx, step),
       roomId: run.roomId,
-      idx,
-      kind: step.kind,
-      ...(step.tool !== undefined ? { tool: step.tool } : {}),
-      ...(step.callId !== undefined ? { callId: step.callId } : {}),
-      text: step.text,
-      createdAt: step.at,
     }
     options.store.appendStep(stored)
     broadcastRoom(run.roomId, { type: 'run.step', runId, step: stored })

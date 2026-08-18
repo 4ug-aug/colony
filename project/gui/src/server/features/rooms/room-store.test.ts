@@ -68,6 +68,7 @@ function makeStep(overrides: Partial<StoredStep> = {}): StoredStep {
     kind: 'message',
     text: 'hello',
     createdAt: 100,
+    at: 100,
     ...overrides,
   }
 }
@@ -126,6 +127,9 @@ test('room store retains history and fails stale runs', () => {
     state: 'failed',
     completedAt: expect.any(Number),
   })
+  // Only runs this sweep transitioned: a second sweep must not resurrect them,
+  // or every restart re-raises Attention for runs that died restarts ago.
+  expect(store.failStaleRuns()).toEqual([])
   sqlite.close()
 })
 

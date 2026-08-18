@@ -1,4 +1,5 @@
 import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
+import { runStep } from '#/server/features/runs/run-storage'
 import {
   buildIssueRunTask,
   issueLineBranch,
@@ -113,17 +114,7 @@ export function createIssueRunner(options: {
   const unsubscribeSteps = options.control.subscribeSteps((runId, step) => {
     const run = options.store.getRun(runId)
     if (!run) return
-    const stored: IssueRunStep = {
-      id: crypto.randomUUID(),
-      runId,
-      idx: options.store.listSteps(runId).length,
-      kind: step.kind,
-      ...(step.tool === undefined ? {} : { tool: step.tool }),
-      ...(step.callId === undefined ? {} : { callId: step.callId }),
-      text: step.text,
-      createdAt: step.at,
-      at: step.at,
-    }
+    const stored = runStep(runId, options.store.listSteps(runId).length, step)
     options.store.appendStep(stored)
     options.onStep?.(stored)
   })

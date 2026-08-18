@@ -1,6 +1,11 @@
 import { previewCron } from '#/features/schedules/cron'
-import type { RunState, Step } from '../../../../../runs'
+import type { RunState } from '../../../../../runs'
 import type { Sqlite } from '#/server/sqlite'
+import {
+  createRunStepStore,
+  failStaleRuns,
+  type RunStep,
+} from '#/server/features/runs/run-storage'
 
 export type ScheduleState = 'active' | 'paused' | 'archived'
 export type ScheduleSource = 'automatic' | 'manual'
@@ -37,12 +42,7 @@ export type ScheduleRun = {
   stdout: string
   stderr: string
 }
-export type ScheduleRunStep = Step & {
-  id: string
-  runId: string
-  idx: number
-  createdAt: number
-}
+export type { RunStep as ScheduleRunStep } from '#/server/features/runs/run-storage'
 
 export type NewSchedule = Omit<
   Schedule,
@@ -90,8 +90,8 @@ export interface ScheduleStore {
     scheduleId: string,
     options: { limit: number; cursor?: string },
   ): { runs: ScheduleRun[]; nextCursor?: string }
-  appendStep(step: ScheduleRunStep): void
-  listSteps(runId: string): ScheduleRunStep[]
+  appendStep(step: RunStep): void
+  listSteps(runId: string): RunStep[]
   failStaleRuns(now: number): ScheduleRun[]
 }
 
@@ -131,17 +131,6 @@ type ScheduleRunRow = {
   stdout: string
   stderr: string
 }
-type StepRow = {
-  id: string
-  run_id: string
-  idx: number
-  kind: 'message' | 'tool_call' | 'tool_result'
-  tool: string | null
-  call_id: string | null
-  text: string
-  created_at: number
-}
-
 const transaction = <T>(sqlite: Sqlite, work: () => T): T => {
   sqlite.prepare('BEGIN').run()
   try {
@@ -228,6 +217,7 @@ function nextRun(schedule: Schedule, from: number): number {
 export function createSqliteScheduleStore(sqlite: Sqlite): ScheduleStore {
   const activeWhere = "WHERE s.state != 'archived'"
   return {
+    ...createRunStepStore(sqlite, 'schedule_run_step'),
     listSchedules: (includeArchived = false) =>
       selectSchedule(sqlite, includeArchived ? '' : activeWhere),
     getSchedule: (id) => selectSchedule(sqlite, 'WHERE s.id = ?', id)[0],
@@ -473,57 +463,10 @@ export function createSqliteScheduleStore(sqlite: Sqlite): ScheduleStore {
           : {}),
       }
     },
-    appendStep: (step) => {
-      sqlite
-        .prepare(
-          'INSERT INTO schedule_run_step (id, run_id, idx, kind, tool, call_id, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        )
-        .run(
-          step.id,
-          step.runId,
-          step.idx,
-          step.kind,
-          step.tool ?? null,
-          step.callId ?? null,
-          step.text,
-          step.createdAt,
-        )
-    },
-    listSteps: (runId) =>
-      (
-        sqlite
-          .prepare(
-            'SELECT * FROM schedule_run_step WHERE run_id = ? ORDER BY idx',
-          )
-          .all(runId) as StepRow[]
-      ).map((row) => ({
-        id: row.id,
-        runId: row.run_id,
-        idx: row.idx,
-        kind: row.kind,
-        ...(row.tool === null ? {} : { tool: row.tool }),
-        ...(row.call_id === null ? {} : { callId: row.call_id }),
-        text: row.text,
-        createdAt: row.created_at,
-        at: row.created_at,
-      })),
-    failStaleRuns: (now) => {
-      const ids = (
-        sqlite
-          .prepare(
-            "SELECT id FROM schedule_run WHERE state IN ('preparing', 'running')",
-          )
-          .all() as { id: string }[]
-      ).map(({ id }) => id)
-      sqlite
-        .prepare(
-          "UPDATE schedule_run SET state = 'failed', error = 'Server restarted before the run completed.', completed_at = ? WHERE state IN ('preparing', 'running')",
-        )
-        .run(now)
-      return ids.flatMap((id) => {
+    failStaleRuns: (now) =>
+      failStaleRuns(sqlite, 'schedule_run', now).flatMap((id) => {
         const run = selectRun(sqlite, 'WHERE r.id = ?', id)[0]
         return run ? [run] : []
-      })
-    },
+      }),
   }
 }
