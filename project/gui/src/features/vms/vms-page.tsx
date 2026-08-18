@@ -248,7 +248,7 @@ function MachinePreviewBody({
         className="absolute inset-0 grid place-items-center overflow-hidden"
         role="status"
       >
-        <StaticDither speed={0.35} />
+        <StaticDither speed={0.35} lightOpacity={0.30} darkOpacity={0.15} />
       </div>
     )
   return (

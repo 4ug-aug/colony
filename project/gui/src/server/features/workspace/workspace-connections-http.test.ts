@@ -1,50 +1,15 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createAdmissionStore } from '#/server/features/accounts/admission'
 import { createAdmissionHttpHandler } from '#/server/features/accounts/admission-http'
 import { createWorkspaceConnections } from './workspace-connections'
 
-const schema = `
-CREATE TABLE user (id TEXT PRIMARY KEY);
-CREATE TABLE admission_setup_token (
-  id INTEGER PRIMARY KEY,
-  token_hash TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  claimed_at INTEGER,
-  redeemed_at INTEGER
-);
-CREATE TABLE workspace_invitation (
-  id TEXT PRIMARY KEY,
-  token_hash TEXT NOT NULL UNIQUE,
-  created_by TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  claimed_at INTEGER,
-  redeemed_at INTEGER,
-  revoked_at INTEGER
-);
-CREATE TABLE workspace_connection (
-  kind text PRIMARY KEY NOT NULL,
-  fields_json text NOT NULL,
-  api_key_ciphertext text,
-  api_key_iv text,
-  api_key_tag text,
-  created_at integer NOT NULL,
-  updated_at integer NOT NULL
-);
-CREATE TABLE agent_definition_connection (
-  agent_definition_id text NOT NULL,
-  kind text NOT NULL REFERENCES workspace_connection (kind) ON DELETE CASCADE,
-  PRIMARY KEY (agent_definition_id, kind)
-);
-`
 
 test('admin can save, link, and clear workspace connections over HTTP', async () => {
   const previous = process.env.BETTER_AUTH_SECRET
   process.env.BETTER_AUTH_SECRET = 'test-secret'
   try {
-    const sqlite = new Database(':memory:')
-    sqlite.exec(schema)
+    const sqlite = migratedDatabase()
     sqlite.query('INSERT INTO user (id) VALUES (?)').run('admin')
     const connections = createWorkspaceConnections(sqlite)
     const handler = createAdmissionHttpHandler({

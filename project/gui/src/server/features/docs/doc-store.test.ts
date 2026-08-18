@@ -1,23 +1,13 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createSqliteDocStore } from './doc-store'
 
-const schema = `
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT);
-  INSERT INTO user VALUES ('ada', 'Ada', NULL);
-  CREATE TABLE doc (
-    id TEXT PRIMARY KEY NOT NULL,
-    title TEXT NOT NULL DEFAULT '',
-    body TEXT NOT NULL DEFAULT '',
-    created_by TEXT NOT NULL REFERENCES user(id),
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-`
 
 test('create makes doc retrievable via get and list', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+  `)
   const store = createSqliteDocStore(sqlite)
 
   const created = store.createDoc({
@@ -41,8 +31,10 @@ test('create makes doc retrievable via get and list', () => {
 })
 
 test('update body/title changes updatedAt', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+  `)
   const store = createSqliteDocStore(sqlite)
 
   store.createDoc({
@@ -65,8 +57,10 @@ test('update body/title changes updatedAt', () => {
 })
 
 test('deleteDoc removes the Doc', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+  `)
   const store = createSqliteDocStore(sqlite)
 
   store.createDoc({

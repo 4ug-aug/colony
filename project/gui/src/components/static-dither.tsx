@@ -1,9 +1,9 @@
-import { Dithering } from '@paper-design/shaders-react'
 import { useTheme } from '#/components/theme-provider'
 import { useMediaQuery } from '#/hooks/use-media-query'
+import { Dithering } from '@paper-design/shaders-react'
 
 /** Warp dither used as a page/placeholder texture. `speed` 0 is still. */
-export function StaticDither({ speed = 0 }: { speed?: number }) {
+export function StaticDither({ speed = 0, lightOpacity = 0.16, darkOpacity = 0.1 }: { speed?: number, lightOpacity?: number, darkOpacity?: number }) {
   const { theme } = useTheme()
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const dark =
@@ -13,7 +13,7 @@ export function StaticDither({ speed = 0 }: { speed?: number }) {
 
   return (
     <div
-      className="pointer-events-none absolute inset-0 opacity-[0.16] dark:opacity-[0.1]"
+      className={`pointer-events-none absolute inset-0 opacity-[${lightOpacity}] dark:opacity-[${darkOpacity}]`}
       aria-hidden="true"
     >
       <Dithering

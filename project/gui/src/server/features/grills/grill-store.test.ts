@@ -1,41 +1,7 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createSqliteGrillStore } from './grill-store'
 
-const schema = `
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT);
-  INSERT INTO user VALUES ('ada', 'Ada', NULL);
-  INSERT INTO user VALUES ('grace', 'Grace', NULL);
-  CREATE TABLE grill (
-    id TEXT PRIMARY KEY NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('code', 'general')),
-    visibility TEXT NOT NULL CHECK (visibility IN ('invite-only', 'workspace-open')),
-    agent_definition_id TEXT NOT NULL,
-    repository TEXT,
-    base_ref TEXT,
-    frontier TEXT NOT NULL DEFAULT '{"questions":[],"drafts":{}}',
-    settled_answers TEXT NOT NULL DEFAULT '[]',
-    draft_artifacts TEXT,
-    created_by TEXT NOT NULL REFERENCES user(id),
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-  CREATE TABLE grill_participant (
-    grill_id TEXT NOT NULL REFERENCES grill(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES user(id),
-    PRIMARY KEY (grill_id, user_id)
-  );
-  CREATE TABLE grill_attention (
-    id TEXT PRIMARY KEY NOT NULL,
-    grill_id TEXT NOT NULL REFERENCES grill(id) ON DELETE CASCADE,
-    recipient_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-    kind TEXT NOT NULL CHECK (kind IN ('grill_invite')),
-    source_id TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    acknowledged_at INTEGER,
-    UNIQUE(recipient_id, kind, source_id)
-  );
-`
 
 function harness(opts?: {
   hasGuidanceSkill?: (agentId: string) => boolean
@@ -46,9 +12,11 @@ function harness(opts?: {
   >[1]['materializeCodeGrill']
   setIssueBranch?: Parameters<typeof createSqliteGrillStore>[1]['setIssueBranch']
 }) {
-  const sqlite = new Database(':memory:')
-  sqlite.exec('PRAGMA foreign_keys = ON')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
+  `)
   const store = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: opts?.hasGuidanceSkill ?? (() => true),
     defaultRepository: 'acme/sweat',

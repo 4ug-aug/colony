@@ -1,23 +1,7 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createWorkspaceConnections } from './workspace-connections'
 
-const schema = `
-CREATE TABLE workspace_connection (
-  kind text PRIMARY KEY NOT NULL,
-  fields_json text NOT NULL,
-  api_key_ciphertext text,
-  api_key_iv text,
-  api_key_tag text,
-  created_at integer NOT NULL,
-  updated_at integer NOT NULL
-);
-CREATE TABLE agent_definition_connection (
-  agent_definition_id text NOT NULL,
-  kind text NOT NULL REFERENCES workspace_connection (kind) ON DELETE CASCADE,
-  PRIMARY KEY (agent_definition_id, kind)
-);
-`
 
 const withSecret = <T>(run: () => T): T => {
   const previous = process.env.BETTER_AUTH_SECRET
@@ -31,8 +15,7 @@ const withSecret = <T>(run: () => T): T => {
 }
 
 const createStore = () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
   return { sqlite, store: createWorkspaceConnections(sqlite) }
 }
 

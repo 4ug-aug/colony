@@ -1,30 +1,18 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createSqliteBulletinStore } from './bulletin-store'
 import { createBulletinsHttp } from './bulletins-http'
 import type { WorkspaceServerMessage } from '#/server/coordinator'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 
-const schema = `
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT);
-  INSERT INTO user VALUES ('ada', 'Ada', NULL);
-  CREATE TABLE bulletin (
-    id TEXT PRIMARY KEY NOT NULL,
-    body TEXT NOT NULL DEFAULT '',
-    x REAL NOT NULL CHECK (x >= 0 AND x <= 1),
-    y REAL NOT NULL CHECK (y >= 0 AND y <= 1),
-    poll TEXT,
-    created_by TEXT NOT NULL REFERENCES user(id),
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-`
 
 const ada: RoomUser = { id: 'ada', name: 'Ada' }
 
 function harness() {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+  `)
   const bulletinStore = createSqliteBulletinStore(sqlite)
   const broadcasts: WorkspaceServerMessage[] = []
   const handle = createBulletinsHttp({

@@ -1,5 +1,5 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createAdmissionStore } from './admission'
 import { invitationUrl } from './admission-http'
 import { createCoordinator } from '#/server/coordinator'
@@ -8,27 +8,7 @@ import { createSqliteRoomStore } from '#/server/features/rooms/room-store'
 import type { RunControl } from '#/server/features/runs/run-control'
 
 const makeDatabase = () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(`
-    CREATE TABLE user (id TEXT PRIMARY KEY);
-    CREATE TABLE admission_setup_token (
-      id INTEGER PRIMARY KEY,
-      token_hash TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      claimed_at INTEGER,
-      redeemed_at INTEGER
-    );
-    CREATE TABLE workspace_invitation (
-      id TEXT PRIMARY KEY,
-      token_hash TEXT NOT NULL UNIQUE,
-      created_by TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL,
-      claimed_at INTEGER,
-      redeemed_at INTEGER,
-      revoked_at INTEGER
-    );
-  `)
+  const sqlite = migratedDatabase()
   return sqlite
 }
 
@@ -113,17 +93,8 @@ test('concurrent invitation redemption claims at most once', async () => {
 })
 
 test('admission endpoints close open signup and enforce the administrator boundary', async () => {
-  const sqlite = new Database(':memory:')
+  const sqlite = migratedDatabase()
   sqlite.exec(`
-    CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT);
-    CREATE TABLE room (id TEXT PRIMARY KEY, name TEXT NOT NULL, visibility TEXT DEFAULT 'public' NOT NULL, created_by TEXT);
-    CREATE TABLE room_member (room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL, PRIMARY KEY (room_id, user_id));
-    CREATE TABLE room_message (id TEXT PRIMARY KEY, room_id TEXT, author_id TEXT, author_name TEXT, author_image TEXT, author_kind TEXT DEFAULT 'user' NOT NULL, text TEXT, created_at INTEGER);
-    CREATE TABLE room_run (id TEXT PRIMARY KEY, room_id TEXT, trigger_message_id TEXT, requested_by_id TEXT, requested_by_name TEXT, requested_by_image TEXT, task TEXT, agent_id TEXT, provider TEXT NOT NULL DEFAULT 'openai', model TEXT NOT NULL DEFAULT '', state TEXT, created_at INTEGER, started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT, stdout TEXT, stderr TEXT);
-    CREATE TABLE run_step (id TEXT PRIMARY KEY, run_id TEXT, room_id TEXT, idx INTEGER, kind TEXT, tool TEXT, call_id TEXT, text TEXT, created_at INTEGER);
-    CREATE TABLE room_attention (id TEXT PRIMARY KEY, room_id TEXT NOT NULL, recipient_id TEXT NOT NULL, kind TEXT NOT NULL, source_id TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER, UNIQUE(recipient_id, kind, source_id));
-    CREATE TABLE admission_setup_token (id INTEGER PRIMARY KEY, token_hash TEXT NOT NULL, created_at INTEGER NOT NULL, claimed_at INTEGER, redeemed_at INTEGER);
-    CREATE TABLE workspace_invitation (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, claimed_at INTEGER, redeemed_at INTEGER, revoked_at INTEGER);
     INSERT INTO room (id, name, visibility) VALUES ('general', 'General', 'public');
   `)
   const admission = createAdmissionStore(sqlite)

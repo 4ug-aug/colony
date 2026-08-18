@@ -1,22 +1,7 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { clampNormalized, createSqliteBulletinStore } from './bulletin-store'
 
-const schema = `
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT);
-  INSERT INTO user VALUES ('ada', 'Ada', NULL);
-  INSERT INTO user VALUES ('grace', 'Grace', NULL);
-  CREATE TABLE bulletin (
-    id TEXT PRIMARY KEY NOT NULL,
-    body TEXT NOT NULL DEFAULT '',
-    x REAL NOT NULL CHECK (x >= 0 AND x <= 1),
-    y REAL NOT NULL CHECK (y >= 0 AND y <= 1),
-    poll TEXT,
-    created_by TEXT NOT NULL REFERENCES user(id),
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-`
 
 test('clampNormalized keeps values in unit interval', () => {
   expect(clampNormalized(-0.5)).toBe(0)
@@ -26,8 +11,11 @@ test('clampNormalized keeps values in unit interval', () => {
 })
 
 test('bulletin store creates, updates, moves, and deletes', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
+  `)
   const store = createSqliteBulletinStore(sqlite)
 
   const created = store.createBulletin({
@@ -60,8 +48,11 @@ test('bulletin store creates, updates, moves, and deletes', () => {
 })
 
 test('bulletin poll records, replaces, and retracts votes', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+    INSERT INTO user (id, name, email) VALUES ('grace', 'Grace', 'grace@example.com');
+  `)
   const store = createSqliteBulletinStore(sqlite)
 
   store.createBulletin({

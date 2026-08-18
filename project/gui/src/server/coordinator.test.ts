@@ -1,5 +1,5 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createServer } from 'node:net'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -3989,37 +3989,7 @@ test('verifyRealtimeTicket rejects tampered and malformed tickets', () => {
 })
 
 test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edits', async () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(`
-    CREATE TABLE grill (
-      id TEXT PRIMARY KEY NOT NULL,
-      kind TEXT NOT NULL,
-      visibility TEXT NOT NULL,
-      agent_definition_id TEXT NOT NULL,
-      repository TEXT,
-      base_ref TEXT,
-      frontier TEXT NOT NULL,
-      settled_answers TEXT NOT NULL,
-      draft_artifacts TEXT,
-      created_by TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE TABLE grill_participant (
-      grill_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      PRIMARY KEY (grill_id, user_id)
-    );
-    CREATE TABLE grill_attention (
-      id TEXT PRIMARY KEY NOT NULL,
-      grill_id TEXT NOT NULL,
-      recipient_id TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      source_id TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      acknowledged_at INTEGER
-    );
-  `)
+  const sqlite = migratedDatabase()
   const grillStore = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: () => true,
   })
@@ -4144,37 +4114,7 @@ test('Grill stream leases a field, broadcasts drafts, and blocks conflicting edi
 })
 
 test('Grill submit broadcasts grill.changed to other Accounts on the stream', async () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(`
-    CREATE TABLE grill (
-      id TEXT PRIMARY KEY NOT NULL,
-      kind TEXT NOT NULL,
-      visibility TEXT NOT NULL,
-      agent_definition_id TEXT NOT NULL,
-      repository TEXT,
-      base_ref TEXT,
-      frontier TEXT NOT NULL,
-      settled_answers TEXT NOT NULL,
-      draft_artifacts TEXT,
-      created_by TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE TABLE grill_participant (
-      grill_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      PRIMARY KEY (grill_id, user_id)
-    );
-    CREATE TABLE grill_attention (
-      id TEXT PRIMARY KEY NOT NULL,
-      grill_id TEXT NOT NULL,
-      recipient_id TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      source_id TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      acknowledged_at INTEGER
-    );
-  `)
+  const sqlite = migratedDatabase()
   const grillStore = createSqliteGrillStore(sqlite, {
     hasGuidanceSkill: () => true,
   })

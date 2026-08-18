@@ -1,16 +1,9 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createWorkspacePreviewConfig } from './preview-config'
 
 const createConfig = () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(`CREATE TABLE workspace_preview_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    init_command TEXT,
-    preview_command TEXT,
-    guest_port INTEGER NOT NULL,
-    grace_duration_ms INTEGER NOT NULL
-  )`)
+  const sqlite = migratedDatabase()
   return { sqlite, config: createWorkspacePreviewConfig(sqlite) }
 }
 

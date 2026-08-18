@@ -1,32 +1,10 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import {
   createSqliteScheduleStore,
   type NewScheduleRun,
 } from './schedule-store'
 
-const schema = `
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT);
-  INSERT INTO user VALUES ('ada', 'Ada', NULL);
-  CREATE TABLE schedule (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, agent_definition_id TEXT NOT NULL,
-    task TEXT NOT NULL, cron_expression TEXT NOT NULL, timezone TEXT NOT NULL,
-    state TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES user(id),
-    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, next_run_at INTEGER
-  );
-  CREATE TABLE schedule_run (
-    id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL REFERENCES schedule(id) ON DELETE CASCADE,
-    source TEXT NOT NULL, scheduled_for INTEGER, started_by TEXT REFERENCES user(id),
-    task TEXT NOT NULL, agent_id TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, state TEXT NOT NULL, created_at INTEGER NOT NULL,
-    started_at INTEGER, completed_at INTEGER, exit_code INTEGER, error TEXT,
-    stdout TEXT NOT NULL, stderr TEXT NOT NULL
-  );
-  CREATE UNIQUE INDEX schedule_one_active_run_idx ON schedule_run(schedule_id) WHERE state IN ('preparing', 'running');
-  CREATE TABLE schedule_run_step (
-    id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES schedule_run(id), idx INTEGER NOT NULL,
-    kind TEXT NOT NULL, tool TEXT, call_id TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL
-  );
-`
 
 const run = (
   id: string,
@@ -48,8 +26,10 @@ const run = (
 })
 
 test('schedule store enforces one active run and advances automatic cadence transactionally', () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+  `)
   const store = createSqliteScheduleStore(sqlite)
   store.createSchedule({
     id: 'schedule-1',

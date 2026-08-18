@@ -1,13 +1,9 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createWorkspaceCursorRuntimeConfig } from './cursor-runtime-config'
 
 const createConfig = () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(`CREATE TABLE workspace_cursor_runtime_config (
-    id INTEGER PRIMARY KEY, model TEXT NOT NULL,
-    api_key_ciphertext TEXT NOT NULL, api_key_iv TEXT NOT NULL, api_key_tag TEXT NOT NULL
-  )`)
+  const sqlite = migratedDatabase()
   const listModels = async (apiKey: string) => {
     if (apiKey !== 'secret-key' && apiKey !== 'rotated-key')
       throw new Error('bad key')

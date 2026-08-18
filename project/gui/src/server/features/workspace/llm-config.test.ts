@@ -1,13 +1,9 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createWorkspaceLlmConfig } from './llm-config'
 
 const createConfig = () => {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(`CREATE TABLE workspace_llm_config (
-    id INTEGER PRIMARY KEY, provider TEXT NOT NULL, base_url TEXT NOT NULL, model TEXT NOT NULL,
-    api_key_ciphertext TEXT NOT NULL, api_key_iv TEXT NOT NULL, api_key_tag TEXT NOT NULL
-  )`)
+  const sqlite = migratedDatabase()
   return { sqlite, config: createWorkspaceLlmConfig(sqlite) }
 }
 

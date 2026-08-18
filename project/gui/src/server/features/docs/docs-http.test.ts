@@ -1,28 +1,18 @@
+import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
 import { createSqliteDocStore } from './doc-store'
 import { createDocsHttp } from './docs-http'
 import type { WorkspaceServerMessage } from '#/server/coordinator'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 
-const schema = `
-  CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT);
-  INSERT INTO user VALUES ('ada', 'Ada', NULL);
-  CREATE TABLE doc (
-    id TEXT PRIMARY KEY NOT NULL,
-    title TEXT NOT NULL DEFAULT '',
-    body TEXT NOT NULL DEFAULT '',
-    created_by TEXT NOT NULL REFERENCES user(id),
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-`
 
 const ada: RoomUser = { id: 'ada', name: 'Ada' }
 
 function harness() {
-  const sqlite = new Database(':memory:')
-  sqlite.exec(schema)
+  const sqlite = migratedDatabase()
+  sqlite.exec(`
+    INSERT INTO user (id, name, email) VALUES ('ada', 'Ada', 'ada@example.com');
+  `)
   const docStore = createSqliteDocStore(sqlite)
   const broadcasts: WorkspaceServerMessage[] = []
   const handle = createDocsHttp({
