@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
@@ -69,25 +70,23 @@ export function CursorRuntimeSettings() {
 
   if (isPending) {
     return (
-      <section className="border-b pb-4">
-        <h2 className="font-semibold">Cursor agent runtime</h2>
-        <p className="mt-4 text-sm text-muted-foreground" role="status">
+      <SettingsCard title="Cursor agent runtime">
+        <p className="text-sm text-muted-foreground" role="status">
           <BrailleLoader text="Loading Cursor runtime settings" />
         </p>
-      </section>
+      </SettingsCard>
     )
   }
 
   if (error || !data) {
     return (
-      <section className="border-b pb-4">
-        <h2 className="font-semibold">Cursor agent runtime</h2>
-        <p className="mt-4 text-sm text-destructive" role="alert">
+      <SettingsCard title="Cursor agent runtime">
+        <p className="text-sm text-destructive" role="alert">
           {error instanceof Error
             ? error.message
             : 'Could not load Cursor runtime settings'}
         </p>
-      </section>
+      </SettingsCard>
     )
   }
 
@@ -145,20 +144,23 @@ function CursorRuntimeForm({
   const busy = save.isPending || refreshing
 
   return (
-    <section className="border-b pb-4">
-      <h2 className="font-semibold">Cursor agent runtime</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Optional Cursor local SDK runtime for{' '}
-        <code className="text-xs">@software-engineer</code> runs. This is
-        separate from the OpenAI-compatible LLM provider used by{' '}
-        <code className="text-xs">@antboy</code>.
-      </p>
+    <SettingsCard
+      title="Cursor agent runtime"
+      description={
+        <>
+          Optional Cursor local SDK runtime for{' '}
+          <code className="text-[0.85em]">@software-engineer</code> runs. This
+          is separate from the OpenAI-compatible LLM provider used by{' '}
+          <code className="text-[0.85em]">@antboy</code>.
+        </>
+      }
+    >
       {formError && (
-        <p className="mt-2 text-sm text-destructive" role="alert">
+        <p className="mb-3 text-sm text-destructive" role="alert">
           {formError}
         </p>
       )}
-      <div className="mt-4 grid max-w-xl gap-3">
+      <div className="grid gap-3">
         <Input
           aria-label="Cursor API key"
           disabled={busy}
@@ -209,8 +211,8 @@ function CursorRuntimeForm({
           </Button>
           <span className="text-sm text-muted-foreground">
             {config.configured ? (
-              <span className="inline-flex items-center gap-1 text-green-600">
-                <Check className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1 text-green-500">
+                <Check className="size-3.5" />
                 Configured
               </span>
             ) : (
@@ -219,6 +221,6 @@ function CursorRuntimeForm({
           </span>
         </div>
       </div>
-    </section>
+    </SettingsCard>
   )
 }

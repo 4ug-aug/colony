@@ -9,9 +9,9 @@ import {
   CardTitle,
 } from '#/components/ui/card'
 import { ExternalLink, HardDrive, Network, Timer } from 'lucide-react'
+import { running, type Machine } from '../types'
 import { MachinePreviewThumbnail } from './machine-preview'
 import { NukeMachineButton } from './nuke-machine-button'
-import { running, type Machine } from '../types'
 
 export function MachineCard({
   machine,
@@ -31,7 +31,7 @@ export function MachineCard({
       {machine.previewUrl && <MachinePreviewThumbnail machine={machine} />}
       <CardHeader className="relative">
         <CardTitle className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-mono">{machine.id}</span>
+          <span className="truncate">{machine.id}</span>
           <Badge variant={running(machine.state) ? 'success' : 'secondary'}>
             {machine.state}
           </Badge>

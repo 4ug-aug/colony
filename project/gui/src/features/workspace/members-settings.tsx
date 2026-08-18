@@ -1,5 +1,6 @@
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
+import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiFetch, apiJson } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -75,11 +76,10 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
   const busy = changeMember.isPending || isFetching
 
   return (
-    <section>
-      <h2 className="font-semibold">Members</h2>
-      <p className="mb-4 mt-1 text-sm text-muted-foreground">
-        Suspend or restore workspace access.
-      </p>
+    <SettingsCard
+      title="Members"
+      description="Suspend or restore workspace access."
+    >
       {(error || actionError) && (
         <p className="mb-3 text-sm text-destructive" role="alert">
           {actionError ??
@@ -93,9 +93,12 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
           <BrailleLoader text="Loading members" />
         </p>
       ) : (
-        <div className="divide-y rounded-md border">
+        <div className="divide-y divide-border/40">
           {members.map((member) => (
-            <div key={member.id} className="flex items-center gap-3 p-3">
+            <div
+              key={member.id}
+              className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
+            >
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">
                   {member.username ?? member.name}
@@ -121,6 +124,6 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
           ))}
         </div>
       )}
-    </section>
+    </SettingsCard>
   )
 }

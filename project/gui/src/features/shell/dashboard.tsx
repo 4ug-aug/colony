@@ -1,3 +1,4 @@
+import { StaticDither } from '#/components/static-dither'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
 import {
@@ -57,7 +58,6 @@ import {
   Hash,
   Lock,
   Plus,
-  Settings,
   StickyNote,
   Wifi,
   WifiOff,
@@ -449,7 +449,7 @@ export function Dashboard({
         user={user}
       />
       <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
-        {view !== 'account' && (
+        {view !== 'account' && view !== 'workspace' && (
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
             {view === 'grills' && selectedGrillId ? (
               <GrillSessionHeader
@@ -468,9 +468,7 @@ export function Dashboard({
               />
             ) : (
               <>
-                {view === 'workspace' ? (
-                  <Settings className="size-4 text-muted-foreground" />
-                ) : view === 'schedules' ? (
+                {view === 'schedules' ? (
                   <CalendarClock className="size-4 text-muted-foreground" />
                 ) : view === 'issues' ? (
                   <Cuboid className="size-4 text-muted-foreground" />
@@ -488,21 +486,19 @@ export function Dashboard({
                   <Hash className="size-4 text-muted-foreground" />
                 )}
                 <p className="font-semibold">
-                  {view === 'workspace'
-                    ? 'Workspace'
-                    : view === 'schedules'
-                      ? 'Schedules'
-                      : view === 'issues'
-                        ? 'Issues'
-                        : view === 'bulletins'
-                          ? 'Bulletin board'
-                          : view === 'docs'
-                            ? 'Docs'
-                            : view === 'grills'
-                              ? 'Grills'
-                              : view === 'vms'
-                                ? 'Machines'
-                                : (room?.name ?? 'Rooms')}
+                  {view === 'schedules'
+                    ? 'Schedules'
+                    : view === 'issues'
+                      ? 'Issues'
+                      : view === 'bulletins'
+                        ? 'Bulletin board'
+                        : view === 'docs'
+                          ? 'Docs'
+                          : view === 'grills'
+                            ? 'Grills'
+                            : view === 'vms'
+                              ? 'Machines'
+                              : (room?.name ?? 'Rooms')}
                 </p>
                 {view === 'room' && room?.visibility === 'private' && (
                   <MembersPanel
@@ -564,7 +560,8 @@ export function Dashboard({
           </div>
         )}
         {view === 'workspace' && user.role === 'admin' && (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="relative min-h-0 flex-1 overflow-y-auto bg-muted/30">
+            <StaticDither />
             <WorkspaceSettingsPage currentUserId={user.id} />
           </div>
         )}

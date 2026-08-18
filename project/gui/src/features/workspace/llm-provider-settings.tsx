@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import {
   defaultLlmBaseUrl,
@@ -47,23 +48,21 @@ export function LlmProviderSettings() {
 
   if (isPending) {
     return (
-      <section className="border-b pb-4">
-        <h2 className="font-semibold">LLM provider</h2>
-        <p className="mt-4 text-sm text-muted-foreground" role="status">
+      <SettingsCard title="LLM provider">
+        <p className="text-sm text-muted-foreground" role="status">
           <BrailleLoader text="Loading LLM settings" />
         </p>
-      </section>
+      </SettingsCard>
     )
   }
 
   if (error || !data) {
     return (
-      <section className="border-b pb-4">
-        <h2 className="font-semibold">LLM provider</h2>
-        <p className="mt-4 text-sm text-destructive" role="alert">
+      <SettingsCard title="LLM provider">
+        <p className="text-sm text-destructive" role="alert">
           {error instanceof Error ? error.message : 'Could not load LLM settings'}
         </p>
-      </section>
+      </SettingsCard>
     )
   }
 
@@ -121,17 +120,16 @@ function LlmProviderForm({
   const busy = save.isPending || refreshing
 
   return (
-    <section className="border-b pb-4">
-      <h2 className="font-semibold">LLM provider</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Configure the OpenAI-compatible provider used for new agent runs.
-      </p>
+    <SettingsCard
+      title="LLM provider"
+      description="Configure the OpenAI-compatible provider used for new agent runs."
+    >
       {formError && (
-        <p className="mt-2 text-sm text-destructive" role="alert">
+        <p className="mb-3 text-sm text-destructive" role="alert">
           {formError}
         </p>
       )}
-      <div className="mt-4 grid max-w-xl gap-3">
+      <div className="grid gap-3">
         <Select
           value={provider}
           disabled={busy}
@@ -195,8 +193,8 @@ function LlmProviderForm({
           </Button>
           <span className="text-sm text-muted-foreground">
             {config.configured ? (
-              <span className="inline-flex items-center gap-1 text-green-600">
-                <Check className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1 text-green-500">
+                <Check className="size-3.5" />
                 Configured
               </span>
             ) : (
@@ -205,6 +203,6 @@ function LlmProviderForm({
           </span>
         </div>
       </div>
-    </section>
+    </SettingsCard>
   )
 }

@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -117,13 +118,12 @@ export function InvitationSettings() {
     createInvitation.isPending || revoke.isPending || isFetching
 
   return (
-    <section className="border-b pb-4">
-      <h2 className="font-semibold">Invitation links</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Create a single-use link to invite someone to this workspace.
-      </p>
+    <SettingsCard
+      title="Invitation links"
+      description="Create a single-use link to invite someone to this workspace."
+    >
       {(error || actionError) && (
-        <p className="mt-2 text-sm text-destructive" role="alert">
+        <p className="mb-3 text-sm text-destructive" role="alert">
           {actionError ??
             (error instanceof Error
               ? error.message
@@ -131,11 +131,11 @@ export function InvitationSettings() {
         </p>
       )}
       {isPending && (
-        <p className="mt-4 text-sm text-muted-foreground" role="status">
+        <p className="mb-3 text-sm text-muted-foreground" role="status">
           <BrailleLoader text="Loading invitations" />
         </p>
       )}
-      <div className="mt-4 flex max-w-sm gap-2">
+      <div className="flex gap-2">
         <Select
           value={String(days)}
           disabled={busy}
@@ -164,7 +164,7 @@ export function InvitationSettings() {
         </Button>
       </div>
       {newLink && (
-        <div className="mt-3 flex max-w-xl items-center gap-2">
+        <div className="mt-3 flex items-center gap-2">
           <Input
             aria-label="Invitation link"
             className="min-w-0 font-mono text-xs"
@@ -176,8 +176,10 @@ export function InvitationSettings() {
           </Button>
         </div>
       )}
-      <div className="mt-5 space-y-2">
-        <h3 className="text-sm font-medium">Recent invitations</h3>
+      <div className="mt-5">
+        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+          Recent invitations
+        </h3>
         {!isPending && invitations.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No invitations created yet.
@@ -186,7 +188,7 @@ export function InvitationSettings() {
         {invitations.map((invitation) => (
           <div
             key={invitation.id}
-            className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm"
+            className="flex items-center gap-3 border-b border-border/40 py-2 text-sm last:border-b-0"
           >
             <span className="min-w-0 flex-1">
               <span className="block capitalize">{invitation.state}</span>
@@ -207,6 +209,6 @@ export function InvitationSettings() {
           </div>
         ))}
       </div>
-    </section>
+    </SettingsCard>
   )
 }

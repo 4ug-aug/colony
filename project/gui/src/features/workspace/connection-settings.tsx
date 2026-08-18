@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
 } from '#/components/ui/tooltip'
 import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
+import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiFetch, apiJson, apiJsonBody } from '#/lib/api-transport'
 import { cn } from '#/lib/utils'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -89,72 +90,66 @@ export function ConnectionSettings() {
 
   if (isPending) {
     return (
-      <section className="border-b pb-4">
-        <h2 className="font-semibold">Connections</h2>
-        <p className="mt-4 text-sm text-muted-foreground" role="status">
+      <SettingsCard title="Connections">
+        <p className="text-sm text-muted-foreground" role="status">
           <BrailleLoader text="Loading connections" />
         </p>
-      </section>
+      </SettingsCard>
     )
   }
 
   if (error || !data) {
     return (
-      <section className="border-b pb-4">
-        <h2 className="font-semibold">Connections</h2>
-        <p className="mt-4 text-sm text-destructive" role="alert">
+      <SettingsCard title="Connections">
+        <p className="text-sm text-destructive" role="alert">
           {error instanceof Error
             ? error.message
             : 'Could not load connections'}
         </p>
-      </section>
+      </SettingsCard>
     )
   }
 
   return (
-    <section className="border-b pb-4">
-      <h2 className="font-semibold">Connections</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Configure external providers and link them to agents. Clear removes
-        credentials and all links for that connection.
-      </p>
+    <SettingsCard
+      title="Connections"
+      description="Configure external providers and link them to agents. Clear removes credentials and all links for that connection."
+    >
       {actionError && (
-        <p className="mt-2 text-sm text-destructive" role="alert">
+        <p className="mb-3 text-sm text-destructive" role="alert">
           {actionError}
         </p>
       )}
-      <div className="mt-4 grid gap-3">
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {data.connections.map((connection) => (
-            <li key={connection.id} className="h-full">
-              <ConnectionCard
-                agents={data.agents}
-                connection={connection}
-                refreshing={isFetching}
-                onError={setActionError}
-                onUpdated={(next) => {
-                  setActionError(undefined)
-                  queryClient.setQueryData<ConnectionsCatalog>(
-                    workspaceConnectionsQueryKey,
-                    (current) =>
-                      current
-                        ? {
-                            ...current,
-                            connections: current.connections.map((item) =>
-                              item.id === next.id ? next : item,
-                            ),
-                          }
-                        : current,
-                  )
-                  refreshAgentDefinitions()
-                  void refreshConnections()
-                }}
-              />
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {data.connections.map((connection) => (
+          <li key={connection.id} className="h-full">
+            <ConnectionCard
+              agents={data.agents}
+              connection={connection}
+              refreshing={isFetching}
+              onError={setActionError}
+              onUpdated={(next) => {
+                setActionError(undefined)
+                queryClient.setQueryData<ConnectionsCatalog>(
+                  workspaceConnectionsQueryKey,
+                  (current) =>
+                    current
+                      ? {
+                          ...current,
+                          connections: current.connections.map((item) =>
+                            item.id === next.id ? next : item,
+                          ),
+                        }
+                      : current,
+                )
+                refreshAgentDefinitions()
+                void refreshConnections()
+              }}
+            />
+          </li>
+        ))}
+      </ul>
+    </SettingsCard>
   )
 }
 
@@ -266,7 +261,7 @@ function ConnectionCard({
     save.isPending || clear.isPending || setLinks.isPending || refreshing
 
   return (
-    <div className="flex h-full flex-col rounded-md border p-3">
+    <div className="flex h-full flex-col rounded-lg bg-background/80 p-3 shadow-sm ring-1 ring-foreground/10">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <img
@@ -281,8 +276,8 @@ function ConnectionCard({
             <h3 className="font-medium">{connection.name}</h3>
             <p className="text-sm text-muted-foreground">
               {connection.configured ? (
-                <span className="inline-flex items-center gap-1 text-green-600">
-                  <Check className="h-3.5 w-3.5" />
+                <span className="inline-flex items-center gap-1 text-green-500">
+                  <Check className="size-3.5" />
                   Configured
                 </span>
               ) : (

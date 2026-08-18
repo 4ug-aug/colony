@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
+import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiFetch, apiJson } from '#/lib/api-transport'
 import { cn } from '#/lib/utils'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -279,21 +280,26 @@ export function AgentSkillsSettings() {
     skillDetail.error instanceof Error ? skillDetail.error.message : undefined
 
   return (
-    <section className="border-b pb-4">
-      <h2 className="font-semibold">Agent skills</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Import a <code className="text-xs">SKILL.md</code> file or a zip of a
-        markdown Agent Skills package, then attach it to agent definitions.
-        Skills are staged into each runtime&apos;s expected layout at run start.
-      </p>
+    <SettingsCard
+      title="Agent skills"
+      description={
+        <>
+          Import a <code className="text-[0.85em]">SKILL.md</code> file or a zip
+          of a markdown Agent Skills package, then attach it to agent
+          definitions. Skills are staged into each runtime&apos;s expected
+          layout at run start.
+        </>
+      }
+    >
       {(error || actionError || detailError) && (
-        <p className="mt-2 text-sm text-destructive" role="alert">
+        <p className="mb-3 text-sm text-destructive" role="alert">
           {actionError ??
             detailError ??
             (error instanceof Error ? error.message : 'Could not load skills')}
         </p>
-      )}      <div className="mt-4 grid gap-3">
-        <div className="grid max-w-xl gap-3">
+      )}
+      <div className="grid gap-3">
+        <div className="grid gap-3">
           <button
             type="button"
             disabled={busy}
@@ -380,13 +386,13 @@ export function AgentSkillsSettings() {
             No skills imported yet.
           </p>
         ) : (
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {skills.map((skill) => {
               const skillBusy = pendingSkillId === skill.id
               return (
                 <li
                   key={skill.id}
-                  className="flex h-full flex-col rounded-md border p-3"
+                  className="flex h-full flex-col rounded-lg bg-background/80 p-3 shadow-sm ring-1 ring-foreground/10"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <button
@@ -478,7 +484,8 @@ export function AgentSkillsSettings() {
                                 skillIds,
                               })
                             }}
-                          />                          Attach to {agent.name}
+                          />
+                          Attach to {agent.name}
                         </label>
                       )
                     })}
@@ -538,6 +545,6 @@ export function AgentSkillsSettings() {
           </div>
         </DialogContent>
       </Dialog>
-    </section>
+    </SettingsCard>
   )
 }

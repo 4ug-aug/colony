@@ -1,6 +1,7 @@
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
+import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
@@ -34,25 +35,23 @@ export function PreviewSettings() {
 
   if (isPending) {
     return (
-      <section className="border-b pb-4">
-        <h2 className="font-semibold">Preview</h2>
-        <p className="mt-4 text-sm text-muted-foreground" role="status">
+      <SettingsCard title="Preview">
+        <p className="text-sm text-muted-foreground" role="status">
           <BrailleLoader text="Loading Preview settings" />
         </p>
-      </section>
+      </SettingsCard>
     )
   }
 
   if (error || !data) {
     return (
-      <section className="border-b pb-4">
-        <h2 className="font-semibold">Preview</h2>
-        <p className="mt-4 text-sm text-destructive" role="alert">
+      <SettingsCard title="Preview">
+        <p className="text-sm text-destructive" role="alert">
           {error instanceof Error
             ? error.message
             : 'Could not load Preview settings'}
         </p>
-      </section>
+      </SettingsCard>
     )
   }
 
@@ -115,20 +114,17 @@ function PreviewForm({
   const busy = save.isPending || refreshing
 
   return (
-    <section className="border-b pb-4">
-      <h2 className="font-semibold">Preview</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Init must finish (pull, install). Preview is the long-running HTTP
-        server. Guest port must match the listen port. Docker in the VM
-        should use host networking.
-      </p>
+    <SettingsCard
+      title="Preview"
+      description="Init must finish (pull, install). Preview is the long-running HTTP server. Guest port must match the listen port. Docker in the VM should use host networking."
+    >
       {formError && (
-        <p className="mt-2 text-sm text-destructive" role="alert">
+        <p className="mb-3 text-sm text-destructive" role="alert">
           {formError}
         </p>
       )}
-      <div className="mt-4 grid max-w-xl gap-3">
-        <label className="grid gap-1">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 sm:col-span-2">
           <span className="text-sm font-medium">Init command</span>
           <span className="text-xs text-muted-foreground">
             Optional. Runs to completion in /work before Preview starts.
@@ -140,7 +136,7 @@ function PreviewForm({
             value={initCommand}
           />
         </label>
-        <label className="grid gap-1">
+        <label className="grid gap-1 sm:col-span-2">
           <span className="text-sm font-medium">Preview command</span>
           <span className="text-xs text-muted-foreground">
             Long-running. nginx on host networking listens on guest port 80.
@@ -172,14 +168,14 @@ function PreviewForm({
             value={graceSeconds}
           />
         </label>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 sm:col-span-2">
           <Button disabled={busy} onClick={() => save.mutate()}>
             {save.isPending ? <BrailleLoader text="Saving" /> : 'Save Preview'}
           </Button>
           <span className="text-sm text-muted-foreground">
             {config.configured ? (
-              <span className="inline-flex items-center gap-1 text-green-600">
-                <Check className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1 text-green-500">
+                <Check className="size-3.5" />
                 Configured
               </span>
             ) : (
@@ -188,6 +184,6 @@ function PreviewForm({
           </span>
         </div>
       </div>
-    </section>
+    </SettingsCard>
   )
 }
