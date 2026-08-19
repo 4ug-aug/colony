@@ -187,3 +187,25 @@ test("a non-zero Docker exec is reported through exitCode, not a throw", async (
     stderr: "boom",
   });
 });
+
+test("a Docker sandbox resolves through the configured DNS server", async () => {
+  const calls: string[][] = [];
+  const runner: CommandRunner = {
+    async run(args): Promise<CommandResult> {
+      calls.push([...args]);
+      return { args, exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+  const provider = createDockerSandboxProvider({
+    runner,
+    createId: () => "sandbox-1",
+    dns: "10.0.0.53",
+  });
+
+  await provider.create({ image: "alpine:latest" });
+
+  const run = calls[0] ?? [];
+  expect(run.indexOf("--dns")).toBeGreaterThan(-1);
+  expect(run[run.indexOf("--dns") + 1]).toBe("10.0.0.53");
+  expect(run.indexOf("--dns")).toBeLessThan(run.indexOf("alpine:latest"));
+});
