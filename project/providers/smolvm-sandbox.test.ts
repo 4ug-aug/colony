@@ -9,6 +9,7 @@ import {
   createSmolvmSandboxProvider,
   forkSmolvmMachine,
   goldenMachineName,
+  guestExtraCaCertificate,
   guestMountIsolation,
   parseDefaultGateway,
   probePreviewUrl,
@@ -654,6 +655,60 @@ test("machine settings become smolvm create flags", () => {
   expect(
     smolvmCreateFlags({ name: "sandbox-1", image: "alpine", network: false }),
   ).toEqual([]);
+  // An internal endpoint needs a resolver that knows the zone and its CA.
+  expect(
+    smolvmCreateFlags({
+      name: "colony-golden-1",
+      image: "alpine",
+      network: true,
+      dns: "10.0.0.53",
+      caCertificate: "/etc/ssl/company.pem",
+    }),
+  ).toEqual([
+    "--net",
+    "--dns",
+    "10.0.0.53",
+    "-v",
+    `/etc/ssl/company.pem:${guestExtraCaCertificate}:ro`,
+  ]);
+});
+
+test("a private CA reaches the golden's guest and every exec in its clones", async () => {
+  const execs: Array<Parameters<SmolMachine["exec"]>> = [];
+  const fork = forking(
+    stubMachine({
+      async exec(command, options) {
+        execs.push([command, options]);
+        return succeeds();
+      },
+    }),
+  );
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-ca",
+    caCertificate: "/etc/ssl/company.pem",
+    dns: "10.0.0.53",
+    ...passthroughImage,
+    ...fork.options,
+  });
+
+  const sandbox = await provider.create({ image: "alpine:latest" });
+  const result = await sandbox.exec({ command: ["node", "-e", ""] });
+
+  expect(fork.goldens[0]).toMatchObject({
+    dns: "10.0.0.53",
+    caCertificate: "/etc/ssl/company.pem",
+  });
+  expect(execs.at(-1)?.[1]?.env).toMatchObject({
+    NODE_EXTRA_CA_CERTS: guestExtraCaCertificate,
+  });
+  expect(result.exitCode).toBe(0);
+  await sandbox.dispose();
+});
+
+test("an agent CA path must be absolute", () => {
+  expect(() =>
+    createSmolvmSandboxProvider({ caCertificate: "certs/company.pem" }),
+  ).toThrow(/absolute/);
 });
 
 test("Preview is ready only when the host URL answers HTTP", async () => {
