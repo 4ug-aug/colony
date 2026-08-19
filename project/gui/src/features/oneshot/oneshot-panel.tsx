@@ -375,7 +375,15 @@ export function OneshotPanel({
               title={agentName}
               aria-hidden
             >
-              <AgentAnt className="size-4" />
+              {working ? (
+                <img
+                  src="/colony-mark.svg"
+                  alt=""
+                  className="size-5 dark:invert"
+                />
+              ) : (
+                <AgentAnt className="size-4" />
+              )}
             </span>
           ) : null}
           {working && run ? (
