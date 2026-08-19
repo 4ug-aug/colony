@@ -109,6 +109,38 @@ const DEFAULT_ROUTE = [
   "eth0\t00000000\t0102A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0",
 ].join("\n");
 
+/** What TSI networking actually shows: a dummy NIC and no default route. */
+const TSI_ROUTE = [
+  "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT",
+  "dummy0\t007100CB\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0",
+].join("\n");
+
+test("a guest with no default route reaches the host on localhost", async () => {
+  const fork = forking(
+    stubMachine({
+      async exec(command) {
+        if (command[0] === "cat") {
+          return { exitCode: 0, stdout: TSI_ROUTE, stderr: "" };
+        }
+        return succeeds();
+      },
+    }),
+  );
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-tsi",
+    ...passthroughImage,
+    ...fork.options,
+  });
+
+  const sandbox = await provider.create({
+    image: "alpine:latest",
+    volumes: ["/tmp/work:/work"],
+  });
+
+  expect(sandbox.hostGateway).toBe("127.0.0.1");
+  await sandbox.dispose();
+});
+
 test("a Linux route table yields the default IPv4 gateway", () => {
   expect(parseDefaultGateway(DEFAULT_ROUTE)).toBe("192.168.2.1");
   expect(

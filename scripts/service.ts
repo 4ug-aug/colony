@@ -1,7 +1,12 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { ensureDockerHostAccess, readEnvValue, requireSmolvm } from "./setup";
+import {
+  ensureDockerHostAccess,
+  readEnvValue,
+  requireGuestReachableMcpHost,
+  requireSmolvm,
+} from "./setup";
 
 export type SystemdUnitOptions = {
   bun: string;
@@ -127,7 +132,10 @@ async function install(): Promise<void> {
   if (!path) throw new Error("PATH is required");
   // An upgrade is the moment a host's runtime can fall behind the code.
   const sandboxProvider = readEnvValue(document, "SWEAT_SANDBOX_PROVIDER");
-  if (sandboxProvider === "smolvm") await requireSmolvm();
+  if (sandboxProvider === "smolvm") {
+    requireGuestReachableMcpHost(readEnvValue(document, "SWEAT_MCP_HOST"));
+    await requireSmolvm();
+  }
   if (sandboxProvider === "docker") await ensureDockerHostAccess();
 
   await run("make", ["--no-print-directory", "agent"], root);

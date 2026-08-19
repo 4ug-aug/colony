@@ -382,13 +382,19 @@ export function parseDefaultGateway(table: string): string | undefined {
   return undefined;
 }
 
+/**
+ * smolvm's default TSI backend gives the guest no default route — just a dummy0
+ * and a loopback that libkrun redirects to the host's own. Measured on a real
+ * clone: `127.0.0.1` answers a host server, `10.0.2.2` black-holes. So a guest
+ * without a route reaches the host on localhost, which is not "unknown".
+ */
 async function guestDefaultGateway(
   machine: SmolMachine,
 ): Promise<string | undefined> {
   try {
     const result = await machine.exec(["cat", "/proc/net/route"]);
     if (result.exitCode !== 0) return undefined;
-    return parseDefaultGateway(result.stdout);
+    return parseDefaultGateway(result.stdout) ?? "127.0.0.1";
   } catch {
     return undefined;
   }
