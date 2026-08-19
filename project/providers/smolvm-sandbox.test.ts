@@ -918,6 +918,23 @@ test("resolveSmolvmImage exports a local Docker tag to a tar archive", async () 
   expect(commands[1]?.slice(0, 2)).toEqual(["docker", "save"]);
 });
 
+test("resolveSmolvmImage rejects an Apple Container OCI archive", async () => {
+  const commands: string[][] = [];
+  await expect(
+    resolveSmolvmImage("sweat-agent:latest", async (command) => {
+      commands.push([...command]);
+      return command.slice(0, 3).join(" ") === "container image inspect"
+        ? { exitCode: 0, stdout: '[{"id":"sha256:test"}]', stderr: "" }
+        : { exitCode: 1, stdout: "", stderr: "unused" };
+    }),
+  ).rejects.toThrow(/SWEAT_CONTAINER_PROVIDER=docker/);
+  expect(commands.at(-1)?.slice(0, 3)).toEqual([
+    "container",
+    "image",
+    "inspect",
+  ]);
+});
+
 test("resolveSmolvmImage refuses a short name that is not a local image", async () => {
   await expect(
     resolveSmolvmImage("sweat-agent-cursor:latest", async () => ({

@@ -104,27 +104,6 @@ async function runCommand(
   return { exitCode, stdout, stderr };
 }
 
-const imageExporters: ReadonlyArray<{
-  inspect: (image: string) => readonly string[];
-  save: (image: string, tar: string) => readonly string[];
-}> = [
-  {
-    inspect: (image) => [
-      "docker",
-      "image",
-      "inspect",
-      "--format",
-      "{{.Id}}",
-      image,
-    ],
-    save: (image, tar) => ["docker", "save", "-o", tar, image],
-  },
-  {
-    inspect: (image) => ["container", "image", "inspect", image],
-    save: (image, tar) => ["container", "images", "save", "--output", tar, image],
-  },
-];
-
 function imageId(stdout: string): string | undefined {
   const line = stdout.trim().split(/\s+/)[0];
   if (!line) return undefined;
@@ -132,8 +111,7 @@ function imageId(stdout: string): string | undefined {
 }
 
 /**
- * smolvm treats a bare tag as a registry pull. Local Colony images are Docker
- * / Apple Container tags, so export a tar when the image is already on the host.
+ * smolvm treats a bare tag as a registry pull, so export local Docker images.
  */
 export async function resolveSmolvmImage(
   image: string,
@@ -141,29 +119,43 @@ export async function resolveSmolvmImage(
 ): Promise<string> {
   if (isLocalImageSource(image)) return image;
 
-  for (const exporter of imageExporters) {
-    const inspected = await run(exporter.inspect(image));
-    if (inspected.exitCode !== 0) continue;
+  const inspected = await run([
+    "docker",
+    "image",
+    "inspect",
+    "--format",
+    "{{.Id}}",
+    image,
+  ]);
+  if (inspected.exitCode === 0) {
     const id = imageId(inspected.stdout);
-    if (!id) continue;
-    await mkdir(localImageDir, { recursive: true });
-    const tar = join(localImageDir, `${id}.tar`);
-    if ((await Bun.file(tar).size) > 0) return tar;
-    const saved = await run(exporter.save(image, tar));
-    if (saved.exitCode !== 0) {
-      throw new Error(
-        `Could not export sandbox image ${image}: ${saved.stderr.trim() || saved.stdout.trim()}`,
-      );
+    if (id) {
+      await mkdir(localImageDir, { recursive: true });
+      const tar = join(localImageDir, `${id}.tar`);
+      if ((await Bun.file(tar).size) > 0) return tar;
+      const saved = await run(["docker", "save", "-o", tar, image]);
+      if (saved.exitCode !== 0) {
+        throw new Error(
+          `Could not export sandbox image ${image}: ${saved.stderr.trim() || saved.stdout.trim()}`,
+        );
+      }
+      if ((await Bun.file(tar).size) === 0) {
+        throw new Error(`Could not export sandbox image ${image}: empty archive`);
+      }
+      return tar;
     }
-    if ((await Bun.file(tar).size) === 0) {
-      throw new Error(`Could not export sandbox image ${image}: empty archive`);
-    }
-    return tar;
+  }
+
+  const appleImage = await run(["container", "image", "inspect", image]);
+  if (appleImage.exitCode === 0) {
+    throw new Error(
+      `Sandbox image ${image} is an Apple Container image, whose OCI archive smolvm cannot import. Set SWEAT_CONTAINER_PROVIDER=docker and run make agent.`,
+    );
   }
 
   if (hasRegistryHost(image)) return image;
   throw new Error(
-    `Sandbox image ${image} is not a local Docker or Apple Container image. smolvm will not pull short names from Docker Hub. Run make agent.`,
+    `Sandbox image ${image} is not a local Docker image. smolvm will not pull short names from Docker Hub. Run make agent.`,
   );
 }
 
