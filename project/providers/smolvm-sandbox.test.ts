@@ -7,6 +7,9 @@ import type { MachineConfig, SmolMachine } from "./smolvm-sandbox";
 import {
   createSmolvmMachine,
   createSmolvmSandboxProvider,
+  forkSmolvmMachine,
+  goldenMachineName,
+  guestMountIsolation,
   parseDefaultGateway,
   probePreviewUrl,
   resolveSmolvmImage,
@@ -29,6 +32,50 @@ const stubMachine = (overrides: Partial<SmolMachine> = {}): SmolMachine => ({
   async delete() {},
   ...overrides,
 });
+
+type Fork = {
+  golden: string;
+  name: string;
+  ports: ReadonlyArray<{ host: number; guest: number }>;
+};
+
+/** Lets a zero-delay reap timer fire before the assertion reads its effect. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+/**
+ * A provider that forks: `createMachine` builds the golden once, `forkMachine`
+ * hands every sandbox its own clone. Records what each side was asked for, so a
+ * test can tell golden setup apart from per-sandbox work.
+ */
+const forking = (clone: SmolMachine = stubMachine()) => {
+  const goldens: MachineConfig[] = [];
+  const goldenExecs: string[][] = [];
+  const forks: Fork[] = [];
+  return {
+    goldens,
+    goldenExecs,
+    forks,
+    options: {
+      createMachine: async (config: MachineConfig) => {
+        goldens.push(config);
+        return stubMachine({
+          async exec(command) {
+            goldenExecs.push([...command]);
+            return succeeds();
+          },
+        });
+      },
+      forkMachine: async (
+        golden: string,
+        name: string,
+        ports: ReadonlyArray<{ host: number; guest: number }>,
+      ) => {
+        forks.push({ golden, name, ports });
+        return clone;
+      },
+    },
+  };
+};
 
 type MachineRow = Partial<{
   name: string;
@@ -72,30 +119,30 @@ test("a Linux route table yields the default IPv4 gateway", () => {
 });
 
 test("a smolvm machine behaves as a sandbox", async () => {
-  const configs: MachineConfig[] = [];
   const execs: Array<Parameters<SmolMachine["exec"]>> = [];
   const chunks: Array<{ stream: "stdout" | "stderr"; text: string }> = [];
   let deletes = 0;
+  const fork = forking(
+    stubMachine({
+      async exec(command, options) {
+        execs.push([command, options]);
+        if (command[0] === "cat") {
+          return { exitCode: 0, stdout: DEFAULT_ROUTE, stderr: "" };
+        }
+        if (command[0] === "sh") return succeeds();
+        options?.onOutput?.({ stream: "stdout", text: "hello\n" });
+        options?.onOutput?.({ stream: "stderr", text: "warning\n" });
+        return { exitCode: 0, stdout: "hello\n", stderr: "warning\n" };
+      },
+      async delete() {
+        deletes += 1;
+      },
+    }),
+  );
   const provider = createSmolvmSandboxProvider({
     createId: () => "sandbox-1",
     ...passthroughImage,
-    createMachine: async (config) => {
-      configs.push(config);
-      return stubMachine({
-        async exec(command, options) {
-          execs.push([command, options]);
-          if (command[0] === "cat") {
-            return { exitCode: 0, stdout: DEFAULT_ROUTE, stderr: "" };
-          }
-          options?.onOutput?.({ stream: "stdout", text: "hello\n" });
-          options?.onOutput?.({ stream: "stderr", text: "warning\n" });
-          return { exitCode: 0, stdout: "hello\n", stderr: "warning\n" };
-        },
-        async delete() {
-          deletes += 1;
-        },
-      });
-    },
+    ...fork.options,
   });
 
   const sandbox = await provider.create({
@@ -112,18 +159,31 @@ test("a smolvm machine behaves as a sandbox", async () => {
 
   expect(sandbox.id).toBe("sandbox-1");
   expect(sandbox.hostGateway).toBe("192.168.2.1");
-  expect(configs).toEqual([
+  // The golden mounts the run directories' shared parent, and publishes nothing.
+  expect(fork.goldens).toEqual([
     {
-      name: "sandbox-1",
+      name: goldenMachineName("alpine:latest", "/tmp"),
       image: "alpine:latest",
       network: true,
-      mounts: [{ source: "/tmp/work", target: "/work", readOnly: false }],
+      forkable: true,
+      mounts: [{ source: "/tmp", target: "/mnt/ws", readOnly: false }],
     },
   ]);
-  expect(execs).toHaveLength(2);
-  expect(execs[0]?.[0]).toEqual(["cat", "/proc/net/route"]);
-  expect(execs[1]?.[0]).toEqual(["echo", "hello"]);
-  expect(execs[1]?.[1]).toMatchObject({
+  expect(fork.forks).toEqual([
+    {
+      golden: goldenMachineName("alpine:latest", "/tmp"),
+      name: "sandbox-1",
+      ports: [],
+    },
+  ]);
+  // Isolation, gateway, then the caller's command.
+  expect(execs).toHaveLength(3);
+  expect(execs[0]?.[0]).toEqual(["sh", "-c", guestMountIsolation([
+    { source: "/tmp/work", target: "/work" },
+  ])]);
+  expect(execs[1]?.[0]).toEqual(["cat", "/proc/net/route"]);
+  expect(execs[2]?.[0]).toEqual(["echo", "hello"]);
+  expect(execs[2]?.[1]).toMatchObject({
     env: { MODEL: "test" },
     workdir: "/work",
   });
@@ -144,12 +204,13 @@ test("disposing a smolvm sandbox twice only removes it once", async () => {
   const provider = createSmolvmSandboxProvider({
     createId: () => "sandbox-1",
     ...passthroughImage,
-    createMachine: async () =>
+    ...forking(
       stubMachine({
         async delete() {
           deletes += 1;
         },
       }),
+    ).options,
   });
 
   const sandbox = await provider.create({ image: "alpine:latest" });
@@ -168,12 +229,13 @@ test("the control pane reports CLI state and the Colony image tag", async () => 
       row(),
       row({ name: "stray", state: "stopped", created_at: 1_700_000_009 }),
     ),
-    createMachine: async () =>
+    ...forking(
       stubMachine({
         async delete() {
           deletes += 1;
         },
       }),
+    ).options,
   });
 
   await provider.create({
@@ -231,12 +293,13 @@ test("a failed nuke leaves the machine visible for retry", async () => {
     createId: () => "sandbox-1",
     ...passthroughImage,
     ...cli(row()),
-    createMachine: async () =>
+    ...forking(
       stubMachine({
         async delete() {
           throw new Error("still running");
         },
       }),
+    ).options,
   });
   await provider.create({ image: "alpine:latest" });
 
@@ -248,58 +311,63 @@ test("a failed nuke leaves the machine visible for retry", async () => {
   ]);
 });
 
-function recordingProvider(execs: string[][]) {
-  return createSmolvmSandboxProvider({
-    createId: () => "sandbox-1",
-    allocatePort: async () => 49152,
-    ...passthroughImage,
-    createMachine: async () =>
-      stubMachine({
-        async exec(command) {
-          execs.push([...command]);
-          return { exitCode: 0, stdout: "", stderr: "" };
-        },
-      }),
-  });
-}
-
-test("a published smolvm machine starts guest dockerd without a host Docker socket", async () => {
-  const execs: string[][] = [];
-
-  await recordingProvider(execs).create({
-    image: "sweat-agent-cursor:latest",
-    publish: { guestPort: 3000 },
-  });
-
-  expect(execs[0]?.[0]).toBe("sh");
-  expect(execs[0]?.[2]).toContain("backend = \"copyfile\"");
-  expect(execs[0]?.[2]).toContain("/storage/bun");
-  expect(execs[0]?.[2]).toContain("dockerd");
-  expect(execs[0]?.[2]).toContain("/storage/docker");
-  expect(execs[0]?.[2]).toContain("native.cgroupdriver=cgroupfs");
-  expect(execs[0]?.[2]).toContain("did not become ready");
-  expect(execs[0]?.[2]).not.toContain("docker.sock");
-  expect(execs[1]).toEqual(["cat", "/proc/net/route"]);
-});
-
-test("a smolvm machine without a Preview port does not boot dockerd", async () => {
-  const execs: string[][] = [];
-
-  await recordingProvider(execs).create({ image: "sweat-agent-cursor:latest" });
-
-  expect(execs).toEqual([["cat", "/proc/net/route"]]);
-});
-
-test("a smolvm machine publishes a guest port and exposes its Preview URL", async () => {
-  const configs: MachineConfig[] = [];
+test("the golden starts guest dockerd without a host Docker socket", async () => {
+  const fork = forking();
   const provider = createSmolvmSandboxProvider({
     createId: () => "sandbox-1",
     allocatePort: async () => 49152,
     ...passthroughImage,
-    createMachine: async (config) => {
-      configs.push(config);
-      return stubMachine();
-    },
+    ...fork.options,
+  });
+
+  await provider.create({
+    image: "sweat-agent-cursor:latest",
+    publish: { guestPort: 3000 },
+  });
+
+  const init = fork.goldenExecs[0];
+  expect(init?.[0]).toBe("sh");
+  expect(init?.[2]).toContain("backend = \"copyfile\"");
+  expect(init?.[2]).toContain("/storage/bun");
+  expect(init?.[2]).toContain("dockerd");
+  expect(init?.[2]).toContain("/storage/docker");
+  expect(init?.[2]).toContain("native.cgroupdriver=cgroupfs");
+  expect(init?.[2]).toContain("did not become ready");
+  expect(init?.[2]).not.toContain("docker.sock");
+});
+
+test("dockerd is booted once on the golden, not per sandbox", async () => {
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => `sandbox-${fork.forks.length + 1}`,
+    allocatePort: async () => 49152,
+    ...passthroughImage,
+    ...fork.options,
+  });
+
+  // A plain run and a published run, in either order, share one golden — so
+  // neither pays the daemon start the old per-sandbox path charged Preview runs.
+  await provider.create({ image: "sweat-agent-cursor:latest" });
+  await provider.create({
+    image: "sweat-agent-cursor:latest",
+    publish: { guestPort: 3000 },
+  });
+
+  expect(fork.goldens).toHaveLength(1);
+  expect(fork.goldenExecs).toHaveLength(1);
+  expect(fork.forks.map((entry) => entry.name)).toEqual([
+    "sandbox-1",
+    "sandbox-2",
+  ]);
+});
+
+test("a smolvm machine publishes a guest port and exposes its Preview URL", async () => {
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-1",
+    allocatePort: async () => 49152,
+    ...passthroughImage,
+    ...fork.options,
   });
 
   const sandbox = await provider.create({
@@ -308,23 +376,237 @@ test("a smolvm machine publishes a guest port and exposes its Preview URL", asyn
   });
 
   expect(sandbox.previewUrl).toBe("http://127.0.0.1:49152");
-  expect(configs[0]?.ports).toEqual([{ host: 49152, guest: 3000 }]);
+  // The port is pinned on the clone; the golden publishes none.
+  expect(fork.forks[0]?.ports).toEqual([{ host: 49152, guest: 3000 }]);
+  expect(fork.goldens[0]?.ports).toBeUndefined();
   await sandbox.dispose();
 });
 
 test("smolvm create boots a local image archive instead of a registry pull", async () => {
-  const configs: MachineConfig[] = [];
+  const fork = forking();
   const provider = createSmolvmSandboxProvider({
     createId: () => "sandbox-1",
     resolveImage: async () => "/tmp/colony-smolvm-images/cursor.tar",
-    createMachine: async (config) => {
-      configs.push(config);
-      return stubMachine();
-    },
+    ...fork.options,
   });
 
   await provider.create({ image: "sweat-agent-cursor:latest" });
-  expect(configs[0]?.image).toBe("/tmp/colony-smolvm-images/cursor.tar");
+  expect(fork.goldens[0]?.image).toBe("/tmp/colony-smolvm-images/cursor.tar");
+});
+
+test("a rebuilt image gets its own golden", async () => {
+  const fork = forking();
+  const images = ["/tmp/images/old.tar", "/tmp/images/new.tar"];
+  const provider = createSmolvmSandboxProvider({
+    createId: () => `sandbox-${fork.forks.length + 1}`,
+    resolveImage: async () => images[fork.goldens.length] ?? "",
+    ...fork.options,
+  });
+
+  await provider.create({ image: "sweat-agent-cursor:latest" });
+  await provider.create({ image: "sweat-agent-cursor:latest" });
+
+  expect(fork.goldens.map((config) => config.name)).toEqual([
+    goldenMachineName("/tmp/images/old.tar", ""),
+    goldenMachineName("/tmp/images/new.tar", ""),
+  ]);
+});
+
+test("a sandbox whose mounts span two roots skips the golden", async () => {
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-1",
+    ...passthroughImage,
+    ...fork.options,
+  });
+
+  // One golden mount cannot cover both parents, and `machine fork` adds none.
+  await provider.create({
+    image: "alpine:latest",
+    volumes: ["/tmp/a/work:/work", "/var/b/cache:/cache"],
+  });
+
+  expect(fork.forks).toEqual([]);
+  expect(fork.goldens).toEqual([
+    {
+      name: "sandbox-1",
+      image: "alpine:latest",
+      network: true,
+      mounts: [
+        { source: "/tmp/a/work", target: "/work", readOnly: false },
+        { source: "/var/b/cache", target: "/cache", readOnly: false },
+      ],
+    },
+  ]);
+});
+
+test("a sandbox still boots when forking fails", async () => {
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-1",
+    allocatePort: async () => 49152,
+    ...passthroughImage,
+    ...fork.options,
+    forkMachine: async () => {
+      throw new Error("fork unsupported on this host");
+    },
+  });
+
+  const sandbox = await provider.create({
+    image: "alpine:latest",
+    volumes: ["/tmp/work:/work"],
+    publish: { guestPort: 3000 },
+  });
+
+  expect(sandbox.previewUrl).toBe("http://127.0.0.1:49152");
+  // The golden attempt, then the sandbox booted the old way with its own mount.
+  expect(fork.goldens.map((config) => config.name)).toEqual([
+    goldenMachineName("alpine:latest", "/tmp"),
+    "sandbox-1",
+  ]);
+  expect(fork.goldens[1]?.mounts).toEqual([
+    { source: "/tmp/work", target: "/work", readOnly: false },
+  ]);
+  expect(fork.goldens[1]?.ports).toEqual([{ host: 49152, guest: 3000 }]);
+});
+
+test("an idle golden is reaped once its last clone goes", async () => {
+  const deleted: string[] = [];
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => `sandbox-${fork.forks.length + 1}`,
+    ...passthroughImage,
+    ...fork.options,
+    goldenIdleTtlMs: 0,
+    run: async (command) => {
+      if (command[2] === "delete") deleted.push(command[4] ?? "");
+      return succeeds();
+    },
+  });
+  const name = goldenMachineName("alpine:latest", "");
+
+  const first = await provider.create({ image: "alpine:latest" });
+  const second = await provider.create({ image: "alpine:latest" });
+  await first.dispose();
+  await settle();
+  // One clone is still running, so the fork base has to stay.
+  expect(deleted.filter((id) => id === name)).toHaveLength(1); // the pre-boot sweep
+
+  await second.dispose();
+  await settle();
+  expect(deleted.filter((id) => id === name)).toHaveLength(2);
+});
+
+test("a run arriving before the reap keeps the golden", async () => {
+  const deleted: string[] = [];
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => `sandbox-${fork.forks.length + 1}`,
+    ...passthroughImage,
+    ...fork.options,
+    goldenIdleTtlMs: 10_000,
+    run: async (command) => {
+      if (command[2] === "delete") deleted.push(command[4] ?? "");
+      return succeeds();
+    },
+  });
+  const name = goldenMachineName("alpine:latest", "");
+
+  const first = await provider.create({ image: "alpine:latest" });
+  await first.dispose();
+  await provider.create({ image: "alpine:latest" });
+  await settle();
+
+  // The second run cancelled the pending reap and reused the same golden.
+  expect(deleted.filter((id) => id === name)).toHaveLength(1);
+  expect(fork.goldens).toHaveLength(1);
+  expect(fork.forks).toHaveLength(2);
+});
+
+test("a lost golden is forgotten so the next run boots a fresh one", async () => {
+  const fork = forking();
+  let forks = 0;
+  const provider = createSmolvmSandboxProvider({
+    createId: () => `sandbox-${++forks}`,
+    ...passthroughImage,
+    ...fork.options,
+    // The golden vanished — a host sleep, or an operator deleting it by hand.
+    forkMachine: async (golden, name, ports) => {
+      if (forks === 1) throw new Error("vm not found");
+      return fork.options.forkMachine(golden, name, ports);
+    },
+  });
+
+  await provider.create({ image: "alpine:latest" });
+  await provider.create({ image: "alpine:latest" });
+
+  // Boot one, fall back, then boot a replacement rather than falling back forever.
+  const name = goldenMachineName("alpine:latest", "");
+  expect(fork.goldens.map((config) => config.name)).toEqual([
+    name,
+    "sandbox-1", // the fallback, booted the old way
+    name, // rebuilt for the second run
+  ]);
+  expect(fork.forks.map((entry) => entry.name)).toEqual(["sandbox-2"]);
+});
+
+test("a clone binds its own workspace and hides its siblings", () => {
+  expect(
+    guestMountIsolation([{ source: "/tmp/colony-workspaces/run-a1", target: "/work" }]),
+  ).toBe(
+    [
+      "mkdir -p /work",
+      "mount -o bind /mnt/ws/run-a1 /work",
+      "mount -t tmpfs none /mnt/ws",
+    ].join("\n"),
+  );
+});
+
+test("goldens are named per image and workspaces root, and marked in the console", async () => {
+  expect(goldenMachineName("a.tar", "/tmp/ws")).toBe(
+    goldenMachineName("a.tar", "/tmp/ws"),
+  );
+  expect(goldenMachineName("a.tar", "/tmp/ws")).not.toBe(
+    goldenMachineName("b.tar", "/tmp/ws"),
+  );
+  expect(goldenMachineName("a.tar", "/tmp/ws")).not.toBe(
+    goldenMachineName("a.tar", "/other"),
+  );
+
+  const golden = goldenMachineName("alpine:latest", "");
+  const provider = createSmolvmSandboxProvider({
+    ...passthroughImage,
+    ...cli(row({ name: golden }), row({ name: "sandbox-1" })),
+  });
+  const listed = await provider.listMachines();
+  expect(listed.find((machine) => machine.id === golden)?.golden).toBe(true);
+  expect(listed.find((machine) => machine.id === "sandbox-1")?.golden).toBe(
+    undefined,
+  );
+});
+
+test("disposeGoldens deletes the fork bases this process booted", async () => {
+  const commands: string[][] = [];
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-1",
+    ...passthroughImage,
+    ...fork.options,
+    run: async (command) => {
+      commands.push([...command]);
+      return succeeds();
+    },
+  });
+  await provider.create({ image: "alpine:latest" });
+
+  await provider.disposeGoldens();
+
+  const name = goldenMachineName("alpine:latest", "");
+  expect(
+    commands.filter(
+      (command) => command[2] === "delete" && command[4] === name,
+    ),
+  ).toHaveLength(2); // the stale-golden sweep before boot, then the reap
 });
 
 test("machine settings become smolvm create flags", () => {
@@ -407,6 +689,52 @@ test("a CLI-backed machine creates, starts, execs and deletes through smolvm", a
     ],
     ["smolvm", "machine", "delete", "--name", "sandbox-1", "-f"],
   ]);
+});
+
+test("a fork base starts forkable and clones pin their own ports", async () => {
+  const commands: string[][] = [];
+  const run = async (command: readonly string[]) => {
+    commands.push([...command]);
+    return succeeds();
+  };
+
+  await createSmolvmMachine({ ...cliConfig, forkable: true }, run);
+  await forkSmolvmMachine(
+    "colony-golden-abc",
+    "sandbox-1",
+    [{ host: 49152, guest: 3000 }],
+    run,
+  );
+
+  expect(commands[1]).toEqual([
+    "smolvm",
+    "machine",
+    "start",
+    "--name",
+    "sandbox-1",
+    "--forkable",
+  ]);
+  expect(commands[2]).toEqual([
+    "smolvm",
+    "machine",
+    "fork",
+    "--golden",
+    "colony-golden-abc",
+    "--name",
+    "sandbox-1",
+    "-p",
+    "49152:3000",
+  ]);
+});
+
+test("a failed fork reports the command that failed", async () => {
+  await expect(
+    forkSmolvmMachine("colony-golden-abc", "sandbox-1", [], async () => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "golden is not forkable",
+    })),
+  ).rejects.toThrow("golden is not forkable");
 });
 
 test("a machine that fails to start is deleted instead of left behind", async () => {
@@ -530,7 +858,7 @@ test("a smolvm machine retains init and Preview output for the Machine console",
     ...passthroughImage,
     probePreview: async () => false,
     ...cli(row()),
-    createMachine: async () =>
+    ...forking(
       stubMachine({
         async exec(command, options) {
           if (command[0] === "cat") {
@@ -548,6 +876,7 @@ test("a smolvm machine retains init and Preview output for the Machine console",
           };
         },
       }),
+    ).options,
   });
 
   const sandbox = await provider.create({
@@ -589,7 +918,7 @@ test("a Preview command that exits is reported as a Preview error", async () => 
     ...passthroughImage,
     probePreview: async () => true,
     ...cli(row()),
-    createMachine: async () =>
+    ...forking(
       stubMachine({
         async exec(command, options) {
           if (command.some((part) => part.includes("make"))) {
@@ -606,6 +935,7 @@ test("a Preview command that exits is reported as a Preview error", async () => 
           return { exitCode: 0, stdout: "", stderr: "" };
         },
       }),
+    ).options,
   });
   const sandbox = await provider.create({
     image: "alpine:latest",
@@ -630,7 +960,7 @@ test("a live Preview command is not an error while it is still running", async (
     ...passthroughImage,
     probePreview: async (url) => url === "http://127.0.0.1:49152",
     ...cli(row()),
-    createMachine: async () =>
+    ...forking(
       stubMachine({
         async exec(command) {
           if (command.some((part) => part.includes("make")))
@@ -638,6 +968,7 @@ test("a live Preview command is not an error while it is still running", async (
           return { exitCode: 0, stdout: "", stderr: "" };
         },
       }),
+    ).options,
   });
   const sandbox = await provider.create({
     image: "alpine:latest",

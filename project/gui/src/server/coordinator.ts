@@ -1727,6 +1727,8 @@ if (import.meta.main) {
     process.off('SIGTERM', stop)
     try {
       await coordinator.stop()
+      // Fork bases outlive a run, so nothing else would ever delete them.
+      await smolvmProvider?.disposeGoldens()
       sqlite.close()
       process.exit(0)
     } catch (error) {
