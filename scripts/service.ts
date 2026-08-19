@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { readEnvValue } from "./setup";
+import { readEnvValue, requireSmolvm } from "./setup";
 
 export type SystemdUnitOptions = {
   bun: string;
@@ -125,6 +125,9 @@ async function install(): Promise<void> {
     throw new Error("systemctl and loginctl are required");
   const path = process.env.PATH;
   if (!path) throw new Error("PATH is required");
+  // An upgrade is the moment a host's runtime can fall behind the code.
+  if (readEnvValue(document, "SWEAT_SANDBOX_PROVIDER") === "smolvm")
+    await requireSmolvm();
 
   await run("make", ["--no-print-directory", "agent"], root);
   await run(loginctl, ["enable-linger", userInfo().username]);
