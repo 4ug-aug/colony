@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0028
 ---
 
 # People without a repository boot a container, not a microVM
@@ -23,6 +23,10 @@ This amends ADR 0024: smolvm stays the default, but "default sandbox
 provider" now means the default for git-workspace persons. Explicit
 composition from ADR 0007 is unchanged — a missing or invalid value still
 fails with the accepted list.
+
+Superseded by [ADR 0028](0028-every-person-boots-the-configured-sandbox.md):
+golden-fork sandboxes cut a microVM boot to 0.23s, so the cost this ADR
+avoided no longer exists and every person boots the configured provider again.
 
 Rejected: keying the choice on the person's runtime kind or agent image
 (the same rule stated indirectly, and it breaks the moment a cursor person

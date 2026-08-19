@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, constants, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
@@ -226,11 +226,41 @@ export async function requireSmolvm(): Promise<void> {
       "The smolvm CLI is required. Install it from https://github.com/smol-machines/smol and try again.",
     );
   }
+  // A microVM needs hardware virtualisation, which a guest without nested
+  // virtualisation cannot offer. The CLI installs and forks fine there and
+  // then fails every single `machine start`, so check the device, not the CLI.
+  if (process.platform === "linux") {
+    try {
+      await access("/dev/kvm", constants.R_OK | constants.W_OK);
+    } catch {
+      throw new Error(
+        "smolvm needs KVM, and /dev/kvm is not writable here. Load the module (sudo modprobe kvm && sudo modprobe kvm_intel, or kvm_amd) and add this user to the kvm group. If this host is itself a VM, enable nested virtualisation or set SWEAT_SANDBOX_PROVIDER=docker instead.",
+      );
+    }
+  }
   if (!(await succeeds("smolvm", ["machine", "fork", "--help"]))) {
     console.warn(
       "This smolvm cannot fork machines, so every run boots a microVM from scratch. Upgrade smolvm for fast run starts.",
     );
   }
+}
+
+/**
+ * Rootless Docker hides the host's loopback from its containers, so an agent
+ * cannot reach the MCP gateway and every capability call is refused. Only
+ * `make setup` used to apply the fix, and an upgrade never runs setup — so a
+ * host that started booting sandboxes in Docker lost its capabilities with no
+ * hint why. The service installer calls this for the same reason it calls
+ * `requireSmolvm`.
+ */
+export async function ensureDockerHostAccess(): Promise<void> {
+  if (!(await available("docker"))) {
+    throw new Error("Docker is required. Install it, start it, and try again.");
+  }
+  const rootless = usesRootlessDocker(
+    await output("docker", ["info", "--format", "{{json .SecurityOptions}}"]),
+  );
+  if (rootless) await configureRootlessDocker();
 }
 
 async function requireRuntime(provider: SandboxProvider): Promise<boolean> {

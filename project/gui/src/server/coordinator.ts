@@ -396,15 +396,20 @@ export function advertisedCapabilityUrl(listenUrl: string, host: string): string
   return listen.href.replace(/\/$/, '')
 }
 
-/** Prefer the sandbox's own host gateway; fall back to the process-wide host. */
+/**
+ * An operator naming SWEAT_MCP_HOST wins: a sandbox only knows its own default
+ * gateway, and rootless Docker cannot route that to the host's loopback. Then
+ * the sandbox's own gateway, then the process-wide host.
+ */
 export function capabilityUrlForSandbox(
   listenUrl: string,
   sandbox: { hostGateway?: string } | undefined,
   fallbackHost: string,
+  configuredHost?: string,
 ): string {
   return advertisedCapabilityUrl(
     listenUrl,
-    sandbox?.hostGateway ?? fallbackHost,
+    configuredHost ?? sandbox?.hostGateway ?? fallbackHost,
   )
 }
 
@@ -1384,7 +1389,6 @@ if (import.meta.main) {
   const control = createRunControl(
     createWorkspaceAgentsExecutor({
       sandboxProvider: smolvmProvider ?? containerProvider,
-      containerProvider,
       image: process.env.SWEAT_AGENT_IMAGE,
       cursorImage: process.env.SWEAT_CURSOR_AGENT_IMAGE,
       model: () => llm.model(),
@@ -1599,6 +1603,7 @@ if (import.meta.main) {
             server.url,
             context.sandbox,
             fallbackMcpHost(),
+            process.env.SWEAT_MCP_HOST,
           ),
           close: server.close,
         }
