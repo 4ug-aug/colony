@@ -218,6 +218,46 @@ test("GitHub preserves binary data, executable modes, and symlinks when syncing"
   }
 }, 10_000);
 
+test("GitHub sends mode and type when syncing a deleted file", async () => {
+  const workspace = await branchWithChange();
+  await git(workspace.directory, ["rm", "--quiet", "README.md"]);
+  await git(workspace.directory, ["commit", "--quiet", "--message", "Remove readme"]);
+  const requests: Array<{ url: string; body?: string }> = [];
+  const gateway = createGitHubMcpGateway({
+    octokit: new Octokit({
+      auth: "secret",
+      request: {
+        fetch: async (url: string, init?: RequestInit) => {
+          requests.push({ url, body: typeof init?.body === "string" ? init.body : undefined });
+          if (url.includes("git/ref/heads%2Fsweat%2Frun-1")) return Response.json({ object: { sha: "run-commit" } });
+          if (url.includes("git/commits/run-commit")) return Response.json({ tree: { sha: "old-tree" } });
+          if (url.includes("git/trees")) return Response.json({ sha: "new-tree" });
+          if (url.includes("git/commits")) return Response.json({ sha: "synced-commit" });
+          if (url.includes("git/refs/heads%2Fsweat%2Frun-1")) return Response.json({});
+          if (url.includes("pulls?")) return Response.json([{ number: 12 }]);
+          throw new Error(`Unexpected GitHub request: ${url}`);
+        },
+      },
+    }),
+    repository: "acme/product",
+    workspace: workspace.directory,
+    branch: "sweat/run-1",
+    baseCommit: workspace.baseCommit,
+    base: "main",
+  });
+  const session = gateway.createSession({
+    tools: ["github.create_pull_request"], expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  try {
+    await expect(gateway.callTool(session.token, "github.create_pull_request", { title: "Change" })).resolves.toEqual({ number: 12 });
+    const tree = JSON.parse(requests.find(({ url }) => url.includes("git/trees"))!.body!).tree;
+    expect(tree).toEqual([{ path: "README.md", mode: "100644", type: "blob", sha: null }]);
+  } finally {
+    await rm(workspace.directory, { force: true, recursive: true });
+  }
+});
+
 test("GitHub returns failed pull request checks", async () => {
   const gateway = createGitHubMcpGateway({
     octokit: new Octokit({

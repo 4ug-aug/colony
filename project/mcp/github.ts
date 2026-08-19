@@ -168,7 +168,8 @@ async function materializeTree(options: {
   changed: readonly Change[];
 }): Promise<TreeItem[]> {
   return Promise.all(options.changed.map(async (file): Promise<TreeItem> => {
-    if (file.deleted) return { path: file.path, sha: null };
+    // GitHub rejects a tree entry without mode and type, deletions included; sha null drops the path whatever its real mode was.
+    if (file.deleted) return { path: file.path, mode: "100644", type: "blob", sha: null };
     const entry = new TextDecoder().decode(await gitBytes(options.workspace, ["ls-tree", "-z", options.commit, "--", file.path]));
     const match = /^(040000|100644|100755|120000|160000) (blob|tree|commit) ([0-9a-f]+)\t/.exec(entry);
     if (!match) throw new Error(`Git tree entry not found for ${file.path}`);
