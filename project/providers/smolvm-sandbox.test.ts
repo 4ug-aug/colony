@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { ExecutionResult } from "../sandboxes";
 import type { MachineConfig, SmolMachine } from "./smolvm-sandbox";
 import {
@@ -662,14 +662,14 @@ test("machine settings become smolvm create flags", () => {
       image: "alpine",
       network: true,
       dns: "10.0.0.53",
-      caCertificate: "/etc/ssl/company.pem",
+      caDirectory: "/tmp/colony-smolvm-ca",
     }),
   ).toEqual([
     "--net",
     "--dns",
     "10.0.0.53",
     "-v",
-    `/etc/ssl/company.pem:${guestExtraCaCertificate}:ro`,
+    `/tmp/colony-smolvm-ca:${dirname(guestExtraCaCertificate)}:ro`,
   ]);
 });
 
@@ -683,9 +683,11 @@ test("a private CA reaches the golden's guest and every exec in its clones", asy
       },
     }),
   );
+  const certificate = join(await mkdtemp(join(tmpdir(), "colony-ca-")), "ca.pem");
+  await writeFile(certificate, "--- a company CA ---");
   const provider = createSmolvmSandboxProvider({
     createId: () => "sandbox-ca",
-    caCertificate: "/etc/ssl/company.pem",
+    caCertificate: certificate,
     dns: "10.0.0.53",
     ...passthroughImage,
     ...fork.options,
@@ -694,10 +696,11 @@ test("a private CA reaches the golden's guest and every exec in its clones", asy
   const sandbox = await provider.create({ image: "alpine:latest" });
   const result = await sandbox.exec({ command: ["node", "-e", ""] });
 
-  expect(fork.goldens[0]).toMatchObject({
-    dns: "10.0.0.53",
-    caCertificate: "/etc/ssl/company.pem",
-  });
+  // Staged alone under a fixed name: virtiofs mounts directories, not files.
+  expect(fork.goldens[0]?.dns).toBe("10.0.0.53");
+  const staged = fork.goldens[0]?.caDirectory ?? "";
+  expect(await Bun.file(join(staged, basename(guestExtraCaCertificate))).text())
+    .toBe("--- a company CA ---");
   expect(execs.at(-1)?.[1]?.env).toMatchObject({
     NODE_EXTRA_CA_CERTS: guestExtraCaCertificate,
   });
