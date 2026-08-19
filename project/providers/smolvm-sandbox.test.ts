@@ -39,6 +39,9 @@ type Fork = {
   ports: ReadonlyArray<{ host: number; guest: number }>;
 };
 
+/** Lets a zero-delay reap timer fire before the assertion reads its effect. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+
 /**
  * A provider that forks: `createMachine` builds the golden once, `forkMachine`
  * hands every sandbox its own clone. Records what each side was asked for, so a
@@ -465,6 +468,86 @@ test("a sandbox still boots when forking fails", async () => {
     { source: "/tmp/work", target: "/work", readOnly: false },
   ]);
   expect(fork.goldens[1]?.ports).toEqual([{ host: 49152, guest: 3000 }]);
+});
+
+test("an idle golden is reaped once its last clone goes", async () => {
+  const deleted: string[] = [];
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => `sandbox-${fork.forks.length + 1}`,
+    ...passthroughImage,
+    ...fork.options,
+    goldenIdleTtlMs: 0,
+    run: async (command) => {
+      if (command[2] === "delete") deleted.push(command[4] ?? "");
+      return succeeds();
+    },
+  });
+  const name = goldenMachineName("alpine:latest", "");
+
+  const first = await provider.create({ image: "alpine:latest" });
+  const second = await provider.create({ image: "alpine:latest" });
+  await first.dispose();
+  await settle();
+  // One clone is still running, so the fork base has to stay.
+  expect(deleted.filter((id) => id === name)).toHaveLength(1); // the pre-boot sweep
+
+  await second.dispose();
+  await settle();
+  expect(deleted.filter((id) => id === name)).toHaveLength(2);
+});
+
+test("a run arriving before the reap keeps the golden", async () => {
+  const deleted: string[] = [];
+  const fork = forking();
+  const provider = createSmolvmSandboxProvider({
+    createId: () => `sandbox-${fork.forks.length + 1}`,
+    ...passthroughImage,
+    ...fork.options,
+    goldenIdleTtlMs: 10_000,
+    run: async (command) => {
+      if (command[2] === "delete") deleted.push(command[4] ?? "");
+      return succeeds();
+    },
+  });
+  const name = goldenMachineName("alpine:latest", "");
+
+  const first = await provider.create({ image: "alpine:latest" });
+  await first.dispose();
+  await provider.create({ image: "alpine:latest" });
+  await settle();
+
+  // The second run cancelled the pending reap and reused the same golden.
+  expect(deleted.filter((id) => id === name)).toHaveLength(1);
+  expect(fork.goldens).toHaveLength(1);
+  expect(fork.forks).toHaveLength(2);
+});
+
+test("a lost golden is forgotten so the next run boots a fresh one", async () => {
+  const fork = forking();
+  let forks = 0;
+  const provider = createSmolvmSandboxProvider({
+    createId: () => `sandbox-${++forks}`,
+    ...passthroughImage,
+    ...fork.options,
+    // The golden vanished — a host sleep, or an operator deleting it by hand.
+    forkMachine: async (golden, name, ports) => {
+      if (forks === 1) throw new Error("vm not found");
+      return fork.options.forkMachine(golden, name, ports);
+    },
+  });
+
+  await provider.create({ image: "alpine:latest" });
+  await provider.create({ image: "alpine:latest" });
+
+  // Boot one, fall back, then boot a replacement rather than falling back forever.
+  const name = goldenMachineName("alpine:latest", "");
+  expect(fork.goldens.map((config) => config.name)).toEqual([
+    name,
+    "sandbox-1", // the fallback, booted the old way
+    name, // rebuilt for the second run
+  ]);
+  expect(fork.forks.map((entry) => entry.name)).toEqual(["sandbox-2"]);
 });
 
 test("a clone binds its own workspace and hides its siblings", () => {

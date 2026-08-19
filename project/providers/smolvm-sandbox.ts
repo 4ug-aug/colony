@@ -17,6 +17,8 @@ type RunCommand = (
 ) => Promise<ExecutionResult>;
 
 const LOG_TAIL = 32_000;
+/** Long enough to span the gap between runs in a working session. */
+const GOLDEN_IDLE_TTL_MS = 15 * 60_000;
 const localImageDir = join(tmpdir(), "colony-smolvm-images");
 
 function tailLog(text: string): string {
@@ -322,6 +324,14 @@ export type SmolvmGoldens = {
   disposeGoldens(): Promise<void>;
 };
 
+/** A fork base and the clones still using it. */
+type GoldenEntry = {
+  machine: Promise<SmolMachine>;
+  clones: Set<string>;
+  /** Pending reap, armed once the last clone goes and cleared when one returns. */
+  idle?: ReturnType<typeof setTimeout>;
+};
+
 /** The per-machine facts `smolvm machine ls` cannot report. */
 type ManagedMachine = {
   machine: SmolMachine;
@@ -549,6 +559,8 @@ export function createSmolvmSandboxProvider(
       name: string,
       ports: ReadonlyArray<{ host: number; guest: number }>,
     ) => Promise<SmolMachine>;
+    /** How long a golden with no clones is kept before its RAM is released. */
+    goldenIdleTtlMs?: number;
     run?: RunCommand;
   } = {},
 ): SandboxProvider & SmolvmMachineControl & SmolvmGoldens {
@@ -561,10 +573,33 @@ export function createSmolvmSandboxProvider(
   const forkMachine =
     options.forkMachine ??
     ((golden, name, ports) => forkSmolvmMachine(golden, name, ports, run));
+  const goldenIdleTtlMs = options.goldenIdleTtlMs ?? GOLDEN_IDLE_TTL_MS;
   const machines = new Map<string, ManagedMachine>();
   /** One golden per resolved image and workspaces root — the two things its
    *  mounts depend on. Memoised as a Promise so concurrent runs share one boot. */
-  const goldens = new Map<string, Promise<SmolMachine>>();
+  const goldens = new Map<string, GoldenEntry>();
+
+  /** Deletes a golden that no clone is using, releasing the RAM it holds. */
+  const reapGolden = async (name: string): Promise<void> => {
+    const entry = goldens.get(name);
+    if (!entry || entry.clones.size > 0) return;
+    goldens.delete(name);
+    await deleteSmolvmMachine(name, run).catch(() => undefined);
+  };
+
+  /**
+   * A frozen golden does no work but still holds its guest RAM — measured at
+   * ~2.8GiB against ~70MiB for each clone that shares it. So it is worth
+   * keeping while runs keep arriving, and worth dropping once they stop.
+   */
+  const releaseGolden = (name: string, cloneId: string): void => {
+    const entry = goldens.get(name);
+    if (!entry) return;
+    entry.clones.delete(cloneId);
+    if (entry.clones.size > 0) return;
+    entry.idle = setTimeout(() => void reapGolden(name), goldenIdleTtlMs);
+    entry.idle.unref?.();
+  };
 
   const golden = (
     image: string,
@@ -572,7 +607,11 @@ export function createSmolvmSandboxProvider(
   ): Promise<SmolMachine> => {
     const name = goldenMachineName(image, workspacesRoot);
     const existing = goldens.get(name);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.idle) clearTimeout(existing.idle);
+      delete existing.idle;
+      return existing.machine;
+    }
     const booting = (async () => {
       // A golden from a previous coordinator is frozen and cannot be forked again.
       await deleteSmolvmMachine(name, run).catch(() => undefined);
@@ -599,7 +638,7 @@ export function createSmolvmSandboxProvider(
       goldens.delete(name);
       throw error;
     });
-    goldens.set(name, booting);
+    goldens.set(name, { machine: booting, clones: new Set() });
     return booting;
   };
 
@@ -616,7 +655,7 @@ export function createSmolvmSandboxProvider(
     image: string;
     mounts?: ReadonlyArray<{ source: string; target: string; readOnly: boolean }>;
     ports: ReadonlyArray<{ host: number; guest: number }>;
-  }): Promise<SmolMachine> => {
+  }): Promise<{ machine: SmolMachine; golden?: string }> => {
     const { id, image, mounts, ports } = sandbox;
     const roots = new Set((mounts ?? []).map((entry) => dirname(entry.source)));
     const bootDirectly = async (): Promise<SmolMachine> => {
@@ -632,28 +671,30 @@ export function createSmolvmSandboxProvider(
     };
     // Every mount must sit under one root for the golden's single mount to cover
     // them, and `machine fork` cannot add one.
-    if (roots.size > 1) return bootDirectly();
+    if (roots.size > 1) return { machine: await bootDirectly() };
     const workspacesRoot = [...roots][0] ?? "";
+    const name = goldenMachineName(image, workspacesRoot);
     let clone: SmolMachine;
     try {
       await golden(image, workspacesRoot);
-      clone = await forkMachine(
-        goldenMachineName(image, workspacesRoot),
-        id,
-        ports,
-      );
+      clone = await forkMachine(name, id, ports);
     } catch (error) {
+      // The golden may be gone — a host sleep breaking its memfd, or an
+      // operator deleting it. Forget it so the next run boots a fresh one
+      // rather than falling back for the rest of the process's life.
+      goldens.delete(name);
       process.stderr.write(
         `smolvm fork unavailable, booting ${id} directly: ${
           error instanceof Error ? error.message : String(error)
         }\n`,
       );
-      return bootDirectly();
+      return { machine: await bootDirectly() };
     }
+    goldens.get(name)?.clones.add(id);
     if (mounts?.length) {
       await clone.exec(["sh", "-c", guestMountIsolation(mounts)]);
     }
-    return clone;
+    return { machine: clone, golden: name };
   };
 
   return {
@@ -700,15 +741,21 @@ export function createSmolvmSandboxProvider(
       }
       // Deleting a golden is safe: live clones keep running, including their
       // mount. The next run boots a fresh one.
+      const base = goldens.get(id);
+      if (base?.idle) clearTimeout(base.idle);
       goldens.delete(id);
       return deleteSmolvmMachine(id, run);
     },
 
     async disposeGoldens() {
-      const booted = [...goldens.keys()];
+      const booted = [...goldens.values()];
+      const names = [...goldens.keys()];
       goldens.clear();
+      for (const entry of booted) {
+        if (entry.idle) clearTimeout(entry.idle);
+      }
       await Promise.all(
-        booted.map((name) =>
+        names.map((name) =>
           deleteSmolvmMachine(name, run).catch(() => undefined),
         ),
       );
@@ -760,7 +807,12 @@ export function createSmolvmSandboxProvider(
       const ports = publish
         ? [{ host: publish.host, guest: publish.guest }]
         : [];
-      const machine = await forkFromGolden({ id, image, mounts, ports });
+      const { machine, golden: from } = await forkFromGolden({
+        id,
+        image,
+        mounts,
+        ports,
+      });
       const hostGateway = await guestDefaultGateway(machine);
       let disposal: Promise<void> | undefined;
       const dispose = async () => {
@@ -768,6 +820,7 @@ export function createSmolvmSandboxProvider(
           .delete()
           .then(() => {
             machines.delete(id);
+            if (from) releaseGolden(from, id);
           })
           .catch((error) => {
             disposal = undefined;
