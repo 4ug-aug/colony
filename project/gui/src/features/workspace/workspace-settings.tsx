@@ -8,7 +8,7 @@ import { MembersSettings } from '#/features/workspace/members-settings'
 import { PreviewSettings } from '#/features/workspace/preview-settings'
 
 const tabEnter =
-  'space-y-3 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 ease-out fill-mode-backwards motion-reduce:animate-none'
+  'min-h-0 overflow-y-auto space-y-3 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 ease-out fill-mode-backwards motion-reduce:animate-none'
 
 export function WorkspaceSettingsPage({
   currentUserId,
@@ -16,9 +16,9 @@ export function WorkspaceSettingsPage({
   currentUserId: string
 }) {
   return (
-    <main className="relative mx-auto w-full max-w-4xl space-y-4 p-4 sm:p-6 lg:p-8">
-      <Tabs defaultValue="runtime" className="gap-4">
-        <TabsList className="w-full bg-card/90 shadow-sm backdrop-blur-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 ease-out fill-mode-backwards motion-reduce:animate-none sm:w-fit">
+    <main className="relative mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col p-4 sm:p-6 lg:p-8">
+      <Tabs defaultValue="runtime" className="min-h-0 flex-1 gap-4">
+        <TabsList className="w-full shrink-0 bg-card/90 shadow-sm backdrop-blur-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 ease-out fill-mode-backwards motion-reduce:animate-none sm:w-fit">
           <TabsTrigger value="runtime">Runtime</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="people">People</TabsTrigger>
