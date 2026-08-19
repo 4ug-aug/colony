@@ -44,7 +44,9 @@ CI-published agent image, and runs database migrations.
 The server setup supports [smolvm](https://github.com/smol-machines/smol) (the
 default), [Apple Container](https://github.com/apple/container) and Docker.
 Install the selected runtime before running the wizard — smolvm also needs
-Docker or Apple Container present to build the agent image. Start the
+Docker or Apple Container present to build the agent image, and a version that
+supports `machine fork` to start runs by cloning a warm microVM instead of
+booting one. Start the
 configured server with `make server` or the local full stack with `make dev`.
 Configure the model provider after first sign-in from Workspace Settings.
 

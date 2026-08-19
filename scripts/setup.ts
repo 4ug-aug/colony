@@ -197,17 +197,45 @@ async function available(command: string): Promise<boolean> {
   return (await child.exited) === 0;
 }
 
+async function succeeds(
+  command: string,
+  args: readonly string[],
+): Promise<boolean> {
+  const child = Bun.spawn([command, ...args], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  return (await child.exited) === 0;
+}
+
 export function usesRootlessDocker(securityOptions: string): boolean {
   return securityOptions.includes("name=rootless");
 }
 
+/**
+ * The microVM provider needs the CLI to run at all, and needs `machine fork`
+ * to be quick: without forking, every sandbox boots from scratch instead of
+ * cloning a golden (`project/providers/smolvm-sandbox.ts`). A missing CLI is
+ * fatal; an old one is only slow. Shared with the Linux service installer so
+ * `make setup`, `make service-install` and `make service-upgrade` all gate on
+ * the same thing.
+ */
+export async function requireSmolvm(): Promise<void> {
+  if (!(await available("smolvm"))) {
+    throw new Error(
+      "The smolvm CLI is required. Install it from https://github.com/smol-machines/smol and try again.",
+    );
+  }
+  if (!(await succeeds("smolvm", ["machine", "fork", "--help"]))) {
+    console.warn(
+      "This smolvm cannot fork machines, so every run boots a microVM from scratch. Upgrade smolvm for fast run starts.",
+    );
+  }
+}
+
 async function requireRuntime(provider: SandboxProvider): Promise<boolean> {
   if (provider === "smolvm") {
-    if (!(await available("smolvm"))) {
-      throw new Error(
-        "The smolvm CLI is required. Install it from https://github.com/smol-machines/smol and rerun make setup.",
-      );
-    }
+    await requireSmolvm();
     return false;
   }
   if (!(await available(provider === "docker" ? "docker" : "container"))) {
