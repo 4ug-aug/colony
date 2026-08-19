@@ -1,3 +1,4 @@
+import { describeError } from "./error.ts";
 import { serializeStep } from "./step.ts";
 import {
   runCursorAgentPersisted,
@@ -41,6 +42,6 @@ try {
     },
   );
 } catch (error) {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(describeError(error));
   process.exit(1);
 }
