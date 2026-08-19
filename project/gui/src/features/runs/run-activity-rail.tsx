@@ -32,6 +32,8 @@ export type ActivityRun = {
   state: 'preparing' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   error?: string
   stdout: string
+  /** What the runtime actually said. `error` is only ever its exit code. */
+  stderr?: string
   output?: string
   attribution?: string
   waitingOn?: string
@@ -244,9 +246,14 @@ export function RunActivityContent({
         {run.state === 'failed' && (
           <section className="flex gap-2 border-t pt-5 text-sm text-destructive">
             <CircleX className="mt-0.5 size-4 shrink-0" />
-            <p className="min-w-0 break-all">
-              {run.error ?? 'The run failed.'}
-            </p>
+            <div className="min-w-0 space-y-2">
+              <p className="break-all">{run.error ?? 'The run failed.'}</p>
+              {run.stderr?.trim() ? (
+                <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted px-2 py-1.5 font-mono text-[0.7rem] leading-4 text-muted-foreground">
+                  {run.stderr}
+                </pre>
+              ) : null}
+            </div>
           </section>
         )}
         {run.state === 'cancelled' && (

@@ -39,8 +39,14 @@ export async function apiJson<T>(
   fallback = 'Request failed',
 ): Promise<T> {
   const response = await apiFetch(path, init)
-  const data = (await response.json()) as T & { error?: string }
-  if (!response.ok) throw new Error(data.error ?? fallback)
+  // A 500 from an uncaught server throw has no body at all, and a proxy error
+  // page is HTML. Either way `json()` rejects with a parse error that tells the
+  // person nothing, so fall back to the caller's message.
+  const data = (await response.json().catch(() => undefined)) as
+    | (T & { error?: string })
+    | undefined
+  if (!response.ok) throw new Error(data?.error ?? fallback)
+  if (!data) throw new Error(fallback)
   return data
 }
 
