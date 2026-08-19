@@ -17,17 +17,39 @@ export function createVmsHttp(control: SmolvmMachineControl) {
       return undefined
     if (user.role !== 'admin') return json({ error: 'Forbidden' }, 403)
 
-    if (url.pathname === '/api/vms' && request.method === 'GET')
-      return json({ machines: await control.listMachines() })
+    // A throw here would be a bare 500 with no body, which the client cannot
+    // parse into a message — so the console shows nothing at all. The host
+    // being broken is exactly when this page has to say why.
+    if (url.pathname === '/api/vms' && request.method === 'GET') {
+      try {
+        return json({ machines: await control.listMachines() })
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error ? error.message : 'Could not list machines',
+          },
+          502,
+        )
+      }
+    }
 
     const logsMatch = url.pathname.match(/^\/api\/vms\/([^/]+)\/logs$/)
     if (logsMatch && request.method === 'GET') {
       const id = machineId(logsMatch[1])
       if (!id) return json({ error: 'Invalid machine id' }, 400)
-      const logs = await control.machineLogs(id)
-      return logs
-        ? json(logs)
-        : json({ error: 'Machine not found' }, 404)
+      try {
+        const logs = await control.machineLogs(id)
+        return logs ? json(logs) : json({ error: 'Machine not found' }, 404)
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error ? error.message : 'Could not read logs',
+          },
+          502,
+        )
+      }
     }
 
     const execMatch = url.pathname.match(/^\/api\/vms\/([^/]+)\/exec$/)

@@ -64,6 +64,34 @@ test('only admins can list, read logs, and nuke machines', async () => {
   expect(nuked).toEqual(['sandbox-1'])
 })
 
+test('a broken host is reported, not swallowed as an unparseable 500', async () => {
+  const handle = createVmsHttp({
+    listMachines: async () => {
+      throw new Error('smolvm is not available')
+    },
+    nukeMachine: async () => false,
+    machineLogs: async () => {
+      throw new Error('machine is frozen')
+    },
+    execMachine: async () => undefined,
+  })
+  const request = (path: string) => {
+    const url = new URL(`http://localhost${path}`)
+    return handle(new Request(url), url, {
+      id: 'admin',
+      name: 'admin',
+      role: 'admin',
+    })
+  }
+
+  const listed = await request('/api/vms')
+  expect(listed?.status).toBe(502)
+  expect(await listed?.json()).toEqual({ error: 'smolvm is not available' })
+  const logs = await request('/api/vms/sandbox-1/logs')
+  expect(logs?.status).toBe(502)
+  expect(await logs?.json()).toEqual({ error: 'machine is frozen' })
+})
+
 test('only admins can exec on a machine', async () => {
   const ran: string[] = []
   const handle = createVmsHttp({
