@@ -37,6 +37,7 @@ function toActivityRun(run: IssueRun): ActivityRun {
     state: run.state,
     ...(run.error === undefined ? {} : { error: run.error }),
     stdout: run.stdout,
+    stderr: run.stderr,
     output: run.stdout,
     waitingOn: run.waitingOn,
     preparation: run.preparation,
