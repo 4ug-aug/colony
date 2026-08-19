@@ -877,7 +877,7 @@ test("client-safe roster presentation never reaches role instructions", async ()
   expect(seen.size).toBeGreaterThan(1);
 });
 
-test("only people who get a repository checkout boot the microVM", async () => {
+test("every person boots the configured sandbox provider", async () => {
   const booted: string[] = [];
   const provider = (name: string) => ({
     create: async () => {
@@ -893,7 +893,6 @@ test("only people who get a repository checkout boot the microVM", async () => {
     cursor: cursorConfig,
     model: modelConfig,
     sandboxProvider: provider("microvm"),
-    containerProvider: provider("container"),
   });
 
   for (const person of [SOFTWARE_ENGINEER_ID, ANTBOY_ID]) {
@@ -903,5 +902,5 @@ test("only people who get a repository checkout boot the microVM", async () => {
     }
   }
 
-  expect(booted).toEqual(["microvm", "container"]);
+  expect(booted).toEqual(["microvm", "microvm"]);
 });

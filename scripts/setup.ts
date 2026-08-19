@@ -233,6 +233,24 @@ export async function requireSmolvm(): Promise<void> {
   }
 }
 
+/**
+ * Rootless Docker hides the host's loopback from its containers, so an agent
+ * cannot reach the MCP gateway and every capability call is refused. Only
+ * `make setup` used to apply the fix, and an upgrade never runs setup — so a
+ * host that started booting sandboxes in Docker lost its capabilities with no
+ * hint why. The service installer calls this for the same reason it calls
+ * `requireSmolvm`.
+ */
+export async function ensureDockerHostAccess(): Promise<void> {
+  if (!(await available("docker"))) {
+    throw new Error("Docker is required. Install it, start it, and try again.");
+  }
+  const rootless = usesRootlessDocker(
+    await output("docker", ["info", "--format", "{{json .SecurityOptions}}"]),
+  );
+  if (rootless) await configureRootlessDocker();
+}
+
 async function requireRuntime(provider: SandboxProvider): Promise<boolean> {
   if (provider === "smolvm") {
     await requireSmolvm();

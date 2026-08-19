@@ -120,11 +120,6 @@ export function createWorkspaceAgentsExecutor(options: {
     close(): Promise<void>;
   };
   sandboxProvider: SandboxProvider;
-  /**
-   * Boots persons that get no repository checkout. Only a git workspace needs
-   * the microVM's Docker-in-VM; defaults to `sandboxProvider` when unset.
-   */
-  containerProvider?: SandboxProvider;
   getPreviewConfig?: () => PreviewConfiguration | undefined;
   attachmentSource?: AttachmentSource;
   skillSource?: SkillSource;
@@ -324,10 +319,7 @@ export function createWorkspaceAgentsExecutor(options: {
         } satisfies AgentDefinition;
       },
     },
-    sandboxes: (definition) =>
-      byId.get(definition.id)?.includeRepository
-        ? options.sandboxProvider
-        : (options.containerProvider ?? options.sandboxProvider),
+    sandboxes: options.sandboxProvider,
     runtime: createRoutingAgentRuntime({}),
     capabilities,
     getPreviewConfig: options.getPreviewConfig,

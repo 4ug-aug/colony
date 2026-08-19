@@ -1384,7 +1384,6 @@ if (import.meta.main) {
   const control = createRunControl(
     createWorkspaceAgentsExecutor({
       sandboxProvider: smolvmProvider ?? containerProvider,
-      containerProvider,
       image: process.env.SWEAT_AGENT_IMAGE,
       cursorImage: process.env.SWEAT_CURSOR_AGENT_IMAGE,
       model: () => llm.model(),
