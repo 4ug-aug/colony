@@ -24,6 +24,12 @@ export function createDockerSandboxProvider(
   options: {
     runner?: CommandRunner;
     createId?: () => string;
+    /**
+     * Resolver for the container. Docker substitutes 8.8.8.8 whenever the host
+     * resolves through a systemd-resolved stub, and an internal zone is
+     * NXDOMAIN there.
+     */
+    dns?: string;
     caCertificate?: string;
     allocatePort?: () => Promise<number>;
   } = {},
@@ -48,6 +54,7 @@ export function createDockerSandboxProvider(
           "--detach",
           "--add-host",
           "host.container.internal:host-gateway",
+          ...(options.dns ? ["--dns", options.dns] : []),
           ...(publish
             ? ["--publish", `127.0.0.1:${publish.host}:${publish.guest}`]
             : []),
