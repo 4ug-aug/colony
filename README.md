@@ -30,8 +30,8 @@ how Issues dispatch child agent runs and integrate afterward.
 Clone the repository and run the setup wizard:
 
 ```bash
-git clone https://github.com/4ug-aug/sweat-v2.git
-cd sweat-v2
+git clone https://github.com/4ug-aug/colony.git
+cd colony
 make setup
 ```
 
@@ -74,11 +74,15 @@ make service-upgrade
 ```
 
 That runs `git pull --ff-only` first so the service is not restarted on a
-stale checkout.
+stale checkout. It rebuilds the local agent image, but never pulls a published
+one: a host whose `SWEAT_AGENT_IMAGE` names a GHCR tag keeps running the copy it
+already has until you `docker pull` it yourself. The coordinator exports the
+local image as-is, so a stale one is invisible apart from the code the agents
+run being older than the server's.
 `make dev` / `make agent` always build local `sweat-agent:latest` and
 `sweat-agent-cursor:latest` images for your machine's architecture. Published
 GHCR images are for production/server hosts and are linux/amd64 today; after
-the first release, set `sweat-v2-agent` to Public in the package settings if
+the first release, set `colony-agent` to Public in the package settings if
 GitHub created it as private.
 
 Choose **Install mac application** on macOS to download and open the latest
@@ -86,7 +90,7 @@ universal DMG. Drag Colony into Applications, then connect it to the server URL
 and enter the one-time setup token to create the first administrator.
 
 Windows has no wizard step because it needs none. Open the
-[latest release](https://github.com/4ug-aug/sweat-v2/releases/latest) and run
+[latest release](https://github.com/4ug-aug/colony/releases/latest) and run
 `Sweat_<version>_x64_en-US.msi` (or `Sweat_<version>_x64-setup.exe` if you
 prefer the NSIS installer). Both install Colony and register the legacy `sweat://`
 invite scheme; then connect to the server URL the same way. A Windows machine

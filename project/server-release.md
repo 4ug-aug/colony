@@ -18,25 +18,25 @@ cp .env.example .env.local
 ```
 
 Set `BETTER_AUTH_SECRET`, `SWEAT_SANDBOX_PROVIDER`, and
-`SWEAT_AGENT_IMAGE=ghcr.io/4ug-aug/sweat-v2-agent:<release-tag>` in
+`SWEAT_AGENT_IMAGE=ghcr.io/4ug-aug/colony-agent:<release-tag>` in
 `.env.local`, replacing `<release-tag>` with the GitHub release tag. Pull the
 published image and start the selected runtime:
 
 ```bash
 container system start
-container image pull ghcr.io/4ug-aug/sweat-v2-agent:<release-tag>
+container image pull ghcr.io/4ug-aug/colony-agent:<release-tag>
 bun src/server/coordinator.js
 ```
 
 For Docker, replace the two container commands with:
 
 ```bash
-docker pull ghcr.io/4ug-aug/sweat-v2-agent:<release-tag>
+docker pull ghcr.io/4ug-aug/colony-agent:<release-tag>
 bun src/server/coordinator.js
 ```
 
 Optional Cursor agent runs also need
-`SWEAT_CURSOR_AGENT_IMAGE=ghcr.io/4ug-aug/sweat-v2-agent-cursor:<release-tag>`
+`SWEAT_CURSOR_AGENT_IMAGE=ghcr.io/4ug-aug/colony-agent-cursor:<release-tag>`
 and a pull of that image. Configure the Cursor API key under Workspace → Cursor
 agent runtime.
 
