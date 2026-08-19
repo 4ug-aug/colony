@@ -9,6 +9,7 @@ import {
   createSmolvmSandboxProvider,
   forkSmolvmMachine,
   goldenMachineName,
+  guestExtraCaCertificate,
   guestMountIsolation,
   parseDefaultGateway,
   probePreviewUrl,
@@ -108,6 +109,38 @@ const DEFAULT_ROUTE = [
   "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT",
   "eth0\t00000000\t0102A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0",
 ].join("\n");
+
+/** What TSI networking actually shows: a dummy NIC and no default route. */
+const TSI_ROUTE = [
+  "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT",
+  "dummy0\t007100CB\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0",
+].join("\n");
+
+test("a guest with no default route reaches the host on localhost", async () => {
+  const fork = forking(
+    stubMachine({
+      async exec(command) {
+        if (command[0] === "cat") {
+          return { exitCode: 0, stdout: TSI_ROUTE, stderr: "" };
+        }
+        return succeeds();
+      },
+    }),
+  );
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-tsi",
+    ...passthroughImage,
+    ...fork.options,
+  });
+
+  const sandbox = await provider.create({
+    image: "alpine:latest",
+    volumes: ["/tmp/work:/work"],
+  });
+
+  expect(sandbox.hostGateway).toBe("127.0.0.1");
+  await sandbox.dispose();
+});
 
 test("a Linux route table yields the default IPv4 gateway", () => {
   expect(parseDefaultGateway(DEFAULT_ROUTE)).toBe("192.168.2.1");
@@ -622,6 +655,60 @@ test("machine settings become smolvm create flags", () => {
   expect(
     smolvmCreateFlags({ name: "sandbox-1", image: "alpine", network: false }),
   ).toEqual([]);
+  // An internal endpoint needs a resolver that knows the zone and its CA.
+  expect(
+    smolvmCreateFlags({
+      name: "colony-golden-1",
+      image: "alpine",
+      network: true,
+      dns: "10.0.0.53",
+      caCertificate: "/etc/ssl/company.pem",
+    }),
+  ).toEqual([
+    "--net",
+    "--dns",
+    "10.0.0.53",
+    "-v",
+    `/etc/ssl/company.pem:${guestExtraCaCertificate}:ro`,
+  ]);
+});
+
+test("a private CA reaches the golden's guest and every exec in its clones", async () => {
+  const execs: Array<Parameters<SmolMachine["exec"]>> = [];
+  const fork = forking(
+    stubMachine({
+      async exec(command, options) {
+        execs.push([command, options]);
+        return succeeds();
+      },
+    }),
+  );
+  const provider = createSmolvmSandboxProvider({
+    createId: () => "sandbox-ca",
+    caCertificate: "/etc/ssl/company.pem",
+    dns: "10.0.0.53",
+    ...passthroughImage,
+    ...fork.options,
+  });
+
+  const sandbox = await provider.create({ image: "alpine:latest" });
+  const result = await sandbox.exec({ command: ["node", "-e", ""] });
+
+  expect(fork.goldens[0]).toMatchObject({
+    dns: "10.0.0.53",
+    caCertificate: "/etc/ssl/company.pem",
+  });
+  expect(execs.at(-1)?.[1]?.env).toMatchObject({
+    NODE_EXTRA_CA_CERTS: guestExtraCaCertificate,
+  });
+  expect(result.exitCode).toBe(0);
+  await sandbox.dispose();
+});
+
+test("an agent CA path must be absolute", () => {
+  expect(() =>
+    createSmolvmSandboxProvider({ caCertificate: "certs/company.pem" }),
+  ).toThrow(/absolute/);
 });
 
 test("Preview is ready only when the host URL answers HTTP", async () => {

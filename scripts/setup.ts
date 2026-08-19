@@ -246,6 +246,20 @@ export async function requireSmolvm(): Promise<void> {
 }
 
 /**
+ * A host that once booted sandboxes in rootless Docker still carries the
+ * address we wrote for it, and it wins over what the sandbox reports. From a
+ * microVM that address answers nothing, so every run dies on a five-second MCP
+ * connect timeout with no hint why. Refuse the install instead.
+ */
+export function requireGuestReachableMcpHost(configured: string | undefined): void {
+  if (configured?.trim() === rootlessDockerMcpHost) {
+    throw new Error(
+      `SWEAT_MCP_HOST=${rootlessDockerMcpHost} is a rootless-Docker gateway and unreachable from a microVM. Remove the line from .env.local (a smolvm guest reaches the host on its own loopback) and rerun.`,
+    );
+  }
+}
+
+/**
  * Rootless Docker hides the host's loopback from its containers, so an agent
  * cannot reach the MCP gateway and every capability call is refused. Only
  * `make setup` used to apply the fix, and an upgrade never runs setup — so a
@@ -492,13 +506,15 @@ async function configureServer(path: string): Promise<void> {
   const preparing = spinner();
   preparing.start("Preparing agent runtime...");
   try {
-    const rootlessDocker = (
-      await Promise.all(
-        [...new Set<SandboxProvider>([provider, container])].map(requireRuntime),
-      )
-    ).some(Boolean);
-    if (rootlessDocker) {
-      await configureRootlessDocker();
+    const rootlessSandboxes = await requireRuntime(provider);
+    const rootlessImages =
+      container === provider ? rootlessSandboxes : await requireRuntime(container);
+    if (rootlessSandboxes || rootlessImages) await configureRootlessDocker();
+    // Only sandboxes that run *inside* rootless Docker need the gateway address
+    // rewritten. A microVM guest reaches the host on its own loopback, and this
+    // address is a black hole there — so writing it for the image builder's
+    // Docker would break every capability call on a smolvm host.
+    if (rootlessSandboxes) {
       document = setEnvValue(
         document,
         "SWEAT_MCP_HOST",

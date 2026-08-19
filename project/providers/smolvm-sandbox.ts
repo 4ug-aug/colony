@@ -215,7 +215,14 @@ export type MachineConfig = {
   ports?: ReadonlyArray<{ host: number; guest: number }>;
   /** Start as a fork base: memfd-backed guest RAM plus a control socket. */
   forkable?: boolean;
+  /** Resolver for the guest, whose default is the public 8.8.8.8 and 1.1.1.1. */
+  dns?: string;
+  /** Host path of a CA the guest should trust, mounted read-only. */
+  caCertificate?: string;
 };
+
+/** Where a guest finds the extra CA, matching the container providers. */
+export const guestExtraCaCertificate = "/etc/ssl/certs/sweat-extra-ca.pem";
 
 /** Where a golden mounts the directory holding every run's workspace. */
 export const guestWorkspacesRoot = "/mnt/ws";
@@ -347,6 +354,10 @@ type ManagedMachine = {
 export function smolvmCreateFlags(config: MachineConfig): string[] {
   return [
     ...(config.network ? ["--net"] : []),
+    ...(config.dns ? ["--dns", config.dns] : []),
+    ...(config.caCertificate
+      ? ["-v", `${config.caCertificate}:${guestExtraCaCertificate}:ro`]
+      : []),
     ...(config.mounts ?? []).flatMap((mount) => [
       "-v",
       `${mount.source}:${mount.target}${mount.readOnly ? ":ro" : ""}`,
@@ -382,13 +393,19 @@ export function parseDefaultGateway(table: string): string | undefined {
   return undefined;
 }
 
+/**
+ * smolvm's default TSI backend gives the guest no default route — just a dummy0
+ * and a loopback that libkrun redirects to the host's own. Measured on a real
+ * clone: `127.0.0.1` answers a host server, `10.0.2.2` black-holes. So a guest
+ * without a route reaches the host on localhost, which is not "unknown".
+ */
 async function guestDefaultGateway(
   machine: SmolMachine,
 ): Promise<string | undefined> {
   try {
     const result = await machine.exec(["cat", "/proc/net/route"]);
     if (result.exitCode !== 0) return undefined;
-    return parseDefaultGateway(result.stdout);
+    return parseDefaultGateway(result.stdout) ?? "127.0.0.1";
   } catch {
     return undefined;
   }
@@ -561,9 +578,24 @@ export function createSmolvmSandboxProvider(
     ) => Promise<SmolMachine>;
     /** How long a golden with no clones is kept before its RAM is released. */
     goldenIdleTtlMs?: number;
+    /**
+     * A guest resolves through public DNS, so an internal model or MCP endpoint
+     * is NXDOMAIN unless the operator names a resolver that knows their zone.
+     */
+    dns?: string;
+    /** Host path of a private CA the guest must trust to reach such a host. */
+    caCertificate?: string;
     run?: RunCommand;
   } = {},
 ): SandboxProvider & SmolvmMachineControl & SmolvmGoldens {
+  if (options.caCertificate && !isAbsolute(options.caCertificate)) {
+    throw new Error("smolvm agent CA certificate path must be absolute");
+  }
+  /** Every machine this provider boots, golden or fallback, needs both. */
+  const hostAccess = {
+    ...(options.dns ? { dns: options.dns } : {}),
+    ...(options.caCertificate ? { caCertificate: options.caCertificate } : {}),
+  };
   const createMachine = options.createMachine ?? createSmolvmMachine;
   const createId = options.createId ?? (() => `sandbox-${crypto.randomUUID()}`);
   const allocatePort = options.allocatePort ?? allocateHostPort;
@@ -620,6 +652,7 @@ export function createSmolvmSandboxProvider(
         image,
         network: true,
         forkable: true,
+        ...hostAccess,
         ...(workspacesRoot
           ? {
               mounts: [
@@ -663,6 +696,7 @@ export function createSmolvmSandboxProvider(
         name: id,
         image,
         network: true,
+        ...hostAccess,
         ...(mounts ? { mounts } : {}),
         ...(ports.length ? { ports } : {}),
       });
@@ -844,7 +878,12 @@ export function createSmolvmSandboxProvider(
         ...(hostGateway ? { hostGateway } : {}),
 
         async exec(request) {
-          const env = envVars(request.env);
+          const env = envVars({
+            ...request.env,
+            ...(options.caCertificate
+              ? { NODE_EXTRA_CA_CERTS: guestExtraCaCertificate }
+              : {}),
+          });
           const channel = request.log;
           let streamed = false;
           const retain = (text: string): void => {

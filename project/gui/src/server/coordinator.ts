@@ -1377,7 +1377,16 @@ if (import.meta.main) {
       hostLanAddress(),
     )
   const smolvmProvider =
-    sandboxProviderName === 'smolvm' ? createSmolvmSandboxProvider() : undefined
+    sandboxProviderName === 'smolvm'
+      ? createSmolvmSandboxProvider({
+          // A microVM guest resolves through public DNS and trusts only public
+          // CAs, so an internal model or MCP endpoint needs both named here.
+          ...(process.env.SWEAT_SANDBOX_DNS
+            ? { dns: process.env.SWEAT_SANDBOX_DNS }
+            : {}),
+          ...(agentCaCertificate ? { caCertificate: agentCaCertificate } : {}),
+        })
+      : undefined
   const containerProvider =
     containerProviderName === 'docker'
       ? createDockerSandboxProvider({

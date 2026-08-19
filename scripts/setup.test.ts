@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   defaultSandboxProvider,
   readEnvValue,
+  requireGuestReachableMcpHost,
   selectUniversalDmg,
   setEnvValue,
   usesRootlessDocker,
@@ -27,6 +28,14 @@ test("defaults the sandbox to smolvm", () => {
 test("detects rootless Docker security options", () => {
   expect(usesRootlessDocker('["name=seccomp","name=rootless"]')).toBe(true);
   expect(usesRootlessDocker('["name=seccomp"]')).toBe(false);
+});
+
+test("rejects a rootless-Docker MCP host on a microVM install", () => {
+  expect(() => requireGuestReachableMcpHost("http://10.0.2.2")).toThrow(
+    /unreachable from a microVM/,
+  );
+  expect(() => requireGuestReachableMcpHost("http://192.168.1.47")).not.toThrow();
+  expect(() => requireGuestReachableMcpHost(undefined)).not.toThrow();
 });
 
 test("selects the universal DMG from release assets", () => {
