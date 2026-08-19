@@ -26,6 +26,7 @@ COPY package.cursor.json ./package.json
 COPY package.cursor-lock.json ./package-lock.json
 RUN npm ci --omit=dev
 
+COPY runtime/error.ts /app/runtime/error.ts
 COPY runtime/step.ts /app/runtime/step.ts
 COPY runtime/cursor-sdk.ts /app/runtime/cursor-sdk.ts
 COPY runtime/cursor-cli.ts /app/runtime/cursor-cli.ts

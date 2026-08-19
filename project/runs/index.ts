@@ -2,6 +2,7 @@ import type { AgentDefinition, AgentDefinitionResolver } from "../agents/definit
 import type { AgentGrantContext } from "../agents/grant-context";
 import type { McpGrant } from "../mcp/gateway";
 import type { CapabilitySessionBinding, CapabilitySessionFactory } from "../mcp/session";
+import { describeError } from "../runtime/error";
 import type { Step } from "../runtime/step";
 import type {
     ExecRequest,
@@ -212,10 +213,6 @@ export interface InputProvisioner<Input extends RunInput> {
 const terminal = (state: RunState): boolean =>
   state === "succeeded" || state === "failed" || state === "cancelled";
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function tail(value: string, maxBytes: number): string {
   const bytes = new TextEncoder().encode(value);
   if (bytes.byteLength <= maxBytes) return value;
@@ -302,7 +299,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       try {
         await step();
       } catch (error) {
-        failure ??= errorText(error);
+        failure ??= describeError(error);
       }
     };
     const { session, sandbox, workspace, capabilitySession } = resources;
@@ -533,7 +530,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         state: "failed",
         completedAt: now(),
         turnActive: false,
-        error: errorText(error),
+        error: describeError(error),
       });
     } finally {
       // Handed to `warm` on success, in which case these are already cleared.
@@ -691,13 +688,13 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         try {
           result = await Promise.race([runtime, timeout]);
         } catch (error) {
-          failure = errorText(error);
+          failure = describeError(error);
         } finally {
           if (timer) clearTimeout(timer);
         }
       }
     } catch (error) {
-      failure = errorText(error);
+      failure = describeError(error);
     } finally {
       // The capability session ends with the run even when the Preview lingers.
       cleanupFailure = await release(record.id, { capabilitySession });

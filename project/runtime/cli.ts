@@ -1,3 +1,4 @@
+import { describeError } from "./error";
 import { serializeStep } from "./step";
 import {
   loadOpenAIAgentSession,
@@ -67,6 +68,6 @@ try {
     await saveOpenAIAgentSession(SESSION_PATH, session);
   }
 } catch (error) {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(describeError(error));
   process.exit(1);
 }
