@@ -1,6 +1,6 @@
 import type { Subprocess } from "bun";
 import { createHash } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import type {
@@ -217,12 +217,20 @@ export type MachineConfig = {
   forkable?: boolean;
   /** Resolver for the guest, whose default is the public 8.8.8.8 and 1.1.1.1. */
   dns?: string;
-  /** Host path of a CA the guest should trust, mounted read-only. */
-  caCertificate?: string;
+  /** Host directory holding only the extra CA bundle, mounted read-only. */
+  caDirectory?: string;
 };
 
-/** Where a guest finds the extra CA, matching the container providers. */
-export const guestExtraCaCertificate = "/etc/ssl/certs/sweat-extra-ca.pem";
+/**
+ * A guest mount is a directory: virtiofs cannot pass a single file, and mounting
+ * the bundle's own directory would expose whatever else lives beside it — a
+ * private key, usually. So the provider stages the bundle alone under a fixed
+ * name, and this is where a guest reads it.
+ */
+const guestCaDirectory = "/etc/ssl/colony-ca";
+export const guestExtraCaCertificate = `${guestCaDirectory}/sweat-extra-ca.pem`;
+/** Not /etc/ssl/certs: mounting over that directory hides every system CA. */
+const caStageDir = join(tmpdir(), "colony-smolvm-ca");
 
 /** Where a golden mounts the directory holding every run's workspace. */
 export const guestWorkspacesRoot = "/mnt/ws";
@@ -355,8 +363,8 @@ export function smolvmCreateFlags(config: MachineConfig): string[] {
   return [
     ...(config.network ? ["--net"] : []),
     ...(config.dns ? ["--dns", config.dns] : []),
-    ...(config.caCertificate
-      ? ["-v", `${config.caCertificate}:${guestExtraCaCertificate}:ro`]
+    ...(config.caDirectory
+      ? ["-v", `${config.caDirectory}:${guestCaDirectory}:ro`]
       : []),
     ...(config.mounts ?? []).flatMap((mount) => [
       "-v",
@@ -591,11 +599,22 @@ export function createSmolvmSandboxProvider(
   if (options.caCertificate && !isAbsolute(options.caCertificate)) {
     throw new Error("smolvm agent CA certificate path must be absolute");
   }
+  /** Copied once: a golden and a fallback boot both mount the same staging. */
+  let staging: Promise<string> | undefined;
+  const stageCaCertificate = (path: string): Promise<string> =>
+    (staging ??= (async () => {
+      await mkdir(caStageDir, { recursive: true });
+      await copyFile(path, join(caStageDir, basename(guestExtraCaCertificate)));
+      return caStageDir;
+    })());
+
   /** Every machine this provider boots, golden or fallback, needs both. */
-  const hostAccess = {
+  const hostAccess = async (): Promise<Partial<MachineConfig>> => ({
     ...(options.dns ? { dns: options.dns } : {}),
-    ...(options.caCertificate ? { caCertificate: options.caCertificate } : {}),
-  };
+    ...(options.caCertificate
+      ? { caDirectory: await stageCaCertificate(options.caCertificate) }
+      : {}),
+  });
   const createMachine = options.createMachine ?? createSmolvmMachine;
   const createId = options.createId ?? (() => `sandbox-${crypto.randomUUID()}`);
   const allocatePort = options.allocatePort ?? allocateHostPort;
@@ -652,7 +671,7 @@ export function createSmolvmSandboxProvider(
         image,
         network: true,
         forkable: true,
-        ...hostAccess,
+        ...(await hostAccess()),
         ...(workspacesRoot
           ? {
               mounts: [
@@ -696,7 +715,7 @@ export function createSmolvmSandboxProvider(
         name: id,
         image,
         network: true,
-        ...hostAccess,
+        ...(await hostAccess()),
         ...(mounts ? { mounts } : {}),
         ...(ports.length ? { ports } : {}),
       });
