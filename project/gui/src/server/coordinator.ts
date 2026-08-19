@@ -1390,6 +1390,11 @@ if (import.meta.main) {
   const containerProvider =
     containerProviderName === 'docker'
       ? createDockerSandboxProvider({
+          // Same two as the microVM: Docker hands a container 8.8.8.8 when the
+          // host resolves through a stub, and installs no private CA of its own.
+          ...(process.env.SWEAT_SANDBOX_DNS
+            ? { dns: process.env.SWEAT_SANDBOX_DNS }
+            : {}),
           ...(agentCaCertificate ? { caCertificate: agentCaCertificate } : {}),
         })
       : createAppleContainerSandboxProvider({
