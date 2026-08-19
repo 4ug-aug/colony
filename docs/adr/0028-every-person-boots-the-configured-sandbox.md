@@ -34,6 +34,13 @@ uses to produce the agent images, and which provider boots sandboxes when
 `SWEAT_SANDBOX_PROVIDER` is itself a container. It no longer decides anything
 per person.
 
+A host without KVM cannot run smolvm for anybody, so it sets
+`SWEAT_SANDBOX_PROVIDER` to a container provider and every person boots there
+— which is what this ADR already says. The per-person split did not help such
+a host either: it only ever moved the people who needed the microVM least.
+`requireSmolvm` now checks `/dev/kvm` so this fails at install rather than on
+every `machine start`.
+
 This supersedes [ADR 0027](0027-container-sandbox-for-people-without-a-repository.md)
 and restores [ADR 0024](0024-smolvm-default-sandbox-provider.md) to its
 original meaning: the default sandbox provider is the default for everyone.

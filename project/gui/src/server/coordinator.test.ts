@@ -3798,6 +3798,17 @@ test('a sandbox host gateway wins over the process-wide MCP host', () => {
   ).toBe('http://host.container.internal:54167/mcp')
 })
 
+test('an explicitly configured MCP host wins over a sandbox gateway', () => {
+  expect(
+    capabilityUrlForSandbox(
+      'http://0.0.0.0:54167/mcp',
+      { hostGateway: 'host.container.internal' },
+      'http://host.container.internal',
+      'http://192.168.1.47',
+    ),
+  ).toBe('http://192.168.1.47:54167/mcp')
+})
+
 test('a container provider is only configured when the sandbox is a microVM', () => {
   expect(parseContainerProvider(undefined, 'docker')).toBe('docker')
   expect(parseContainerProvider('docker', 'apple-container')).toBe(

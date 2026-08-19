@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, constants, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
@@ -225,6 +225,18 @@ export async function requireSmolvm(): Promise<void> {
     throw new Error(
       "The smolvm CLI is required. Install it from https://github.com/smol-machines/smol and try again.",
     );
+  }
+  // A microVM needs hardware virtualisation, which a guest without nested
+  // virtualisation cannot offer. The CLI installs and forks fine there and
+  // then fails every single `machine start`, so check the device, not the CLI.
+  if (process.platform === "linux") {
+    try {
+      await access("/dev/kvm", constants.R_OK | constants.W_OK);
+    } catch {
+      throw new Error(
+        "smolvm needs KVM, and /dev/kvm is not writable here. Load the module (sudo modprobe kvm && sudo modprobe kvm_intel, or kvm_amd) and add this user to the kvm group. If this host is itself a VM, enable nested virtualisation or set SWEAT_SANDBOX_PROVIDER=docker instead.",
+      );
+    }
   }
   if (!(await succeeds("smolvm", ["machine", "fork", "--help"]))) {
     console.warn(
