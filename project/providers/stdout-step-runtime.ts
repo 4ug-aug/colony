@@ -6,7 +6,10 @@ import type { AgentProvider, RuntimeRequest } from "../runs";
  */
 export function createStdoutStepRuntime(options: {
   command: (request: RuntimeRequest) => readonly string[];
-  env: (request: RuntimeRequest) => Record<string, string>;
+  env: (
+    request: RuntimeRequest,
+    sandbox: Parameters<AgentProvider["run"]>[0],
+  ) => Record<string, string>;
 }): AgentProvider {
   const runOnce = async (
     sandbox: Parameters<AgentProvider["run"]>[0],
@@ -24,7 +27,7 @@ export function createStdoutStepRuntime(options: {
 
     const result = await sandbox.exec({
       command: [...options.command(request)],
-      env: options.env(request),
+      env: options.env(request, sandbox),
       ...(request.workspace ? { workdir: request.workspace } : {}),
       onOutput: (chunk) => {
         if (chunk.stream === "stderr") {

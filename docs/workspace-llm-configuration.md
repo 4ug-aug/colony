@@ -44,10 +44,11 @@ saving a provider.
 
 ## Container networking
 
-Agents run in disposable containers. A model URL of `localhost`, `127.0.0.1`,
-or `[::1]` is automatically rewritten to `host.container.internal` only for
-the agent container, so the workspace setting can keep the normal local Ollama
-URL.
+Agents run in disposable sandboxes. A model URL of `localhost`, `127.0.0.1`,
+or `[::1]` is automatically rewritten to whatever name that sandbox reaches the
+host by -- `host.container.internal` in a container, the default route it
+reports in a microVM -- so the workspace setting can keep the normal local
+Ollama URL.
 
 The Apple Container host alias must be available after each macOS restart; see
 the [container setup](../project/README.md#troubleshooting). If Ollama runs on
