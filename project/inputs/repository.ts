@@ -205,14 +205,27 @@ async function stageAttachment(
   }
 }
 
+/**
+ * Every run's workspace is a sibling under one root, not loose in the system
+ * temp directory. A smolvm golden mounts this root once and each of its clones
+ * binds its own directory out of it, which only works if they share a parent —
+ * and mounting the temp directory itself would hand every sandbox the cached
+ * sandbox image archives that also live there.
+ */
+export const workspacesRoot = join(tmpdir(), "colony-workspaces");
+
+async function defaultWorkspaceDirectory(): Promise<string> {
+  await mkdir(workspacesRoot, { recursive: true });
+  return mkdtemp(join(workspacesRoot, "run-"));
+}
+
 export function createRepositoryWorkspaceProvisioner(
   options: WorkspaceProvisionerOptions,
 ): InputProvisioner<WorkspaceInput> {
   const sources = new Map(
     options.sources.map((source) => [source.provider, source]),
   );
-  const createDirectory =
-    options.createDirectory ?? (() => mkdtemp(join(tmpdir(), "sweat-run-")));
+  const createDirectory = options.createDirectory ?? defaultWorkspaceDirectory;
   const removeDirectory =
     options.removeDirectory ??
     ((directory) => rm(directory, { force: true, recursive: true }));

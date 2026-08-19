@@ -99,11 +99,7 @@ export function SignIn({ onChangeServer }: { onChangeServer: () => void }) {
       onSubmit={(event) => void submit(event)}
     >
       <div className="flex items-center gap-2 text-sm font-semibold">
-        <img
-          src="/app-icon.png"
-          alt=""
-          className="size-7 rounded-md bg-white p-1"
-        />
+        <img src="/colony-mark.svg" alt="" className="size-8 dark:invert" />
         Colony
       </div>
       <div className="flex flex-col gap-1">
