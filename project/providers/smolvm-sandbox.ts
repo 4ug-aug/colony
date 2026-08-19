@@ -589,6 +589,9 @@ export function createSmolvmSandboxProvider(
     /**
      * A guest resolves through public DNS, so an internal model or MCP endpoint
      * is NXDOMAIN unless the operator names a resolver that knows their zone.
+     *
+     * ponytail: one IP, because `smolvm --dns` rejects a second. A host whose
+     * resolvers fail over needs smolvm to accept a list first.
      */
     dns?: string;
     /** Host path of a private CA the guest must trust to reach such a host. */
