@@ -93,6 +93,43 @@ test("the OpenAI runtime routes a host-local model through the container host", 
   );
 });
 
+test("the OpenAI runtime routes a host-local model through the sandbox host gateway", async () => {
+  let request: { env: Record<string, string> } | undefined;
+  const runtime = createOpenAIAgentsRuntime();
+
+  await runtime.run(
+    {
+      id: "sandbox-1",
+      hostGateway: "192.168.64.1",
+      exec: async (value) => {
+        request = value as { env: Record<string, string> };
+        return { exitCode: 0, stdout: "done", stderr: "" };
+      },
+      dispose: async () => {},
+    },
+    {
+      task: "Fix the test",
+      definition: {
+        id: "antboy",
+        instructions: "Inspect and verify.",
+        requestedCapabilities: [],
+        runtime: {
+          kind: "openai-agents",
+          image: "sweat-agent:latest",
+          model: {
+            baseUrl: "http://localhost:11434/v1",
+            apiKey: "secret",
+            model: "test",
+          },
+        },
+        executionPolicy: { maxDurationMs: 1000, maxOutputBytes: 1000, maxSteps: 100 },
+      },
+    },
+  );
+
+  expect(request?.env.SWEAT_MODEL_BASE_URL).toBe("http://192.168.64.1:11434/v1");
+});
+
 // Shared minimal definition used by step-parsing tests.
 const minimalDefinition = {
   id: "agent-x",

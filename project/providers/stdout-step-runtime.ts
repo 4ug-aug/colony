@@ -1,12 +1,16 @@
 import { parseStep } from "../runtime/step";
 import type { AgentProvider, RuntimeRequest } from "../runs";
+import type { Sandbox } from "../sandboxes";
 
 /**
  * Shared NDJSON stdout → step runtime used by Cursor and OpenAI Agents providers.
  */
 export function createStdoutStepRuntime(options: {
   command: (request: RuntimeRequest) => readonly string[];
-  env: (request: RuntimeRequest) => Record<string, string>;
+  env: (
+    request: RuntimeRequest,
+    sandbox: Pick<Sandbox, "hostGateway">,
+  ) => Record<string, string>;
 }): AgentProvider {
   const runOnce = async (
     sandbox: Parameters<AgentProvider["run"]>[0],
@@ -24,7 +28,7 @@ export function createStdoutStepRuntime(options: {
 
     const result = await sandbox.exec({
       command: [...options.command(request)],
-      env: options.env(request),
+      env: options.env(request, sandbox),
       ...(request.workspace ? { workdir: request.workspace } : {}),
       onOutput: (chunk) => {
         if (chunk.stream === "stderr") {
