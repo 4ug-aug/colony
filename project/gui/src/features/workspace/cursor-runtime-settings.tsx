@@ -1,3 +1,8 @@
+import { AgentMentionChip } from '#/features/agents/agent-mark'
+import {
+  agentNameFrom,
+  useAgentDefinitions,
+} from '#/features/agents/use-agent-definitions'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
@@ -25,10 +30,7 @@ type CursorModel = {
   displayName: string
 }
 
-const cursorRuntimeQueryKey = [
-  'workspace-settings',
-  'cursor-runtime',
-] as const
+const cursorRuntimeQueryKey = ['workspace-settings', 'cursor-runtime'] as const
 
 const cursorModelsQueryKey = [
   'workspace-settings',
@@ -117,6 +119,7 @@ function CursorRuntimeForm({
   const [cursorModel, setCursorModel] = useState(config.model ?? '')
   const [cursorApiKey, setCursorApiKey] = useState('')
   const [formError, setFormError] = useState<string>()
+  const { data: agents = [] } = useAgentDefinitions()
 
   const save = useMutation({
     mutationFn: () =>
@@ -149,9 +152,16 @@ function CursorRuntimeForm({
       description={
         <>
           Optional Cursor local SDK runtime for{' '}
-          <code className="text-[0.85em]">@software-engineer</code> runs. This
-          is separate from the OpenAI-compatible LLM provider used by{' '}
-          <code className="text-[0.85em]">@antboy</code>.
+          <AgentMentionChip
+            agentId="software-engineer"
+            label={agentNameFrom(agents, 'software-engineer')}
+          />{' '}
+          runs. This is separate from the OpenAI-compatible LLM provider used by{' '}
+          <AgentMentionChip
+            agentId="antboy"
+            label={agentNameFrom(agents, 'antboy')}
+          />
+          .
         </>
       }
     >
