@@ -651,7 +651,16 @@ test("machine settings become smolvm create flags", () => {
       mounts: [{ source: "/tmp/work", target: "/work", readOnly: false }],
       ports: [{ host: 49152, guest: 3000 }],
     }),
-  ).toEqual(["--net", "-v", "/tmp/work:/work", "-p", "49152:3000"]);
+  ).toEqual([
+    // A clone forked with `-p` needs the interface only virtio-net gives it.
+    "--net",
+    "--net-backend",
+    "virtio-net",
+    "-v",
+    "/tmp/work:/work",
+    "-p",
+    "49152:3000",
+  ]);
   expect(
     smolvmCreateFlags({ name: "sandbox-1", image: "alpine", network: false }),
   ).toEqual([]);
@@ -666,6 +675,8 @@ test("machine settings become smolvm create flags", () => {
     }),
   ).toEqual([
     "--net",
+    "--net-backend",
+    "virtio-net",
     "--dns",
     "10.0.0.53",
     "-v",
@@ -759,6 +770,8 @@ test("a CLI-backed machine creates, starts, execs and deletes through smolvm", a
       "--image",
       "/tmp/cursor.tar",
       "--net",
+      "--net-backend",
+      "virtio-net",
     ],
     ["smolvm", "machine", "start", "--name", "sandbox-1"],
     [
