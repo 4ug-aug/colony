@@ -1,12 +1,12 @@
 import {
-  OPENAI_DEFAULT_BASE_URL,
-  type OpenAICompatibleModel,
-} from '#project/runtime/openai-agents'
-import {
-  createSecretBox,
-  validModel,
-  type TransactionalSqlite,
+    createSecretBox,
+    validModel,
+    type TransactionalSqlite,
 } from '#/server/secret-box'
+import {
+    OPENAI_DEFAULT_BASE_URL,
+    type OpenAICompatibleModel,
+} from '#project/runtime/openai-agents'
 
 export type LlmProvider = 'openai' | 'custom'
 

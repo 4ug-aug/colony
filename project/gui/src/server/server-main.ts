@@ -1,6 +1,14 @@
 import { rosterDefinitionSummaries, rosterPerson } from '#project/agents/roster'
 import { capabilityPresentation } from '#project/agents/roster-people'
 import { getConnectionKind } from '#project/connections/registry'
+import {
+  capabilityHost,
+  capabilityUrlForSandbox,
+  createCoordinator,
+  hostLanAddress,
+  parseContainerProvider,
+  parseSandboxProvider,
+} from './coordinator'
 import { createSqliteBulletinStore } from './features/bulletins/bulletin-store'
 import { createSqliteDocStore } from './features/docs/doc-store'
 import { createSqliteGrillStore, type Grill } from './features/grills/grill-store'
@@ -23,14 +31,6 @@ import {
   createWorkspaceSkillStore,
   skillDirectory,
 } from './features/workspace/workspace-skills'
-import {
-  capabilityHost,
-  capabilityUrlForSandbox,
-  createCoordinator,
-  hostLanAddress,
-  parseContainerProvider,
-  parseSandboxProvider,
-} from './coordinator'
 
 if (import.meta.main) {
   const sandboxProviderName = parseSandboxProvider(
