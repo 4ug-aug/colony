@@ -34,8 +34,7 @@ export interface Sandbox {
   /**
    * Hostname the guest uses to reach host-bound ports (the MCP gateway).
    * Container guests use `host.container.internal`; a microVM uses the
-   * default-route gateway it actually has, which changes with the network
-   * backend publishing a Preview port selects.
+   * default-route gateway its virtio-net interface actually has.
    */
   readonly hostGateway?: string;
   /**

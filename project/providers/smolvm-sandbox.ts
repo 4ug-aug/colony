@@ -353,7 +353,10 @@ type ManagedMachine = {
 /** The machine settings smolvm takes as `machine create` flags. */
 export function smolvmCreateFlags(config: MachineConfig): string[] {
   return [
-    ...(config.network ? ["--net"] : []),
+    // Always virtio-net: publishing a Preview port makes smolvm pick that
+    // backend, and a guest booted on the default TSI has no interface for it —
+    // a clone forked with `-p` off a TSI golden loses the network entirely.
+    ...(config.network ? ["--net", "--net-backend", "virtio-net"] : []),
     ...(config.dns ? ["--dns", config.dns] : []),
     ...(config.caDirectory
       ? ["-v", `${config.caDirectory}:${guestCaDirectory}:ro`]
@@ -394,10 +397,10 @@ export function parseDefaultGateway(table: string): string | undefined {
 }
 
 /**
- * smolvm's default TSI backend gives the guest no default route — just a dummy0
- * and a loopback that libkrun redirects to the host's own. Measured on a real
- * clone: `127.0.0.1` answers a host server, `10.0.2.2` black-holes. So a guest
- * without a route reaches the host on localhost, which is not "unknown".
+ * Every machine boots on virtio-net, so a guest has a default route to the
+ * host. The localhost fallback covers one that came up without a route: on
+ * libkrun's TSI backend a guest's loopback is redirected to the host's own, so
+ * `127.0.0.1` still answers there — which is not "unknown".
  */
 async function guestDefaultGateway(
   machine: SmolMachine,
