@@ -18,7 +18,7 @@
     "db:migrate": "bun run src/server/migrate.ts",
     "benchmark:room": "bun run benchmarks/room-load.ts",
     "seed:admin": "bun run src/server/seed-admin.ts",
-    "coordinator": "bun --watch run src/server/coordinator.ts",
+    "coordinator": "bun --watch run src/server/server-main.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

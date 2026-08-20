@@ -1,4 +1,13 @@
-import type { DashboardView } from './room-sidebar'
+export type DashboardView =
+  | 'room'
+  | 'account'
+  | 'workspace'
+  | 'schedules'
+  | 'issues'
+  | 'bulletins'
+  | 'docs'
+  | 'grills'
+  | 'vms'
 
 /**
  * The single side surface a Room can show at once (thread rail or Run

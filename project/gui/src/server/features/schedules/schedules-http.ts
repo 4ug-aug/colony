@@ -2,7 +2,7 @@ import { previewCron } from '#/features/schedules/cron'
 import type {
   AgentDefinitionSummary,
   WorkspaceServerMessage,
-} from '#/server/coordinator'
+} from '#/server/protocol'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 import {
   type Schedule,

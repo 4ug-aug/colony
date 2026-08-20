@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import {
   applyLiveReply,
   buildFlatTimelineItems,
-  isThreadReply,
   runResultAsLiveReply,
   runResultsForThread,
   runsForThread,
@@ -32,10 +31,10 @@ function reply(id: string, authorId: string, createdAt: number): RoomMessage {
   }
 }
 
-describe('isThreadReply', () => {
-  test('is true only when rootId is set', () => {
-    expect(isThreadReply(root)).toBe(false)
-    expect(isThreadReply(reply('reply-1', 'user-2', 2))).toBe(true)
+describe('thread replies', () => {
+  test('are identified by rootId', () => {
+    expect(root.rootId).toBeUndefined()
+    expect(reply('reply-1', 'user-2', 2).rootId).toBe('root-1')
   })
 })
 
@@ -230,6 +229,37 @@ describe('buildFlatTimelineItems', () => {
     expect(items[0]?.run).toEqual(succeeded)
     expect(items[1]?.run).toEqual(failed)
     expect(items.every((item) => !('result' in item))).toBe(true)
+  })
+
+  test('groups only consecutive messages from the same author within five minutes', () => {
+    const message = (
+      id: string,
+      authorId: string,
+      createdAt: number,
+    ): RoomMessage => ({
+      ...root,
+      id,
+      author: { id: authorId, name: authorId },
+      createdAt,
+    })
+
+    const withinWindow = buildFlatTimelineItems(
+      [message('a', 'admin', 1_000), message('b', 'admin', 300_999)],
+      [],
+    )
+    expect(withinWindow.map((item) => item.grouped)).toEqual([false, true])
+
+    const atFiveMinutes = buildFlatTimelineItems(
+      [message('a', 'admin', 1_000), message('b', 'admin', 301_000)],
+      [],
+    )
+    expect(atFiveMinutes.map((item) => item.grouped)).toEqual([false, false])
+
+    const differentAuthor = buildFlatTimelineItems(
+      [message('a', 'admin', 1_000), message('b', 'teammate', 2_000)],
+      [],
+    )
+    expect(differentAuthor.map((item) => item.grouped)).toEqual([false, false])
   })
 })
 

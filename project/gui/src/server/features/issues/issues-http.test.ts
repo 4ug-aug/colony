@@ -7,7 +7,7 @@ import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
 import type {
   AgentDefinitionSummary,
   WorkspaceServerMessage,
-} from '#/server/coordinator'
+} from '#/server/protocol'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 
 const ada: RoomUser = { id: 'ada', name: 'Ada' }

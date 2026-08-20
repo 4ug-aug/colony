@@ -39,7 +39,7 @@ export function renderSystemdUnit(options: SystemdUnitOptions): string {
     options.bun,
     `--env-file=${options.envFile}`,
     "run",
-    "src/server/coordinator.ts",
+    "src/server/server-main.ts",
   ]
     .map(unitValue)
     .join(" ");

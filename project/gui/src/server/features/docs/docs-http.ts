@@ -1,4 +1,4 @@
-import type { WorkspaceServerMessage } from '#/server/coordinator'
+import type { WorkspaceServerMessage } from '#/server/protocol'
 import type { DocStore } from './doc-store'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 import { json, readBody } from '#/server/http/respond'

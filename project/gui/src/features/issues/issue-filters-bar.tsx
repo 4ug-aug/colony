@@ -19,12 +19,13 @@ import {
   PopoverTrigger,
 } from '#/components/ui/popover'
 import { cn } from '#/lib/utils'
-import { BarChart3, Check, ChevronDown, UserRound, X } from 'lucide-react'
+import { BarChart3, ChevronDown, UserRound, X } from 'lucide-react'
 import { useState } from 'react'
 import { EMPTY_ISSUE_FILTERS, issueFiltersActive } from './issue-filters'
 import type { IssueListFilters } from './issue-filters'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
 import { LabelDot } from './issue-labels'
+import { LabelCheck } from './property-picker'
 import type { IssuePriority, IssueStatus } from './types'
 import {
   ISSUE_PRIORITIES,
@@ -43,22 +44,6 @@ function filterTriggerClass(active: boolean) {
   return cn(
     'h-7 gap-1 px-2 text-xs font-medium text-muted-foreground',
     active && 'bg-muted text-foreground',
-  )
-}
-
-function LabelCheck({ checked }: { checked: boolean }) {
-  return (
-    <span
-      className={cn(
-        'flex size-4 shrink-0 items-center justify-center rounded-sm border',
-        checked
-          ? 'border-sky-500 bg-sky-500 text-white'
-          : 'border-muted-foreground/50 bg-transparent',
-      )}
-      aria-hidden
-    >
-      {checked ? <Check className="size-3" strokeWidth={3} /> : null}
-    </span>
   )
 }
 

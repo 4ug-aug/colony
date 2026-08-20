@@ -1,4 +1,4 @@
-import type { AgentDefinitionSummary } from '#/server/coordinator'
+import type { AgentDefinitionSummary } from '#/server/protocol'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 import { json, readBody } from '#/server/http/respond'
 import {

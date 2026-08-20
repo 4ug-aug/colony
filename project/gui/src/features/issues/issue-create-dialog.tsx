@@ -40,7 +40,8 @@ import type { FormEvent, ReactNode } from 'react'
 import { useState } from 'react'
 import { formatIssueId } from './format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
-import type { Issue, IssueOwner, IssuePriority, IssueStatus } from './types'
+import { ownerValue, parseOwnerValue } from './owner-encoding'
+import type { Issue, IssuePriority, IssueStatus } from './types'
 import {
   ISSUE_PRIORITIES,
   ISSUE_PRIORITY_LABEL,
@@ -72,22 +73,6 @@ function parseTags(value: string): string[] {
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean)
-}
-
-function ownerValue(owner: IssueOwner | undefined): string {
-  if (!owner) return 'none'
-  return `${owner.kind}:${owner.id}`
-}
-
-function parseOwnerValue(value: string | null): IssueOwner | undefined {
-  if (!value || value === 'none') return undefined
-  const separator = value.indexOf(':')
-  if (separator <= 0) return undefined
-  const kind = value.slice(0, separator)
-  const id = value.slice(separator + 1)
-  if (!id) return undefined
-  if (kind === 'account' || kind === 'agent') return { kind, id }
-  return undefined
 }
 
 function CompactPersonAvatar({ author }: { author: Author }) {

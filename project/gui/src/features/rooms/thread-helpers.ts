@@ -4,10 +4,6 @@ import type {
   RunResultReply,
 } from './types'
 
-export function isThreadReply(message: RoomMessage): boolean {
-  return message.rootId != null
-}
-
 /**
  * Filters a room-wide run list down to the runs relevant to one thread — a
  * run triggered by the thread root itself, or by one of its replies — so a

@@ -17,7 +17,7 @@ import {
 import type {
   AgentDefinitionSummary,
   WorkspaceServerMessage,
-} from '#/server/coordinator'
+} from '#/server/protocol'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 import {
   overlayLivePreparation,

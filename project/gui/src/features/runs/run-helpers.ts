@@ -1,7 +1,8 @@
 import { stepLabel, type Step } from './step-label'
 import type { RoomRun } from '#/features/rooms/types'
+import type { RunState } from '../../../../runs'
 
-export type RunState = 'preparing' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type { RunState }
 
 export const terminal = (state: RunState) =>
   state === 'succeeded' || state === 'failed' || state === 'cancelled'

@@ -8,46 +8,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '#/components/ui/alert-dialog'
-import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '#/components/ui/collapsible'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuGroup,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from '#/components/ui/context-menu'
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from '#/components/ui/hover-card'
-import { Input } from '#/components/ui/input'
-import {
-  Popover,
-  PopoverContent,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from '#/components/ui/popover'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
-  useSidebar,
 } from '#/components/ui/sidebar'
 import { toast } from '#/components/ui/toast'
 import { GitHubIcon } from '#/components/github-icon'
@@ -56,7 +32,6 @@ import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { canDeleteRoom } from '#/features/rooms/permissions'
 import type { RoomNotification } from '#/features/rooms/room-notifications'
 import type { Author, Room } from '#/features/rooms/types'
-import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { authClient } from '#/lib/auth-client'
 import { isTauriRuntime } from '#/lib/server-config'
 import { cn } from '#/lib/utils'
@@ -68,17 +43,17 @@ import {
   Cuboid,
   FileText,
   Flame,
-  Hash,
-  Lock,
   LogOut,
   StickyNote,
   ScrollText,
   Settings,
   Box,
-  Trash2,
 } from 'lucide-react'
-import type { ReactNode, SubmitEvent } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import { CollapsibleGroup } from './collapsible-group'
+import { CreateRoomPopover } from './create-room-popover'
+import type { DashboardView } from './dashboard-navigation'
+import { RoomMenuItem } from './room-menu-item'
 
 const capabilityIcons: Record<
   string,
@@ -93,269 +68,6 @@ const capabilityIcons: Record<
 
 const isSweatNativeCapability = (capability: { id: string }) =>
   capability.id.startsWith('workspace.')
-
-const panelClassName =
-  "h-(--collapsible-panel-height) overflow-hidden transition-[height,opacity] duration-200 ease-out motion-reduce:transition-none data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 [&[hidden]:not([hidden='until-found'])]:hidden"
-
-export type DashboardView =
-  | 'room'
-  | 'account'
-  | 'workspace'
-  | 'schedules'
-  | 'issues'
-  | 'bulletins'
-  | 'docs'
-  | 'grills'
-  | 'vms'
-
-/**
- * A sidebar section that remembers whether it is expanded. Sections stay
- * expanded while the sidebar itself is collapsed to icons, since their labels
- * and triggers are hidden in that state.
- */
-function CollapsibleGroup({
-  storageKey,
-  label,
-  action,
-  children,
-}: {
-  storageKey: string
-  label: string
-  action?: ReactNode
-  children: ReactNode
-}) {
-  const { state } = useSidebar()
-  const [expanded, setExpanded] = useStoredBoolean(
-    `sidebar.group.${storageKey}`,
-    true,
-  )
-
-  return (
-    <Collapsible
-      open={state === 'collapsed' || expanded}
-      onOpenChange={setExpanded}
-    >
-      <SidebarGroup>
-        <div className="flex items-center justify-between pr-2 group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel
-            className="group/label flex-1 gap-1 hover:text-sidebar-foreground"
-            render={<CollapsibleTrigger />}
-          >
-            <ChevronRight className="transition-transform duration-200 group-data-[panel-open]/label:rotate-90 motion-reduce:transition-none" />
-            {label}
-          </SidebarGroupLabel>
-          {action}
-        </div>
-        <CollapsibleContent className={panelClassName}>
-          <SidebarGroupContent>{children}</SidebarGroupContent>
-        </CollapsibleContent>
-      </SidebarGroup>
-    </Collapsible>
-  )
-}
-
-function CreateRoomPopover({
-  group,
-  onCreate,
-  createError,
-}: {
-  group: 'public' | 'private'
-  onCreate: (name: string, visibility: 'public' | 'private') => Promise<unknown>
-  createError: string | undefined
-}) {
-  const [open, setOpen] = useState(false)
-  const [roomName, setRoomName] = useState('')
-  const [visibility, setVisibility] = useState(group)
-  const [pending, setPending] = useState(false)
-  const roomNameInput = useRef<HTMLInputElement>(null)
-
-  const close = () => {
-    setRoomName('')
-    setVisibility(group)
-    setOpen(false)
-  }
-
-  const submitRoom = async (event: SubmitEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!roomName.trim()) return
-    setPending(true)
-    const result = await onCreate(roomName.trim(), visibility)
-    setPending(false)
-    if (result) close()
-  }
-
-  useEffect(() => {
-    if (open) roomNameInput.current?.focus()
-  }, [open])
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        if (next) setOpen(true)
-        else close()
-      }}
-    >
-      <PopoverTrigger
-        render={
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            aria-label={`Create ${group} room`}
-          />
-        }
-      >
-        +
-      </PopoverTrigger>
-      <PopoverContent side="right" align="start">
-        <PopoverHeader>
-          <PopoverTitle>Create room</PopoverTitle>
-        </PopoverHeader>
-        <form
-          className="mt-3 space-y-2"
-          onSubmit={(event) => void submitRoom(event)}
-        >
-          <Input
-            ref={roomNameInput}
-            value={roomName}
-            onChange={(event) => setRoomName(event.target.value)}
-            className="h-8"
-            aria-label="Room name"
-            placeholder="Room name"
-            disabled={pending}
-            required
-            pattern={'.*\\S.*'}
-            title="Room name cannot be blank"
-          />
-          <div
-            className="flex items-center gap-1"
-            role="group"
-            aria-label="Visibility"
-          >
-            <Button
-              type="button"
-              onClick={() => setVisibility('public')}
-              disabled={pending}
-              size="xs"
-              variant={visibility === 'public' ? 'default' : 'outline'}
-              className="flex-1"
-            >
-              Public
-            </Button>
-            <Button
-              type="button"
-              onClick={() => setVisibility('private')}
-              disabled={pending}
-              size="xs"
-              variant={visibility === 'private' ? 'default' : 'outline'}
-              className="flex-1"
-            >
-              Private
-            </Button>
-          </div>
-          <div className="flex gap-1">
-            <Button
-              type="submit"
-              size="xs"
-              disabled={pending || !roomName.trim()}
-            >
-              {pending ? <BrailleLoader text="Creating room" /> : 'Create'}
-            </Button>
-            <Button type="button" variant="ghost" size="xs" onClick={close}>
-              Cancel
-            </Button>
-          </div>
-        </form>
-        {createError && (
-          <p className="mt-1 text-xs text-destructive" role="alert">
-            {createError}
-          </p>
-        )}
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-function RoomMenuItem({
-  room,
-  isActive,
-  notification,
-  canDelete,
-  onSelect,
-  onRequestDelete,
-}: {
-  room: Room
-  isActive: boolean
-  notification: RoomNotification | undefined
-  canDelete: boolean
-  onSelect: () => void
-  onRequestDelete: () => void
-}) {
-  const notificationLabel =
-    notification === 'mention'
-      ? 'has a mention'
-      : notification === 'unread'
-        ? 'has new messages'
-        : undefined
-
-  return (
-    <SidebarMenuItem>
-      <ContextMenu disabled={!canDelete}>
-        <ContextMenuTrigger
-          render={
-            <SidebarMenuButton
-              isActive={isActive}
-              tooltip={
-                notificationLabel
-                  ? `${room.name} · ${notificationLabel}`
-                  : room.name
-              }
-              aria-label={
-                notificationLabel
-                  ? `${room.name}, ${notificationLabel}`
-                  : room.name
-              }
-              onClick={onSelect}
-              className="data-[active=true]:bg-primary/5"
-            />
-          }
-        >
-          {room.visibility === 'private' ? <Lock /> : <Hash />}
-          <span>{room.name}</span>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuGroup>
-            <ContextMenuItem variant="destructive" onClick={onRequestDelete}>
-              <Trash2 />
-              Delete room
-            </ContextMenuItem>
-          </ContextMenuGroup>
-        </ContextMenuContent>
-      </ContextMenu>
-      {notification && (
-        <>
-          <SidebarMenuBadge aria-hidden="true" className="h-auto min-w-0 p-0">
-            <span
-              className={cn(
-                'size-2 rounded-full',
-                notification === 'mention' ? 'bg-orange-500' : 'bg-green-500',
-              )}
-            />
-          </SidebarMenuBadge>
-          <span
-            aria-hidden="true"
-            className={cn(
-              'absolute top-0 right-0 z-10 hidden size-2.5 rounded-full ring-2 ring-sidebar',
-              'group-data-[collapsible=icon]:block',
-              notification === 'mention' ? 'bg-orange-500' : 'bg-green-500',
-            )}
-          />
-        </>
-      )}
-    </SidebarMenuItem>
-  )
-}
 
 export function RoomSidebar({
   rooms,

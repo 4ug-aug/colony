@@ -130,7 +130,7 @@ jobs:
         run: |
           bundle="sweat-server-$VERSION"
           mkdir -p "release/$bundle/src/server"
-          bun build project/gui/src/server/coordinator.ts --target=bun --minify --outfile "release/$bundle/src/server/coordinator.js"
+          bun build project/gui/src/server/server-main.ts --target=bun --minify --outfile "release/$bundle/src/server/coordinator.js"
           cp -R project/gui/drizzle "release/$bundle/drizzle"
           cp .env.example "release/$bundle/.env.example"
           cp project/server-release.md "release/$bundle/README.md"

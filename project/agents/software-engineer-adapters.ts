@@ -104,6 +104,9 @@ export function createWorkspaceDocsAdapter(options: {
   return {
     capability: {
       id: "workspace.docs",
+      applies({ grantContext }) {
+        return Boolean(grantContext?.grillId);
+      },
       createUpstream: () => createWorkspaceDocsMcpUpstream(options),
     },
   };

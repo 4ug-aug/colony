@@ -5,8 +5,6 @@ import { MachineCard } from './components/machine-card'
 import { MachineDetail } from './components/machine-session'
 import { useMachines } from './use-machines'
 
-export { MachineSessionHeader } from './components/machine-session'
-
 export function VmsPage({
   selectedId,
   onSelectedIdChange,

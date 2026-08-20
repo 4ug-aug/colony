@@ -33,7 +33,8 @@ export function createWorkspaceDocsMcpUpstream(options: {
         },
         {
           name: "workspace.get_doc",
-          description: "Read one Colony workspace Doc, including its markdown body.",
+          description:
+            "Read one Colony workspace Doc by its Colony id from workspace.list_docs, including its markdown body. This is not Outline.",
           inputSchema: {
             type: "object",
             properties: { id: { type: "string" } },

@@ -29,7 +29,7 @@ import {
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
-import { OwnerDisplay } from './issue-property-editors'
+import { OwnerDisplay } from './owner-display'
 import type { Issue, IssueOwner, IssuePriority, IssueStatus } from './types'
 import {
   ISSUE_PRIORITIES,

@@ -14,7 +14,7 @@ test("renders the Linux user unit with absolute runtime paths", () => {
     "WorkingDirectory=/home/sweat/Sweat\\x20Server/project/gui",
   );
   expect(unit).toContain(
-    'ExecStart="/home/sweat/.bun/bin/bun" "--env-file=/home/sweat/Sweat Server/.env.local" "run" "src/server/coordinator.ts"',
+    'ExecStart="/home/sweat/.bun/bin/bun" "--env-file=/home/sweat/Sweat Server/.env.local" "run" "src/server/server-main.ts"',
   );
   expect(unit).toContain(
     'Environment="SWEAT_DATABASE_PATH=/home/sweat/Sweat Server/project/gui/sweat.sqlite"',

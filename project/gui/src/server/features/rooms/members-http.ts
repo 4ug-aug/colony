@@ -2,7 +2,7 @@ import type {
   RoomServerMessage,
   WorkspaceRoom,
   WorkspaceServerMessage,
-} from '#/server/coordinator'
+} from '#/server/protocol'
 import type { RoomStore, RoomUser } from './room-store'
 import { json, readBody } from '#/server/http/respond'
 

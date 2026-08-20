@@ -46,4 +46,5 @@ test("the software engineer requests scoped issue and pull request tools", () =>
   );
   expect(softwareEngineerRole.instructions).not.toContain("Room");
   expect(softwareEngineerRole.instructions).not.toContain("Grill");
+  expect(softwareEngineerRole.instructions).not.toContain("Colony Doc");
 });

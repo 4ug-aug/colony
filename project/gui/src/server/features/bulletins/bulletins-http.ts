@@ -1,4 +1,4 @@
-import type { WorkspaceServerMessage } from '#/server/coordinator'
+import type { WorkspaceServerMessage } from '#/server/protocol'
 import type { BulletinStore, Poll } from './bulletin-store'
 import { clampNormalized } from './bulletin-store'
 import type { RoomUser } from '#/server/features/rooms/room-store'

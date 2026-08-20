@@ -2,7 +2,7 @@ import { migratedDatabase, seedAccounts } from '#/server/test-db'
 import { expect, test } from 'bun:test'
 import { createSqliteBulletinStore } from './bulletin-store'
 import { createBulletinsHttp } from './bulletins-http'
-import type { WorkspaceServerMessage } from '#/server/coordinator'
+import type { WorkspaceServerMessage } from '#/server/protocol'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 
 

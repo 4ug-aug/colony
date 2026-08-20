@@ -26,14 +26,11 @@ import { formatIssueId } from './format'
 import { IssueDeleteButton } from './issue-delete-menu'
 import { IssueStatusIcon } from './issue-icons'
 import { IssueLiveWork } from './issue-live-work'
-import {
-  OwnerDisplay,
-  OwnerPicker,
-  PriorityPicker,
-  StatusPicker,
-  TagsEditor,
-  TimeSpentEditor,
-} from './issue-property-editors'
+import { OwnerDisplay } from './owner-display'
+import { OwnerPicker } from './owner-picker'
+import { PriorityPicker, StatusPicker } from './property-picker'
+import { TagsEditor } from './tags-editor'
+import { TimeSpentEditor } from './time-spent-editor'
 import { IssueRunsRail } from './issue-runs-rail'
 import { parentWorkLabel } from './issue-tree'
 import type { Issue, IssueRun } from './types'

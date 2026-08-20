@@ -752,6 +752,7 @@ test("Grill-linked runs grant Grill tools and read-only workspace Docs", async (
   const docsAdapter: WorkspaceAgentAdapter = {
     capability: {
       id: "workspace.docs",
+      applies: ({ grantContext }) => Boolean(grantContext?.grillId),
       createUpstream: () => ({
         listTools: async () => [
           { name: "workspace.list_docs" },
@@ -815,6 +816,73 @@ test("Grill-linked runs grant Grill tools and read-only workspace Docs", async (
     "workspace.set_grill_frontier",
     "workspace.propose_grill_issues",
     "workspace.propose_grill_writeup",
+  ]);
+});
+
+test("workspace.docs is omitted outside Grill sessions", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const docsAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "workspace.docs",
+      applies: ({ grantContext }) => Boolean(grantContext?.grillId),
+      createUpstream: () => ({
+        listTools: async () => [
+          { name: "workspace.list_docs" },
+          { name: "workspace.get_doc" },
+        ],
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const roomAdapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "workspace.room",
+      applies: ({ grantContext }) => Boolean(grantContext?.roomId),
+      createUpstream: () => ({
+        listTools: async () => [
+          { name: "workspace.read_messages" },
+          { name: "workspace.post_message" },
+        ],
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    adapters: [docsAdapter, roomAdapter],
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-docs-room",
+    }),
+  });
+
+  const id = executor.startRun({
+    task: "summarize the room",
+    agentDefinitionId: ANTBOY_ID,
+    grantContext: { roomId: "room-1" },
+  });
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+    await Bun.sleep(0);
+  }
+  const run = executor.getRun(id)!;
+  expect(run.state).toBe("succeeded");
+  expect(run.capabilityGrant?.tools).toEqual([
+    "workspace.read_messages",
+    "workspace.post_message",
   ]);
 });
 

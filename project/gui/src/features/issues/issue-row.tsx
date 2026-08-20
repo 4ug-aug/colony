@@ -20,11 +20,8 @@ import {
 import { IssueDeleteContextMenu } from './issue-delete-menu'
 import { ChildStatusRing, IssueStatusIcon } from './issue-icons'
 import { IssueLabelChip } from './issue-labels'
-import {
-  OwnerPicker,
-  PriorityPicker,
-  StatusPicker,
-} from './issue-property-editors'
+import { OwnerPicker } from './owner-picker'
+import { PriorityPicker, StatusPicker } from './property-picker'
 import type { Issue } from './types'
 import { parentWorkLabel } from './issue-tree'
 import { useIssueTiming } from './use-issue-timing'

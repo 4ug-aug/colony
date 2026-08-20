@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Octokit } from "octokit";
 import {
   createGitHubSoftwareEngineerAdapter,
+  createWorkspaceDocsAdapter,
   createWorkspaceGrillAdapter,
   createWorkspaceIssuesAdapter,
   createWorkspaceSoftwareEngineerAdapter,
@@ -108,6 +109,20 @@ test("workspace.grill applies only when grantContext.grillId is set", () => {
   });
   expect(adapter.capability?.applies?.({})).toBe(false);
   expect(adapter.capability?.applies?.({ grantContext: {} })).toBe(false);
+  expect(
+    adapter.capability?.applies?.({ grantContext: { grillId: "grill-1" } }),
+  ).toBe(true);
+});
+
+test("workspace.docs applies only when grantContext.grillId is set", () => {
+  const adapter = createWorkspaceDocsAdapter({
+    port: { listDocs: () => [], getDoc: () => undefined },
+  });
+  expect(adapter.capability?.applies?.({})).toBe(false);
+  expect(adapter.capability?.applies?.({ grantContext: {} })).toBe(false);
+  expect(
+    adapter.capability?.applies?.({ grantContext: { roomId: "room-1" } }),
+  ).toBe(false);
   expect(
     adapter.capability?.applies?.({ grantContext: { grillId: "grill-1" } }),
   ).toBe(true);

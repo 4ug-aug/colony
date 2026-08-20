@@ -135,10 +135,6 @@ export class InMemoryRunStore<Input extends RunInput = RunInput> implements RunS
   }
 }
 
-export function createInMemoryRunStore<Input extends RunInput = RunInput>(): RunStore<Input> {
-  return new InMemoryRunStore<Input>();
-}
-
 export interface RuntimeRequest {
   definition: AgentDefinition;
   task: string;

@@ -433,8 +433,6 @@ export function useRooms(userId: string) {
 
   useEffect(() => {
     let stopped = false
-    let attempts = 0
-    let retry: ReturnType<typeof setTimeout> | undefined
     const selectFrom = (nextRooms: Room[]) => {
       setSelectedRoomId((current) => {
         if (current && nextRooms.some(({ id }) => id === current))
@@ -449,9 +447,6 @@ export function useRooms(userId: string) {
     const connect = () => {
       if (stopped) return
       workspaceSocket.current = connectWorkspaceStream({
-        onOpen() {
-          attempts = 0
-        },
         onMessage(data) {
           const event = JSON.parse(data) as WorkspaceStreamMessage
           if (stopped) return
@@ -499,13 +494,6 @@ export function useRooms(userId: string) {
           }
           if (event.type === 'message.created') recordMessageActivity(event)
         },
-        onClose() {
-          if (stopped) return
-          retry = setTimeout(connect, Math.min(1_000 * 2 ** attempts++, 10_000))
-        },
-        onError() {
-          workspaceSocket.current?.close()
-        },
       })
     }
 
@@ -528,7 +516,6 @@ export function useRooms(userId: string) {
 
     return () => {
       stopped = true
-      if (retry) clearTimeout(retry)
       workspaceSocket.current?.close()
     }
   }, [acknowledge, forgetRoom, recordMessageActivity])

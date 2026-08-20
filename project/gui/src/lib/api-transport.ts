@@ -208,8 +208,70 @@ export const connectRoomStream = (
   handlers: RealtimeStreamHandlers,
 ) => connectRealtimeStream(`/api/rooms/${roomId}/stream`, handlers)
 
-export const connectWorkspaceStream = (handlers: RealtimeStreamHandlers) =>
-  connectRealtimeStream('/api/workspace/stream', handlers)
+const workspaceSubscribers = new Set<RealtimeStreamHandlers>()
+let workspaceSocket: RealtimeStreamHandle | undefined
+let workspaceReconnect: ReturnType<typeof setTimeout> | undefined
+let workspaceReconnectAttempts = 0
+
+function stopWorkspaceReconnect() {
+  if (workspaceReconnect) clearTimeout(workspaceReconnect)
+  workspaceReconnect = undefined
+}
+
+function openWorkspaceSocket() {
+  if (workspaceSocket) return
+  stopWorkspaceReconnect()
+  const socket = connectRealtimeStream('/api/workspace/stream', {
+    onOpen() {
+      if (workspaceSocket !== socket) return
+      workspaceReconnectAttempts = 0
+      for (const handlers of workspaceSubscribers) handlers.onOpen?.()
+    },
+    onMessage(data) {
+      if (workspaceSocket !== socket) return
+      for (const handlers of [...workspaceSubscribers]) handlers.onMessage(data)
+    },
+    onClose() {
+      if (workspaceSocket !== socket) return
+      workspaceSocket = undefined
+      for (const handlers of [...workspaceSubscribers]) handlers.onClose?.()
+      if (workspaceSubscribers.size === 0) return
+      workspaceReconnect = setTimeout(
+        () => {
+          workspaceReconnect = undefined
+          if (!workspaceSocket && workspaceSubscribers.size > 0)
+            openWorkspaceSocket()
+        },
+        Math.min(1_000 * 2 ** workspaceReconnectAttempts++, 10_000),
+      )
+    },
+    onError() {
+      if (workspaceSocket !== socket) return
+      for (const handlers of [...workspaceSubscribers]) handlers.onError?.()
+    },
+  })
+  workspaceSocket = socket
+}
+
+export function connectWorkspaceStream(
+  handlers: RealtimeStreamHandlers,
+): RealtimeStreamHandle {
+  workspaceSubscribers.add(handlers)
+  openWorkspaceSocket()
+  return {
+    send(data) {
+      workspaceSocket?.send(data)
+    },
+    close() {
+      workspaceSubscribers.delete(handlers)
+      if (workspaceSubscribers.size > 0) return
+      stopWorkspaceReconnect()
+      const socket = workspaceSocket
+      workspaceSocket = undefined
+      socket?.close()
+    },
+  }
+}
 
 export const connectGrillStream = (
   grillId: string,

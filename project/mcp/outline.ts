@@ -1,4 +1,4 @@
-import type { McpUpstream } from "./gateway";
+import type { McpTool, McpUpstream } from "./gateway";
 import { createRemoteMcpUpstream } from "./remote";
 
 export type OutlineConfiguration = { url: string; apiKey: string };
@@ -12,15 +12,39 @@ export function outlineMcpUrl(instanceOrMcpUrl: string): string {
   return `${base}/mcp`;
 }
 
+const listDocumentsDescription =
+  'Search the Outline wiki: pass query for full-text search, or omit it to list recent documents. Then read a hit with outline.fetch { resource: "document", id }. This is not workspace.list_docs.';
+
+const fetchDescription =
+  'Read an Outline wiki document, collection, user, attachment, or template. To read a wiki page, call with resource "document" and the id from outline.list_documents. This is not workspace.get_doc.';
+
+/** Replace Outline's generic list/fetch blurbs so agents search, then fetch by resource+id. */
+export function clarifyOutlineUpstream(upstream: McpUpstream): McpUpstream {
+  return {
+    async listTools() {
+      return (await upstream.listTools()).map((tool): McpTool => {
+        if (tool.name === "outline.list_documents")
+          return { ...tool, description: listDocumentsDescription };
+        if (tool.name === "outline.fetch")
+          return { ...tool, description: fetchDescription };
+        return tool;
+      });
+    },
+    callTool: (name, args) => upstream.callTool(name, args),
+  };
+}
+
 /** Outline serves MCP at `<instance>/mcp`; cloud instances are https://<subdomain>.getoutline.com. */
 export function createOutlineMcpUpstream(
   options: OutlineConfiguration,
 ): McpUpstream {
-  return createRemoteMcpUpstream({
-    name: "outline",
-    url: outlineMcpUrl(options.url),
-    accessToken: options.apiKey,
-  });
+  return clarifyOutlineUpstream(
+    createRemoteMcpUpstream({
+      name: "outline",
+      url: outlineMcpUrl(options.url),
+      accessToken: options.apiKey,
+    }),
+  );
 }
 
 export function readOutlineConfiguration(

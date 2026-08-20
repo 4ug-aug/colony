@@ -36,10 +36,6 @@ export const WORKSPACE_ROSTER: readonly WorkspaceRosterPerson[] =
     return { ...person, role };
   });
 
-export function rosterRole(id: string): AgentRole | undefined {
-  return rolesById[id];
-}
-
 export type RosterDefinitionSummary = {
   id: string;
   name: string;

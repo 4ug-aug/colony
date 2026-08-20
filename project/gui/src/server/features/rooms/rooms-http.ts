@@ -14,7 +14,7 @@ import type {
   RoomServerMessage,
   WorkspaceRoom,
   WorkspaceServerMessage,
-} from '#/server/coordinator'
+} from '#/server/protocol'
 import type { RunControl } from '#/server/features/runs/run-control'
 import {
   MESSAGE_SEARCH_DEFAULT_LIMIT,
