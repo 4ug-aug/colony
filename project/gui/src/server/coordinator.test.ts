@@ -58,6 +58,7 @@ class FakeRunControl implements RunControl {
     attachments?: readonly AttachmentInput[]
   }> = []
   stops = 0
+  followUps: { runId: string; task: string }[] = []
   listRuns() {
     return this.runs
   }
@@ -124,8 +125,33 @@ class FakeRunControl implements RunControl {
     this.publish(changed)
     return changed
   }
-  async followUp(_runId: string, _task: string) {
-    return undefined
+  async followUp(runId: string, task: string) {
+    const run = this.runs.find((item) => item.id === runId)
+    if (!run) return undefined
+    this.followUps.push({ runId, task })
+    const changed = {
+      ...run,
+      task,
+      state: run.state === 'preparing' ? ('running' as const) : run.state,
+      turnActive: false,
+    }
+    this.runs = this.runs.map((item) => (item.id === runId ? changed : item))
+    this.publish(changed)
+    return changed
+  }
+  completeTurn(id: string, stdout?: string) {
+    const run = this.runs.find((item) => item.id === id)
+    if (!run) throw new Error('run not found')
+    const changed = {
+      ...run,
+      state: 'running' as const,
+      turnActive: false,
+      exitCode: 0,
+      ...(stdout != null ? { stdout } : {}),
+    }
+    this.runs = this.runs.map((item) => (item.id === id ? changed : item))
+    this.publish(changed)
+    return changed
   }
   async stop() {
     this.stops++
@@ -1769,7 +1795,7 @@ test('hub post by non-HTTP caller broadcasts message.created to subscribed socke
   }
 })
 
-test('agent-authored hub post does NOT create a run', async () => {
+test('an agent hub post that only @mentions itself starts no run', async () => {
   const store = roomStore()
   const control = new FakeRunControl()
   const messages = createRoomMessageHub(store)
@@ -1795,7 +1821,6 @@ test('agent-authored hub post does NOT create a run', async () => {
     })
     const event = await pending
     expect(event.type).toBe('message.created')
-    // No run should be created by an agent hub post
     expect(control.listRuns()).toHaveLength(0)
     expect(store.listRuns(GENERAL_ROOM_ID)).toHaveLength(0)
     await expectNoEvent(socket)
@@ -3390,6 +3415,171 @@ test('two separate reply mentions on the same thread run concurrently — no per
       ),
     ).toBe(true)
     expect(control.requests).toHaveLength(2)
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('an account message with two agent mentions starts one Room-linked run per named definition', async () => {
+  const store = roomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: '@software-engineer @antboy please pair on the flaky test',
+      }),
+    })
+    expect(response.status).toBe(202)
+    const body = (await response.json()) as { run: RoomRun; runs: RoomRun[] }
+    expect(body.runs.map(({ agentId }) => agentId)).toEqual([
+      'software-engineer',
+      'antboy',
+    ])
+    expect(body.run.id).toBe(body.runs[0]?.id)
+    expect(control.requests).toEqual([
+      {
+        task: '@antboy please pair on the flaky test',
+        roomId: GENERAL_ROOM_ID,
+        rootId: store.listMessages(GENERAL_ROOM_ID)[0].id,
+        agentDefinitionId: 'software-engineer',
+        attachments: [],
+      },
+      {
+        task: '@software-engineer please pair on the flaky test',
+        roomId: GENERAL_ROOM_ID,
+        rootId: store.listMessages(GENERAL_ROOM_ID)[0].id,
+        agentDefinitionId: 'antboy',
+        attachments: [],
+      },
+    ])
+    expect(store.listRuns(GENERAL_ROOM_ID)).toHaveLength(2)
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('a later @ of the same definition in that thread followUps the warm Room-linked run', async () => {
+  const store = roomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const firstResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@antboy first look' }),
+    })
+    const { message: trigger, run } = (await firstResponse.json()) as {
+      message: RoomMessage
+      run: RoomRun
+    }
+    control.completeTurn(run.id, 'On it.')
+
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: '@antboy check the logs',
+        rootId: trigger.id,
+      }),
+    })
+    expect(replyResponse.status).toBe(202)
+    const { run: again } = (await replyResponse.json()) as { run: RoomRun }
+    expect(again.id).toBe(run.id)
+    await Bun.sleep(5)
+    expect(control.requests).toHaveLength(1)
+    expect(control.followUps).toEqual([
+      { runId: run.id, task: 'check the logs' },
+    ])
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('completing one account-started Room-linked run does not ping its peer', async () => {
+  const store = roomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: '@software-engineer @antboy please pair',
+      }),
+    })
+    const { runs } = (await response.json()) as { runs: RoomRun[] }
+    control.completeTurn(runs[0]!.id, 'Patch ready.')
+    await Bun.sleep(5)
+    expect(control.followUps).toEqual([])
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('an agent @mention starts a Room-linked run and pings only the invoker when it completes', async () => {
+  const store = roomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base, messages } = await makeCoordinator({
+    store,
+    control,
+  })
+  try {
+    const response = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: '@software-engineer start pairing' }),
+    })
+    const { message: trigger, run: se } = (await response.json()) as {
+      message: RoomMessage
+      run: RoomRun
+    }
+    messages.postMessage({
+      roomId: GENERAL_ROOM_ID,
+      author: {
+        kind: 'agent',
+        id: 'software-engineer',
+        name: 'Software engineer',
+      },
+      text: '@antboy take the tests',
+      rootId: trigger.id,
+    })
+    expect(control.requests).toHaveLength(2)
+    expect(control.requests[1]).toMatchObject({
+      task: 'take the tests',
+      agentDefinitionId: 'antboy',
+      rootId: trigger.id,
+      threadReadRootId: trigger.id,
+    })
+    const antboy = store
+      .listRuns(GENERAL_ROOM_ID)
+      .find((run) => run.agentId === 'antboy')!
+    control.completeTurn(antboy.id, 'Tests are green.')
+    await Bun.sleep(5)
+    expect(control.followUps).toEqual([])
+
+    control.completeTurn(se.id, 'Posted.')
+    await Bun.sleep(5)
+    expect(control.followUps).toEqual([
+      { runId: se.id, task: 'Tests are green.' },
+    ])
   } finally {
     await coordinator.stop()
   }

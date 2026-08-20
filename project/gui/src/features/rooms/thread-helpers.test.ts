@@ -279,6 +279,12 @@ describe('runResultsForThread', () => {
       completedAt: 6,
       stdout: 'Also done',
     }
+    const warm: RoomRun = {
+      ...run('run-warm', 'root-1'),
+      state: 'running',
+      exitCode: 0,
+      stdout: 'Warm answer',
+    }
     const failed: RoomRun = {
       ...run('run-fail', 'root-1'),
       state: 'failed',
@@ -295,11 +301,17 @@ describe('runResultsForThread', () => {
 
     expect(
       runResultsForThread(
-        [succeededRoot, succeededReply, failed, elsewhere],
+        [succeededRoot, succeededReply, warm, failed, elsewhere],
         root,
         replies,
       ),
     ).toEqual([
+      {
+        id: 'run-warm',
+        agentId: 'software-engineer',
+        text: 'Warm answer',
+        createdAt: 1,
+      },
       {
         id: 'run-root',
         agentId: 'software-engineer',

@@ -170,6 +170,32 @@ test('passes oneshot context and optional repositoryBase', () => {
   })
 })
 
+test('passes room context and starts the run warm when warm is set', () => {
+  let request: WorkspaceAgentStartRunRequest | undefined
+  const control = createRunControl(
+    captureExecutor((value) => {
+      request = value
+    }),
+  )
+
+  control.start('fix the flaky test', {
+    roomId: 'room-1',
+    rootId: 'trigger-1',
+    agentDefinitionId: 'antboy',
+    warm: true,
+    idleTtlMs: 60_000,
+    onCreate: () => true,
+  })
+
+  expect(request?.grantContext).toEqual({
+    roomId: 'room-1',
+    rootId: 'trigger-1',
+    agentDefinitionId: 'antboy',
+  })
+  expect(request?.warm).toBe(true)
+  expect(request?.idleTtlMs).toBe(60_000)
+})
+
 test('passes chat context and starts the run warm', () => {
   let request: WorkspaceAgentStartRunRequest | undefined
   const control = createRunControl(

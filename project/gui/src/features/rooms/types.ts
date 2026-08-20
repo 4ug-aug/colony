@@ -90,6 +90,7 @@ export type RoomRun = {
   createdAt: number
   startedAt?: number
   completedAt?: number
+  exitCode?: number
   error?: string
   stdout: string
   output?: string

@@ -1366,6 +1366,48 @@ test('getThread includes a succeeded run result as a chronological, non-message 
   sqlite.close()
 })
 
+test('getThread includes a warm running turn result once stdout and exit code are present', () => {
+  const sqlite = database()
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: '@software-engineer fix the bug',
+    createdAt: 1,
+  })
+  store.createRun(
+    makeRun({
+      id: 'run-warm',
+      triggerMessageId: 'root-1',
+      state: 'running',
+      startedAt: 4,
+      exitCode: 0,
+      stdout: 'Still here, tests pass.',
+    }),
+  )
+  store.createRun(
+    makeRun({
+      id: 'run-active',
+      triggerMessageId: 'root-1',
+      state: 'running',
+      stdout: 'partial',
+    }),
+  )
+
+  const thread = store.getThread(GENERAL_ROOM_ID, 'root-1')
+  expect(thread?.results).toEqual([
+    {
+      id: 'run-warm',
+      agentId: 'software-engineer',
+      text: 'Still here, tests pass.',
+      createdAt: 4,
+    },
+  ])
+
+  sqlite.close()
+})
+
 test('listThreadParticipantIds returns the root author and distinct reply authors, excluding agents', () => {
   const sqlite = database()
   const store = createSqliteRoomStore(sqlite)

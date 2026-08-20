@@ -63,6 +63,8 @@ export type RunStartContext<Output> =
       threadReadRootId?: string
       agentDefinitionId?: string
       attachments?: readonly AttachmentInput[]
+      warm?: boolean
+      idleTtlMs?: number
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
   | {
@@ -238,9 +240,14 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
         ...('roomId' in context && context.attachments
           ? { attachments: context.attachments }
           : {}),
-        ...('grillId' in context || 'chatId' in context
+        ...('grillId' in context ||
+        'chatId' in context ||
+        ('roomId' in context && context.warm)
           ? {
-              warm: context.warm ?? true,
+              warm:
+                'grillId' in context || 'chatId' in context
+                  ? (context.warm ?? true)
+                  : true,
               ...('idleTtlMs' in context && context.idleTtlMs !== undefined
                 ? { idleTtlMs: context.idleTtlMs }
                 : {}),

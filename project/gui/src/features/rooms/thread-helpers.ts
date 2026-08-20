@@ -26,7 +26,13 @@ export function runResultsForThread(
   replies: readonly RoomMessage[],
 ): RunResultReply[] {
   return runsForThread(runs, root, replies)
-    .filter((run) => run.state === 'succeeded')
+    .filter(
+      (run) =>
+        run.state === 'succeeded' ||
+        (run.state === 'running' &&
+          run.exitCode === 0 &&
+          Boolean((run.output ?? run.stdout)?.trim())),
+    )
     .map((run) => ({
       id: run.id,
       agentId: run.agentId,
