@@ -1,4 +1,9 @@
-import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import { AgentMentionChip } from '#/features/agents/agent-mark'
+import { isAgentMentionId } from '#/features/agents/agent-color'
+import {
+  agentNameFrom,
+  useAgentDefinitions,
+} from '#/features/agents/use-agent-definitions'
 import { Button } from '#/components/ui/button'
 import { toast } from '#/components/ui/toast'
 import { Check, Copy } from 'lucide-react'
@@ -14,19 +19,28 @@ import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-const mentionChip = (key: string, handle: string) => (
-  <span
-    key={key}
-    className="rounded bg-muted px-1.5 font-medium text-muted-foreground"
-  >
-    @{handle}
-  </span>
-)
+const mentionChip = (
+  key: string,
+  handle: string,
+  agent?: { id: string; name: string },
+) =>
+  agent ? (
+    <AgentMentionChip key={key} agentId={agent.id} label={agent.name} />
+  ) : (
+    <span
+      key={key}
+      className="rounded bg-muted px-1.5 font-medium text-muted-foreground"
+    >
+      @{handle}
+    </span>
+  )
 
 function withMentions(
   children: ReactNode,
   handles: Set<string>,
   mentionPattern: RegExp,
+  agents: { id: string; name: string }[],
+  agentIds: Set<string>,
 ): ReactNode {
   if (!children) return children
   const nodes = Array.isArray(children) ? children : [children]
@@ -41,7 +55,15 @@ function withMentions(
     for (const part of parts) {
       const handle = part.startsWith('@') ? part.slice(1) : undefined
       if (handle && handles.has(handle)) {
-        result.push(mentionChip(`mention-${keyIndex++}`, handle))
+        result.push(
+          mentionChip(
+            `mention-${keyIndex++}`,
+            handle,
+            isAgentMentionId(handle, agentIds)
+              ? { id: handle, name: agentNameFrom(agents, handle) }
+              : undefined,
+          ),
+        )
       } else if (part) {
         result.push(part)
       }
@@ -53,7 +75,9 @@ function withMentions(
 function languageFromCodeChild(children: ReactNode): string {
   const child = Children.toArray(children).find((node) => isValidElement(node))
   if (!isValidElement<{ className?: string }>(child)) return ''
-  return /language-([a-zA-Z0-9_+-]+)/.exec(child.props.className ?? '')?.[1] ?? ''
+  return (
+    /language-([a-zA-Z0-9_+-]+)/.exec(child.props.className ?? '')?.[1] ?? ''
+  )
 }
 
 function CodeBlock({
@@ -106,10 +130,8 @@ export function Markdown({
   mentions?: string[]
 }) {
   const { data: agents = [] } = useAgentDefinitions()
-  const handles = new Set([
-    ...agents.map((agent) => agent.id),
-    ...mentions,
-  ])
+  const agentIds = new Set(agents.map((agent) => agent.id))
+  const handles = new Set([...agentIds, ...mentions])
   const escaped = [...handles]
     .map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
@@ -119,11 +141,17 @@ export function Markdown({
   )
   const defaultComponents: Components = {
     p({ children: content, ...props }) {
-      return <p {...props}>{withMentions(content, handles, mentionPattern)}</p>
+      return (
+        <p {...props}>
+          {withMentions(content, handles, mentionPattern, agents, agentIds)}
+        </p>
+      )
     },
     li({ children: content, ...props }) {
       return (
-        <li {...props}>{withMentions(content, handles, mentionPattern)}</li>
+        <li {...props}>
+          {withMentions(content, handles, mentionPattern, agents, agentIds)}
+        </li>
       )
     },
     pre: CodeBlock,

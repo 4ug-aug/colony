@@ -1,4 +1,5 @@
 import type { Author } from '#/features/rooms/types'
+import { AgentMark } from '#/features/agents/agent-mark'
 import {
   HoverCard,
   HoverCardContent,
@@ -56,12 +57,7 @@ export function Avatar({
   details?: boolean
 }) {
   const avatar = agent ? (
-    <div
-      className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
-      aria-hidden="true"
-    >
-      <AgentAnt className="size-8" />
-    </div>
+    <AgentMark agentId={author.id} className="mt-0.5 size-8" />
   ) : (
     <AccountFace name={author.name} image={author.image} color={author.color} />
   )

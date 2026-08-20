@@ -5,7 +5,7 @@ import type { AgentDefinition } from '#/features/schedules/types'
 export const agentDefinitionsQueryKey = ['agent-definitions'] as const
 
 export function agentNameFrom(
-  agents: readonly AgentDefinition[],
+  agents: readonly { id: string; name: string }[],
   agentId: string,
 ) {
   return agents.find((agent) => agent.id === agentId)?.name ?? agentId

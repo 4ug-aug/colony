@@ -95,7 +95,7 @@ sessions while retaining its profile and authored history.
 _Avoid_: Account deletion, member removal
 
 **Workspace**: The customer-owned collaborative environment containing people,
-agent definitions, rooms, Bulletins, Grills, Docs, and their shared work
+agent definitions, rooms, Chats, Bulletins, Grills, Docs, and their shared work
 history.
 _Avoid_: Community
 
@@ -200,7 +200,21 @@ _Avoid_: Room agent, flat run
 
 **Oneshot**: An ephemeral, bounded, single-turn run started from the workspace
 launcher whose Task and result are not retained as workspace history.
-_Avoid_: Quick run, one-shot prompt, temporary Room
+_Avoid_: Quick run, one-shot prompt, temporary Room, Chat
+
+**Chat**: An account-owned, private, multi-turn conversation with one agent
+definition. Its transcript lasts; it is not shared as workspace history. Not a
+Room, not a Oneshot, and not a Grill.
+_Avoid_: Room, DM, thread, personal Room
+
+**Chat message**: One user or assistant turn in a Chat. An assistant turn may
+include that turn's tool steps from its Chat-linked run.
+_Avoid_: Room message, Oneshot step, Grill narration
+
+**Chat-linked run**: A warm run bound to one Chat. Follow-up sends reuse the
+provider session; idle TTL recycles it; the next send starts a new warm run
+rehydrated from the persisted transcript.
+_Avoid_: Room-linked run, Oneshot, Grill-linked run
 
 **Room attachment**: Durable bytes and metadata attached to one room message.
 When that message starts a run, the server verifies and copies the attachment

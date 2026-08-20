@@ -1,3 +1,4 @@
+import { AgentMark } from '#/features/agents/agent-mark'
 import { ErrorBoundary } from '#/components/error-boundary'
 import { Badge } from '#/components/ui/badge'
 import { BrailleLoader } from '#/components/ui/braille-loader'
@@ -88,7 +89,10 @@ function GrillListActivity({ grill }: { grill: GrillListItem }) {
   )
 }
 
-function pageItems(page: number, pageCount: number): Array<number | 'ellipsis'> {
+function pageItems(
+  page: number,
+  pageCount: number,
+): Array<number | 'ellipsis'> {
   if (pageCount <= 7) {
     return Array.from({ length: pageCount }, (_, index) => index + 1)
   }
@@ -321,24 +325,36 @@ export function GrillsPage({
                         className="flex min-w-0 flex-1 items-start justify-between gap-3 px-4 py-3 text-left"
                         onClick={() => setActiveId(grill.id)}
                       >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {grillDisplayTitle(grill)}
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <Badge variant="outline" className="font-normal">
-                              {grill.kind === 'code' ? 'Code' : 'General'}
-                            </Badge>
-                            <Badge variant="secondary" className="font-normal">
-                              {grill.visibility === 'workspace-open'
-                                ? 'Workspace open'
-                                : 'Invite only'}
-                            </Badge>
-                            {grill.issueProposal ? (
+                        <div className="flex min-w-0 flex-1 items-start gap-2">
+                          <AgentMark
+                            agentId={grill.agentDefinitionId}
+                            className="mt-0.5"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {grillDisplayTitle(grill)}
+                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               <Badge variant="outline" className="font-normal">
-                                proposal {grill.issueProposal.status}
+                                {grill.kind === 'code' ? 'Code' : 'General'}
                               </Badge>
-                            ) : null}
+                              <Badge
+                                variant="secondary"
+                                className="font-normal"
+                              >
+                                {grill.visibility === 'workspace-open'
+                                  ? 'Workspace open'
+                                  : 'Invite only'}
+                              </Badge>
+                              {grill.issueProposal ? (
+                                <Badge
+                                  variant="outline"
+                                  className="font-normal"
+                                >
+                                  proposal {grill.issueProposal.status}
+                                </Badge>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                         <GrillListActivity grill={grill} />

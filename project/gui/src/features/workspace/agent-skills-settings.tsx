@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '#/components/ui/dialog'
+import { AgentMark } from '#/features/agents/agent-mark'
 import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiFetch, apiJson } from '#/lib/api-transport'
@@ -50,10 +51,7 @@ type SkillPackageDetail = {
   files: { path: string; content: string }[]
 }
 
-const workspaceSkillsQueryKey = [
-  'workspace-settings',
-  'skills',
-] as const
+const workspaceSkillsQueryKey = ['workspace-settings', 'skills'] as const
 
 function skillMarkdownBody(content: string): string {
   if (!content.startsWith('---')) return content
@@ -171,7 +169,9 @@ export function AgentSkillsSettings() {
       )
       if (previous) {
         const attachments: Record<string, string[]> = {}
-        for (const [agentId, skillIds] of Object.entries(previous.attachments)) {
+        for (const [agentId, skillIds] of Object.entries(
+          previous.attachments,
+        )) {
           attachments[agentId] = skillIds.filter((id) => id !== skill.id)
         }
         queryClient.setQueryData<SkillsCatalog>(workspaceSkillsQueryKey, {
@@ -254,16 +254,18 @@ export function AgentSkillsSettings() {
     },
     onSuccess: (result) => {
       setActionError(undefined)
-      queryClient.setQueryData<SkillsCatalog>(workspaceSkillsQueryKey, (current) =>
-        current
-          ? {
-              ...current,
-              attachments: {
-                ...current.attachments,
-                [result.agentDefinitionId]: result.skillIds,
-              },
-            }
-          : current,
+      queryClient.setQueryData<SkillsCatalog>(
+        workspaceSkillsQueryKey,
+        (current) =>
+          current
+            ? {
+                ...current,
+                attachments: {
+                  ...current.attachments,
+                  [result.agentDefinitionId]: result.skillIds,
+                },
+              }
+            : current,
       )
       refreshAgentDefinitions()
     },
@@ -457,14 +459,17 @@ export function AgentSkillsSettings() {
                   </div>
                   <div className="mt-auto space-y-2 border-t pt-3">
                     {skillBusy && (
-                      <p className="text-sm text-muted-foreground" role="status">
+                      <p
+                        className="text-sm text-muted-foreground"
+                        role="status"
+                      >
                         <BrailleLoader text="Updating attachments" />
                       </p>
                     )}
                     {agents.map((agent) => {
-                      const attached = (
-                        attachments[agent.id] ?? []
-                      ).includes(skill.id)
+                      const attached = (attachments[agent.id] ?? []).includes(
+                        skill.id,
+                      )
                       return (
                         <label
                           key={`${agent.id}-${skill.id}`}
@@ -485,6 +490,7 @@ export function AgentSkillsSettings() {
                               })
                             }}
                           />
+                          <AgentMark agentId={agent.id} />
                           Attach to {agent.name}
                         </label>
                       )

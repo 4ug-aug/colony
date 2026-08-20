@@ -1,3 +1,4 @@
+import { AgentMark } from '#/features/agents/agent-mark'
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import {
@@ -237,22 +238,25 @@ export function GrillSessionHeader({
         <ArrowLeft data-icon="inline-start" />
         Grills
       </Button>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">
-          {grill.kind === 'code' ? 'Code Grill' : 'General Grill'}
-          {agentName ? ` with ${agentName}` : ''}
-        </p>
-        <p className="truncate text-xs text-muted-foreground">
-          {grill.initialRequest?.trim() ||
-            [
-              grill.visibility === 'workspace-open'
-                ? 'Workspace open'
-                : 'Invite only',
-              grill.baseRef ? `base ${grill.baseRef}` : undefined,
-            ]
-              .filter(Boolean)
-              .join(', ')}
-        </p>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <AgentMark agentId={grill.agentDefinitionId} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold">
+            {grill.kind === 'code' ? 'Code Grill' : 'General Grill'}
+            {agentName ? ` with ${agentName}` : ''}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {grill.initialRequest?.trim() ||
+              [
+                grill.visibility === 'workspace-open'
+                  ? 'Workspace open'
+                  : 'Invite only',
+                grill.baseRef ? `base ${grill.baseRef}` : undefined,
+              ]
+                .filter(Boolean)
+                .join(', ')}
+          </p>
+        </div>
       </div>
       <DiscardGrillButton grillId={grill.id} onDiscarded={onBack} />
     </>

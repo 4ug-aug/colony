@@ -1,3 +1,4 @@
+import { AgentMark } from '#/features/agents/agent-mark'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
@@ -153,6 +154,7 @@ export function StartGrillDialog({
                 <SelectContent>
                   {grillAgents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
+                      <AgentMark agentId={agent.id} />
                       {agent.name}
                     </SelectItem>
                   ))}

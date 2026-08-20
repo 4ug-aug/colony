@@ -28,3 +28,15 @@ test("grill invocation names Colony Doc tools, not Outline", () => {
   expect(result).toContain("workspace.get_doc");
   expect(result).not.toContain("outline.");
 });
+
+test("chat invocation allows follow-up turns and is not a Room", () => {
+  const result = instructionsForInvocation("Be helpful.", {
+    chatId: "chat-1",
+    agentDefinitionId: "antboy",
+  });
+  expect(result).toContain("Be helpful.");
+  expect(result).toContain("Chat");
+  expect(result).toContain("Follow-up turns");
+  expect(result).not.toContain("working from a Room");
+  expect(result).not.toContain("Oneshot");
+});

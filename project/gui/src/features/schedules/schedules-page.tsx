@@ -1,3 +1,4 @@
+import { AgentMark } from '#/features/agents/agent-mark'
 import { useMemo, useState } from 'react'
 import { Pause, Play, Plus, RotateCcw, Archive } from 'lucide-react'
 import { previewCron } from './cron'
@@ -218,6 +219,7 @@ export function SchedulesPage({
                     <SelectGroup>
                       {agents.map((agent) => (
                         <SelectItem key={agent.id} value={agent.id}>
+                          <AgentMark agentId={agent.id} />
                           {agent.name}
                         </SelectItem>
                       ))}
@@ -303,6 +305,13 @@ export function SchedulesPage({
                         </CardTitle>
                         <CardDescription>
                           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                            <span className="inline-flex items-center gap-1.5">
+                              <AgentMark agentId={schedule.agentDefinitionId} />
+                              {agents.find(
+                                (agent) =>
+                                  agent.id === schedule.agentDefinitionId,
+                              )?.name ?? schedule.agentDefinitionId}
+                            </span>
                             <span>
                               {
                                 previewCron(

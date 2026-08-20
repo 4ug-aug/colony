@@ -296,7 +296,8 @@ pre code {
   gap: 0.5rem;
   min-height: 1.75rem;
   padding: 0 0.25rem 0 0.75rem;
-  border-bottom: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--foreground) 8%, transparent);
   color: var(--muted-foreground);
   font-size: 0.6875rem;
   line-height: 1;
@@ -338,6 +339,14 @@ pre code {
   padding: 0.1rem 0.35rem;
   color: var(--muted-foreground);
   font-weight: 600;
+}
+
+.tiptap .mention:has([data-slot='agent-mention-chip']) {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-weight: inherit;
+  border-radius: 0;
 }
 
 .mention-menu {
@@ -475,10 +484,11 @@ pre code {
 
 .mention-menu button {
   display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
+  align-items: center;
+  gap: 0.5rem;
   width: 100%;
-  padding: 0.35rem 0.5rem;
+  height: 2.25rem;
+  padding: 0 0.5rem;
   border: 0;
   border-radius: 0.5rem;
   background: transparent;
@@ -494,22 +504,8 @@ pre code {
 .mention-menu-heading {
   padding: 0.35rem 0.5rem 0.2rem;
   color: var(--muted-foreground);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 500;
-}
-
-.mention-menu-icon {
-  display: grid;
-  width: 1.35rem;
-  height: 1.35rem;
-  flex: none;
-  place-items: center;
-  margin-top: 0.1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  background: var(--background);
-  font-family: ui-monospace, monospace;
-  font-size: 0.55rem;
 }
 
 .agent-ant {
@@ -521,29 +517,37 @@ pre code {
   -webkit-mask: url('/no-bg-ant-worker.png') center / contain no-repeat;
 }
 
-.mention-menu button span:last-child {
+.mention-menu-copy {
   display: flex;
   flex: 1;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.1rem;
   min-width: 0;
 }
 
-.mention-menu button strong {
+.mention-menu-copy strong,
+.mention-menu-copy small {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-menu-copy strong {
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 1.15;
 }
 
-.mention-menu button small {
-  min-width: 0;
+.mention-menu-copy small {
   color: var(--muted-foreground);
   font-size: 0.75rem;
+  line-height: 1.15;
 }
 
 .mention-menu button:hover,
 .mention-menu button.is-selected {
-  background: var(--accent);
+  background: color-mix(in oklab, var(--muted) 40%, transparent);
 }
 
 button,

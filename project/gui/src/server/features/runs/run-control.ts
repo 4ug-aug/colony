@@ -90,6 +90,13 @@ export type RunStartContext<Output> =
       repositoryBase?: string
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
+  | {
+      chatId: string
+      agentDefinitionId?: string
+      warm?: boolean
+      idleTtlMs?: number
+      onCreate: (run: RunSummary) => NonNullable<Output>
+    }
 
 export interface RunControl {
   subscribe(listener: (run: RunSummary) => void): () => void
@@ -193,6 +200,8 @@ function grantContextFrom<Output>(
         ? { repositoryBase: context.repositoryBase }
         : {}),
     }
+  if ('chatId' in context)
+    return { chatId: context.chatId, agentDefinitionId }
   return {
     issueId: context.issueId,
     agentDefinitionId,
@@ -229,10 +238,10 @@ export function createRunControl(executor: RunControlExecutor): RunControl {
         ...('roomId' in context && context.attachments
           ? { attachments: context.attachments }
           : {}),
-        ...('grillId' in context
+        ...('grillId' in context || 'chatId' in context
           ? {
               warm: context.warm ?? true,
-              ...(context.idleTtlMs !== undefined
+              ...('idleTtlMs' in context && context.idleTtlMs !== undefined
                 ? { idleTtlMs: context.idleTtlMs }
                 : {}),
             }

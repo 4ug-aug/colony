@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Cuboid, Hash } from 'lucide-react'
 import { timestamp } from './format'
+import { AgentMark } from '#/features/agents/agent-mark'
 import {
   Command,
   CommandDialog,
@@ -155,7 +156,10 @@ export function MessageSearchCommand({
                           <span className="truncate font-medium">
                             {hit.roomName}
                           </span>
-                          <span className="truncate text-muted-foreground">
+                          <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-muted-foreground">
+                            {hit.author.kind === 'agent' ? (
+                              <AgentMark agentId={hit.author.id} />
+                            ) : null}
                             {hit.author.name}
                           </span>
                           <span className="ml-auto shrink-0 text-[0.625rem] text-muted-foreground">

@@ -96,6 +96,7 @@ export function Dashboard({
   const selectedDocId = view === 'docs' ? location.id : undefined
   const selectedGrillId = view === 'grills' ? location.id : undefined
   const selectedMachineId = view === 'vms' ? location.id : undefined
+  const selectedChatId = view === 'chat' ? location.id : undefined
   const selectRef = useRef(select)
   selectRef.current = select
 
@@ -254,13 +255,14 @@ export function Dashboard({
         onOpenBulletins={() => openView('bulletins')}
         onOpenDocs={() => openView('docs')}
         onOpenGrills={() => openView('grills')}
+        onOpenChat={() => openView('chat')}
         onOpenVms={() => {
           if (user.role === 'admin') openView('vms')
         }}
         user={user}
       />
       <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
-        {view !== 'account' && view !== 'workspace' && (
+        {view !== 'account' && view !== 'workspace' && view !== 'chat' && (
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
             {view === 'grills' && selectedGrillId ? (
               <GrillSessionHeader
@@ -426,6 +428,10 @@ export function Dashboard({
             selectedMachineId={selectedMachineId}
             onSelectedMachineIdChange={(id) =>
               navigate({ view: 'vms', ...(id ? { id } : {}) })
+            }
+            selectedChatId={selectedChatId}
+            onSelectedChatIdChange={(id) =>
+              navigate({ view: 'chat', ...(id ? { id } : {}) })
             }
             onOpenMachine={openMachine}
           />

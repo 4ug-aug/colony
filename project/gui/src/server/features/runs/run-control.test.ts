@@ -170,6 +170,29 @@ test('passes oneshot context and optional repositoryBase', () => {
   })
 })
 
+test('passes chat context and starts the run warm', () => {
+  let request: WorkspaceAgentStartRunRequest | undefined
+  const control = createRunControl(
+    captureExecutor((value) => {
+      request = value
+    }),
+  )
+
+  control.start('what is on call?', {
+    chatId: 'chat-1',
+    agentDefinitionId: 'antboy',
+    idleTtlMs: 60_000,
+    onCreate: () => true,
+  })
+
+  expect(request?.grantContext).toEqual({
+    chatId: 'chat-1',
+    agentDefinitionId: 'antboy',
+  })
+  expect(request?.warm).toBe(true)
+  expect(request?.idleTtlMs).toBe(60_000)
+})
+
 test('passes Issue mergeRevisions on grantContext', () => {
   let request: WorkspaceAgentStartRunRequest | undefined
   const control = createRunControl(

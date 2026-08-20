@@ -10,6 +10,7 @@ import {
   parseSandboxProvider,
 } from './coordinator'
 import { createSqliteBulletinStore } from './features/bulletins/bulletin-store'
+import { createSqliteChatStore } from './features/chats/chat-store'
 import { createSqliteDocStore } from './features/docs/doc-store'
 import { createSqliteGrillStore, type Grill } from './features/grills/grill-store'
 import {
@@ -103,6 +104,7 @@ if (import.meta.main) {
   const issueStore = createSqliteIssueStore(sqlite, githubRepository)
   const bulletinStore = createSqliteBulletinStore(sqlite)
   const docStore = createSqliteDocStore(sqlite)
+  const chatStore = createSqliteChatStore(sqlite)
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
   const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
@@ -440,6 +442,7 @@ if (import.meta.main) {
     issueStore,
     bulletinStore,
     docStore,
+    chatStore,
     grillStore,
     grillNotify,
     issueNotify,
