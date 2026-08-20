@@ -4,8 +4,8 @@ import { Button } from '#/components/ui/button'
 import { toast } from '#/components/ui/toast'
 import { AgentMark } from '#/features/agents/agent-mark'
 import {
-  agentNameFrom,
-  useAgentDefinitions,
+    agentNameFrom,
+    useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
 import { MessageComposer } from '#/features/rooms/message-composer'
 import { groupActivity, pairSteps } from '#/features/runs/run-activity'
@@ -18,11 +18,11 @@ import { useRef, useState } from 'react'
 import { ChatHistorySheet } from './chat-history-sheet'
 import type { ChatMessageStep } from './types'
 import {
-  useCancelChatTurn,
-  useChat,
-  useCreateChat,
-  useLastChatAgent,
-  useSendChatMessage,
+    useCancelChatTurn,
+    useChat,
+    useCreateChat,
+    useLastChatAgent,
+    useSendChatMessage,
 } from './use-chats'
 
 const DEFAULT_AGENT_ID = 'software-engineer'
@@ -125,10 +125,8 @@ function AssistantTurn({
             ),
           )}
         {text ? (
-          <div className="agent-message-frame">
-            <div className="agent-message-inner">
-              <Markdown>{text}</Markdown>
-            </div>
+          <div className="text-sm leading-6">
+            <Markdown>{text}</Markdown>
           </div>
         ) : null}
         {error ? (
@@ -236,7 +234,7 @@ export function ChatsPage({
           onSelectChat={onSelectedIdChange}
         />
         <div
-          className="min-h-0 h-full overflow-y-auto"
+          className="no-scrollbar min-h-0 h-full overflow-y-auto"
           onScroll={(event) => {
             const el = event.currentTarget
             follow.current =

@@ -39,45 +39,43 @@ function AgentMessageBody({
     }
   }
   return (
-    <div className="agent-message-frame group/agent relative">
-      <div className="agent-message-inner">
+    <div className="group/agent relative pr-8">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="absolute top-0 right-0 opacity-0 transition-opacity group-hover/agent:opacity-100 focus-visible:opacity-100"
+        aria-label="Copy as markdown"
+        onClick={() => void copyMarkdown()}
+      >
+        {copied ? <Check /> : <Copy />}
+      </Button>
+      <div className="relative">
+        <div
+          className={
+            long && !expanded ? 'max-h-48 overflow-hidden' : undefined
+          }
+        >
+          <Markdown mentions={mentions}>{text}</Markdown>
+        </div>
+        {long && !expanded && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent"
+            aria-hidden
+          />
+        )}
+      </div>
+      {long && (
         <Button
           type="button"
           variant="ghost"
-          size="icon-xs"
-          className="absolute top-2 right-2 opacity-0 transition-opacity group-hover/agent:opacity-100 focus-visible:opacity-100"
-          aria-label="Copy as markdown"
-          onClick={() => void copyMarkdown()}
+          size="xs"
+          className="mt-1 -ml-2"
+          onClick={() => setExpanded((value) => !value)}
         >
-          {copied ? <Check /> : <Copy />}
+          {expanded ? 'Show less' : 'Show more'}
         </Button>
-        <div className="relative">
-          <div
-            className={
-              long && !expanded ? 'max-h-48 overflow-hidden' : undefined
-            }
-          >
-            <Markdown mentions={mentions}>{text}</Markdown>
-          </div>
-          {long && !expanded && (
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent dark:from-card"
-              aria-hidden
-            />
-          )}
-        </div>
-        {long && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            className="mt-1 -ml-2"
-            onClick={() => setExpanded((value) => !value)}
-          >
-            {expanded ? 'Show less' : 'Show more'}
-          </Button>
-        )}
-      </div>
+      )}
     </div>
   )
 }

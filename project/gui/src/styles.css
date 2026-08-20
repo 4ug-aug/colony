@@ -429,38 +429,6 @@ pre code {
   animation: message-search-hit 1.6s ease-out;
 }
 
-.agent-message-frame {
-  border-radius: 0.75rem;
-  padding: 1px;
-  background: linear-gradient(
-    135deg,
-    oklch(0.72 0.12 195),
-    oklch(0.7 0.11 145),
-    oklch(0.78 0.1 85)
-  );
-}
-
-.agent-message-inner {
-  position: relative;
-  border-radius: calc(0.75rem - 1px);
-  background: var(--background);
-  padding: 0.65rem 0.85rem;
-  padding-right: 2.25rem;
-}
-
-.dark .agent-message-frame {
-  background: linear-gradient(
-    135deg,
-    oklch(0.62 0.11 195),
-    oklch(0.58 0.1 145),
-    oklch(0.68 0.09 85)
-  );
-}
-
-.dark .agent-message-inner {
-  background: var(--card);
-}
-
 @keyframes room-fade-in {
   from {
     opacity: 0;
