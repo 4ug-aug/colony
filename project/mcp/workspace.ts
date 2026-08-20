@@ -90,7 +90,7 @@ export function createWorkspaceMcpUpstream(options: {
         {
           name: "workspace.post_message",
           description:
-            "Post a progress update or clarifying question into the current room. Do not use this for your final result; your final response is automatically shown in the room as the run result.",
+            "Post a progress update, clarifying question, or agent mention into the current room. Include `@<agent-definition-id>` plus a task (for example `@software-engineer review this`) to start or follow up that agent's Room-linked run in this thread. Mentioning yourself starts nothing. Do not use this for your final result; your final response is automatically shown in the room as the run result.",
           inputSchema: {
             type: "object",
             properties: { text: { type: "string" } },

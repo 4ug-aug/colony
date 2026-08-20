@@ -6,6 +6,7 @@ import type { RoomRun } from '#/features/rooms/types'
 import { llmProviderName } from '#/lib/llm-provider'
 import { cn } from '#/lib/utils'
 import { Check, CircleX, X } from 'lucide-react'
+import { runTurnInFlight } from './run-helpers'
 import { RunAvatar } from './run-avatar'
 
 export function RunCapsule({
@@ -19,13 +20,13 @@ export function RunCapsule({
 }) {
   const name = useAgentName(run.agentId)
   const state =
-    run.state === 'succeeded'
-      ? 'completed'
-      : run.state === 'failed'
-        ? 'failed'
-        : run.state === 'cancelled'
-          ? 'cancelled'
-          : 'working'
+    run.state === 'failed'
+      ? 'failed'
+      : run.state === 'cancelled'
+        ? 'cancelled'
+        : runTurnInFlight(run)
+          ? 'working'
+          : 'completed'
   return (
     <button
       type="button"
@@ -41,11 +42,11 @@ export function RunCapsule({
         <RunAvatar run={run} />
       </AvatarGroup>
       <ProviderIcon provider={run.provider} className="size-3.5" />
-      {run.state === 'succeeded' ? (
+      {state === 'completed' ? (
         <Check className="size-3.5 text-primary" />
-      ) : run.state === 'failed' ? (
+      ) : state === 'failed' ? (
         <CircleX className="size-3.5 text-destructive" />
-      ) : run.state === 'cancelled' ? (
+      ) : state === 'cancelled' ? (
         <X className="size-3.5" />
       ) : (
         <BrailleLoader text="Working" className="[&_svg]:size-3.5" />

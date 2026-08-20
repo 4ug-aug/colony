@@ -317,7 +317,7 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         {
           name: "workspace.assign_issue",
           description:
-            'Set the Issue owner to an account or agent definition ({ "kind": "agent"|"account", "id": "<id>" }), or clear it with owner null. Do not pass display names; use ids such as "software-engineer".',
+            'Set the Issue owner to an account or agent definition ({ "kind": "agent"|"account", "id": "<id>" }), or clear it with owner null. Do not pass display names; use ids such as "software-engineer". Assigning an agent starts an Issue-linked run on that work item. It is not how you invoke an agent in a Room; @mention their definition id there instead.',
           inputSchema: {
             type: "object",
             properties: {

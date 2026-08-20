@@ -14,7 +14,7 @@ import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { groupActivity, mergeSteps, pairSteps } from './run-activity'
 import { RunActivitySplitHeader } from './run-activity-dither'
-import { terminal } from './run-helpers'
+import { runTurnInFlight } from './run-helpers'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { ToolCallDetailsList } from './tool-call-details-list'
 import type { Step } from './step-label'
@@ -39,6 +39,8 @@ export type ActivityRun = {
   waitingOn?: string
   preparation?: readonly string[]
   sandboxId?: string
+  exitCode?: number
+  turnActive?: boolean
 }
 export type TriggerMessage = { author: Person; text: string }
 
@@ -98,24 +100,24 @@ export function RunActivityContent({
   const skills = agentDefinition?.skills ?? []
   const scrollRef = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
-  const followLive = useRef(!terminal(run.state))
   const sandboxId = run.sandboxId
   const groups = useMemo(() => groupActivity(pairSteps(steps)), [steps])
   const latest = steps.at(-1)
-  const status =
-    run.state === 'succeeded'
-      ? 'Completed'
-      : run.state === 'failed'
-        ? 'Failed'
-        : run.state === 'cancelled'
-          ? 'Cancelled'
-          : latest
-            ? stepLabel(latest)
-            : run.waitingOn
-              ? run.waitingOn
-              : run.state === 'preparing'
-                ? 'Preparing'
-                : 'Working'
+  const inFlight = runTurnInFlight(run)
+  const followLive = useRef(inFlight)
+  const status = inFlight
+    ? latest
+      ? stepLabel(latest)
+      : run.waitingOn
+        ? run.waitingOn
+        : run.state === 'preparing'
+          ? 'Preparing'
+          : 'Working'
+    : run.state === 'failed'
+      ? 'Failed'
+      : run.state === 'cancelled'
+        ? 'Cancelled'
+        : 'Completed'
 
   useEffect(() => {
     const element = scrollRef.current
@@ -130,7 +132,7 @@ export function RunActivityContent({
         agentId={run.agentId}
         provider={run.provider}
         model={run.model}
-        state={run.state}
+        inFlight={inFlight}
         status={status}
         skills={skills}
         onClose={onClose}
@@ -232,7 +234,9 @@ export function RunActivityContent({
           </div>
         </section>
 
-        {run.state === 'succeeded' && (
+        {!inFlight &&
+          run.state !== 'failed' &&
+          run.state !== 'cancelled' && (
           <section className="border-t pt-5 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="size-4 text-primary" />
@@ -260,7 +264,7 @@ export function RunActivityContent({
             <p>The run was cancelled.</p>
           </section>
         )}
-        {!terminal(run.state) && (
+        {inFlight && (
           <div className="flex items-center gap-2 border-t pt-5 text-sm text-muted-foreground">
             <BrailleLoader text={status} />
           </div>

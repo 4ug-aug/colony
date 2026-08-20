@@ -226,9 +226,36 @@ describe('buildFlatTimelineItems', () => {
     const items = buildFlatTimelineItems([trigger, other], [succeeded, failed])
 
     expect(items.map((item) => item.id)).toEqual(['trigger-1', 'other-1'])
-    expect(items[0]?.run).toEqual(succeeded)
-    expect(items[1]?.run).toEqual(failed)
+    expect(items[0]?.runs).toEqual([succeeded])
+    expect(items[1]?.runs).toEqual([failed])
     expect(items.every((item) => !('result' in item))).toBe(true)
+  })
+
+  test('attaches every Room-linked run that shares a trigger message', () => {
+    const trigger: RoomMessage = {
+      ...root,
+      id: 'trigger-1',
+      text: 'Hey Antboy what can you do, and Software engineer what can you do?',
+      createdAt: 100,
+    }
+    const antboy: RoomRun = {
+      ...run('run-antboy', 'trigger-1'),
+      agentId: 'antboy',
+      createdAt: 101,
+    }
+    const engineer: RoomRun = {
+      ...run('run-engineer', 'trigger-1'),
+      agentId: 'software-engineer',
+      createdAt: 102,
+    }
+
+    const items = buildFlatTimelineItems([trigger], [engineer, antboy])
+
+    expect(items).toHaveLength(1)
+    expect(items[0]?.runs.map((item) => item.id)).toEqual([
+      'run-antboy',
+      'run-engineer',
+    ])
   })
 
   test('groups only consecutive messages from the same author within five minutes', () => {

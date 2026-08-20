@@ -89,6 +89,11 @@ test("listTools returns the five Issue tools", async () => {
     "workspace.update_issue",
     "workspace.assign_issue",
   ]);
+  const assign = tools.find((tool) => tool.name === "workspace.assign_issue");
+  expect(assign?.description).toContain("Issue-linked run");
+  expect(assign?.description).toContain(
+    "not how you invoke an agent in a Room",
+  );
 });
 
 test("create, assign, and get Issues through MCP tools", async () => {

@@ -257,15 +257,17 @@ export function Timeline({
                   ))}
                 </div>
               )}
-              {(item.run || (item.message.replySummary && onOpenThread)) && (
+              {(item.runs.length > 0 ||
+                (item.message.replySummary && onOpenThread)) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {item.run && (
+                  {item.runs.map((run) => (
                     <RunCapsule
-                      run={item.run}
+                      key={run.id}
+                      run={run}
                       openRun={openRun}
                       className="mt-0"
                     />
-                  )}
+                  ))}
                   {item.message.replySummary && onOpenThread && (
                     <ThreadSummaryChip
                       replyCount={item.message.replySummary.replyCount}

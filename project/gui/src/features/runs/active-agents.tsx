@@ -12,7 +12,7 @@ import {
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
 import { RunAvatar } from './run-avatar'
-import { terminal, runStatus } from './run-helpers'
+import { runStatus, runTurnInFlight } from './run-helpers'
 import type { RoomRun } from '#/features/rooms/types'
 import type { Step } from './step-label'
 
@@ -28,7 +28,7 @@ export function ActiveAgents({
   openRun: (runId: string) => void
 }) {
   const { data: agents = [] } = useAgentDefinitions()
-  const activeRuns = runs.filter((run) => !terminal(run.state))
+  const activeRuns = runs.filter(runTurnInFlight)
   if (!activeRuns.length) return null
   const name = (agentId: string) => agentNameFrom(agents, agentId)
 

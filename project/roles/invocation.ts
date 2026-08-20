@@ -11,7 +11,7 @@ const invocationRoles = [
     id: "oneshot",
     applies: (context: AgentGrantContext | undefined) =>
       Boolean(context?.oneshotId),
-    instructions: `You are running a Oneshot: a single bounded Task with one final output and no follow-up turns. Deliver the complete answer in your final response. Do not ask clarifying questions and wait; if information is missing, state assumptions and finish. You are not in a Room — workspace.room tools are unavailable.`,
+    instructions: `You are running a Oneshot: a single bounded Task with one final output and no follow-up turns. Deliver the complete answer in your final response. Do not ask clarifying questions and wait; if information is missing, state assumptions and finish. You are not in a Room — workspace.room tools are unavailable. If the Task asks you to spawn, invoke, or ask another agent, do not create or assign an Issue as a substitute; name the Room message you would post (@software-engineer plus a task — a bare @mention starts nothing) and finish.`,
   },
   {
     id: "chat",
@@ -23,7 +23,7 @@ const invocationRoles = [
     id: "room",
     applies: (context: AgentGrantContext | undefined) =>
       Boolean(context?.roomId),
-    instructions: `You are working from a Room. Use workspace.room tools to understand the shared discussion before acting. Use workspace.post_message only for useful progress updates or clarifying questions; deliver the final result in your final response. A Room task may be conversational and may not involve a code repository or failing test.`,
+    instructions: `You are working from a Room. Use workspace.room tools to understand the shared discussion before acting. Use workspace.post_message for progress updates, clarifying questions, or to invoke another agent; deliver the final result in your final response. A Room task may be conversational and may not involve a code repository or failing test. To spawn, invoke, or ask another agent here, post a message that @mentions their definition id plus a task. Roster: @software-engineer (Software engineer), @antboy (Antboy). That starts or follows up their Room-linked run; Colony pings only you when it finishes. Mentioning yourself starts nothing. A bare @mention starts nothing. Do not assign an Issue to bring an agent into this conversation.`,
   },
 ] as const;
 
