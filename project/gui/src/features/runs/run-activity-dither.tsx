@@ -1,3 +1,4 @@
+import { AgentMark } from '#/features/agents/agent-mark'
 import { Dithering } from '@paper-design/shaders-react'
 import { Box, X } from 'lucide-react'
 import { ProviderIcon } from '#/components/provider-icon'
@@ -52,6 +53,7 @@ function DitherTile({
 
 export function RunActivitySplitHeader({
   agent,
+  agentId,
   provider,
   model,
   state,
@@ -62,6 +64,7 @@ export function RunActivitySplitHeader({
   onOpenMachine,
 }: {
   agent: string
+  agentId: string
   provider: RuntimeProvider
   model: string
   state: RunState
@@ -76,6 +79,7 @@ export function RunActivitySplitHeader({
       <div className="flex min-h-24 overflow-hidden rounded-xl border bg-background shadow-sm">
         <DitherTile active={!terminal(state)} provider={provider} />
         <div className="flex min-w-0 flex-1 items-center gap-3 bg-background px-3 py-2">
+          <AgentMark agentId={agentId} />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold">Run activity</h2>
             <p className="truncate text-xs font-medium">{agent}</p>

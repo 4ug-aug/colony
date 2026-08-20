@@ -1,4 +1,11 @@
-import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
+import {
+  EditorContent,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+  useEditor,
+  useEditorState,
+  type ReactNodeViewProps,
+} from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
 import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
@@ -20,8 +27,15 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { AccountFace } from '#/components/avatar'
 import { Button } from '#/components/ui/button'
-import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import { AgentMark, AgentMentionChip } from '#/features/agents/agent-mark'
+import { isAgentMentionId } from '#/features/agents/agent-color'
+import {
+  agentNameFrom,
+  useAgentDefinitions,
+} from '#/features/agents/use-agent-definitions'
 import type { MentionableAccount } from './types'
 import { formatBytes } from './format'
 
@@ -31,7 +45,43 @@ type MentionItem = {
   name: string
   description: string
   kind: 'account' | 'agent'
+  image?: string
+  faceName?: string
 }
+
+function ComposerMentionView({ node }: ReactNodeViewProps) {
+  const id = String(node.attrs.id ?? '')
+  const { data: agents = [] } = useAgentDefinitions()
+  const isAgent = isAgentMentionId(
+    id,
+    agents.map((agent) => agent.id),
+  )
+  return (
+    <NodeViewWrapper as="span">
+      {isAgent ? (
+        <AgentMentionChip agentId={id} label={agentNameFrom(agents, id)} />
+      ) : (
+        <>@{node.attrs.label ?? id}</>
+      )}
+    </NodeViewWrapper>
+  )
+}
+
+const ComposerMention = Mention.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(ComposerMentionView, {
+      as: 'span',
+      className: 'mention',
+      attrs: ({ node }) => {
+        const mentionId = node.attrs.id
+        return {
+          'data-type': 'mention',
+          ...(mentionId ? { 'data-id': String(mentionId) } : {}),
+        }
+      },
+    })
+  },
+})
 
 const previewTypes = new Set([
   'image/png',
@@ -99,11 +149,76 @@ function SelectedFile({
   )
 }
 
+function MentionMenu({
+  items,
+  selected,
+  command,
+}: {
+  items: MentionItem[]
+  selected: number
+  command: (item: MentionItem) => void
+}) {
+  const groups = [
+    { kind: 'account' as const, label: 'People' },
+    { kind: 'agent' as const, label: 'Agents' },
+  ]
+  return (
+    <>
+      {groups.map(({ kind, label }) => {
+        const rows = items
+          .map((item, index) => ({ item, index }))
+          .filter(({ item }) => item.kind === kind)
+        if (!rows.length) return null
+        return (
+          <div
+            key={kind}
+            className="mention-menu-group"
+            role="group"
+            aria-label={label}
+          >
+            <div className="mention-menu-heading" aria-hidden="true">
+              {label}
+            </div>
+            {rows.map(({ item, index }) => (
+              <button
+                key={`${item.kind}-${item.id}`}
+                type="button"
+                role="option"
+                aria-selected={index === selected}
+                className={index === selected ? 'is-selected' : ''}
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  command(item)
+                }}
+              >
+                {item.kind === 'agent' ? (
+                  <AgentMark agentId={item.id} className="shrink-0" />
+                ) : (
+                  <AccountFace
+                    name={item.faceName ?? item.name}
+                    image={item.image}
+                    className="size-6 shrink-0 text-xs"
+                  />
+                )}
+                <span className="mention-menu-copy">
+                  <strong>{item.name}</strong>
+                  <small>{item.description}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 function suggestionMenu(
   mentionOpen: { current: boolean },
   container: { current: HTMLDivElement | null },
 ) {
   let popup: HTMLDivElement | undefined
+  let root: Root | undefined
   let selected = 0
   let current:
     | {
@@ -118,51 +233,14 @@ function suggestionMenu(
     clientRect?: (() => DOMRect | null) | null
   }) => {
     current = props
-    if (!popup) return
-    const groups = [
-      { kind: 'account' as const, label: 'People' },
-      { kind: 'agent' as const, label: 'Agents' },
-    ].flatMap(({ kind, label }) => {
-      const items = props.items
-        .map((item, index) => ({ item, index }))
-        .filter(({ item }) => item.kind === kind)
-      if (!items.length) return []
-      const group = document.createElement('div')
-      group.className = 'mention-menu-group'
-      group.setAttribute('role', 'group')
-      group.setAttribute('aria-label', label)
-      const heading = document.createElement('div')
-      heading.className = 'mention-menu-heading'
-      heading.textContent = label
-      heading.setAttribute('aria-hidden', 'true')
-      group.append(
-        heading,
-        ...items.map(({ item, index }) => {
-          const option = document.createElement('button')
-          option.type = 'button'
-          option.className = index === selected ? 'is-selected' : ''
-          option.setAttribute('role', 'option')
-          option.setAttribute('aria-selected', String(index === selected))
-          const icon = document.createElement('span')
-          icon.className = 'mention-menu-icon'
-          icon.textContent = item.kind === 'agent' ? '</>' : '@'
-          const copy = document.createElement('span')
-          const name = document.createElement('strong')
-          name.textContent = item.name
-          const description = document.createElement('small')
-          description.textContent = item.description
-          copy.append(name, description)
-          option.append(icon, copy)
-          option.onmousedown = (event) => {
-            event.preventDefault()
-            props.command(item)
-          }
-          return option
-        }),
-      )
-      return group
-    })
-    popup.replaceChildren(...groups)
+    if (!root) return
+    root.render(
+      <MentionMenu
+        items={props.items}
+        selected={selected}
+        command={props.command}
+      />,
+    )
   }
   return {
     onStart(props: Parameters<typeof render>[0]) {
@@ -171,6 +249,7 @@ function suggestionMenu(
       popup.setAttribute('role', 'listbox')
       popup.setAttribute('aria-label', 'People and agents')
       ;(container.current ?? document.body).appendChild(popup)
+      root = createRoot(popup)
       render(props)
       mentionOpen.current = true
     },
@@ -201,14 +280,22 @@ function suggestionMenu(
     },
     onExit() {
       const leaving = popup
+      const leavingRoot = root
       if (leaving) {
         leaving.classList.add('is-leaving')
-        const remove = () => leaving.remove()
+        let removed = false
+        const remove = () => {
+          if (removed) return
+          removed = true
+          leavingRoot?.unmount()
+          leaving.remove()
+        }
         leaving.addEventListener('animationend', remove, { once: true })
         // Fallback in case the animation never fires (e.g. reduced motion).
         setTimeout(remove, 200)
       }
       popup = undefined
+      root = undefined
       selected = 0
       current = undefined
       mentionOpen.current = false
@@ -286,6 +373,8 @@ export const MessageComposer = forwardRef<
             name: `@${username}`,
             description: account.displayName ?? 'Teammate',
             kind: 'account' as const,
+            image: account.image,
+            faceName: account.displayName ?? account.name,
           }
         }),
         ...agents,
@@ -323,7 +412,7 @@ export const MessageComposer = forwardRef<
         blockquote: false,
         codeBlock: false,
       }),
-      Mention.configure({
+      ComposerMention.configure({
         HTMLAttributes: { class: 'mention' },
         renderText: ({ node }) => `@${node.attrs.id}`,
         suggestion: {
@@ -566,7 +655,7 @@ export const MessageComposer = forwardRef<
             (!editorState.hasText && !files.length) || disabled || sending
           }
         >
-          {sending ? (editing ? 'Saving…' : 'Sending…') : <Send />}
+          {sending ? editing ? 'Saving…' : 'Sending…' : <Send />}
         </Button>
       </div>
     </div>

@@ -1,17 +1,8 @@
-import { AgentAnt } from '#/components/avatar'
 import { Markdown } from '#/components/markdown'
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '#/components/ui/select'
 import { toast } from '#/components/ui/toast'
-import { agentIcon } from '#/features/agents/agent-icon'
+import { AgentMark } from '#/features/agents/agent-mark'
 import {
   agentNameFrom,
   useAgentDefinitions,
@@ -20,8 +11,11 @@ import { MessageComposer } from '#/features/rooms/message-composer'
 import { groupActivity, pairSteps } from '#/features/runs/run-activity'
 import { stepLabel, type Step } from '#/features/runs/step-label'
 import { ToolCallDetailsList } from '#/features/runs/tool-call-details-list'
-import { Ban, MessageCircle, Plus } from 'lucide-react'
+import type { AgentDefinition } from '#/features/schedules/types'
+import { cn } from '#/lib/utils'
+import { Ban, MessageSquare, Plus } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { ChatHistorySheet } from './chat-history-sheet'
 import type { ChatMessageStep } from './types'
 import {
   useCancelChatTurn,
@@ -46,13 +40,63 @@ function asStep(step: ChatMessageStep, runId: string): Step {
   }
 }
 
+function CoworkerPicker({
+  agents,
+  selectedId,
+  disabled,
+  onSelect,
+}: {
+  agents: AgentDefinition[]
+  selectedId?: string
+  disabled?: boolean
+  onSelect: (id: string) => void
+}) {
+  return (
+    <div className="@container">
+      <p className="mb-3 text-sm text-muted-foreground">Message a coworker</p>
+      <div className="flex h-8 items-center rounded-t-md bg-muted/60 px-3">
+        <p className="text-xs font-medium text-muted-foreground">Coworkers</p>
+      </div>
+      <ul className="rounded-b-md border border-t-0 border-border/50">
+        {agents.map((agent) => {
+          const selected = agent.id === selectedId
+          return (
+            <li key={agent.id}>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-pressed={selected}
+                onClick={() => onSelect(agent.id)}
+                className={cn(
+                  'flex h-9 w-full items-center gap-2 border-b border-border/40 px-2 text-left text-sm outline-none last:border-b-0 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50',
+                  selected && 'bg-muted/60 font-medium',
+                )}
+              >
+                <AgentMark agentId={agent.id} />
+                <span className="min-w-0 truncate font-medium">
+                  {agent.name}
+                </span>
+                <span className="hidden min-w-0 truncate text-xs text-muted-foreground @min-[24rem]:block">
+                  {agent.description}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 function AssistantTurn({
+  agentId,
   text,
   steps,
   runId,
   working,
   error,
 }: {
+  agentId: string
   text: string
   steps: ChatMessageStep[]
   runId: string
@@ -64,27 +108,22 @@ function AssistantTurn({
   const latest = items.at(-1)?.step
   return (
     <div className="flex gap-3">
-      <div
-        className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-        aria-hidden="true"
-      >
-        <AgentAnt className="size-6" />
-      </div>
+      <AgentMark agentId={agentId} className="mt-0.5 size-8" />
       <div className="min-w-0 flex-1 space-y-2">
         {groups
           .filter((group) => working || group.kind === 'tools')
           .map((group, index) =>
-          group.kind === 'reasoning' ? (
-            <p
-              key={group.item.step.id}
-              className="whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none"
-            >
-              {group.item.step.text}
-            </p>
-          ) : (
-            <ToolCallDetailsList key={`tools-${index}`} items={group.items} />
-          ),
-        )}
+            group.kind === 'reasoning' ? (
+              <p
+                key={group.item.step.id}
+                className="whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none"
+              >
+                {group.item.step.text}
+              </p>
+            ) : (
+              <ToolCallDetailsList key={`tools-${index}`} items={group.items} />
+            ),
+          )}
         {text ? (
           <div className="agent-message-frame">
             <div className="agent-message-inner">
@@ -130,10 +169,10 @@ export function ChatsPage({
   const linkedRun = data?.linkedRun
   const turnActive = Boolean(linkedRun?.turnActive)
   const working = turnActive || create.isPending || send.isPending
-  const AgentIcon = agentIcon(
-    (chat ? agents.find((agent) => agent.id === chat.agentDefinitionId) : selectedAgent)
-      ?.icon,
-  )
+  const coworkerId = chat?.agentDefinitionId ?? selectedAgent?.id
+  const coworkerName = chat
+    ? agentNameFrom(agents, chat.agentDefinitionId)
+    : selectedAgent?.name
 
   const submit = async (text: string) => {
     const trimmed = text.trim()
@@ -163,42 +202,21 @@ export function ChatsPage({
   return (
     <div className="flex min-h-0 flex-1 flex-col animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-        <MessageCircle className="size-4 text-muted-foreground" />
-        {chat ? (
+        {coworkerId && coworkerName ? (
           <>
-            <AgentIcon className="size-4 text-muted-foreground" />
-            <p className="min-w-0 truncate font-semibold">
-              {agentNameFrom(agents, chat.agentDefinitionId)}
-            </p>
-            <p className="hidden min-w-0 truncate text-sm text-muted-foreground sm:block">
-              {chat.title}
-            </p>
+            <AgentMark agentId={coworkerId} />
+            <p className="min-w-0 truncate font-semibold">{coworkerName}</p>
+            {chat ? (
+              <p className="hidden min-w-0 truncate text-sm text-muted-foreground sm:block">
+                {chat.title}
+              </p>
+            ) : null}
           </>
         ) : (
-          <Select
-            value={selectedAgent?.id}
-            onValueChange={(value) => {
-              if (typeof value === 'string') setAgentId(value)
-            }}
-          >
-            <SelectTrigger
-              size="sm"
-              className="w-56"
-              aria-label="Agent"
-              disabled={working}
-            >
-              <SelectValue placeholder="Agent" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {agents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <>
+            <MessageSquare className="size-4 text-muted-foreground" />
+            <p className="font-semibold">Chat</p>
+          </>
         )}
         <Button
           type="button"
@@ -212,58 +230,69 @@ export function ChatsPage({
         </Button>
       </header>
 
-      <div
-        className="min-h-0 flex-1 overflow-y-auto"
-        onScroll={(event) => {
-          const el = event.currentTarget
-          follow.current =
-            el.scrollHeight - el.scrollTop - el.clientHeight < 80
-        }}
-        ref={(node) => {
-          if (node && follow.current) node.scrollTop = node.scrollHeight
-        }}
-      >
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
-          {selectedId && isPending && !data ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
-              <BrailleLoader text="Loading chat" />
-            </p>
-          ) : null}
-          {error ? (
-            <p className="text-sm text-destructive" role="alert">
-              {error instanceof Error ? error.message : 'Could not load chat'}
-            </p>
-          ) : null}
-          {!selectedId && !messages.length ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
-              Start a conversation.
-            </p>
-          ) : null}
-          {messages.map((message) =>
-            message.role === 'user' ? (
-              <div key={message.id} className="flex justify-end">
-                <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm leading-6">
-                  <Markdown>{message.text}</Markdown>
-                </div>
-              </div>
-            ) : (
-              <AssistantTurn
-                key={message.id}
-                text={message.text}
-                steps={message.steps}
-                runId={message.runId ?? message.id}
+      <div className="relative min-h-0 flex-1">
+        <ChatHistorySheet
+          selectedChatId={selectedId}
+          onSelectChat={onSelectedIdChange}
+        />
+        <div
+          className="min-h-0 h-full overflow-y-auto"
+          onScroll={(event) => {
+            const el = event.currentTarget
+            follow.current =
+              el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          }}
+          ref={(node) => {
+            if (node && follow.current) node.scrollTop = node.scrollHeight
+          }}
+        >
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
+            {selectedId && isPending && !data ? (
+              <p className="py-12 text-center text-sm text-muted-foreground">
+                <BrailleLoader text="Loading chat" />
+              </p>
+            ) : null}
+            {error ? (
+              <p className="text-sm text-destructive" role="alert">
+                {error instanceof Error ? error.message : 'Could not load chat'}
+              </p>
+            ) : null}
+            {!selectedId && !messages.length ? (
+              <CoworkerPicker
+                agents={agents}
+                selectedId={selectedAgent?.id}
+                disabled={working}
+                onSelect={setAgentId}
               />
-            ),
-          )}
-          {turnActive ? (
-            <AssistantTurn
-              text=""
-              steps={liveSteps}
-              runId={linkedRun?.id ?? 'live'}
-              working
-              error={linkedRun?.error}
-            />
-          ) : null}
+            ) : null}
+            {messages.map((message) =>
+              message.role === 'user' ? (
+                <div key={message.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm leading-6">
+                    <Markdown>{message.text}</Markdown>
+                  </div>
+                </div>
+              ) : (
+                <AssistantTurn
+                  key={message.id}
+                  agentId={coworkerId ?? DEFAULT_AGENT_ID}
+                  text={message.text}
+                  steps={message.steps}
+                  runId={message.runId ?? message.id}
+                />
+              ),
+            )}
+            {turnActive ? (
+              <AssistantTurn
+                agentId={coworkerId ?? DEFAULT_AGENT_ID}
+                text=""
+                steps={liveSteps}
+                runId={linkedRun?.id ?? 'live'}
+                working
+                error={linkedRun?.error}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -293,7 +322,11 @@ export function ChatsPage({
             mentionableAccounts={[]}
             hideMentions
             hideAttachments
-            placeholder="Message"
+            placeholder={
+              selectedAgent
+                ? `Message ${selectedAgent.name}`
+                : 'Message a coworker'
+            }
           />
         </div>
       </div>

@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '#/components/ui/select'
 import { toast } from '#/components/ui/toast'
+import { AgentMark } from '#/features/agents/agent-mark'
 import {
   agentNameFrom,
   useAgentDefinitions,
@@ -72,6 +73,7 @@ function IssueRunRow({
             )}
             aria-hidden
           />
+          <AgentMark agentId={run.agentId} />
           <span className="min-w-0 flex-1 truncate font-medium">
             {agentName}
           </span>
@@ -193,6 +195,7 @@ export function IssueRunsRail({
                 <SelectGroup>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
+                      <AgentMark agentId={agent.id} />
                       {agent.name}
                     </SelectItem>
                   ))}

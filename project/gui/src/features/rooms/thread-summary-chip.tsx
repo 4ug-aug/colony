@@ -1,8 +1,6 @@
-import { AccountFace, AgentAnt } from '#/components/avatar'
-import {
-  agentNameFrom,
-  useAgentDefinitions,
-} from '#/features/agents/use-agent-definitions'
+import { AccountFace } from '#/components/avatar'
+import { AgentMark } from '#/features/agents/agent-mark'
+import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { cn } from '#/lib/utils'
 import { timestamp } from './format'
 import type { ThreadParticipant } from './types'
@@ -16,14 +14,11 @@ function ReplyAvatars({ participants }: { participants: ThreadParticipant[] }) {
       {participants.map((participant) => {
         const isAgent = agentIds.has(participant.id)
         return isAgent ? (
-          <div
+          <AgentMark
             key={participant.id}
-            className="flex size-5 items-center justify-center rounded-full border border-border bg-muted text-primary"
-            aria-hidden="true"
-            title={agentNameFrom(agents, participant.id)}
-          >
-            <AgentAnt className="size-3.5" />
-          </div>
+            agentId={participant.id}
+            className="size-5"
+          />
         ) : (
           <AccountFace
             key={participant.id}

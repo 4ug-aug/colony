@@ -1,5 +1,5 @@
-import { AccountFace, AgentAnt } from '#/components/avatar'
-import { Avatar, AvatarFallback } from '#/components/ui/avatar'
+import { AccountFace } from '#/components/avatar'
+import { AgentMark } from '#/features/agents/agent-mark'
 import {
   agentNameFrom,
   useAgentDefinitions,
@@ -41,11 +41,7 @@ export function OwnerDisplay({
     const name = agentNameFrom(agents, owner.id)
     return (
       <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
-        <Avatar size="sm" className="size-5 shrink-0" title={name}>
-          <AvatarFallback className="border bg-muted text-primary">
-            <AgentAnt className="size-3.5" />
-          </AvatarFallback>
-        </Avatar>
+        <AgentMark agentId={owner.id} />
         <span className="min-w-0 truncate text-sm" data-owner-name>
           {name}
         </span>

@@ -23,6 +23,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '#/components/ui/tooltip'
+import { AgentMark } from '#/features/agents/agent-mark'
 import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiFetch, apiJson, apiJsonBody } from '#/lib/api-transport'
@@ -302,10 +303,7 @@ function ConnectionCard({
                   <p className="text-xs font-medium">{connection.name} tools</p>
                   <ul className="mt-2 flex flex-col gap-1">
                     {connection.tools.map((tool) => (
-                      <li
-                        key={tool}
-                        className="text-xs text-muted-foreground"
-                      >
+                      <li key={tool} className="text-xs text-muted-foreground">
                         {tool}
                       </li>
                     ))}
@@ -332,12 +330,11 @@ function ConnectionCard({
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Clear {connection.name}?
-                  </AlertDialogTitle>
+                  <AlertDialogTitle>Clear {connection.name}?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This removes stored credentials and unlinks every agent from
-                    this connection. Non-secret fields stay until you save again.
+                    this connection. Non-secret fields stay until you save
+                    again.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -421,6 +418,7 @@ function ConnectionCard({
                   setLinks.mutate([...next])
                 }}
               />
+              <AgentMark agentId={agent.id} />
               Link to {agent.name}
             </label>
           )

@@ -127,6 +127,7 @@ export function RunActivityContent({
     <>
       <RunActivitySplitHeader
         agent={agent}
+        agentId={run.agentId}
         provider={run.provider}
         model={run.model}
         state={run.state}
@@ -186,10 +187,7 @@ export function RunActivityContent({
               </Button>
             </div>
           )}
-          {!loading &&
-            !error &&
-            !groups.length &&
-            !run.preparation?.length && (
+          {!loading && !error && !groups.length && !run.preparation?.length && (
             <p className="text-sm text-muted-foreground">
               No activity recorded yet.
             </p>

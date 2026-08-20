@@ -1,4 +1,4 @@
-import { AgentAnt } from '#/components/avatar'
+import { AgentMark } from '#/features/agents/agent-mark'
 import { Markdown } from '#/components/markdown'
 import { Badge } from '#/components/ui/badge'
 import { BrailleLoader } from '#/components/ui/braille-loader'
@@ -71,11 +71,7 @@ function OneshotStream({
       className="min-h-0 flex-1 space-y-2 overflow-y-auto text-sm border rounded-md p-2 dark:bg-background"
     >
       {error ? <p className="text-destructive">{error}</p> : null}
-      <ToolCallDetailsList
-        items={toolItems}
-        compact
-        resultMaxLength={800}
-      />
+      <ToolCallDetailsList items={toolItems} compact resultMaxLength={800} />
       {done && finalOutput ? (
         <div
           className={cn(
@@ -108,7 +104,8 @@ function OneshotPeek({
   peek: OneshotToolPeek
   onOpenIssue?: (id: string) => void
 }) {
-  const className = 'flex w-full min-w-0 items-center justify-start gap-1 px-1 hover:bg-accent'
+  const className =
+    'flex w-full min-w-0 items-center justify-start gap-1 px-1 hover:bg-accent'
   const inner = (
     <>
       <ToolIcon tool={peek.tool} className="size-3" />
@@ -142,9 +139,7 @@ function OneshotPeek({
       </Button>
     )
   }
-  return (
-    <span className={cn(className, 'text-xs font-medium')}>{inner}</span>
-  )
+  return <span className={cn(className, 'text-xs font-medium')}>{inner}</span>
 }
 
 export function OneshotPanel({
@@ -340,11 +335,7 @@ export function OneshotPanel({
       {peeks.length > 0 ? (
         <div className="-mb-px flex w-fit max-w-[80%] flex-col items-stretch gap-0.5 self-end rounded-t-xl border border-b-0 bg-background px-2 py-1 dark:bg-muted animate-in fade-in-0 slide-in-from-bottom-2 duration-200 fill-mode-both motion-reduce:animate-none">
           {peeks.map((peek) => (
-            <OneshotPeek
-              key={peek.key}
-              peek={peek}
-              onOpenIssue={onOpenIssue}
-            />
+            <OneshotPeek key={peek.key} peek={peek} onOpenIssue={onOpenIssue} />
           ))}
         </div>
       ) : null}
@@ -357,174 +348,166 @@ export function OneshotPanel({
           active ? 'h-[min(70vh,28rem)]' : 'h-[min(50vh,20rem)]',
         )}
       >
-      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            className="size-7 shrink-0"
-            aria-label="Close Oneshot"
-            onClick={() => void close()}
-          >
-            <X className="size-3.5" />
-          </Button>
-          {active ? (
-            <span
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border bg-muted text-primary"
-              title={agentName}
-              aria-hidden
-            >
-              {working ? (
-                <img
-                  src="/colony-mark.svg"
-                  alt=""
-                  className="size-5 dark:invert"
-                />
-              ) : (
-                <AgentAnt className="size-4" />
-              )}
-            </span>
-          ) : null}
-          {working && run ? (
-            <BrailleLoader
-              className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-              text={`${agentName} ${workingLabel(run, steps)}`}
-            />
-          ) : working ? (
-            <BrailleLoader
-              className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-              text={`${agentName} is starting`}
-            />
-          ) : active && run ? (
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground flex items-center gap-2">
-              <span className="font-medium text-foreground/80">{agentName}</span>
-              <Badge
-                className="capitalize"
-                variant={
-                  run.state === 'succeeded'
-                    ? 'default'
-                    : run.state === 'failed'
-                      ? 'destructive'
-                      : 'outline'
-                }
-              >
-                {run.state === 'succeeded' ? 'Done' : run.state}
-              </Badge>
-            </span>
-          ) : (
-            <>
-              <Select
-                value={selectedAgent?.id}
-                onValueChange={(value) => {
-                  if (typeof value === 'string') setAgentId(value)
-                }}
-              >
-                <SelectTrigger
-                  id="oneshot-agent"
-                  size="sm"
-                  className="min-w-0 flex-1"
-                  aria-label="Agent"
-                >
-                  <SelectValue placeholder="Agent" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {showRevision ? (
-                <Input
-                  id="oneshot-ref"
-                  value={revision}
-                  onChange={(event) => setRevision(event.target.value)}
-                  placeholder="Ref"
-                  aria-label="Repository ref"
-                  className="h-8 w-24 shrink-0"
-                />
-              ) : null}
-              <Button
-                type="button"
-                size="sm"
-                className="shrink-0 gap-1.5"
-                disabled={!task.trim() || start.isPending || !selectedAgent}
-                onClick={() => void submit()}
-                title={`${isApplePlatform() ? '⌘' : 'Ctrl'}+Enter`}
-              >
-                Run
-                <KbdGroup className="pointer-events-none hidden sm:inline-flex opacity-80">
-                  <Kbd className="bg-primary-foreground/15 text-primary-foreground">
-                    {isApplePlatform() ? '⌘' : 'Ctrl'}
-                  </Kbd>
-                  <Kbd className="bg-primary-foreground/15 text-primary-foreground">
-                    ↵
-                  </Kbd>
-                </KbdGroup>
-              </Button>
-            </>
-          )}
-          {canCopyFinal ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             <Button
               type="button"
               size="icon-sm"
               variant="ghost"
               className="size-7 shrink-0"
-              aria-label="Copy final output"
-              title="Copy final output"
-              onClick={() => void copyFinal()}
+              aria-label="Close Oneshot"
+              onClick={() => void close()}
             >
-              {copied ? (
-                <Check className="size-3.5" />
-              ) : (
-                <Copy className="size-3.5" />
-              )}
+              <X className="size-3.5" />
             </Button>
-          ) : null}
-        </div>
-
-        <div className="relative min-h-0 flex-1 overflow-hidden">
-          {active ? (
-            <div className="absolute inset-0 flex flex-col">
-              {run ? (
-                <OneshotStream
-                  run={run}
-                  steps={steps}
-                  error={
-                    isError
-                      ? error instanceof Error
-                        ? error.message
-                        : 'Could not load Oneshot'
-                      : undefined
-                  }
-                />
-              ) : null}
-            </div>
-          ) : (
-            <div className="absolute inset-0">
-              <Textarea
-                ref={taskRef}
-                value={task}
-                onChange={(event) => setTask(event.target.value)}
-                placeholder="What should the agent do?"
-                className="h-full min-h-0 resize-none [field-sizing:fixed]"
-                autoFocus
-                onKeyDown={(event) => {
-                  if (!(event.metaKey || event.ctrlKey)) return
-                  if (event.key !== 'Enter' && event.code !== 'Enter') return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  void submit()
-                }}
+            {active ? (
+              <AgentMark
+                agentId={run?.agentId ?? selectedAgent?.id ?? DEFAULT_AGENT_ID}
+                className="shrink-0"
               />
-            </div>
-          )}
+            ) : null}
+            {working && run ? (
+              <BrailleLoader
+                className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                text={`${agentName} ${workingLabel(run, steps)}`}
+              />
+            ) : working ? (
+              <BrailleLoader
+                className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                text={`${agentName} is starting`}
+              />
+            ) : active && run ? (
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground flex items-center gap-2">
+                <span className="font-medium text-foreground/80">
+                  {agentName}
+                </span>
+                <Badge
+                  className="capitalize"
+                  variant={
+                    run.state === 'succeeded'
+                      ? 'default'
+                      : run.state === 'failed'
+                        ? 'destructive'
+                        : 'outline'
+                  }
+                >
+                  {run.state === 'succeeded' ? 'Done' : run.state}
+                </Badge>
+              </span>
+            ) : (
+              <>
+                <Select
+                  value={selectedAgent?.id}
+                  onValueChange={(value) => {
+                    if (typeof value === 'string') setAgentId(value)
+                  }}
+                >
+                  <SelectTrigger
+                    id="oneshot-agent"
+                    size="sm"
+                    className="min-w-0 flex-1"
+                    aria-label="Agent"
+                  >
+                    <SelectValue placeholder="Agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          <AgentMark agentId={agent.id} />
+                          {agent.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {showRevision ? (
+                  <Input
+                    id="oneshot-ref"
+                    value={revision}
+                    onChange={(event) => setRevision(event.target.value)}
+                    placeholder="Ref"
+                    aria-label="Repository ref"
+                    className="h-8 w-24 shrink-0"
+                  />
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  className="shrink-0 gap-1.5"
+                  disabled={!task.trim() || start.isPending || !selectedAgent}
+                  onClick={() => void submit()}
+                  title={`${isApplePlatform() ? '⌘' : 'Ctrl'}+Enter`}
+                >
+                  Run
+                  <KbdGroup className="pointer-events-none hidden sm:inline-flex opacity-80">
+                    <Kbd className="bg-primary-foreground/15 text-primary-foreground">
+                      {isApplePlatform() ? '⌘' : 'Ctrl'}
+                    </Kbd>
+                    <Kbd className="bg-primary-foreground/15 text-primary-foreground">
+                      ↵
+                    </Kbd>
+                  </KbdGroup>
+                </Button>
+              </>
+            )}
+            {canCopyFinal ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                className="size-7 shrink-0"
+                aria-label="Copy final output"
+                title="Copy final output"
+                onClick={() => void copyFinal()}
+              >
+                {copied ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  <Copy className="size-3.5" />
+                )}
+              </Button>
+            ) : null}
+          </div>
+
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            {active ? (
+              <div className="absolute inset-0 flex flex-col">
+                {run ? (
+                  <OneshotStream
+                    run={run}
+                    steps={steps}
+                    error={
+                      isError
+                        ? error instanceof Error
+                          ? error.message
+                          : 'Could not load Oneshot'
+                        : undefined
+                    }
+                  />
+                ) : null}
+              </div>
+            ) : (
+              <div className="absolute inset-0">
+                <Textarea
+                  ref={taskRef}
+                  value={task}
+                  onChange={(event) => setTask(event.target.value)}
+                  placeholder="What should the agent do?"
+                  className="h-full min-h-0 resize-none [field-sizing:fixed]"
+                  autoFocus
+                  onKeyDown={(event) => {
+                    if (!(event.metaKey || event.ctrlKey)) return
+                    if (event.key !== 'Enter' && event.code !== 'Enter') return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    void submit()
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       </div>
     </div>
   )

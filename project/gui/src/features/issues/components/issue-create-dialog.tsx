@@ -1,4 +1,5 @@
-import { AgentAnt, Avatar } from '#/components/avatar'
+import { Avatar } from '#/components/avatar'
+import { AgentMark } from '#/features/agents/agent-mark'
 import { Button } from '#/components/ui/button'
 import {
   Command,
@@ -84,14 +85,6 @@ function CompactPersonAvatar({ author }: { author: Author }) {
       )}
     >
       <Avatar author={author} details={false} />
-    </span>
-  )
-}
-
-function CompactAgentAvatar() {
-  return (
-    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border bg-muted text-primary">
-      <AgentAnt className="size-3.5" />
     </span>
   )
 }
@@ -385,7 +378,7 @@ function IssueCreateForm({
                     </span>
                   ) : selectedAgent ? (
                     <span className="flex min-w-0 items-center gap-2">
-                      <CompactAgentAvatar />
+                      <AgentMark agentId={selectedAgent.id} />
                       <span className="truncate">{selectedAgent.name}</span>
                     </span>
                   ) : (
@@ -429,7 +422,7 @@ function IssueCreateForm({
                       value={ownerValue({ kind: 'agent', id: agent.id })}
                     >
                       <span className="flex min-w-0 items-center gap-2">
-                        <CompactAgentAvatar />
+                        <AgentMark agentId={agent.id} />
                         <span className="truncate">{agent.name}</span>
                       </span>
                     </SelectItem>
@@ -448,10 +441,7 @@ function IssueCreateForm({
         >
           Cancel
         </Button>
-        <Button
-          type="submit"
-          disabled={!title.trim() || createIssue.isPending}
-        >
+        <Button type="submit" disabled={!title.trim() || createIssue.isPending}>
           {createIssue.isPending ? 'Creating…' : 'Create issue'}
         </Button>
       </DialogFooter>
