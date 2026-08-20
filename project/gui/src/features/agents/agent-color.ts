@@ -1,7 +1,7 @@
 /** Mark fill / mention label. */
 const TONES: Record<string, string> = {
-  'software-engineer': 'text-primary',
-  antboy: 'text-amber-600 dark:text-amber-400',
+  'software-engineer': 'text-agent-software-engineer',
+  antboy: 'text-agent-antboy',
 }
 
 const MARK_FALLBACK = [

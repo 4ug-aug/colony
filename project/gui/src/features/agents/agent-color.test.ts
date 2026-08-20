@@ -2,8 +2,10 @@ import { expect, test } from 'bun:test'
 import { agentMarkClass, isAgentMentionId } from './agent-color'
 
 test('known agents map to distinct Colony mark tokens', () => {
-  expect(agentMarkClass('software-engineer')).toBe('text-primary')
-  expect(agentMarkClass('antboy')).toBe('text-amber-600 dark:text-amber-400')
+  expect(agentMarkClass('software-engineer')).toBe(
+    'text-agent-software-engineer',
+  )
+  expect(agentMarkClass('antboy')).toBe('text-agent-antboy')
 })
 
 test('unknown agent ids hash stably into fallback mark tokens', () => {

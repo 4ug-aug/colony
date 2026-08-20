@@ -4,8 +4,8 @@ import { Button } from '#/components/ui/button'
 import { toast } from '#/components/ui/toast'
 import { AgentMark } from '#/features/agents/agent-mark'
 import {
-    agentNameFrom,
-    useAgentDefinitions,
+  agentNameFrom,
+  useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
 import { MessageComposer } from '#/features/rooms/message-composer'
 import { groupActivity, pairSteps } from '#/features/runs/run-activity'
@@ -16,13 +16,14 @@ import { cn } from '#/lib/utils'
 import { Ban, MessageSquare, Plus } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { ChatHistorySheet } from './chat-history-sheet'
-import type { ChatMessageStep } from './types'
+import type { Chat, ChatMessageStep } from './types'
 import {
-    useCancelChatTurn,
-    useChat,
-    useCreateChat,
-    useLastChatAgent,
-    useSendChatMessage,
+  useCancelChatTurn,
+  useChat,
+  useChats,
+  useCreateChat,
+  useLastChatAgent,
+  useSendChatMessage,
 } from './use-chats'
 
 const DEFAULT_AGENT_ID = 'software-engineer'
@@ -53,9 +54,8 @@ function CoworkerPicker({
 }) {
   return (
     <div className="@container">
-      <p className="mb-3 text-sm text-muted-foreground">Message a coworker</p>
       <div className="flex h-8 items-center rounded-t-md bg-muted/60 px-3">
-        <p className="text-xs font-medium text-muted-foreground">Coworkers</p>
+        <p className="text-xs font-medium text-muted-foreground">Agents</p>
       </div>
       <ul className="rounded-b-md border border-t-0 border-border/50">
         {agents.map((agent) => {
@@ -83,6 +83,44 @@ function CoworkerPicker({
             </li>
           )
         })}
+      </ul>
+    </div>
+  )
+}
+
+function RecentChats({
+  chats,
+  onSelect,
+}: {
+  chats: Chat[]
+  onSelect: (id: string) => void
+}) {
+  const recent = chats.slice(0, 7)
+  if (recent.length === 0) return null
+  return (
+    <div className="@container">
+      <div className="flex h-8 items-center rounded-t-md bg-muted/60 px-3">
+        <p className="text-xs font-medium text-muted-foreground">Recent chats</p>
+      </div>
+      <ul className="rounded-b-md border border-t-0 border-border/50">
+        {recent.map((chat) => (
+          <li key={chat.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(chat.id)}
+              className="flex h-9 w-full items-center gap-2 border-b border-border/40 px-2 text-left text-sm outline-none last:border-b-0 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <AgentMark agentId={chat.agentDefinitionId} />
+              <span className="min-w-0 truncate font-medium">{chat.title}</span>
+              <span className="ml-auto hidden shrink-0 text-xs tabular-nums text-muted-foreground @min-[24rem]:block">
+                {new Intl.DateTimeFormat(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                }).format(chat.updatedAt)}
+              </span>
+            </button>
+          </li>
+        ))}
       </ul>
     </div>
   )
@@ -152,6 +190,7 @@ export function ChatsPage({
   onSelectedIdChange: (id: string | undefined) => void
 }) {
   const { data: agents = [] } = useAgentDefinitions()
+  const { data: chats = [] } = useChats()
   const [agentId, setAgentId] = useLastChatAgent(DEFAULT_AGENT_ID)
   const selectedAgent =
     agents.find((agent) => agent.id === agentId) ?? agents[0]
@@ -256,12 +295,15 @@ export function ChatsPage({
               </p>
             ) : null}
             {!selectedId && !messages.length ? (
-              <CoworkerPicker
-                agents={agents}
-                selectedId={selectedAgent?.id}
-                disabled={working}
-                onSelect={setAgentId}
-              />
+              <>
+                <CoworkerPicker
+                  agents={agents}
+                  selectedId={selectedAgent?.id}
+                  disabled={working}
+                  onSelect={setAgentId}
+                />
+                <RecentChats chats={chats} onSelect={onSelectedIdChange} />
+              </>
             ) : null}
             {messages.map((message) =>
               message.role === 'user' ? (
@@ -323,7 +365,7 @@ export function ChatsPage({
             placeholder={
               selectedAgent
                 ? `Message ${selectedAgent.name}`
-                : 'Message a coworker'
+                : 'Message an agent'
             }
           />
         </div>
