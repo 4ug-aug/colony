@@ -13,7 +13,7 @@ import {
 import type { MessageSearchHit } from './types'
 import { searchIssues } from '#/features/issues/issue-filters'
 import { formatIssueId } from '#/features/issues/format'
-import { IssueStatusIcon } from '#/features/issues/issue-icons'
+import { IssueStatusIcon } from '#/features/issues/components/issue-icons'
 import type { Issue } from '#/features/issues/types'
 import { useIssues } from '#/features/issues/use-issues'
 import {

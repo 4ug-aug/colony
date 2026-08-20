@@ -5,7 +5,7 @@ import {
   grillIsComplete,
   type GrillListStatus,
 } from '#/features/grills/grill-status'
-import { GRILL_TURN_CONTRACT } from '../../../../../mcp/workspace-grill'
+import { GRILL_TURN_CONTRACT } from '#project/mcp/workspace-grill'
 import type {
   Grill,
   GrillKind,

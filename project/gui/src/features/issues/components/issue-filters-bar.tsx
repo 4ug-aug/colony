@@ -21,18 +21,18 @@ import {
 import { cn } from '#/lib/utils'
 import { BarChart3, ChevronDown, UserRound, X } from 'lucide-react'
 import { useState } from 'react'
-import { EMPTY_ISSUE_FILTERS, issueFiltersActive } from './issue-filters'
-import type { IssueListFilters } from './issue-filters'
+import { EMPTY_ISSUE_FILTERS, issueFiltersActive } from '../issue-filters'
+import type { IssueListFilters } from '../issue-filters'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
 import { LabelDot } from './issue-labels'
 import { LabelCheck } from './property-picker'
-import type { IssuePriority, IssueStatus } from './types'
+import type { IssuePriority, IssueStatus } from '../types'
 import {
   ISSUE_PRIORITIES,
   ISSUE_PRIORITY_LABEL,
   ISSUE_STATUS_LABEL,
   ISSUE_STATUSES,
-} from './types'
+} from '../types'
 
 function toggleValue<T>(values: T[], value: T): T[] {
   return values.includes(value)

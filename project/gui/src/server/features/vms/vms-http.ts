@@ -1,4 +1,4 @@
-import type { SmolvmMachineControl } from '../../../../../providers/smolvm-sandbox'
+import type { SmolvmMachineControl } from '#project/providers/smolvm-sandbox'
 import type { RoomUser } from '../rooms/room-store'
 import { json, readBody } from '../../http/respond'
 

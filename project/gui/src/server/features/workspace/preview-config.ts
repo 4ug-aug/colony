@@ -1,5 +1,5 @@
 import type { TransactionalSqlite } from '#/server/secret-box'
-import type { PreviewConfiguration } from '../../../../../runs'
+import type { PreviewConfiguration } from '#project/runs'
 
 export type { PreviewConfiguration }
 

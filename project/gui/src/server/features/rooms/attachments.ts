@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
-import type { AttachmentSource } from '../../../../../inputs/repository'
+import type { AttachmentSource } from '#project/inputs/repository'
 import type { NewRoomAttachment, RoomStore } from './room-store'
 
 const MAX_ATTACHMENTS = 5

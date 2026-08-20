@@ -26,10 +26,10 @@ import {
   
 } from './features/runs/run-control'
 import type {RunControl, RunSummary, Step} from './features/runs/run-control';
-import type { AttachmentInput } from '../../../inputs/repository'
-import { createWorkspaceAgentsExecutor } from '../../../agents/roster'
-import { createAppleContainerClient } from '../../../sdk/src'
-import { createAppleContainerSandboxProvider } from '../../../providers/apple-container-sandbox'
+import type { AttachmentInput } from '#project/inputs/repository'
+import { createWorkspaceAgentsExecutor } from '#project/agents/roster'
+import { createAppleContainerClient } from '#project/sdk/src'
+import { createAppleContainerSandboxProvider } from '#project/providers/apple-container-sandbox'
 import {
   createSqliteRoomStore,
   GENERAL_ROOM_ID

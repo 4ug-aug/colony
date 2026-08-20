@@ -1,7 +1,7 @@
 import {
   OPENAI_DEFAULT_BASE_URL,
   type OpenAICompatibleModel,
-} from '../../../../../runtime/openai-agents'
+} from '#project/runtime/openai-agents'
 import {
   createSecretBox,
   validModel,

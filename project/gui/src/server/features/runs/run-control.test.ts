@@ -3,7 +3,7 @@ import { createRunControl, overlayLivePreparation } from './run-control'
 import type {
   WorkspaceAgentExecutor,
   WorkspaceAgentStartRunRequest,
-} from '../../../../../agents/roster'
+} from '#project/agents/roster'
 
 function captureExecutor(
   capture: (request: WorkspaceAgentStartRunRequest) => void,

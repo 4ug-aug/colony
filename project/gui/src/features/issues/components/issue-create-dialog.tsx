@@ -38,18 +38,18 @@ import { cn } from '#/lib/utils'
 import { ChevronDown, CircleDashed, UserRound } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
 import { useState } from 'react'
-import { formatIssueId } from './format'
+import { formatIssueId } from '../format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
-import { ownerValue, parseOwnerValue } from './owner-encoding'
-import type { Issue, IssuePriority, IssueStatus } from './types'
+import { ownerValue, parseOwnerValue } from '../owner-encoding'
+import type { Issue, IssuePriority, IssueStatus } from '../types'
 import {
   ISSUE_PRIORITIES,
   ISSUE_PRIORITY_LABEL,
   ISSUE_STATUS_LABEL,
   ISSUE_STATUSES,
-} from './types'
-import { useCreateIssue, useIssues } from './use-issues'
-import { useWorkspaceMembers } from './use-workspace-members'
+} from '../types'
+import { useCreateIssue, useIssues } from '../use-issues'
+import { useWorkspaceMembers } from '../use-workspace-members'
 
 function FieldLabel({
   htmlFor,

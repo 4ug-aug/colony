@@ -1,10 +1,10 @@
 import { toast } from '#/components/ui/toast'
 import type { KeyboardEvent } from 'react'
 import { useState } from 'react'
-import { formatTimeSpentMinutes } from './format'
+import { formatTimeSpentMinutes } from '../format'
 import { railTriggerClass } from './property-picker'
-import type { Issue } from './types'
-import { useUpdateIssue } from './use-issues'
+import type { Issue } from '../types'
+import { useUpdateIssue } from '../use-issues'
 
 export function TimeSpentEditor({ issue }: { issue: Issue }) {
   const updateIssue = useUpdateIssue()

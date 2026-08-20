@@ -16,16 +16,16 @@ import { cn } from '#/lib/utils'
 import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { formatIssueId } from './format'
+import { formatIssueId } from '../format'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
-import type { Issue, IssuePriority, IssueStatus } from './types'
+import type { Issue, IssuePriority, IssueStatus } from '../types'
 import {
   ISSUE_PRIORITIES,
   ISSUE_PRIORITY_LABEL,
   ISSUE_STATUS_LABEL,
   ISSUE_STATUSES,
-} from './types'
-import { useIssues, useUpdateIssue } from './use-issues'
+} from '../types'
+import { useIssues, useUpdateIssue } from '../use-issues'
 
 const iconTriggerClass =
   'inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/40'

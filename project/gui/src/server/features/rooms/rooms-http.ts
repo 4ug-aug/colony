@@ -3,7 +3,7 @@ import {
   rosterMentionPattern,
   rosterNotConfiguredMessage,
   rosterPerson,
-} from '../../../../../agents/roster'
+} from '#project/agents/roster'
 import {
   attachmentBytes,
   MAX_REQUEST_BYTES,

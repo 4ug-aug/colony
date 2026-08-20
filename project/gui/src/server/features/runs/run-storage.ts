@@ -1,4 +1,4 @@
-import type { Step, StepKind } from '../../../../../runs'
+import type { Step, StepKind } from '#project/runs'
 import type { Sqlite } from '#/server/sqlite'
 
 /** A run step as stored: the runtime's wire Step plus its persisted identity. */

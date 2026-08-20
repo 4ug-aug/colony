@@ -1,5 +1,5 @@
-import { DEFAULT_WARM_IDLE_TTL_MS } from '../../../../../runs'
-import type { Step } from '../../../../../runs'
+import { DEFAULT_WARM_IDLE_TTL_MS } from '#project/runs'
+import type { Step } from '#project/runs'
 import type { RunSummary } from '#/server/features/runs/run-control'
 
 export type GrillLatestStep = {

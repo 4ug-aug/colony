@@ -16,16 +16,16 @@ import {
   formatIssueCreatedAt,
   formatIssueId,
   formatTimeSpentMinutes,
-} from './format'
+} from '../format'
 import { IssueDeleteContextMenu } from './issue-delete-menu'
 import { ChildStatusRing, IssueStatusIcon } from './issue-icons'
 import { IssueLabelChip } from './issue-labels'
 import { OwnerPicker } from './owner-picker'
 import { PriorityPicker, StatusPicker } from './property-picker'
-import type { Issue } from './types'
-import { parentWorkLabel } from './issue-tree'
-import { useIssueTiming } from './use-issue-timing'
-import { useIssues } from './use-issues'
+import type { Issue } from '../types'
+import { parentWorkLabel } from '../issue-tree'
+import { useIssueTiming } from '../use-issue-timing'
+import { useIssues } from '../use-issues'
 
 function ChildProgressChip({
   issue,

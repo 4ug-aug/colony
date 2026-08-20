@@ -23,12 +23,12 @@ import { GrillFrontierPanel } from './grill-frontier-panel'
 import {
   grillEnterAlertClassName,
   grillEnterClassName,
-} from './grill-presentation'
+} from '../grill-presentation'
 import { ProposalPanel } from './grill-proposal-panel'
 import { GrillSettledRounds } from './grill-settled-rounds'
-import { grillAwaitingWrapUpReview, grillIsComplete } from './grill-status'
+import { grillAwaitingWrapUpReview, grillIsComplete } from '../grill-status'
 import { GrillWriteupPanel } from './grill-writeup-panel'
-import { useGrill, useGrillRealtime } from './use-grills'
+import { useGrill, useGrillRealtime } from '../use-grills'
 
 export function GrillSession({
   grillId,

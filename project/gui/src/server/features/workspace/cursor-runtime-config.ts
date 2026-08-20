@@ -1,4 +1,4 @@
-import type { CursorRuntimeConfig } from '../../../../../agents/definition'
+import type { CursorRuntimeConfig } from '#project/agents/definition'
 import {
   createSecretBox,
   validModel,

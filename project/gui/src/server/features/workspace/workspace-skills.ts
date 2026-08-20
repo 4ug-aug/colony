@@ -12,7 +12,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import {
   validateSkillPackageFiles,
   type SkillPackageFile,
-} from '../../../../../skills/package'
+} from '#project/skills/package'
 import type { TransactionalSqlite } from '#/server/secret-box'
 
 export type WorkspaceSkill = {

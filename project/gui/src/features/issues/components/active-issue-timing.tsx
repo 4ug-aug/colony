@@ -7,11 +7,11 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { Square, Timer } from 'lucide-react'
 import { useState } from 'react'
-import { formatIssueId } from './format'
+import { formatIssueId } from '../format'
 import { IssueStatusIcon } from './issue-icons'
-import { formatElapsedClock } from './issue-timing'
-import { useIssueTiming } from './use-issue-timing'
-import { useIssues } from './use-issues'
+import { formatElapsedClock } from '../issue-timing'
+import { useIssueTiming } from '../use-issue-timing'
+import { useIssues } from '../use-issues'
 
 function useTimingClock(startedAt: number | undefined) {
   const { data } = useQuery({

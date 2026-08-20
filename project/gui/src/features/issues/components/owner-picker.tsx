@@ -8,13 +8,13 @@ import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { cn } from '#/lib/utils'
 import { Check } from 'lucide-react'
 import { useState } from 'react'
-import { formatIssueId } from './format'
+import { formatIssueId } from '../format'
 import { OwnerDisplay } from './owner-display'
-import { ownerValue, parseOwnerValue } from './owner-encoding'
+import { ownerValue, parseOwnerValue } from '../owner-encoding'
 import { railTriggerClass } from './property-picker'
-import type { Issue } from './types'
-import { useAssignIssue } from './use-issues'
-import { useWorkspaceMembers } from './use-workspace-members'
+import type { Issue } from '../types'
+import { useAssignIssue } from '../use-issues'
+import { useWorkspaceMembers } from '../use-workspace-members'
 
 export function OwnerPicker({
   issue,

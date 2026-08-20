@@ -44,3 +44,37 @@ liveTest("the agent image includes Git", async () => {
     await sandbox.dispose();
   }
 });
+
+for (const image of ["sweat-agent:latest", "sweat-agent-cursor:latest"] as const) {
+  liveTest(`the ${image} image includes Python`, async () => {
+    const sandboxes = createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(),
+    });
+    const sandbox = await sandboxes.create({ image });
+
+    try {
+      const result = await sandbox.exec({ command: ["python", "--version"] });
+      expect(result.exitCode).toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toMatch(/^Python 3\./);
+    } finally {
+      await sandbox.dispose();
+    }
+  });
+}
+
+for (const image of ["sweat-agent:latest", "sweat-agent-cursor:latest"] as const) {
+  liveTest(`the ${image} image includes PGlite`, async () => {
+    const sandboxes = createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(),
+    });
+    const sandbox = await sandboxes.create({ image });
+
+    try {
+      const result = await sandbox.exec({ command: ["pglite-server", "--help"] });
+      expect(result.exitCode).toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toMatch(/pglite/i);
+    } finally {
+      await sandbox.dispose();
+    }
+  });
+}

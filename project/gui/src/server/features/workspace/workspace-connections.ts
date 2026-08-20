@@ -3,9 +3,9 @@ import {
   getConnectionKind,
   listConnectionKinds,
   type ConnectionKindPublic,
-} from '../../../../../connections/registry'
-import type { WorkspaceAgentAdapter } from '../../../../../agents/roster'
-import { capabilityPresentation } from '../../../../../agents/roster-people'
+} from '#project/connections/registry'
+import type { WorkspaceAgentAdapter } from '#project/agents/roster'
+import { capabilityPresentation } from '#project/agents/roster-people'
 import {
   createSecretBox,
   type EncryptedSecretColumns,

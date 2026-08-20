@@ -22,13 +22,13 @@ import { terminal } from '#/features/runs/run-helpers'
 import { cn } from '#/lib/utils'
 import { ChevronDown, Play, Square } from 'lucide-react'
 import { useState } from 'react'
-import { formatIssueCreatedAt, formatIssueId } from './format'
-import type { Issue, IssueRun } from './types'
+import { formatIssueCreatedAt, formatIssueId } from '../format'
+import type { Issue, IssueRun } from '../types'
 import {
   useCancelIssueRun,
   useIssueRuns,
   useStartIssueRun,
-} from './use-issue-runs'
+} from '../use-issue-runs'
 
 const runBadgeVariant = (state: string) =>
   state === 'failed' ? 'destructive' : 'success'

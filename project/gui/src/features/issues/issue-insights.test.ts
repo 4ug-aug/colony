@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
-import { buildIssueInsights } from './issue-insights'
+import { IssuePriorityIcon, IssueStatusIcon } from './components/issue-icons'
+import { buildIssueInsights } from './components/issue-insights'
 import type { Issue } from './types'
 
 const issue = (

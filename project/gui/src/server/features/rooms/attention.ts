@@ -1,4 +1,4 @@
-import { rosterMentionHandles } from '../../../../../agents/roster-meta'
+import { rosterMentionHandles } from '#project/agents/roster-meta'
 import type { RoomUser } from './room-store'
 
 export const AGENT_MENTION_HANDLES = rosterMentionHandles()

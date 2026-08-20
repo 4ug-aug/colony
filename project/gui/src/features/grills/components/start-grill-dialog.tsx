@@ -20,8 +20,8 @@ import { toast } from '#/components/ui/toast'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import type { FormEvent } from 'react'
 import { useState } from 'react'
-import type { Grill, GrillKind, GrillVisibility } from './types'
-import { useCreateGrill } from './use-grills'
+import type { Grill, GrillKind, GrillVisibility } from '../types'
+import { useCreateGrill } from '../use-grills'
 
 export function StartGrillDialog({
   open,

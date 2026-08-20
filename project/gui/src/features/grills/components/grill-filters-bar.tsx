@@ -19,8 +19,8 @@ import {
   grillFiltersActive,
   type GrillListFilters,
   type GrillListStatus,
-} from './grill-filters'
-import type { GrillKind, GrillVisibility } from './types'
+} from '../grill-filters'
+import type { GrillKind, GrillVisibility } from '../types'
 
 function toggleValue<T>(values: T[], value: T): T[] {
   return values.includes(value)

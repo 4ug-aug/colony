@@ -18,8 +18,8 @@ import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { IssueLabelChip, LabelDot } from './issue-labels'
 import { LabelCheck } from './property-picker'
-import type { Issue } from './types'
-import { useIssues, useUpdateIssue } from './use-issues'
+import type { Issue } from '../types'
+import { useIssues, useUpdateIssue } from '../use-issues'
 
 export function TagsEditor({ issue }: { issue: Issue }) {
   const [open, setOpen] = useState(false)

@@ -9,10 +9,10 @@ import { cn } from '#/lib/utils'
 import { ChevronDown, Plus } from 'lucide-react'
 import { IssueRow } from './issue-row'
 import { IssueStatusIcon } from './issue-icons'
-import { nestIssuesByParent } from './issue-tree'
-import type { IssueTreeNode } from './issue-tree'
-import type { Issue, IssueStatus } from './types'
-import { ISSUE_STATUS_LABEL, ISSUE_STATUSES } from './types'
+import { nestIssuesByParent } from '../issue-tree'
+import type { IssueTreeNode } from '../issue-tree'
+import type { Issue, IssueStatus } from '../types'
+import { ISSUE_STATUS_LABEL, ISSUE_STATUSES } from '../types'
 
 function StatusGroup({
   status,

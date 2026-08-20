@@ -1,5 +1,5 @@
 import { previewCron } from '#/features/schedules/cron'
-import type { RunState } from '../../../../../runs'
+import type { RunState } from '#project/runs'
 import type { Sqlite } from '#/server/sqlite'
 import {
   createRunStepStore,

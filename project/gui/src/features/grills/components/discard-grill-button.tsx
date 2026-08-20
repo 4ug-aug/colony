@@ -12,7 +12,7 @@ import {
 import { Button } from '#/components/ui/button'
 import { toast } from '#/components/ui/toast'
 import { Trash2 } from 'lucide-react'
-import { useDiscardGrill } from './use-grills'
+import { useDiscardGrill } from '../use-grills'
 
 export function DiscardGrillButton({
   grillId,

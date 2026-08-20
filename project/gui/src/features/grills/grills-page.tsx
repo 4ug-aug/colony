@@ -14,7 +14,7 @@ import {
 import type { RunState } from '#/features/runs/run-helpers'
 import { Flame } from 'lucide-react'
 import { useDeferredValue, useState, type MouseEvent } from 'react'
-import { DiscardGrillButton } from './discard-grill-button'
+import { DiscardGrillButton } from './components/discard-grill-button'
 import {
   EMPTY_GRILL_FILTERS,
   GRILL_PAGE_SIZE,
@@ -22,15 +22,13 @@ import {
   grillFiltersActive,
   type GrillListFilters,
 } from './grill-filters'
-import { GrillFiltersBar } from './grill-filters-bar'
+import { GrillFiltersBar } from './components/grill-filters-bar'
 import { grillStepLabel } from './grill-presentation'
-import { GrillSession } from './grill-session'
+import { GrillSession } from './components/grill-session'
 import { grillListStatus } from './grill-status'
-import { StartGrillDialog } from './start-grill-dialog'
+import { StartGrillDialog } from './components/start-grill-dialog'
 import type { GrillListItem } from './types'
 import { useGrills } from './use-grills'
-
-export { GrillSessionHeader } from './grill-session'
 
 function GrillListActivity({ grill }: { grill: GrillListItem }) {
   const status = grillListStatus(grill)

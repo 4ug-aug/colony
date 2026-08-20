@@ -5,7 +5,7 @@ import {
 } from './oneshot-session'
 import { createOneshotsHttp } from './oneshots-http'
 import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
-import type { WorkspaceAgentStartRunRequest } from '../../../../../agents/roster'
+import type { WorkspaceAgentStartRunRequest } from '#project/agents/roster'
 
 const baseSummary = (overrides: Partial<RunSummary> = {}): RunSummary => ({
   id: 'run-1',

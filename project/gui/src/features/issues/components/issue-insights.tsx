@@ -9,13 +9,13 @@ import { cn } from '#/lib/utils'
 import { X } from 'lucide-react'
 import { Bar, BarChart, XAxis, YAxis } from 'recharts'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
-import type { Issue, IssuePriority, IssueStatus } from './types'
+import type { Issue, IssuePriority, IssueStatus } from '../types'
 import {
   ISSUE_PRIORITIES,
   ISSUE_PRIORITY_LABEL,
   ISSUE_STATUS_LABEL,
   ISSUE_STATUSES,
-} from './types'
+} from '../types'
 
 const chartConfig = {
   none: { label: 'No priority', color: '#64748b' },

@@ -6,15 +6,15 @@ import { toast } from '#/components/ui/toast'
 import {
   IssuePriorityIcon,
   IssueStatusIcon,
-} from '#/features/issues/issue-icons'
+} from '#/features/issues/components/issue-icons'
 import { CornerDownRight } from 'lucide-react'
 import { useState } from 'react'
-import type { Grill, GrillProposedIssue } from './types'
+import type { Grill, GrillProposedIssue } from '../types'
 import {
   useConfirmGrillProposal,
   useDismissGrillProposal,
   usePushBackGrillProposal,
-} from './use-grills'
+} from '../use-grills'
 
 function proposedIssueDepth(
   issuesByKey: Map<string, GrillProposedIssue>,

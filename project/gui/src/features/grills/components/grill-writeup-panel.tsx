@@ -3,9 +3,9 @@ import { Button } from '#/components/ui/button'
 import { toast } from '#/components/ui/toast'
 import { useDoc } from '#/features/docs/use-docs'
 import { cn } from '#/lib/utils'
-import { grillEnterClassName } from './grill-presentation'
-import type { Grill } from './types'
-import { useCompleteGrill } from './use-grills'
+import { grillEnterClassName } from '../grill-presentation'
+import type { Grill } from '../types'
+import { useCompleteGrill } from '../use-grills'
 
 export function GrillWriteupPanel({
   grill,

@@ -19,7 +19,7 @@ import {
   type AdmissionOptions,
 } from './features/accounts/admission-http'
 import { mentionedAccounts } from './features/rooms/attention'
-import { rosterDefinitionSummaries } from '../../../agents/roster'
+import { rosterDefinitionSummaries } from '#project/agents/roster'
 import { attachmentDirectory } from './features/rooms/attachments'
 import { type ScheduleStore } from './features/schedules/schedule-store'
 import {
@@ -51,7 +51,7 @@ import { createMembersHttp } from './features/rooms/members-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
 import { createOneshotSession } from './features/oneshots/oneshot-session'
 import { createVmsHttp } from './features/vms/vms-http'
-import type { SmolvmMachineControl } from '../../../providers/smolvm-sandbox'
+import type { SmolvmMachineControl } from '#project/providers/smolvm-sandbox'
 import type {
   AgentDefinitionSummary,
   GrillLeaseMessage,

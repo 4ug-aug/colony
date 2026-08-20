@@ -1,4 +1,4 @@
-import type { RunState } from '../../../../../runs'
+import type { RunState } from '#project/runs'
 
 export const ISSUE_TITLE_MAX = 500
 export const ISSUE_DESCRIPTION_MAX = 10_000

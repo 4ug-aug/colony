@@ -27,7 +27,7 @@ import {
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { WORKSPACE_PEOPLE } from '../../../../../agents/roster-people'
+import { WORKSPACE_PEOPLE } from '#project/agents/roster-people'
 
 export type AccountInput = {
   email: string

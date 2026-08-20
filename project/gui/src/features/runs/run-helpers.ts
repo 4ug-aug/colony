@@ -1,6 +1,6 @@
 import { stepLabel, type Step } from './step-label'
 import type { RoomRun } from '#/features/rooms/types'
-import type { RunState } from '../../../../runs'
+import type { RunState } from '#project/runs'
 
 export type { RunState }
 

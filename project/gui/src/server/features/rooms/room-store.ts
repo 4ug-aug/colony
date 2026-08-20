@@ -1,4 +1,4 @@
-import type { RunState } from '../../../../../runs'
+import type { RunState } from '#project/runs'
 import type { RunSummary } from '#/server/features/runs/run-control'
 import { failStaleRuns, type RunStep } from '#/server/features/runs/run-storage'
 import type { Sqlite } from '#/server/sqlite'

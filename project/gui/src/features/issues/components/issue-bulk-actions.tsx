@@ -30,15 +30,15 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { IssuePriorityIcon, IssueStatusIcon } from './issue-icons'
 import { OwnerDisplay } from './owner-display'
-import type { Issue, IssueOwner, IssuePriority, IssueStatus } from './types'
+import type { Issue, IssueOwner, IssuePriority, IssueStatus } from '../types'
 import {
   ISSUE_PRIORITIES,
   ISSUE_PRIORITY_LABEL,
   ISSUE_STATUS_LABEL,
   ISSUE_STATUSES,
-} from './types'
-import { useAssignIssue, useDeleteIssue, useUpdateIssue } from './use-issues'
-import { useWorkspaceMembers } from './use-workspace-members'
+} from '../types'
+import { useAssignIssue, useDeleteIssue, useUpdateIssue } from '../use-issues'
+import { useWorkspaceMembers } from '../use-workspace-members'
 
 function BulkPicker<T>({
   label,

@@ -33,10 +33,10 @@ import {
 import { formatIssueDeepLink } from '#/lib/issue-deep-link'
 import { Copy, Link, MoreHorizontal, Trash2 } from 'lucide-react'
 import { useState, type ReactElement, type ReactNode } from 'react'
-import { formatIssueId, formatIssueMarkdown } from './format'
-import type { Issue } from './types'
-import { useDeleteIssue } from './use-issues'
-import { useWorkspaceMembers } from './use-workspace-members'
+import { formatIssueId, formatIssueMarkdown } from '../format'
+import type { Issue } from '../types'
+import { useDeleteIssue } from '../use-issues'
+import { useWorkspaceMembers } from '../use-workspace-members'
 
 async function copyText(text: string, successTitle: string) {
   try {

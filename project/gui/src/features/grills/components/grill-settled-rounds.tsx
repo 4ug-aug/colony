@@ -8,9 +8,9 @@ import {
 import { cn } from '#/lib/utils'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
-import { formatSettledAnswer } from './grill-answers'
-import { grillEnterClassName } from './grill-presentation'
-import type { SettledRound } from './types'
+import { formatSettledAnswer } from '../grill-answers'
+import { grillEnterClassName } from '../grill-presentation'
+import type { SettledRound } from '../types'
 
 const collapsiblePanelClassName =
   "h-(--collapsible-panel-height) overflow-hidden transition-[height,opacity] duration-200 ease-out motion-reduce:transition-none data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 [&[hidden]:not([hidden='until-found'])]:hidden"

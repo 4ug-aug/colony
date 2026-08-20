@@ -1,8 +1,8 @@
-import type { AgentGrantContext } from '../../../../../agents/grant-context'
-import type { RunInput, RunRecord, Step } from '../../../../../runs'
-import type { WorkspaceAgentExecutor } from '../../../../../agents/roster'
-import { SOFTWARE_ENGINEER_ID } from '../../../../../agents/roster'
-import type { AttachmentInput } from '../../../../../inputs/repository'
+import type { AgentGrantContext } from '#project/agents/grant-context'
+import type { RunInput, RunRecord, Step } from '#project/runs'
+import type { WorkspaceAgentExecutor } from '#project/agents/roster'
+import { SOFTWARE_ENGINEER_ID } from '#project/agents/roster'
+import type { AttachmentInput } from '#project/inputs/repository'
 
 export type RunProvider = 'openai' | 'custom' | 'cursor'
 

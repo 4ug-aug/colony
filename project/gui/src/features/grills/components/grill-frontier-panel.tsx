@@ -21,21 +21,21 @@ import {
   isAnswerComplete,
   isOtherAnswer,
   otherDraftText,
-} from './grill-answers'
-import { grillEnterClassName, grillStepLabel } from './grill-presentation'
-import { grillAwaitingWrapUpReview, grillIsComplete } from './grill-status'
+} from '../grill-answers'
+import { grillEnterClassName, grillStepLabel } from '../grill-presentation'
+import { grillAwaitingWrapUpReview, grillIsComplete } from '../grill-status'
 import type {
   Grill,
   GrillLatestStep,
   GrillLinkedRun,
   GrillQuestion,
-} from './types'
-import type { useGrillRealtime } from './use-grills'
+} from '../types'
+import type { useGrillRealtime } from '../use-grills'
 import {
   grillTurnActive,
   useReplyToGrill,
   useSubmitGrillRound,
-} from './use-grills'
+} from '../use-grills'
 
 function AgentNotes({
   steps,

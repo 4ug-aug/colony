@@ -6,7 +6,7 @@ import {
   CircleDot,
   Clock3,
 } from 'lucide-react'
-import { ISSUE_STATUSES, type IssuePriority, type IssueStatus } from './types'
+import { ISSUE_STATUSES, type IssuePriority, type IssueStatus } from '../types'
 
 const statusIcon: Record<
   IssueStatus,

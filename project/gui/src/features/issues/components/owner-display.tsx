@@ -6,8 +6,8 @@ import {
 } from '#/features/agents/use-agent-definitions'
 import { cn } from '#/lib/utils'
 import { CircleDashed, UserRound } from 'lucide-react'
-import type { IssueActor } from './types'
-import { useWorkspaceMembers } from './use-workspace-members'
+import type { IssueActor } from '../types'
+import { useWorkspaceMembers } from '../use-workspace-members'
 
 export function OwnerDisplay({
   owner,

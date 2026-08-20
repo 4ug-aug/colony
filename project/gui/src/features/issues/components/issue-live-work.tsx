@@ -4,12 +4,12 @@ import {
 } from '#/features/runs/run-activity-rail'
 import type { Step } from '#/features/runs/step-label'
 import { toast } from '#/components/ui/toast'
-import type { IssueRun } from './types'
+import type { IssueRun } from '../types'
 import {
   useCancelIssueRun,
   useIssueRunSteps,
   type IssueRunStep,
-} from './use-issue-runs'
+} from '../use-issue-runs'
 
 function toActivityStep(step: IssueRunStep): Step {
   return {
