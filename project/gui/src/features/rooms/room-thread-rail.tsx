@@ -20,7 +20,7 @@ import { ArrowDown, X } from 'lucide-react'
 import type { AnimationEvent } from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { MessageComposer } from './message-composer'
-import { runsForThread } from './thread-helpers'
+import { runsForThread, runsForTrigger } from './thread-helpers'
 import {
   acknowledgeNewReplies,
   applyIncomingReplies,
@@ -67,7 +67,7 @@ function ThreadMessage({
   onEdit,
   focused,
   onFocusHandled,
-  run,
+  runs = [],
   openRun,
   bubble = false,
 }: {
@@ -77,7 +77,7 @@ function ThreadMessage({
   onEdit?: (message: RoomMessage) => void
   focused?: boolean
   onFocusHandled?: () => void
-  run?: RoomRun
+  runs?: readonly RoomRun[]
   openRun?: (runId: string) => void
   /** Root message only — replies stay flush with the thread timeline. */
   bubble?: boolean
@@ -137,7 +137,18 @@ function ThreadMessage({
             ))}
           </div>
         )}
-        {run && openRun && <RunCapsule run={run} openRun={openRun} />}
+        {runs.length > 0 && openRun && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {runs.map((run) => (
+              <RunCapsule
+                key={run.id}
+                run={run}
+                openRun={openRun}
+                className="mt-0"
+              />
+            ))}
+          </div>
+        )}
       </div>
     </article>
   )
@@ -199,12 +210,7 @@ function RoomThreadRailContent({
   )
   const { data: agents = [] } = useAgentDefinitions()
   const [editingReply, setEditingReply] = useState<RoomMessage>()
-  const threadRuns = new Map(
-    runsForThread(runs, root, replies).map((run) => [
-      run.triggerMessageId,
-      run,
-    ]),
-  )
+  const threadRuns = runsForThread(runs, root, replies)
   const scrollRef = useRef<HTMLDivElement>(null)
   const timelineItems = [
     ...replies.map((reply) => ({
@@ -312,7 +318,7 @@ function RoomThreadRailContent({
                   message={root}
                   mentionHandles={mentionHandles}
                   currentUserId={currentUserId}
-                  run={threadRuns.get(root.id)}
+                  runs={runsForTrigger(threadRuns, root.id)}
                   openRun={openRun}
                   bubble
                 />
@@ -328,7 +334,7 @@ function RoomThreadRailContent({
                       onEdit={setEditingReply}
                       focused={focusReplyId === item.reply.id}
                       onFocusHandled={onFocusReplyHandled}
-                      run={threadRuns.get(item.reply.id)}
+                      runs={runsForTrigger(threadRuns, item.reply.id)}
                       openRun={openRun}
                     />
                   ) : (

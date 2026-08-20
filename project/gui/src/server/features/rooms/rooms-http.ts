@@ -1,9 +1,5 @@
 import { canDeleteRoom } from '#/features/rooms/permissions'
-import {
-  rosterMentionPattern,
-  rosterNotConfiguredMessage,
-  rosterPerson,
-} from '#project/agents/roster'
+import { rosterNotConfiguredMessage, rosterPerson } from '#project/agents/roster'
 import {
   attachmentBytes,
   MAX_REQUEST_BYTES,
@@ -20,7 +16,6 @@ import {
   MESSAGE_SEARCH_DEFAULT_LIMIT,
   MESSAGE_SEARCH_MAX_LIMIT,
   type RoomMessage,
-  type RoomRun,
   type RoomStore,
   type RoomUser,
 } from './room-store'
@@ -30,6 +25,11 @@ import {
   type RoomMessageHub,
 } from './room-hub'
 import { json } from '#/server/http/respond'
+import {
+  mentionedAgentIds,
+  mentionTaskFor,
+  type RoomLinkedRuns,
+} from './room-linked-runs'
 
 async function textFrom(request: Request): Promise<string | undefined> {
   try {
@@ -144,6 +144,7 @@ export function createRoomsHttp(deps: {
   store: RoomStore
   messages: RoomMessageHub
   control: RunControl
+  linkedRuns: RoomLinkedRuns
   attachmentsDirectory: string
   historyPageSize: number
   agentReady?: (agentDefinitionId?: string) => boolean
@@ -319,30 +320,25 @@ export function createRoomsHttp(deps: {
       const input = await messageInputFrom(request)
       if ('error' in input) return json({ error: input.error }, 400)
       const { text, files, rootId } = input
-      const mention = rosterMentionPattern()
-      const mentionMatch = text.match(mention)
-      const agentDefinitionId = mentionMatch?.[2]
-      const isAgentMessage = Boolean(agentDefinitionId)
-      const task = isAgentMessage
-        ? text.replace(mention, (_, prefix: string) => prefix).trim()
-        : undefined
-      if (isAgentMessage && !task)
+      const mentioned = mentionedAgentIds(text)
+      const named = mentioned
+        .map((id) => ({ id, task: mentionTaskFor(text, id) }))
+        .filter((item) => item.task)
+      if (mentioned.length > 0 && named.length === 0)
         return json({ error: 'Agent task is required' }, 400)
-      if (
-        task &&
-        agentDefinitionId &&
-        deps.agentReady &&
-        !deps.agentReady(agentDefinitionId)
-      ) {
-        const person = rosterPerson(agentDefinitionId)
-        return json(
-          {
-            error: person
-              ? rosterNotConfiguredMessage(person.kind)
-              : 'Unknown agent',
-          },
-          409,
-        )
+      if (deps.agentReady) {
+        const blocked = named.find(({ id }) => !deps.agentReady?.(id))
+        if (blocked) {
+          const person = rosterPerson(blocked.id)
+          return json(
+            {
+              error: person
+                ? rosterNotConfiguredMessage(person.kind)
+                : 'Unknown agent',
+            },
+            409,
+          )
+        }
       }
       let attachments
       try {
@@ -380,18 +376,11 @@ export function createRoomsHttp(deps: {
           return json({ error: 'Invalid thread root' }, 400)
         return json({ error: 'Unable to save message' }, 500)
       }
-      if (!task) return json({ message }, 201)
+      if (!named.length) return json({ message }, 201)
       try {
-        const run = deps.control.start(task, {
-          roomId,
-          // Write binding: a top-level mention roots writes at its own
-          // trigger message; a reply mention writes into the existing
-          // thread root it already belongs to (never a nested root).
-          rootId: rootId ?? message.id,
-          // Read scope: only a reply mention gets a thread-scoped read;
-          // top-level mentions keep the flat Room scope.
-          ...(rootId ? { threadReadRootId: rootId } : {}),
-          agentDefinitionId,
+        const runs = deps.linkedRuns.dispatch({
+          message,
+          requestedBy: user,
           attachments: attachments.map((attachment) => ({
             type: 'attachment' as const,
             id: attachment.id,
@@ -400,18 +389,11 @@ export function createRoomsHttp(deps: {
             byteSize: attachment.byteSize,
             sha256: attachment.sha256,
           })),
-          onCreate: (source) => {
-            const run: RoomRun = {
-              ...source,
-              roomId,
-              triggerMessageId: message.id,
-              requestedBy: user,
-            }
-            deps.store.createRun(run)
-            return run
-          },
         })
-        return json({ message, run }, 202)
+        const run = runs[0]
+        return run
+          ? json({ message, run, runs }, 202)
+          : json({ message }, 201)
       } catch (error) {
         return json(
           {

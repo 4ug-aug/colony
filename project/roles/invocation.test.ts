@@ -9,6 +9,8 @@ test("oneshot invocation appends single-output instructions", () => {
   expect(result).toContain("Be helpful.");
   expect(result).toContain("Oneshot");
   expect(result).toContain("single bounded Task");
+  expect(result).toContain("do not create or assign an Issue as a substitute");
+  expect(result).toContain("a bare @mention starts nothing");
   expect(result).not.toContain("working from a Room");
 });
 
@@ -39,4 +41,14 @@ test("chat invocation allows follow-up turns and is not a Room", () => {
   expect(result).toContain("Follow-up turns");
   expect(result).not.toContain("working from a Room");
   expect(result).not.toContain("Oneshot");
+});
+
+test("room invocation treats spawn as an @mention, not Issue assignment", () => {
+  const result = instructionsForInvocation("Base.", { roomId: "room-1" });
+  expect(result).toContain("@software-engineer");
+  expect(result).toContain("@antboy");
+  expect(result).toContain("workspace.post_message");
+  expect(result).toContain("Mentioning yourself starts nothing");
+  expect(result).toContain("A bare @mention starts nothing");
+  expect(result).toContain("Do not assign an Issue to bring an agent into this conversation");
 });

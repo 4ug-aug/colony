@@ -505,11 +505,14 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       .prepare(
         `SELECT COALESCE(trig.root_id, room_run.trigger_message_id) AS root_id,
                 room_run.agent_id AS author_id, room_run.agent_id AS author_name,
-                room_run.completed_at AS created_at, room_run.id
+                COALESCE(room_run.completed_at, room_run.started_at, room_run.created_at) AS created_at, room_run.id
          FROM room_run
          LEFT JOIN room_message trig ON trig.id = room_run.trigger_message_id
          WHERE COALESCE(trig.root_id, room_run.trigger_message_id) IN (${placeholders})
-           AND room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL`,
+           AND (
+             (room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL)
+             OR (room_run.state = 'running' AND room_run.exit_code = 0 AND room_run.stdout != '')
+           )`,
       )
       .all(...rootIds) as {
       root_id: string
@@ -970,14 +973,18 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         .all(roomId, rootId) as MessageRow[]
       const resultRows = sqlite
         .prepare(
-          `SELECT room_run.id, room_run.agent_id, room_run.stdout, room_run.completed_at
+          `SELECT room_run.id, room_run.agent_id, room_run.stdout,
+                  COALESCE(room_run.completed_at, room_run.started_at, room_run.created_at) AS completed_at
            FROM room_run
            LEFT JOIN room_message trig
              ON trig.id = room_run.trigger_message_id AND trig.room_id = room_run.room_id
            WHERE room_run.room_id = ?
              AND (room_run.trigger_message_id = ? OR trig.root_id = ?)
-             AND room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL
-           ORDER BY room_run.completed_at, room_run.id`,
+             AND (
+               (room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL)
+               OR (room_run.state = 'running' AND room_run.exit_code = 0 AND room_run.stdout != '')
+             )
+           ORDER BY completed_at, room_run.id`,
         )
         .all(roomId, rootId, rootId) as {
         id: string

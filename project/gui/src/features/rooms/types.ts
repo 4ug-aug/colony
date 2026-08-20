@@ -90,6 +90,9 @@ export type RoomRun = {
   createdAt: number
   startedAt?: number
   completedAt?: number
+  exitCode?: number
+  /** Live warm-spine flag: a turn is in flight. Omitted on persisted history. */
+  turnActive?: boolean
   error?: string
   stdout: string
   output?: string

@@ -63,6 +63,9 @@ test("listTools() returns workspace.read_messages and workspace.post_message", a
   expect(tools[1]?.description).toContain(
     "Do not use this for your final result",
   );
+  expect(tools[1]?.description).toContain("@<agent-definition-id>");
+  expect(tools[1]?.description).toContain("@software-engineer");
+  expect(tools[1]?.description).toContain("Mentioning yourself starts nothing");
 });
 
 test("read_messages returns a chronological, compact transcript", async () => {

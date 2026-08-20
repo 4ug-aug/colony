@@ -33,6 +33,22 @@ directs another account's attention to that room. Agent identifiers share the
 same visible `@` syntax but are not account mentions.
 _Avoid_: Notification, assignment
 
+**Agent mention**: An `@` of an agent definition in a Room message that starts
+a Room-linked run for that definition, or continues one that is still warm in
+that thread. The author may be an Account or an agent. One message may name
+several; each named definition starts its own run. The Task is that message;
+Colony does not split it per agent. Distinct from an account mention. When the
+author is an agent, completing the mentioned run produces an invocation ping
+for that author only.
+_Avoid_: Agent notification, @agent as Attention, dual dispatch, sliced Task
+
+**Invocation ping**: A follow-up to the agent who @mentioned another agent,
+fired when that mentioned Room-linked run completes. Its Task includes that
+run's result. One message that names several agents produces one ping per
+completed run, not a single ping after all of them. Agents started together by
+an Account message are peers and do not ping each other.
+_Avoid_: Subagent return, sibling wake, parked wait, barrier wait
+
 **Attention**: A durable, account-directed reason to return to a place in the
 workspace — a Room, Room thread, or Grill — because of a relevant mention,
 thread reply, terminal run, or Grill invite; acknowledging it clears its badge
@@ -191,12 +207,16 @@ acknowledges it, while opening only the containing Room does not, and its badge
 is aggregated onto the Room without marking the flat timeline unread.
 _Avoid_: Room unread, thread notification
 
-**Room-linked run**: A run invoked by an agent mention in a Room message;
-top-level invocations retain Room-scoped message tools and write into a thread
-rooted at the triggering message, while thread invocations receive
-thread-scoped message tools and write into that existing thread, and every
-mention starts a new bounded run without a retained provider conversation.
-_Avoid_: Room agent, flat run
+**Room-linked run**: A run invoked by an agent mention in a Room message.
+A message with several agent mentions starts one run per named definition.
+Top-level invocations retain Room-scoped message tools and write into a thread
+rooted at the triggering message; thread invocations receive thread-scoped
+message tools and write into that existing thread. A later agent mention of a
+definition whose run in that thread is still warm is a follow-up on that run,
+not a new run. Idle TTL recycles the warm instance the same way Chat and Grill
+do; the next mention starts a new run that can still read the thread. Colony
+does not keep a run alive until pinged.
+_Avoid_: Room agent, flat run, shared multi-agent run, parked wait
 
 **Oneshot**: An ephemeral, bounded, single-turn run started from the workspace
 launcher whose Task and result are not retained as workspace history.
@@ -246,9 +266,9 @@ _Avoid_: UUID-as-display-id, ticket number, per-workspace prefix
 **Issue owner**: The single Account or Agent definition responsible for an
 Issue. Child Issues keep their own owners; assigning a parent does not cascade
 ownership. Assigning an Agent definition starts that Issue's run even when a
-parent Issue-linked run is active. Agent-to-agent hand-off is assigning (or
-creating) Issues to other agent definitions, not a separate delegation type
-and not an in-sandbox subagent.
+parent Issue-linked run is active. On Issues, agent-to-agent hand-off is
+assigning (or creating) Issues to other agent definitions, not a Room
+invocation ping and not an in-sandbox subagent.
 _Avoid_: Assignee, owners (plural), worker, run participant, parent cover
 
 **Issue creator**: The Account or Agent definition that created the Issue.

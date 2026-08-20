@@ -47,6 +47,7 @@ import { createDocsHttp } from './features/docs/docs-http'
 import { createGrillsHttp } from './features/grills/grills-http'
 import { createGrillLinkedRuns } from './features/grills/grill-linked-runs'
 import { createRoomsHttp } from './features/rooms/rooms-http'
+import { createRoomLinkedRuns } from './features/rooms/room-linked-runs'
 import { createMembersHttp } from './features/rooms/members-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
 import { createOneshotSession } from './features/oneshots/oneshot-session'
@@ -770,10 +771,64 @@ export function createCoordinator(options: {
     if (changed.state === 'succeeded')
       notifySuccessfulRunThreadAttention(changed)
   }
+  const roomLinkedRuns = createRoomLinkedRuns({
+    startWarm: ({
+      roomId,
+      rootId,
+      threadReadRootId,
+      triggerMessageId,
+      requestedBy,
+      task,
+      agentDefinitionId,
+      idleTtlMs,
+      attachments,
+    }) =>
+      options.control.start(task, {
+        roomId,
+        rootId,
+        ...(threadReadRootId ? { threadReadRootId } : {}),
+        agentDefinitionId,
+        warm: true,
+        idleTtlMs,
+        ...(attachments ? { attachments } : {}),
+        onCreate: (source) => {
+          const run: RoomRun = {
+            ...source,
+            roomId,
+            triggerMessageId,
+            requestedBy,
+          }
+          options.store.createRun(run)
+          return run
+        },
+      }),
+    followUp: (runId, task) => options.control.followUp(runId, task),
+    getRun: (runId) => options.control.getRun(runId),
+    subscribe: (listener) => options.control.subscribe(listener),
+    agentReady: options.agentReady,
+  })
   const unsubscribe = options.control.subscribe(project)
   const unsubscribeMessages = options.messages.subscribe((event) => {
     broadcastRoom(event.message.roomId, event)
     if (event.type !== 'message.created') return
+    if (event.message.author.kind === 'agent') {
+      const threadRootId = event.message.rootId ?? event.message.id
+      const invoker = roomLinkedRuns.getLinkedRun(
+        threadRootId,
+        event.message.author.id,
+      )
+      roomLinkedRuns.dispatch({
+        message: event.message,
+        requestedBy: invoker?.requestedBy ?? {
+          id: event.message.author.id,
+          name: event.message.author.name,
+          ...(event.message.author.image
+            ? { image: event.message.author.image }
+            : {}),
+        },
+        invokerAgentId: event.message.author.id,
+      })
+    }
     for (const account of mentionedAccounts(
       event.message.text,
       options.store.listMentionableAccounts(event.message.roomId),
@@ -939,6 +994,7 @@ export function createCoordinator(options: {
     store: options.store,
     messages: options.messages,
     control: options.control,
+    linkedRuns: roomLinkedRuns,
     attachmentsDirectory,
     historyPageSize: roomHistoryPageSize,
     agentReady: options.agentReady,

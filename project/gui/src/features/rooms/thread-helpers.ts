@@ -26,7 +26,13 @@ export function runResultsForThread(
   replies: readonly RoomMessage[],
 ): RunResultReply[] {
   return runsForThread(runs, root, replies)
-    .filter((run) => run.state === 'succeeded')
+    .filter(
+      (run) =>
+        run.state === 'succeeded' ||
+        (run.state === 'running' &&
+          run.exitCode === 0 &&
+          Boolean((run.output ?? run.stdout)?.trim())),
+    )
     .map((run) => ({
       id: run.id,
       agentId: run.agentId,
@@ -40,8 +46,18 @@ export type FlatTimelineItem = {
   id: string
   message: RoomMessage
   createdAt: number
-  run?: RoomRun
+  runs: RoomRun[]
   grouped: boolean
+}
+
+/** Room-linked runs started from this message, oldest first. */
+export function runsForTrigger(
+  runs: readonly RoomRun[],
+  triggerMessageId: string,
+): RoomRun[] {
+  return runs
+    .filter((run) => run.triggerMessageId === triggerMessageId)
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
 }
 
 /**
@@ -52,7 +68,6 @@ export function buildFlatTimelineItems(
   messages: readonly RoomMessage[],
   runs: readonly RoomRun[],
 ): FlatTimelineItem[] {
-  const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
   const sorted = [...messages]
     .map((message) => ({
       id: message.id,
@@ -64,7 +79,7 @@ export function buildFlatTimelineItems(
     const previous = sorted[index - 1]
     return {
       ...item,
-      run: statuses.get(item.message.id),
+      runs: runsForTrigger(runs, item.message.id),
       grouped:
         previous != null &&
         previous.message.author.id === item.message.author.id &&

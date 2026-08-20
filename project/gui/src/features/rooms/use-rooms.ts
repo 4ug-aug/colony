@@ -953,12 +953,23 @@ export function useRooms(userId: string) {
         )
         const responseBody = (await response.json()) as {
           message?: RoomMessage
+          run?: RoomRun
+          runs?: RoomRun[]
           error?: string
         }
         if (!response.ok || !responseBody.message)
           throw new Error(responseBody.error ?? 'Request failed')
         result = responseBody.message
         setError(undefined)
+        const postedRuns = responseBody.runs?.length
+          ? responseBody.runs
+          : responseBody.run
+            ? [responseBody.run]
+            : []
+        if (postedRuns.length) {
+          runsRef.current = mergeRuns(runsRef.current, postedRuns)
+          setRuns((current) => mergeRuns(current, postedRuns))
+        }
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'Request failed')
       }
@@ -990,22 +1001,28 @@ export function useRooms(userId: string) {
         const responseBody = (await response.json()) as {
           message?: RoomMessage
           run?: RoomRun
+          runs?: RoomRun[]
           error?: string
         }
         if (!response.ok || !responseBody.message)
           throw new Error(responseBody.error ?? 'Request failed')
         result = { message: responseBody.message, run: responseBody.run }
         setError(undefined)
+        const postedRuns = responseBody.runs?.length
+          ? responseBody.runs
+          : responseBody.run
+            ? [responseBody.run]
+            : []
+        if (postedRuns.length) {
+          runsRef.current = mergeRuns(runsRef.current, postedRuns)
+          setRuns((current) => mergeRuns(current, postedRuns))
+        }
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'Request failed')
       }
       if (result) {
         acceptServerMessages([result.message])
         setMessages((current) => mergeMessages(current, [result.message]))
-        if (result.run) {
-          runsRef.current = mergeRuns(runsRef.current, [result.run])
-          setRuns((current) => mergeRuns(current, [result.run!]))
-        }
       }
       return result
     },
