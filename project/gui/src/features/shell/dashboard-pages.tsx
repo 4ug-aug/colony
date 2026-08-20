@@ -2,6 +2,7 @@ import { StaticDither } from '#/components/static-dither'
 import { AccountSettingsPage } from '#/features/account/account-settings'
 import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
 import { BulletinsPage } from '#/features/bulletins/bulletins-page'
+import { ChatsPage } from '#/features/chats/chats-page'
 import { DocsPage } from '#/features/docs/docs-page'
 import { GrillsPage } from '#/features/grills/grills-page'
 import { IssuesPage } from '#/features/issues/issues-page'
@@ -32,6 +33,8 @@ export function DashboardPages({
   selectedMachineId,
   onSelectedMachineIdChange,
   onOpenMachine,
+  selectedChatId,
+  onSelectedChatIdChange,
 }: {
   view: DashboardView
   user: Author
@@ -51,9 +54,17 @@ export function DashboardPages({
   selectedMachineId: string | undefined
   onSelectedMachineIdChange: (id: string | undefined) => void
   onOpenMachine?: (sandboxId: string) => void
+  selectedChatId: string | undefined
+  onSelectedChatIdChange: (id: string | undefined) => void
 }) {
   return (
     <>
+      {view === 'chat' && (
+        <ChatsPage
+          selectedId={selectedChatId}
+          onSelectedIdChange={onSelectedChatIdChange}
+        />
+      )}
       {view === 'account' && (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <AccountSettingsPage user={user} onChangeServer={onChangeServer} />

@@ -9,6 +9,8 @@ export type AgentGrantContext = {
   grillId?: string;
   /** Private ad-hoc dispatch; not a Room / Issue / Schedule / Grill link. */
   oneshotId?: string;
+  /** Private multi-turn Chat; not a Room / Oneshot / Grill link. */
+  chatId?: string;
   /** Checkout + PR merge base override (Issue branch or Oneshot revision). */
   repositoryBase?: string;
   /** Extra Git heads to merge onto repositoryBase during Issue integrate checkout. */

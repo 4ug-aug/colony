@@ -14,6 +14,12 @@ const invocationRoles = [
     instructions: `You are running a Oneshot: a single bounded Task with one final output and no follow-up turns. Deliver the complete answer in your final response. Do not ask clarifying questions and wait; if information is missing, state assumptions and finish. You are not in a Room — workspace.room tools are unavailable.`,
   },
   {
+    id: "chat",
+    applies: (context: AgentGrantContext | undefined) =>
+      Boolean(context?.chatId),
+    instructions: `You are in a Chat: a private multi-turn conversation with one Account. Answer in your assistant text. Ask clarifying questions when they help. Follow-up turns will arrive in this same conversation. You are not in a Room — workspace.room tools are unavailable.`,
+  },
+  {
     id: "room",
     applies: (context: AgentGrantContext | undefined) =>
       Boolean(context?.roomId),

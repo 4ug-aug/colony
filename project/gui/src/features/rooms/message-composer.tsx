@@ -231,6 +231,9 @@ export const MessageComposer = forwardRef<
     mentionableAccounts: MentionableAccount[]
     editing?: boolean
     onCancelEdit?: () => void
+    hideMentions?: boolean
+    hideAttachments?: boolean
+    placeholder?: string
   }
 >(function MessageComposer(
   {
@@ -242,6 +245,9 @@ export const MessageComposer = forwardRef<
     mentionableAccounts,
     editing = false,
     onCancelEdit,
+    hideMentions = false,
+    hideAttachments = false,
+    placeholder,
   },
   ref,
 ) {
@@ -262,24 +268,28 @@ export const MessageComposer = forwardRef<
   const [sending, setSending] = useState(false)
   const roomNameRef = useRef(roomName)
   const editingRef = useRef(editing)
+  const placeholderRef = useRef(placeholder)
+  placeholderRef.current = placeholder
   // TipTap onUpdate is sync, but React may re-render with a lagging `value`
   // (e.g. live room updates while typing fast). Re-applying that plain-text
   // value via setContent strips mention atoms — skip sync for our own emits.
   const skipNextValueSync = useRef(false)
   const mentionItems = useRef<MentionItem[]>([])
-  mentionItems.current = [
-    ...mentionableAccounts.map((account) => {
-      const username = account.username ?? account.name
-      return {
-        id: username,
-        label: username,
-        name: `@${username}`,
-        description: account.displayName ?? 'Teammate',
-        kind: 'account' as const,
-      }
-    }),
-    ...agents,
-  ]
+  mentionItems.current = hideMentions
+    ? []
+    : [
+        ...mentionableAccounts.map((account) => {
+          const username = account.username ?? account.name
+          return {
+            id: username,
+            label: username,
+            name: `@${username}`,
+            description: account.displayName ?? 'Teammate',
+            kind: 'account' as const,
+          }
+        }),
+        ...agents,
+      ]
   useEffect(() => {
     roomNameRef.current = roomName
   }, [roomName])
@@ -288,7 +298,7 @@ export const MessageComposer = forwardRef<
   }, [editing])
   const serialize = () => editor.getText()
   const addFiles = (next: FileList | File[]) => {
-    if (disabled || sending || editing) return
+    if (disabled || sending || editing || hideAttachments) return
     setFiles((current) => [...current, ...Array.from(next)])
   }
   const submit = async () => {
@@ -328,7 +338,8 @@ export const MessageComposer = forwardRef<
         placeholder: () =>
           editingRef.current
             ? 'Edit your message…'
-            : `Message #${roomNameRef.current} or mention someone…`,
+            : (placeholderRef.current ??
+              `Message #${roomNameRef.current} or mention someone…`),
       }),
     ],
     content: value,
@@ -337,7 +348,7 @@ export const MessageComposer = forwardRef<
       attributes: {
         class:
           'min-h-12 max-h-40 overflow-y-auto px-1 py-1 text-sm leading-6 outline-none',
-        'aria-label': `Message #${roomName}`,
+        'aria-label': placeholderRef.current ?? `Message #${roomName}`,
       },
       handleKeyDown: (_, event) => {
         if (mentionOpen.current) return false
@@ -500,17 +511,19 @@ export const MessageComposer = forwardRef<
             () => editor.chain().focus().toggleCode().run(),
             Code,
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Mention a teammate or agent"
-            onClick={() => editor.chain().focus().insertContent('@').run()}
-            disabled={disabled}
-          >
-            <AtSign />
-          </Button>
-          {!editing && (
+          {!hideMentions && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Mention a teammate or agent"
+              onClick={() => editor.chain().focus().insertContent('@').run()}
+              disabled={disabled}
+            >
+              <AtSign />
+            </Button>
+          )}
+          {!editing && !hideAttachments && (
             <>
               <input
                 ref={fileInput}

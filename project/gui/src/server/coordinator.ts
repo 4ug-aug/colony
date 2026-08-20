@@ -50,6 +50,9 @@ import { createRoomsHttp } from './features/rooms/rooms-http'
 import { createMembersHttp } from './features/rooms/members-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
 import { createOneshotSession } from './features/oneshots/oneshot-session'
+import { type ChatStore } from './features/chats/chat-store'
+import { createChatLinkedRuns } from './features/chats/chat-linked-runs'
+import { createChatsHttp } from './features/chats/chats-http'
 import { createVmsHttp } from './features/vms/vms-http'
 import type { SmolvmMachineControl } from '#project/providers/smolvm-sandbox'
 import type {
@@ -252,6 +255,7 @@ export function createCoordinator(options: {
   bulletinStore?: BulletinStore
   docStore?: DocStore
   grillStore?: GrillStore
+  chatStore?: ChatStore
   grillNotify?: {
     onChanged: (grill: Grill) => void
   }
@@ -885,6 +889,52 @@ export function createCoordinator(options: {
     oneshotSession,
     agentDefinitions,
   })
+  const chatLinkedRuns = options.chatStore
+    ? createChatLinkedRuns({
+        startWarm: ({
+          chatId,
+          task,
+          agentDefinitionId,
+          idleTtlMs,
+          onCreate,
+        }) =>
+          options.control.start(task, {
+            chatId,
+            agentDefinitionId,
+            warm: true,
+            idleTtlMs,
+            onCreate,
+          }),
+        followUp: (runId, task) => options.control.followUp(runId, task),
+        cancel: (runId) => options.control.cancel(runId),
+        getRun: (runId) => options.control.getRun(runId),
+        subscribe: (listener) => options.control.subscribe(listener),
+        subscribeSteps: (listener) => options.control.subscribeSteps(listener),
+        onTurnComplete: (turn) => {
+          try {
+            options.chatStore?.appendMessage({
+              id: crypto.randomUUID(),
+              chatId: turn.chatId,
+              role: 'assistant',
+              text: turn.text.trim() || 'Completed.',
+              createdAt: Date.now(),
+              runId: turn.runId,
+              steps: turn.steps,
+            })
+          } catch {
+            // Chat was deleted while the turn finished.
+          }
+        },
+      })
+    : undefined
+  const chatsHttp =
+    options.chatStore && chatLinkedRuns
+      ? createChatsHttp({
+          chatStore: options.chatStore,
+          linkedRuns: chatLinkedRuns,
+          agentDefinitions,
+        })
+      : undefined
   const roomsHttp = createRoomsHttp({
     store: options.store,
     messages: options.messages,
@@ -997,6 +1047,7 @@ export function createCoordinator(options: {
         (bulletinsHttp ? await bulletinsHttp(request, url, user) : undefined) ??
         (docsHttp ? await docsHttp(request, url, user) : undefined) ??
         (grillsHttp ? await grillsHttp(request, url, user) : undefined) ??
+        (chatsHttp ? await chatsHttp(request, url, user) : undefined) ??
         (await oneshotsHttp(request, url, user)) ??
         (await roomsHttp(request, url, user)) ??
         (await membersHttp(request, url, user))

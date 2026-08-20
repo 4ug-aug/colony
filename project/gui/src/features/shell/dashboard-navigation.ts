@@ -1,5 +1,6 @@
 export type DashboardView =
   | 'room'
+  | 'chat'
   | 'account'
   | 'workspace'
   | 'schedules'
@@ -34,6 +35,7 @@ export type DashboardLocation = {
 
 const views: DashboardView[] = [
   'room',
+  'chat',
   'account',
   'workspace',
   'schedules',

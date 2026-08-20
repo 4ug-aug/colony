@@ -27,8 +27,16 @@ import {
 } from '#/components/ui/sidebar'
 import { toast } from '#/components/ui/toast'
 import { GitHubIcon } from '#/components/github-icon'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '#/components/ui/context-menu'
 import { agentIcon } from '#/features/agents/agent-icon'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import { useChats, useDeleteChat } from '#/features/chats/use-chats'
 import { canDeleteRoom } from '#/features/rooms/permissions'
 import type { RoomNotification } from '#/features/rooms/room-notifications'
 import type { Author, Room } from '#/features/rooms/types'
@@ -48,6 +56,7 @@ import {
   ScrollText,
   Settings,
   Box,
+  Trash2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { CollapsibleGroup } from './collapsible-group'
@@ -87,6 +96,8 @@ export function RoomSidebar({
   onOpenDocs,
   onOpenGrills,
   onOpenVms,
+  selectedChatId,
+  onSelectChat,
   user,
 }: {
   rooms: Room[]
@@ -106,10 +117,15 @@ export function RoomSidebar({
   onOpenDocs: () => void
   onOpenGrills: () => void
   onOpenVms: () => void
+  selectedChatId: string | undefined
+  onSelectChat: (id: string | undefined) => void
   user: Author
 }) {
   const { data: agents = [] } = useAgentDefinitions()
+  const { data: chats = [] } = useChats()
+  const deleteChat = useDeleteChat()
   const [roomToDelete, setRoomToDelete] = useState<Room>()
+  const [chatToDelete, setChatToDelete] = useState<(typeof chats)[number]>()
 
   const roomsByVisibility = (visibility: 'public' | 'private') =>
     rooms.filter((room) => room.visibility === visibility)
@@ -360,6 +376,59 @@ export function RoomSidebar({
             })}
           </SidebarMenu>
         </CollapsibleGroup>
+        <CollapsibleGroup
+          storageKey="chats"
+          label="Chats"
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              aria-label="New chat"
+              onClick={() => onSelectChat(undefined)}
+            >
+              +
+            </Button>
+          }
+        >
+          <SidebarMenu>
+            {chats.map((chat) => {
+              const Icon = agentIcon(
+                agents.find((agent) => agent.id === chat.agentDefinitionId)
+                  ?.icon,
+              )
+              return (
+                <SidebarMenuItem key={chat.id}>
+                  <ContextMenu>
+                    <ContextMenuTrigger
+                      render={
+                        <SidebarMenuButton
+                          isActive={view === 'chat' && chat.id === selectedChatId}
+                          tooltip={chat.title}
+                          onClick={() => onSelectChat(chat.id)}
+                        />
+                      }
+                    >
+                      <Icon />
+                      <span>{chat.title}</span>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuGroup>
+                        <ContextMenuItem
+                          variant="destructive"
+                          onClick={() => setChatToDelete(chat)}
+                        >
+                          <Trash2 />
+                          Delete chat
+                        </ContextMenuItem>
+                      </ContextMenuGroup>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                </SidebarMenuItem>
+              )
+            })}
+          </SidebarMenu>
+        </CollapsibleGroup>
         {roomGroup('public')}
         {roomGroup('private')}
       </SidebarContent>
@@ -476,6 +545,42 @@ export function RoomSidebar({
               }}
             >
               Delete room
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={chatToDelete !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setChatToDelete(undefined)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {chatToDelete?.title}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the chat and its transcript.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const chat = chatToDelete
+                if (!chat) return
+                void deleteChat.mutateAsync(chat.id).then(() => {
+                  setChatToDelete(undefined)
+                  if (selectedChatId === chat.id) onSelectChat(undefined)
+                  toast.add({
+                    type: 'success',
+                    title: 'Chat deleted',
+                    description: `${chat.title} was permanently deleted.`,
+                  })
+                })
+              }}
+            >
+              Delete chat
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
