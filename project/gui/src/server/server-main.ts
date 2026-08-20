@@ -27,6 +27,8 @@ import { createSqliteRoomStore } from './features/rooms/room-store'
 import { createRunControl } from './features/runs/run-control'
 import { createSqliteScheduleStore } from './features/schedules/schedule-store'
 import { createWorkspaceConnections } from './features/workspace/workspace-connections'
+import { createUserConnections } from './features/accounts/user-connections'
+import { readMicrosoftOAuthConfig } from '#project/mcp/outlook'
 import {
   createWorkspaceSkillStore,
   skillDirectory,
@@ -57,6 +59,7 @@ if (import.meta.main) {
     {
       createGitHubSoftwareEngineerAdapter,
       createLinearSoftwareEngineerAdapter,
+      createOutlookAdapter,
       createWorkspaceDocsAdapter,
       createWorkspaceIssuesAdapter,
       createWorkspaceGrillAdapter,
@@ -89,6 +92,7 @@ if (import.meta.main) {
   const cursorRuntime = createWorkspaceCursorRuntimeConfig(sqlite)
   const preview = createWorkspacePreviewConfig(sqlite)
   const connections = createWorkspaceConnections(sqlite)
+  const userConnections = createUserConnections(sqlite)
   const skillsDirectory = skillDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
   )
@@ -104,6 +108,7 @@ if (import.meta.main) {
   const bulletinStore = createSqliteBulletinStore(sqlite)
   const docStore = createSqliteDocStore(sqlite)
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
+  const microsoftOauth = readMicrosoftOAuthConfig()
   const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
   const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
   if (githubRepository && !process.env.SWEAT_GITHUB_TOKEN?.trim()) {
@@ -408,6 +413,24 @@ if (import.meta.main) {
               }),
             ]
           : []),
+        ...(microsoftOauth
+          ? [
+              createOutlookAdapter({
+                ...microsoftOauth,
+                loadSecret: (userId) =>
+                  userConnections.loadSecret(userId, 'outlook')?.secret,
+                persistSecret: (userId, secret) => {
+                  const current = userConnections.loadSecret(userId, 'outlook')
+                  if (!current) return
+                  userConnections.save(userId, {
+                    kind: 'outlook',
+                    fields: current.fields,
+                    apiKey: secret,
+                  })
+                },
+              }),
+            ]
+          : []),
       ],
       createCapabilityEndpoint: (gateway, context) => {
         const server = createMcpGatewayHttpServer({
@@ -502,6 +525,7 @@ if (import.meta.main) {
       preview,
       skills,
       connections,
+      userConnections,
       listUsers: () => authContext.internalAdapter.listUsers(100),
       banUser: (request, userId) =>
         auth.api.banUser({ body: { userId }, headers: request.headers }),

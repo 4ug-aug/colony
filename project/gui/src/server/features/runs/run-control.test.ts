@@ -170,6 +170,28 @@ test('passes oneshot context and optional repositoryBase', () => {
   })
 })
 
+test('passes the invoking userId on grantContext', () => {
+  let request: WorkspaceAgentStartRunRequest | undefined
+  const control = createRunControl(
+    captureExecutor((value) => {
+      request = value
+    }),
+  )
+
+  control.start('search my inbox', {
+    oneshotId: 'oneshot-1',
+    agentDefinitionId: 'antboy',
+    userId: 'user-1',
+    onCreate: () => true,
+  })
+
+  expect(request?.grantContext).toEqual({
+    oneshotId: 'oneshot-1',
+    agentDefinitionId: 'antboy',
+    userId: 'user-1',
+  })
+})
+
 test('passes Issue mergeRevisions on grantContext', () => {
   let request: WorkspaceAgentStartRunRequest | undefined
   const control = createRunControl(

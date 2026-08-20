@@ -384,6 +384,7 @@ export function createRoomsHttp(deps: {
       try {
         const run = deps.control.start(task, {
           roomId,
+          userId: user.id,
           // Write binding: a top-level mention roots writes at its own
           // trigger message; a reply mention writes into the existing
           // thread root it already belongs to (never a nested root).

@@ -13,6 +13,8 @@ export type ConnectionField = {
   kind: ConnectionFieldKind
 }
 
+export type ConnectionAuth = 'secret' | 'oauth'
+
 export type ConnectionKindPublic = {
   id: string
   name: string
@@ -21,6 +23,7 @@ export type ConnectionKindPublic = {
   tools: readonly string[]
   secretLabel: string
   fields: readonly ConnectionField[]
+  auth?: ConnectionAuth
 }
 
 export type ParsedConnectionConfig = {
@@ -37,6 +40,7 @@ export type ConnectionKind = ConnectionKindPublic & {
   createAdapter(config: {
     fields: Record<string, string>
     apiKey: string
+    persistSecret?: (apiKey: string) => void
   }): WorkspaceAgentAdapter
 }
 
@@ -201,5 +205,6 @@ export function connectionKindPublic(
     tools: kind.tools,
     secretLabel: kind.secretLabel,
     fields: kind.fields,
+    auth: kind.auth ?? 'secret',
   }
 }

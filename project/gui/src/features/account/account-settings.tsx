@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Box, CircleCheckBig, Clock, Waypoints } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Box, Check, CircleCheckBig, Clock, Waypoints } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { AccountFace, AgentAnt } from '#/components/avatar'
 import { StaticDither } from '#/components/static-dither'
@@ -43,6 +43,7 @@ import {
 import type { Author } from '#/features/rooms/types'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { authClient } from '#/lib/auth-client'
+import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { parseAccountColor } from '#/lib/account-color'
 import {
   clearServerConfig,
@@ -546,6 +547,8 @@ export function AccountSettingsPage({
                 </CardContent>
               </Card>
 
+              <OutlookConnectionCard />
+
               {isTauriRuntime() && (
                 <Card className="bg-card/90 shadow-sm backdrop-blur-sm md:col-span-2">
                   <CardHeader>
@@ -608,3 +611,154 @@ export function AccountSettingsPage({
     </div>
   )
 }
+
+const accountOutlookQueryKey = ['account', 'connections', 'outlook'] as const
+
+type AccountOutlook = {
+  kind: 'outlook'
+  configured: boolean
+  account?: string
+}
+
+function OutlookConnectionCard() {
+  const queryClient = useQueryClient()
+  const { data, isPending, error } = useQuery({
+    queryKey: accountOutlookQueryKey,
+    queryFn: () =>
+      apiJson<{ connection: AccountOutlook }>(
+        '/api/account/connections/outlook',
+        undefined,
+        'Could not load Outlook',
+      ),
+  })
+  const connect = useMutation({
+    mutationFn: () =>
+      apiJson<{ url: string }>(
+        '/api/account/connections/outlook/oauth/start',
+        undefined,
+        'Could not connect Outlook',
+      ),
+    onSuccess: (result) => {
+      window.location.assign(result.url)
+    },
+  })
+  const disconnect = useMutation({
+    mutationFn: () =>
+      apiJsonBody<{ connection: AccountOutlook }>(
+        '/api/account/connections/outlook/clear',
+        'POST',
+        undefined,
+        'Could not disconnect Outlook',
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: accountOutlookQueryKey })
+    },
+  })
+  const connection = data?.connection
+  const busy = connect.isPending || disconnect.isPending
+  const actionError =
+    connect.error instanceof Error
+      ? connect.error.message
+      : disconnect.error instanceof Error
+        ? disconnect.error.message
+        : undefined
+
+  return (
+    <Card className="bg-card/90 shadow-sm backdrop-blur-sm md:col-span-2">
+      <CardHeader>
+        <CardTitle>Outlook</CardTitle>
+        <CardDescription>
+          Connect your Microsoft account so Antboy can read mail and create
+          drafts as you
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <img
+            alt=""
+            className="size-8 shrink-0 object-contain"
+            src="/icons/outlook.svg"
+          />
+          {isPending ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              <BrailleLoader text="Loading Outlook" />
+            </p>
+          ) : error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error instanceof Error
+                ? error.message
+                : 'Could not load Outlook'}
+            </p>
+          ) : connection?.configured ? (
+            <p className="inline-flex min-w-0 items-center gap-1 text-sm text-green-500">
+              <Check className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {connection.account ?? 'Connected'}
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Not connected</p>
+          )}
+        </div>
+        {connection?.configured ? (
+          <AlertDialog>
+            <AlertDialogTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                />
+              }
+            >
+              Disconnect
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Disconnect Outlook?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Antboy will no longer be able to read your mail or create
+                  drafts until you connect again.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={disconnect.isPending}
+                  onClick={() => disconnect.mutate()}
+                >
+                  {disconnect.isPending ? (
+                    <BrailleLoader text="Disconnecting" />
+                  ) : (
+                    'Disconnect'
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy || isPending}
+            onClick={() => connect.mutate()}
+          >
+            {connect.isPending ? (
+              <BrailleLoader text="Connecting" />
+            ) : (
+              'Connect'
+            )}
+          </Button>
+        )}
+      </CardContent>
+      {actionError && (
+        <p className="px-6 pb-4 text-sm text-destructive" role="alert">
+          {actionError}
+        </p>
+      )}
+    </Card>
+  )
+}
+

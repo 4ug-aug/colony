@@ -103,6 +103,31 @@ describe('oneshotPeeks', () => {
     ])
   })
 
+  test('successful Outlook create_draft peeks link to the draft', () => {
+    expect(
+      oneshotPeeks([
+        createCall('call', 0, 'outlook_create_draft', 'c1'),
+        createResult(
+          'result',
+          1,
+          'c1',
+          JSON.stringify({
+            id: 'draft-1',
+            subject: 'Hello',
+            webLink: 'https://outlook.office.com/mail/draft-1',
+          }),
+        ),
+      ]),
+    ).toEqual([
+      {
+        key: 'draft-1',
+        label: 'Hello',
+        tool: 'outlook.create_draft',
+        href: 'https://outlook.office.com/mail/draft-1',
+      },
+    ])
+  })
+
   test('reads toolName from call args when step.tool is missing', () => {
     expect(
       oneshotPeeks([

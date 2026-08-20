@@ -40,6 +40,7 @@ import {
   type ScheduleRunner,
 } from './features/schedules/schedule-runner'
 import { allowedOrigin, json, withCors } from './http/respond'
+import { isOutlookOAuthCallbackPath } from '#project/mcp/outlook'
 import { createIssuesHttp } from './features/issues/issues-http'
 import { createSchedulesHttp } from './features/schedules/schedules-http'
 import { createBulletinsHttp } from './features/bulletins/bulletins-http'
@@ -914,8 +915,15 @@ export function createCoordinator(options: {
         request.headers.get('origin'),
         options.origin,
       )
-      const cors = (response: Response): Response => withCors(response, origin!)
-      if (!origin) return json({ error: 'Forbidden' }, 403)
+      const cors = (response: Response): Response =>
+        origin ? withCors(response, origin) : response
+      if (
+        !origin &&
+        !(
+          request.method === 'GET' && isOutlookOAuthCallbackPath(url.pathname)
+        )
+      )
+        return json({ error: 'Forbidden' }, 403)
       if (request.method === 'OPTIONS')
         return cors(
           new Response(null, {

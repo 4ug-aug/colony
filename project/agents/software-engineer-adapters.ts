@@ -9,6 +9,11 @@ import {
   type GrafanaConfiguration,
 } from "../mcp/grafana";
 import {
+  createOutlookMcpUpstream,
+  outlookNotConnectedMessage,
+  outlookTools,
+} from "../mcp/outlook";
+import {
   createOutlineMcpUpstream,
   type OutlineConfiguration,
 } from "../mcp/outline";
@@ -227,6 +232,43 @@ export function createGrafanaAdapter(
     capability: {
       id: "grafana.observability",
       createUpstream: () => createGrafanaMcpUpstream(options),
+    },
+  };
+}
+
+export function createOutlookAdapter(options: {
+  loadSecret: (userId: string) => string | undefined;
+  persistSecret?: (userId: string, secret: string) => void;
+  clientId: string;
+  clientSecret: string;
+  tenant?: string;
+  fetch?: typeof fetch;
+}): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "outlook.mail",
+      createUpstream: ({ grantContext }) => {
+        const userId = grantContext?.userId;
+        const secret = userId ? options.loadSecret(userId) : undefined;
+        if (!userId || !secret) {
+          return {
+            listTools: async () => outlookTools.map((name) => ({ name })),
+            callTool: async () => {
+              throw new Error(outlookNotConnectedMessage);
+            },
+          };
+        }
+        return createOutlookMcpUpstream({
+          secret,
+          persistSecret: options.persistSecret
+            ? (next) => options.persistSecret!(userId, next)
+            : undefined,
+          clientId: options.clientId,
+          clientSecret: options.clientSecret,
+          tenant: options.tenant,
+          fetch: options.fetch,
+        });
+      },
     },
   };
 }

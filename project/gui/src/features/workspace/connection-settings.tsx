@@ -45,6 +45,7 @@ type PublicConnection = {
   tools: readonly string[]
   secretLabel: string
   fieldSchema: ConnectionField[]
+  auth?: 'secret' | 'oauth'
   configured: boolean
   values: Record<string, string>
   linkedAgentIds: string[]
@@ -171,6 +172,7 @@ function ConnectionCard({
   )
   const [apiKey, setApiKey] = useState('')
   const [formError, setFormError] = useState<string>()
+  const oauth = connection.auth === 'oauth'
 
   const save = useMutation({
     mutationFn: () =>
@@ -257,8 +259,32 @@ function ConnectionCard({
     },
   })
 
+  const connect = useMutation({
+    mutationFn: () =>
+      apiJson<{ url: string }>(
+        `/api/workspace/settings/connections/${encodeURIComponent(connection.id)}/oauth/start`,
+        undefined,
+        `Could not connect ${connection.name}`,
+      ),
+    onSuccess: (result) => {
+      window.location.assign(result.url)
+    },
+    onError: (reason) => {
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : `Could not connect ${connection.name}`
+      setFormError(message)
+      onError(message)
+    },
+  })
+
   const busy =
-    save.isPending || clear.isPending || setLinks.isPending || refreshing
+    save.isPending ||
+    clear.isPending ||
+    setLinks.isPending ||
+    connect.isPending ||
+    refreshing
 
   return (
     <div className="flex h-full flex-col rounded-lg bg-background/80 p-3 shadow-sm ring-1 ring-foreground/10">
@@ -278,8 +304,12 @@ function ConnectionCard({
               {connection.configured ? (
                 <span className="inline-flex items-center gap-1 text-green-500">
                   <Check className="size-3.5" />
-                  Configured
+                  {connection.values.account
+                    ? connection.values.account
+                    : 'Configured'}
                 </span>
+              ) : oauth ? (
+                'Not connected'
               ) : (
                 'Not configured'
               )}
@@ -328,16 +358,19 @@ function ConnectionCard({
                   />
                 }
               >
-                Clear
+                {oauth ? 'Disconnect' : 'Clear'}
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>
-                    Clear {connection.name}?
+                    {oauth ? 'Disconnect' : 'Clear'} {connection.name}?
                   </AlertDialogTitle>
                   <AlertDialogDescription>
                     This removes stored credentials and unlinks every agent from
-                    this connection. Non-secret fields stay until you save again.
+                    this connection.
+                    {oauth
+                      ? ''
+                      : ' Non-secret fields stay until you save again.'}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -347,7 +380,11 @@ function ConnectionCard({
                     onClick={() => clear.mutate()}
                   >
                     {clear.isPending ? (
-                      <BrailleLoader text="Clearing" />
+                      <BrailleLoader
+                        text={oauth ? 'Disconnecting' : 'Clearing'}
+                      />
+                    ) : oauth ? (
+                      'Disconnect'
                     ) : (
                       'Clear'
                     )}
@@ -356,9 +393,25 @@ function ConnectionCard({
               </AlertDialogContent>
             </AlertDialog>
           )}
-          <Button disabled={busy} onClick={() => save.mutate()} size="sm">
-            {save.isPending ? <BrailleLoader text="Saving" /> : 'Save'}
-          </Button>
+          {oauth ? (
+            !connection.configured && (
+              <Button
+                disabled={busy}
+                onClick={() => connect.mutate()}
+                size="sm"
+              >
+                {connect.isPending ? (
+                  <BrailleLoader text="Connecting" />
+                ) : (
+                  'Connect'
+                )}
+              </Button>
+            )
+          ) : (
+            <Button disabled={busy} onClick={() => save.mutate()} size="sm">
+              {save.isPending ? <BrailleLoader text="Saving" /> : 'Save'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -368,36 +421,38 @@ function ConnectionCard({
         </p>
       )}
 
-      <div className="mt-4 grid gap-3">
-        {(connection.fieldSchema ?? []).map((field) => (
+      {!oauth && (
+        <div className="mt-4 grid gap-3">
+          {(connection.fieldSchema ?? []).map((field) => (
+            <Input
+              key={field.key}
+              aria-label={`${connection.name} ${field.label}`}
+              disabled={busy}
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  [field.key]: event.target.value,
+                }))
+              }
+              placeholder={field.label}
+              type={field.kind === 'url' ? 'url' : 'text'}
+              value={values[field.key] ?? ''}
+            />
+          ))}
           <Input
-            key={field.key}
-            aria-label={`${connection.name} ${field.label}`}
+            aria-label={`${connection.name} ${connection.secretLabel}`}
             disabled={busy}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                [field.key]: event.target.value,
-              }))
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder={
+              connection.configured
+                ? `Leave blank to keep current ${connection.secretLabel.toLowerCase()}`
+                : connection.secretLabel
             }
-            placeholder={field.label}
-            type={field.kind === 'url' ? 'url' : 'text'}
-            value={values[field.key] ?? ''}
+            type="password"
+            value={apiKey}
           />
-        ))}
-        <Input
-          aria-label={`${connection.name} ${connection.secretLabel}`}
-          disabled={busy}
-          onChange={(event) => setApiKey(event.target.value)}
-          placeholder={
-            connection.configured
-              ? `Leave blank to keep current ${connection.secretLabel.toLowerCase()}`
-              : connection.secretLabel
-          }
-          type="password"
-          value={apiKey}
-        />
-      </div>
+        </div>
+      )}
 
       <div className="mt-auto space-y-2 pt-3">
         <p className="text-sm font-medium">Link to agents</p>

@@ -17,6 +17,8 @@ type PeekHandler = (input: {
 
 const handlers: Record<string, PeekHandler> = {
   'asana.create_task': createdAsanaTaskPeek,
+  'outlook.create_draft': createdOutlookDraftPeek,
+  'outlook.create_reply_draft': createdOutlookDraftPeek,
   'workspace.create_issue': createdIssuePeek,
 }
 
@@ -93,6 +95,24 @@ function createdAsanaTaskPeek(input: {
       ? permalink
       : undefined
   return { key: gid.trim(), label: name.trim(), ...(href ? { href } : {}) }
+}
+
+function createdOutlookDraftPeek(input: {
+  result: string
+}): Omit<OneshotToolPeek, 'tool'> | null {
+  const parsed = parseJson(input.result)
+  if (parsed === undefined) return null
+  const draft = asRecord(unwrapMcpText(parsed))
+  if (!draft) return null
+  const { id, subject, webLink } = draft
+  if (typeof id !== 'string' || !id.trim()) return null
+  const label =
+    typeof subject === 'string' && subject.trim() ? subject.trim() : 'Draft'
+  const href =
+    typeof webLink === 'string' && /^https:\/\//.test(webLink)
+      ? webLink
+      : undefined
+  return { key: id.trim(), label, ...(href ? { href } : {}) }
 }
 
 function toolNameFromStep(step: Step): string {

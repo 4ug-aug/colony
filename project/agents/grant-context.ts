@@ -14,4 +14,6 @@ export type AgentGrantContext = {
   /** Extra Git heads to merge onto repositoryBase during Issue integrate checkout. */
   mergeRevisions?: string[];
   agentDefinitionId?: string;
+  /** Colony account that invoked this run; user-owned tools (Outlook) bind to it. */
+  userId?: string;
 };

@@ -7,6 +7,7 @@ describe('tool icons', () => {
     expect(toolIconId('github_create_pull_request')).toBe('github')
     expect(toolIconId('linear.get_issue')).toBe('linear')
     expect(toolIconId('asana.list_tasks')).toBe('asana')
+    expect(toolIconId('outlook.search_messages')).toBe('outlook')
     expect(toolIconId('grafana.query_prometheus')).toBe('grafana')
     expect(toolIconId('outline.fetch')).toBe('outline')
     expect(toolIconId('shell')).toBe('shell')

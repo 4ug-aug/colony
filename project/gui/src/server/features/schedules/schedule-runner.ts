@@ -65,6 +65,7 @@ export function createScheduleRunner(options: {
       return options.control.start(schedule.task, {
         scheduleId: schedule.id,
         agentDefinitionId: schedule.agentDefinitionId,
+        ...(accountId === undefined ? {} : { userId: accountId }),
         onCreate: (summary) => {
           const input: NewScheduleRun = {
             ...summary,

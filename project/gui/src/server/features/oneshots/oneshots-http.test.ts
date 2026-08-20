@@ -40,6 +40,7 @@ function fakeControl(
             ? {
                 oneshotId: context.oneshotId,
                 agentDefinitionId: context.agentDefinitionId,
+                ...(context.userId ? { userId: context.userId } : {}),
                 ...('repositoryBase' in context && context.repositoryBase
                   ? { repositoryBase: context.repositoryBase }
                   : {}),
@@ -79,6 +80,7 @@ test('oneshot session starts with oneshot grant context', () => {
     oneshotId: run.oneshotId,
     agentDefinitionId: 'antboy',
     repositoryBase: 'main',
+    userId: 'user-1',
   })
 })
 

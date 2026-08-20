@@ -62,6 +62,7 @@ const capabilityIcons: Record<
   'linear.issues': { icon: '/icons/linear.svg' },
   'github.pull-requests': { github: true },
   'asana.tasks': { icon: '/icons/asana.svg' },
+  'outlook.mail': { icon: '/icons/outlook.svg' },
   'outline.documents': { icon: '/icons/outline.svg', invertOnDark: true },
   'grafana.observability': { icon: '/icons/grafana.svg' },
 }

@@ -116,6 +116,7 @@ test('admin can save, link, and clear workspace connections over HTTP', async ()
     }
     expect(clearedBody.connection.configured).toBe(false)
     expect(clearedBody.connection.linkedAgentIds).toEqual([])
+    expect(catalog.connections.map((item) => item.id)).not.toContain('outlook')
   } finally {
     if (previous === undefined) delete process.env.BETTER_AUTH_SECRET
     else process.env.BETTER_AUTH_SECRET = previous

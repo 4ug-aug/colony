@@ -54,7 +54,9 @@ export function overlayLivePreparation<T extends { id: string }>(
 
 export type { Step }
 
-export type RunStartContext<Output> =
+export type RunStartContext<Output> = {
+  userId?: string
+} & (
   | {
       roomId: string
       /** Write destination: the trigger message id for a top-level mention, or the existing thread root for a reply mention. */
@@ -90,6 +92,7 @@ export type RunStartContext<Output> =
       repositoryBase?: string
       onCreate: (run: RunSummary) => NonNullable<Output>
     }
+)
 
 export interface RunControl {
   subscribe(listener: (run: RunSummary) => void): () => void
@@ -172,23 +175,26 @@ function grantContextFrom<Output>(
   context: RunStartContext<Output>,
   agentDefinitionId: string,
 ): AgentGrantContext {
+  const userId = context.userId ? { userId: context.userId } : {}
   if ('roomId' in context)
     return {
       roomId: context.roomId,
       agentDefinitionId,
+      ...userId,
       ...(context.rootId ? { rootId: context.rootId } : {}),
       ...(context.threadReadRootId
         ? { threadReadRootId: context.threadReadRootId }
         : {}),
     }
   if ('scheduleId' in context)
-    return { scheduleId: context.scheduleId, agentDefinitionId }
+    return { scheduleId: context.scheduleId, agentDefinitionId, ...userId }
   if ('grillId' in context)
-    return { grillId: context.grillId, agentDefinitionId }
+    return { grillId: context.grillId, agentDefinitionId, ...userId }
   if ('oneshotId' in context)
     return {
       oneshotId: context.oneshotId,
       agentDefinitionId,
+      ...userId,
       ...(context.repositoryBase
         ? { repositoryBase: context.repositoryBase }
         : {}),
@@ -196,6 +202,7 @@ function grantContextFrom<Output>(
   return {
     issueId: context.issueId,
     agentDefinitionId,
+    ...userId,
     ...(context.repositoryBase
       ? { repositoryBase: context.repositoryBase }
       : {}),

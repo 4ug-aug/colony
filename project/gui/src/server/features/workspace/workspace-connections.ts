@@ -2,6 +2,7 @@ import {
   connectionKindPublic,
   getConnectionKind,
   listConnectionKinds,
+  type ConnectionAuth,
   type ConnectionKindPublic,
 } from '#project/connections/registry'
 import type { WorkspaceAgentAdapter } from '#project/agents/roster'
@@ -31,6 +32,7 @@ export type PublicConnection = {
   tools: readonly string[]
   secretLabel: string
   fieldSchema: ConnectionKindPublic['fields']
+  auth: ConnectionAuth
   configured: boolean
   values: Record<string, string>
   linkedAgentIds: string[]
@@ -109,6 +111,7 @@ export function createWorkspaceConnections(
       tools: meta.tools.map((tool) => presentation?.tools[tool] ?? tool),
       secretLabel: meta.secretLabel,
       fieldSchema: meta.fields,
+      auth: meta.auth ?? 'secret',
       configured: isConfigured(row),
       values: row ? parseFields(row.fields_json) : {},
       linkedAgentIds: listLinkedAgentIds(kindId),
@@ -121,7 +124,7 @@ export function createWorkspaceConnections(
       .run(kind)
   }
 
-  return {
+  const store: WorkspaceConnectionStore = {
     list() {
       return listConnectionKinds().map((kind) => publicFor(kind.id))
     },
@@ -240,9 +243,13 @@ export function createWorkspaceConnections(
           api_key_iv: row.api_key_iv!,
           api_key_tag: row.api_key_tag!,
         }
+        const fields = parseFields(row.fields_json)
         const adapter = kind.createAdapter({
-          fields: parseFields(row.fields_json),
+          fields,
           apiKey: decrypt(secret),
+          persistSecret: (apiKey) => {
+            store.save({ kind: row.kind, fields, apiKey })
+          },
         })
         if (!adapter.capability) return [adapter]
         return [
@@ -257,4 +264,5 @@ export function createWorkspaceConnections(
       })
     },
   }
+  return store
 }

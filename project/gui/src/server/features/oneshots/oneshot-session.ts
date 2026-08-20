@@ -81,6 +81,7 @@ export function createOneshotSession(options: {
         const repositoryBase = input.repositoryBase?.trim() || undefined
         return options.control.start(input.task.trim(), {
           oneshotId,
+          userId: input.accountId,
           agentDefinitionId: input.agentDefinitionId,
           ...(repositoryBase ? { repositoryBase } : {}),
           onCreate: (summary) => {

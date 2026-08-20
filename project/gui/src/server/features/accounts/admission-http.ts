@@ -20,6 +20,7 @@ import type {
   PublicConnection,
   WorkspaceConnectionStore,
 } from '#/server/features/workspace/workspace-connections'
+import type { UserConnectionStore } from '#/server/features/accounts/user-connections'
 import {
   extractZipToDirectory,
   normalizeExtractedPackage,
@@ -28,6 +29,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WORKSPACE_PEOPLE } from '#project/agents/roster-people'
+import {
+  completeOutlookOAuth,
+  createOutlookAuthorizeUrl,
+  isOutlookOAuthCallbackPath,
+  outlookRedirectUri,
+  readMicrosoftOAuthConfig,
+} from '#project/mcp/outlook'
 
 export type AccountInput = {
   email: string
@@ -69,6 +77,7 @@ export type AdmissionOptions = {
   }
   skills?: WorkspaceSkillStore
   connections?: WorkspaceConnectionStore
+  userConnections?: UserConnectionStore
 }
 
 export function invitationUrl(
@@ -139,6 +148,14 @@ export function createAdmissionHttpHandler(
     onSuspend: (userId: string) => void
   },
 ) {
+  const signedIn = async (
+    request: Request,
+  ): Promise<RoomUser | Response> => {
+    const user = await options.authenticate(request)
+    if (!user) return json({ error: 'Unauthorized' }, 401)
+    return user
+  }
+
   const administrator = async (
     request: Request,
   ): Promise<RoomUser | Response> => {
@@ -385,6 +402,125 @@ export function createAdmissionHttpHandler(
         } finally {
           await rm(temporary, { force: true, recursive: true })
         }
+      }
+    }
+
+    if (
+      url.pathname === '/api/account/connections/outlook' &&
+      options.userConnections &&
+      request.method === 'GET'
+    ) {
+      const user = await signedIn(request)
+      if (user instanceof Response) return user
+      return json({ connection: options.userConnections.get(user.id, 'outlook') })
+    }
+
+    if (
+      url.pathname === '/api/account/connections/outlook/clear' &&
+      options.userConnections &&
+      request.method === 'POST'
+    ) {
+      const user = await signedIn(request)
+      if (user instanceof Response) return user
+      return json({
+        connection: options.userConnections.clear(user.id, 'outlook'),
+      })
+    }
+
+    if (
+      url.pathname === '/api/account/connections/outlook/oauth/start' &&
+      options.userConnections &&
+      request.method === 'GET'
+    ) {
+      const user = await signedIn(request)
+      if (user instanceof Response) return user
+      try {
+        const oauth = readMicrosoftOAuthConfig()
+        if (!oauth) throw new Error('Outlook OAuth is not configured')
+        const signing = process.env.BETTER_AUTH_SECRET?.trim()
+        if (!signing) throw new Error('BETTER_AUTH_SECRET is required')
+        return json({
+          url: createOutlookAuthorizeUrl({
+            ...oauth,
+            redirectUri: outlookRedirectUri(url.origin),
+            secret: signing,
+            userId: user.id,
+          }),
+        })
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to start Outlook connect',
+          },
+          400,
+        )
+      }
+    }
+
+    if (
+      isOutlookOAuthCallbackPath(url.pathname) &&
+      options.userConnections &&
+      request.method === 'GET'
+    ) {
+      const escape = (value: string) =>
+        value.replace(/[&<>"']/g, (character) =>
+          ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+          })[character]!,
+        )
+      const back = options.guiOrigin.startsWith('http')
+        ? `<p><a href="${escape(options.guiOrigin)}">Back to Colony</a></p>`
+        : '<p>Return to Colony and open Account settings.</p>'
+      const page = (message: string, status = 200) =>
+        new Response(
+          `<!doctype html><meta charset="utf-8"><title>Outlook</title><p>${escape(message)}</p>${back}`,
+          {
+            status,
+            headers: { 'content-type': 'text/html; charset=utf-8' },
+          },
+        )
+      if (
+        url.searchParams.get('error') ||
+        !url.searchParams.get('code') ||
+        !url.searchParams.get('state')
+      )
+        return page('Outlook connection was cancelled or failed.', 400)
+      try {
+        const oauth = readMicrosoftOAuthConfig()
+        const signing = process.env.BETTER_AUTH_SECRET?.trim()
+        if (!oauth || !signing)
+          return page('Outlook OAuth is not configured.', 400)
+        const completed = await completeOutlookOAuth({
+          code: url.searchParams.get('code')!,
+          state: url.searchParams.get('state')!,
+          redirectUri: outlookRedirectUri(url.origin),
+          secret: signing,
+          ...oauth,
+        })
+        options.userConnections.save(completed.userId, {
+          kind: 'outlook',
+          fields: { account: completed.account },
+          apiKey: completed.secret,
+        })
+        if (options.guiOrigin.startsWith('http'))
+          return Response.redirect(options.guiOrigin, 302)
+        return page(
+          'Outlook is connected. Return to Colony and open Account settings.',
+        )
+      } catch (error) {
+        return page(
+          error instanceof Error
+            ? error.message
+            : 'Outlook connection failed.',
+          400,
+        )
       }
     }
 

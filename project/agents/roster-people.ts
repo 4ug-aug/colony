@@ -80,6 +80,15 @@ export const capabilityPresentation: Record<
       "grafana.get_alert_group": "Get alert groups",
     },
   },
+  "outlook.mail": {
+    name: "Outlook",
+    tools: {
+      "outlook.search_messages": "Search mail",
+      "outlook.get_message": "Read mail",
+      "outlook.create_draft": "Create drafts",
+      "outlook.create_reply_draft": "Draft replies",
+    },
+  },
   "github.pull-requests": {
     name: "GitHub pull requests",
     tools: {
