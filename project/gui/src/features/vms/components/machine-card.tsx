@@ -16,12 +16,17 @@ import { NukeMachineButton } from './nuke-machine-button'
 export function MachineCard({
   machine,
   onOpen,
+  enterDelayMs = 0,
 }: {
   machine: Machine
   onOpen: () => void
+  enterDelayMs?: number
 }) {
   return (
-    <Card className="relative shadow-sm transition-shadow hover:ring-foreground/20">
+    <Card
+      className="relative shadow-sm transition-shadow hover:ring-foreground/20 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out fill-mode-backwards motion-reduce:animate-none"
+      style={{ animationDelay: `${enterDelayMs}ms` }}
+    >
       <button
         type="button"
         className="absolute inset-0 z-10 cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"

@@ -75,10 +75,11 @@ export function VmsPage({
         )}
 
         <div className="grid gap-4 xl:grid-cols-3 md:grid-cols-2 sm:grid-cols-1">
-          {machines.map((machine) => (
+          {machines.map((machine, index) => (
             <MachineCard
               key={machine.id}
               machine={machine}
+              enterDelayMs={Math.min(index, 5) * 40}
               onOpen={() => onSelectedIdChange(machine.id)}
             />
           ))}
