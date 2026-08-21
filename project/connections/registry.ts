@@ -3,14 +3,22 @@ import {
   createAsanaSoftwareEngineerAdapter,
   createGrafanaAdapter,
   createOutlineAdapter,
+  createPostgresAdapter,
 } from '../agents/software-engineer-adapters'
+import { POSTGRES_TOOLS } from '../mcp/postgres'
 
-export type ConnectionFieldKind = 'text' | 'url'
+export type ConnectionFieldKind = 'text' | 'url' | 'select'
+
+export type ConnectionSelectOption = {
+  value: string
+  label: string
+}
 
 export type ConnectionField = {
   key: string
   label: string
   kind: ConnectionFieldKind
+  options?: readonly ConnectionSelectOption[]
 }
 
 export type ConnectionKindPublic = {
@@ -108,6 +116,26 @@ const grafanaTools = [
   'grafana.get_alert_group',
 ] as const
 
+const oneOf = (
+  value: unknown,
+  options: readonly string[],
+  label: string,
+  fallback: string,
+): string => {
+  if (typeof value === 'string' && options.includes(value)) return value
+  if (value === undefined || value === '') return fallback
+  throw new Error(`${label} is required`)
+}
+
+const postgresPort = (value: unknown): string => {
+  const raw =
+    typeof value === 'string' && value.trim() ? value.trim() : '5432'
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    throw new Error('Postgres port must be an integer from 1 to 65535')
+  return String(port)
+}
+
 const asanaKind: ConnectionKind = {
   id: 'asana',
   name: 'Asana',
@@ -178,7 +206,77 @@ const grafanaKind: ConnectionKind = {
   },
 }
 
-const kinds: readonly ConnectionKind[] = [asanaKind, outlineKind, grafanaKind]
+const postgresKind: ConnectionKind = {
+  id: 'postgres',
+  name: 'Postgres',
+  icon: '/icons/postgres.svg',
+  capabilityId: 'postgres.sql',
+  tools: POSTGRES_TOOLS,
+  secretLabel: 'Password',
+  fields: [
+    { key: 'host', label: 'Host', kind: 'text' },
+    { key: 'port', label: 'Port', kind: 'text' },
+    { key: 'database', label: 'Database', kind: 'text' },
+    { key: 'user', label: 'User', kind: 'text' },
+    {
+      key: 'sslmode',
+      label: 'TLS',
+      kind: 'select',
+      options: [
+        { value: 'require', label: 'Require TLS' },
+        { value: 'disable', label: 'Disable TLS' },
+      ],
+    },
+    {
+      key: 'accessMode',
+      label: 'Access',
+      kind: 'select',
+      options: [
+        { value: 'read', label: 'Read' },
+        {
+          value: 'readwrite',
+          label: 'Read and write (insert and update, never delete)',
+        },
+      ],
+    },
+  ],
+  parseAndValidate({ fields, apiKey, hasExistingSecret }) {
+    return {
+      fields: {
+        host: nonEmpty(fields.host, 'Postgres host'),
+        port: postgresPort(fields.port),
+        database: nonEmpty(fields.database, 'Postgres database'),
+        user: nonEmpty(fields.user, 'Postgres user'),
+        sslmode: oneOf(fields.sslmode, ['require', 'disable'], 'TLS', 'require'),
+        accessMode: oneOf(
+          fields.accessMode,
+          ['read', 'readwrite'],
+          'Access',
+          'read',
+        ),
+      },
+      apiKey: requireSecret(apiKey, hasExistingSecret, 'Postgres password'),
+    }
+  },
+  createAdapter({ fields, apiKey }) {
+    return createPostgresAdapter({
+      host: fields.host!,
+      port: Number(fields.port),
+      database: fields.database!,
+      user: fields.user!,
+      password: apiKey,
+      sslmode: fields.sslmode === 'disable' ? 'disable' : 'require',
+      accessMode: fields.accessMode === 'readwrite' ? 'readwrite' : 'read',
+    })
+  },
+}
+
+const kinds: readonly ConnectionKind[] = [
+  asanaKind,
+  outlineKind,
+  grafanaKind,
+  postgresKind,
+]
 
 const byId = new Map(kinds.map((kind) => [kind.id, kind] as const))
 

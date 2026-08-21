@@ -80,6 +80,14 @@ export const capabilityPresentation: Record<
       "grafana.get_alert_group": "Get alert groups",
     },
   },
+  "postgres.sql": {
+    name: "Postgres",
+    tools: {
+      "postgres.list_tables": "List tables",
+      "postgres.describe_table": "Describe tables",
+      "postgres.query": "Query Postgres",
+    },
+  },
   "github.pull-requests": {
     name: "GitHub pull requests",
     tools: {
