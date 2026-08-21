@@ -19,8 +19,8 @@ import {
     SandboxAgent,
 } from "@openai/agents/sandbox";
 import { UnixLocalSandboxClient } from "@openai/agents/sandbox/local";
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import OpenAI from "openai";
 
 import type { CapabilitySessionBinding } from "../mcp/session";
@@ -479,6 +479,7 @@ export async function saveOpenAIAgentSession(
   statePath: string,
   session: MemorySession,
 ): Promise<void> {
+  await mkdir(dirname(statePath), { recursive: true });
   await writeFile(
     statePath,
     JSON.stringify({

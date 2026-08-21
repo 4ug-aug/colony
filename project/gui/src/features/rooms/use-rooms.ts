@@ -15,6 +15,8 @@ import type {
   WorkspaceStreamMessage,
 } from './types'
 import type { Step } from '#/features/runs/step-label'
+import { mergeLatestSteps, mergeLiveSteps } from './room-step-batch'
+import type { StepArrival } from './room-step-batch'
 import { toast } from '#/components/ui/toast'
 import {
   acknowledgeThreadAttentionRoot,
@@ -527,6 +529,21 @@ export function useRooms(userId: string) {
     let stopped = false
     let attempts = 0
     let retry: ReturnType<typeof setTimeout> | undefined
+    let pendingSteps: StepArrival[] = []
+    let frame: number | undefined
+
+    // A working agent emits many steps per frame, and this state sits at the top
+    // of the tree, so a commit per step re-renders the whole Dashboard. Coalesce
+    // a burst into one commit per frame. The buffer lives in the effect scope so
+    // switching rooms discards it instead of leaking steps into the next room.
+    const flushSteps = () => {
+      frame = undefined
+      if (!pendingSteps.length) return
+      const batch = pendingSteps
+      pendingSteps = []
+      setLatestStepByRun((current) => mergeLatestSteps(current, batch))
+      setLiveStepsByRun((current) => mergeLiveSteps(current, batch))
+    }
 
     const connect = () => {
       if (stopped) return
@@ -637,19 +654,8 @@ export function useRooms(userId: string) {
             event.type === 'run.step' &&
             runsRef.current.some((r) => r.id === event.runId)
           ) {
-            setLatestStepByRun((current) => {
-              const next = new Map(current)
-              next.set(event.runId, event.step)
-              return next
-            })
-            setLiveStepsByRun((current) => {
-              const next = new Map(current)
-              next.set(
-                event.runId,
-                upsert(current.get(event.runId) ?? [], event.step),
-              )
-              return next
-            })
+            pendingSteps.push({ runId: event.runId, step: event.step })
+            if (frame === undefined) frame = requestAnimationFrame(flushSteps)
           }
           if (event.type === 'room.members.changed') {
             setMembersChangedAt((current) => ({
@@ -679,6 +685,7 @@ export function useRooms(userId: string) {
     return () => {
       stopped = true
       if (retry) clearTimeout(retry)
+      if (frame !== undefined) cancelAnimationFrame(frame)
       roomSocket.current?.close()
     }
   }, [

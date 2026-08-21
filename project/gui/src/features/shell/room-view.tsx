@@ -38,7 +38,7 @@ import type { Step } from '#/features/runs/step-label'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { ArrowDown } from 'lucide-react'
 import type { RefObject } from 'react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DashboardSideSurface } from './dashboard-navigation'
 
 const bottomScrollThreshold = 150
@@ -114,6 +114,15 @@ export function RoomView({
   openMachine?: (sandboxId: string) => void
 }) {
   const inlineRail = useMediaQuery('(min-width: 1024px)')
+  // Markdown is memo()'d, so this has to keep its identity between renders or
+  // every message re-parses on every commit.
+  const mentionHandles = useMemo(
+    () => [
+      user.name,
+      ...mentionableAccounts.map((account) => account.username ?? account.name),
+    ],
+    [user.name, mentionableAccounts],
+  )
   const threadWidthRef = useRef(localStorage.getItem('thread.width') ?? '26rem')
   const threadDraftsRef = useRef<ThreadDrafts>(emptyThreadDrafts)
   const [transition, setTransition] = useState<ThreadTransitionState>({
@@ -229,12 +238,7 @@ export function RoomView({
         liveReplies={threadReplies[activeRootId] ?? []}
         runs={runs}
         openRun={openActivity}
-        mentionHandles={[
-          user.name,
-          ...mentionableAccounts.map(
-            (account) => account.username ?? account.name,
-          ),
-        ]}
+        mentionHandles={mentionHandles}
         mentionableAccounts={mentionableAccounts}
         currentUserId={user.id}
         onClose={closeSideSurface}
@@ -341,12 +345,7 @@ export function RoomView({
                           setDraft(message.text)
                         }}
                         onOpenThread={(nextRootId) => openThread(nextRootId)}
-                        mentionHandles={[
-                          user.name,
-                          ...mentionableAccounts.map(
-                            (account) => account.username ?? account.name,
-                          ),
-                        ]}
+                        mentionHandles={mentionHandles}
                       />
                     </div>
                   )}

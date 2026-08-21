@@ -53,7 +53,7 @@ function ThreadResult({
           </time>
         </div>
         <div className="mt-0.5 text-sm leading-6">
-          <Markdown mentions={[]}>{result.text}</Markdown>
+          <Markdown>{result.text}</Markdown>
         </div>
       </div>
     </article>

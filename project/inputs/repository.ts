@@ -259,14 +259,6 @@ export function createRepositoryWorkspaceProvisioner(
         context.agentDefinitionId && options.skillSource
           ? options.skillSource.layoutForAgent(context.agentDefinitionId)
           : undefined;
-      if (
-        !repositories.length &&
-        !attachments.length &&
-        !skillPackages.length
-      ) {
-        return {};
-      }
-
       const repository = repositories[0];
       const source = repository && sources.get(repository.provider);
       if (repository && !source)
