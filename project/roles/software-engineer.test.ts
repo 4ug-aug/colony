@@ -22,6 +22,11 @@ test("the software engineer requests scoped issue and pull request tools", () =>
       (capability) => capability.id === "asana.tasks",
     ),
   ).toBe(false);
+  expect(
+    softwareEngineerRole.requestedCapabilities.some(
+      (capability) => capability.id === "postgres.sql",
+    ),
+  ).toBe(false);
   expect(softwareEngineerRole.requestedCapabilities).toContainEqual({
     id: "github.pull-requests",
     tools: [

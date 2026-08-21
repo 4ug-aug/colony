@@ -19,6 +19,14 @@ import {
 } from '#/components/ui/hover-card'
 import { Input } from '#/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '#/components/ui/select'
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -35,7 +43,8 @@ import { useState } from 'react'
 type ConnectionField = {
   key: string
   label: string
-  kind: 'text' | 'url'
+  kind: 'text' | 'url' | 'select'
+  options?: readonly { value: string; label: string }[]
 }
 
 type PublicConnection = {
@@ -366,22 +375,52 @@ function ConnectionCard({
       )}
 
       <div className="mt-4 grid gap-3">
-        {(connection.fieldSchema ?? []).map((field) => (
-          <Input
-            key={field.key}
-            aria-label={`${connection.name} ${field.label}`}
-            disabled={busy}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                [field.key]: event.target.value,
-              }))
-            }
-            placeholder={field.label}
-            type={field.kind === 'url' ? 'url' : 'text'}
-            value={values[field.key] ?? ''}
-          />
-        ))}
+        {(connection.fieldSchema ?? []).map((field) =>
+          field.kind === 'select' && field.options?.length ? (
+            <Select
+              key={field.key}
+              disabled={busy}
+              onValueChange={(value) =>
+                setValues((current) => ({
+                  ...current,
+                  [field.key]: value ?? '',
+                }))
+              }
+              value={values[field.key] || field.options[0]!.value}
+            >
+              <SelectTrigger
+                aria-label={`${connection.name} ${field.label}`}
+                className="w-full"
+              >
+                <SelectValue placeholder={field.label} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {field.options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              key={field.key}
+              aria-label={`${connection.name} ${field.label}`}
+              disabled={busy}
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  [field.key]: event.target.value,
+                }))
+              }
+              placeholder={field.label}
+              type={field.kind === 'url' ? 'url' : 'text'}
+              value={values[field.key] ?? ''}
+            />
+          ),
+        )}
         <Input
           aria-label={`${connection.name} ${connection.secretLabel}`}
           disabled={busy}

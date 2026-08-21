@@ -9,6 +9,7 @@ describe('tool icons', () => {
     expect(toolIconId('asana.list_tasks')).toBe('asana')
     expect(toolIconId('grafana.query_prometheus')).toBe('grafana')
     expect(toolIconId('outline.fetch')).toBe('outline')
+    expect(toolIconId('postgres.query')).toBe('postgres')
     expect(toolIconId('shell')).toBe('shell')
     expect(toolIconId('workspace.read_messages')).toBe('workspace')
     expect(toolIconId('workspace_read_messages')).toBe('workspace')
