@@ -1,4 +1,5 @@
 import {
+    MemorySession,
     OpenAIChatCompletionsModel,
     OpenAIResponsesModel,
     Usage,
@@ -88,6 +89,29 @@ function completionStream(
   ];
   return new Response(
     `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")}data: [DONE]\n\n`,
+    { headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+function responsesStream(id: string, text: string): Response {
+  const event = {
+    type: "response.completed",
+    response: {
+      id,
+      object: "response",
+      status: "completed",
+      output: [{
+        type: "message",
+        id: `msg-${id}`,
+        role: "assistant",
+        status: "completed",
+        content: [{ type: "output_text", text }],
+      }],
+      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    },
+  };
+  return new Response(
+    `event: response.completed\ndata: ${JSON.stringify(event)}\n\n`,
     { headers: { "content-type": "text/event-stream" } },
   );
 }
@@ -686,20 +710,52 @@ test("openOpenAIAgentSession keeps a durable MemorySession across the handle", a
   await session.dispose();
 });
 
-test("OpenAI session items survive between CLI processes", async () => {
+test("a reloaded MemorySession prepends the first user task on the next runAgent turn", async () => {
   const directory = await mkdtemp(join(tmpdir(), "sweat-openai-session-"));
   const statePath = join(directory, "session.json");
+  const inputs: unknown[] = [];
+  let calls = 0;
+  const client = new OpenAI({
+    apiKey: "test-key",
+    baseURL: "https://models.example/v1",
+    fetch: async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: unknown };
+      inputs.push(body.input);
+      return responsesStream(`resp-${calls}`, `reply ${calls}`);
+    },
+  });
+  const request = {
+    instructions: "Be brief.",
+    agentId: "antboy",
+    model: {
+      baseUrl: "https://models.example/v1",
+      apiKey: "test-key",
+      model: "test-model",
+    },
+  };
+  const modelProvider = {
+    getModel: () => new CompatibleResponsesModel(client, "test-model"),
+  };
+
   try {
-    const first = await loadOpenAIAgentSession(statePath);
-    await first.addItems([
-      { role: "user", content: "The proposal needs a rocket." },
-    ]);
+    const first = new MemorySession();
+    await runAgent(
+      { ...request, task: "Write a poem to /work/poems/poem.txt." },
+      { modelProvider, session: first },
+    );
     await saveOpenAIAgentSession(statePath, first);
 
-    const second = await loadOpenAIAgentSession(statePath);
-    expect(await second.getItems()).toEqual([
-      { role: "user", content: "The proposal needs a rocket." },
-    ]);
+    const restored = await loadOpenAIAgentSession(statePath);
+    await runAgent(
+      { ...request, task: "now cat it." },
+      { modelProvider, session: restored },
+    );
+
+    expect(inputs).toHaveLength(2);
+    expect(JSON.stringify(inputs[1])).toContain(
+      "Write a poem to /work/poems/poem.txt.",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
