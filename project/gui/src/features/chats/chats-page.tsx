@@ -220,12 +220,14 @@ export function ChatsPage({
       if (!chatId) {
         const created = await create.mutateAsync(selectedAgent.id)
         chatId = created.id
+        setDraft('')
         onSelectedIdChange(created.id)
       }
       await send.mutateAsync({ chatId, text: trimmed })
       setDraft('')
       return true
     } catch (reason) {
+      setDraft(trimmed)
       toast.add({
         type: 'error',
         title: 'Could not send message',
@@ -353,7 +355,6 @@ export function ChatsPage({
             </div>
           ) : null}
           <MessageComposer
-            key={selectedId ?? 'new'}
             value={draft}
             onChange={setDraft}
             onSubmit={async (text) => submit(text)}
