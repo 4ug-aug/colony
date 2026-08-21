@@ -2,6 +2,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { AgentSkillsSettings } from '#/features/workspace/agent-skills-settings'
 import { ConnectionSettings } from '#/features/workspace/connection-settings'
 import { CursorRuntimeSettings } from '#/features/workspace/cursor-runtime-settings'
+import { GrantToolsSettings } from '#/features/workspace/grant-tools-settings'
 import { InvitationSettings } from '#/features/workspace/invitation-settings'
 import { LlmProviderSettings } from '#/features/workspace/llm-provider-settings'
 import { MembersSettings } from '#/features/workspace/members-settings'
@@ -30,6 +31,9 @@ export function WorkspaceSettingsPage({
             <CursorRuntimeSettings />
             <div className="md:col-span-2">
               <PreviewSettings />
+            </div>
+            <div className="md:col-span-2">
+              <GrantToolsSettings />
             </div>
           </div>
         </TabsContent>

@@ -972,3 +972,59 @@ test("every person boots the configured sandbox provider", async () => {
 
   expect(booted).toEqual(["microvm", "microvm"]);
 });
+
+test("selectTools narrows the capability grant for this task", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const githubTools = [
+    "github.create_pull_request",
+    "github.wait_for_pull_request_checks",
+    "github.compare",
+    "github.get_file",
+    "github.get_pull_request",
+  ];
+  const adapter: WorkspaceAgentAdapter = {
+    capability: {
+      id: "github.pull-requests",
+      createUpstream: () => ({
+        listTools: async () => githubTools.map((name) => ({ name })),
+        callTool: async () => ({}),
+      }),
+    },
+  };
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    adapters: [adapter],
+    selectTools: async ({ eligibleTools }) =>
+      eligibleTools.filter((name) => name === "github.compare"),
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-select-tools",
+    }),
+  });
+
+  const id = executor.startRun({
+    task: "compare this branch to main",
+    agentDefinitionId: SOFTWARE_ENGINEER_ID,
+  });
+  expect(executor.getRun(id)?.capabilityGrant?.tools).toEqual(githubTools);
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+    await Bun.sleep(0);
+  }
+  const run = executor.getRun(id)!;
+  expect(run.state).toBe("succeeded");
+  expect(run.capabilityGrant?.tools).toEqual(["github.compare"]);
+});

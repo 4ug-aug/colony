@@ -253,6 +253,13 @@
       "when": 1804000000000,
       "tag": "0035_ensure_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1805000000000,
+      "tag": "0036_workspace_grant_tools",
+      "breakpoints": true
     }
   ]
 }

@@ -107,6 +107,13 @@ export const capabilityPresentation: Record<
   },
 };
 
+export function capabilityToolLabel(tool: string): string | undefined {
+  for (const capability of Object.values(capabilityPresentation)) {
+    const label = capability.tools[tool];
+    if (label) return `${capability.name}: ${label}`;
+  }
+}
+
 export type WorkspacePerson = {
   id: string;
   name: string;

@@ -235,6 +235,15 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   store?: RunStore<Input>;
   inputs?: InputProvisioner<Input>;
   capabilities?: CapabilitySessionFactory;
+  /**
+   * Host-side grant narrowing before sandbox create. Must not use tools or a
+   * sandbox; empty or out-of-grant names fall back to the original grant.
+   */
+  narrowCapabilityGrant?: (input: {
+    task: string;
+    tools: readonly string[];
+    grantContext?: AgentGrantContext;
+  }) => readonly string[] | Promise<readonly string[]>;
   getPreviewConfig?: () => PreviewConfiguration | undefined;
   createId?: () => string;
   now?: () => number;
@@ -361,6 +370,32 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     });
   };
 
+  const applyGrantSelection = async (
+    record: RunRecord<Input>,
+  ): Promise<RunRecord<Input>> => {
+    const grant = record.capabilityGrant;
+    if (!grant || !dependencies.narrowCapabilityGrant) return record;
+    try {
+      const selected = await dependencies.narrowCapabilityGrant({
+        task: record.task,
+        tools: grant.tools,
+        grantContext: record.grantContext,
+      });
+      if (cancellation.has(record.id)) return record;
+      const allowed = new Set(grant.tools);
+      const tools = selected.filter((name) => allowed.has(name));
+      const capabilityGrant = {
+        ...grant,
+        tools: tools.length ? tools : grant.tools,
+      };
+      store.update(record.id, { capabilityGrant });
+      return { ...record, capabilityGrant };
+    } catch {
+      return record;
+    }
+  };
+  // ponytail: warm follow-ups keep the first-turn grant; re-pick if later turns starve for tools.
+
   const clearIdle = (entry: WarmEntry): void => {
     if (entry.idleTimer) clearTimeout(entry.idleTimer);
     entry.idleTimer = undefined;
@@ -440,6 +475,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       if (!dependencies.runtime.openWarmSession) {
         throw new Error("Runtime does not support warm Grill-linked runs");
       }
+      record = await applyGrantSelection(record);
+      if (cancellation.has(record.id)) return;
       if (dependencies.inputs?.prepare)
         progress(record.id, "Preparing workspace");
       workspace = (
@@ -546,6 +583,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     let previewGraceMs: number | undefined;
 
     try {
+      record = await applyGrantSelection(record);
+      if (cancellation.has(record.id)) return;
       if (dependencies.inputs?.prepare)
         progress(record.id, "Preparing workspace");
       workspace = (

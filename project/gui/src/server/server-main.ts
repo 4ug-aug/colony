@@ -89,6 +89,16 @@ if (import.meta.main) {
   const llm = createWorkspaceLlmConfig(sqlite)
   const cursorRuntime = createWorkspaceCursorRuntimeConfig(sqlite)
   const preview = createWorkspacePreviewConfig(sqlite)
+  const [
+    { createWorkspaceGrantToolsConfig },
+    { createGrantedToolSelector },
+    { createOpenAIGrantPicker },
+  ] = await Promise.all([
+    import('./features/workspace/grant-tools-config'),
+    import('../../../agents/grant-tools'),
+    import('../../../agents/grant-tools-model'),
+  ])
+  const grantTools = createWorkspaceGrantToolsConfig(sqlite)
   const connections = createWorkspaceConnections(sqlite)
   const skillsDirectory = skillDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
@@ -212,6 +222,9 @@ if (import.meta.main) {
       model: () => llm.model(),
       cursor: () => cursorRuntime.cursor(),
       getPreviewConfig: () => preview.preview(),
+      selectTools: createGrantedToolSelector(() => grantTools.policy(), {
+        pick: createOpenAIGrantPicker(() => llm.model()),
+      }),
       attachmentSource: createRoomAttachmentSource({
         store,
         directory: attachmentsDirectory,
@@ -503,6 +516,7 @@ if (import.meta.main) {
       llm,
       cursorRuntime,
       preview,
+      grantTools,
       skills,
       connections,
       listUsers: () => authContext.internalAdapter.listUsers(100),

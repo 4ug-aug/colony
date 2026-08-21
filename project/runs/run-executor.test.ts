@@ -253,6 +253,106 @@ test("a run grant cannot exceed its agent definition", () => {
   })).toThrow("Capability grant exceeds agent definition");
 });
 
+test("narrowCapabilityGrant shrinks the grant before the sandbox runs", async () => {
+  let seen: readonly string[] | undefined;
+  const twoTools: AgentDefinition = {
+    ...definition,
+    requestedCapabilities: [{
+      id: "linear.issues",
+      tools: ["linear.get_issue", "linear.list_issues"],
+    }],
+  };
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([twoTools]),
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async (_sandbox, request) => {
+        seen = request.capabilitySession?.allowedTools;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    capabilities: {
+      create: (grant) => ({
+        url: "http://gateway.test/mcp",
+        token: "token",
+        expiresAt: grant.expiresAt,
+        allowedTools: grant.tools,
+        revoke: () => {},
+      }),
+    },
+    narrowCapabilityGrant: async ({ tools }) =>
+      tools.filter((name) => name === "linear.get_issue"),
+    createId: () => "run-narrow",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "get one issue",
+    capabilityGrant: {
+      tools: ["linear.get_issue", "linear.list_issues"],
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
+  expect(executor.getRun(id)?.capabilityGrant?.tools).toEqual([
+    "linear.get_issue",
+    "linear.list_issues",
+  ]);
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(executor.getRun(id)?.capabilityGrant?.tools).toEqual(["linear.get_issue"]);
+  expect(seen).toEqual(["linear.get_issue"]);
+});
+
+test("narrowCapabilityGrant failure keeps the original grant", async () => {
+  let seen: readonly string[] | undefined;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async (_sandbox, request) => {
+        seen = request.capabilitySession?.allowedTools;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    capabilities: {
+      create: (grant) => ({
+        url: "http://gateway.test/mcp",
+        token: "token",
+        expiresAt: grant.expiresAt,
+        allowedTools: grant.tools,
+        revoke: () => {},
+      }),
+    },
+    narrowCapabilityGrant: async () => {
+      throw new Error("picker down");
+    },
+    createId: () => "run-narrow-fallback",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "get one issue",
+    capabilityGrant: {
+      tools: ["linear.get_issue"],
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(executor.getRun(id)?.state).toBe("succeeded");
+  expect(seen).toEqual(["linear.get_issue"]);
+});
+
 test("steps reach subscribers and unsubscribe stops delivery", async () => {
   const steps: Array<{ runId: string; step: Step }> = [];
   let runCounter = 0;
