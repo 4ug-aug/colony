@@ -373,6 +373,23 @@ Body
   await workspace.dispose();
 });
 
+test("an empty input list still gets a disposable workspace", async () => {
+  let removed: string | undefined;
+  const provisioner = createRepositoryWorkspaceProvisioner({
+    sources: [],
+    createDirectory: async () => mkdtemp(join(tmpdir(), "sweat-run-")),
+    removeDirectory: async (directory) => {
+      removed = directory;
+      await rm(directory, { force: true, recursive: true });
+    },
+  });
+
+  const prepared = await provisioner.prepare([], { runId: "run-empty" });
+  expect(prepared.workspace?.path).toBeTruthy();
+  await prepared.workspace?.dispose();
+  expect(removed).toBe(prepared.workspace?.path);
+});
+
 test("skills alone still provision a workspace for openai-agents layout", async () => {
   const provisioner = createRepositoryWorkspaceProvisioner({
     sources: [],

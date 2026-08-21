@@ -6,7 +6,8 @@ import {
   saveOpenAIAgentSession,
 } from "./openai-agents";
 
-const SESSION_PATH = "/tmp/sweat-openai-session.json";
+// ponytail: /tmp is guest tmpfs; /work is the workspace bind mount.
+const SESSION_PATH = "/work/.sweat/openai-session.json";
 
 const required = (name: string): string => {
   const value = Bun.env[name];
