@@ -253,7 +253,7 @@ test("a run grant cannot exceed its agent definition", () => {
   })).toThrow("Capability grant exceeds agent definition");
 });
 
-test("narrowCapabilityGrant shrinks the grant before the sandbox runs", async () => {
+test("narrowCapabilityGrant shrinks the session tools and keeps the stored grant", async () => {
   let seen: readonly string[] | undefined;
   const twoTools: AgentDefinition = {
     ...definition,
@@ -286,8 +286,10 @@ test("narrowCapabilityGrant shrinks the grant before the sandbox runs", async ()
         revoke: () => {},
       }),
     },
-    narrowCapabilityGrant: async ({ tools }) =>
-      tools.filter((name) => name === "linear.get_issue"),
+    narrowCapabilityGrant: async ({ tools }) => ({
+      tools: tools.filter((name) => name === "linear.get_issue"),
+      reason: "narrowed",
+    }),
     createId: () => "run-narrow",
   });
 
@@ -304,12 +306,21 @@ test("narrowCapabilityGrant shrinks the grant before the sandbox runs", async ()
     "linear.list_issues",
   ]);
   await waitFor(() => executor.getRun(id)?.state === "succeeded");
-  expect(executor.getRun(id)?.capabilityGrant?.tools).toEqual(["linear.get_issue"]);
+  expect(executor.getRun(id)?.capabilityGrant?.tools).toEqual([
+    "linear.get_issue",
+    "linear.list_issues",
+  ]);
   expect(seen).toEqual(["linear.get_issue"]);
+  expect(executor.getRun(id)?.preparation).toContain("Tools narrowed to 1 of 2");
 });
 
-test("narrowCapabilityGrant failure keeps the original grant", async () => {
+test("narrowCapabilityGrant failure keeps the original grant and signals fallback", async () => {
   let seen: readonly string[] | undefined;
+  const errors: unknown[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => {
+    errors.push(args);
+  };
   const executor = createRunExecutor({
     definitions: createInMemoryAgentDefinitionResolver([definition]),
     sandboxes: {
@@ -340,6 +351,59 @@ test("narrowCapabilityGrant failure keeps the original grant", async () => {
     createId: () => "run-narrow-fallback",
   });
 
+  try {
+    const id = executor.startRun({
+      agentDefinitionId: "test-agent",
+      task: "get one issue",
+      capabilityGrant: {
+        tools: ["linear.get_issue"],
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await waitFor(() => executor.getRun(id)?.state === "succeeded");
+    expect(executor.getRun(id)?.state).toBe("succeeded");
+    expect(executor.getRun(id)?.capabilityGrant?.tools).toEqual(["linear.get_issue"]);
+    expect(seen).toEqual(["linear.get_issue"]);
+    expect(executor.getRun(id)?.preparation).toContain("Tool picker failed; using fallback");
+    expect(errors.length).toBeGreaterThan(0);
+  } finally {
+    console.error = original;
+  }
+});
+
+test("picker-failed reason fails open and signals fallback", async () => {
+  let seen: readonly string[] | undefined;
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async (_sandbox, request) => {
+        seen = request.capabilitySession?.allowedTools;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    capabilities: {
+      create: (grant) => ({
+        url: "http://gateway.test/mcp",
+        token: "token",
+        expiresAt: grant.expiresAt,
+        allowedTools: grant.tools,
+        revoke: () => {},
+      }),
+    },
+    narrowCapabilityGrant: async ({ tools }) => ({
+      tools,
+      reason: "picker-failed",
+    }),
+    createId: () => "run-narrow-reason",
+  });
+
   const id = executor.startRun({
     agentDefinitionId: "test-agent",
     task: "get one issue",
@@ -351,6 +415,64 @@ test("narrowCapabilityGrant failure keeps the original grant", async () => {
   await waitFor(() => executor.getRun(id)?.state === "succeeded");
   expect(executor.getRun(id)?.state).toBe("succeeded");
   expect(seen).toEqual(["linear.get_issue"]);
+  expect(executor.getRun(id)?.preparation).toContain("Tool picker failed; using fallback");
+});
+
+test("empty grant selection fails open and signals the fallback", async () => {
+  let seen: readonly string[] | undefined;
+  const twoTools: AgentDefinition = {
+    ...definition,
+    requestedCapabilities: [{
+      id: "linear.issues",
+      tools: ["linear.get_issue", "linear.list_issues"],
+    }],
+  };
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([twoTools]),
+    sandboxes: {
+      create: async () => ({
+        id: "sandbox",
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      }),
+    },
+    runtime: {
+      run: async (_sandbox, request) => {
+        seen = request.capabilitySession?.allowedTools;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    },
+    capabilities: {
+      create: (grant) => ({
+        url: "http://gateway.test/mcp",
+        token: "token",
+        expiresAt: grant.expiresAt,
+        allowedTools: grant.tools,
+        revoke: () => {},
+      }),
+    },
+    narrowCapabilityGrant: async () => ({ tools: [], reason: "fallback" }),
+    createId: () => "run-narrow-empty",
+  });
+
+  const id = executor.startRun({
+    agentDefinitionId: "test-agent",
+    task: "get one issue",
+    capabilityGrant: {
+      tools: ["linear.get_issue", "linear.list_issues"],
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(executor.getRun(id)?.state).toBe("succeeded");
+  expect(executor.getRun(id)?.capabilityGrant?.tools).toEqual([
+    "linear.get_issue",
+    "linear.list_issues",
+  ]);
+  expect(seen).toEqual(["linear.get_issue", "linear.list_issues"]);
+  expect(executor.getRun(id)?.preparation).toContain(
+    "Tool allowlist matched nothing; granting all 2",
+  );
 });
 
 test("steps reach subscribers and unsubscribe stops delivery", async () => {

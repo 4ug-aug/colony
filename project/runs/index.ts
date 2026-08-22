@@ -1,5 +1,6 @@
 import type { AgentDefinition, AgentDefinitionResolver } from "../agents/definition";
 import type { AgentGrantContext } from "../agents/grant-context";
+import type { GrantSelection } from "../agents/grant-tools";
 import type { McpGrant } from "../mcp/gateway";
 import type { CapabilitySessionBinding, CapabilitySessionFactory } from "../mcp/session";
 import { describeError } from "../runtime/error";
@@ -236,14 +237,15 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   inputs?: InputProvisioner<Input>;
   capabilities?: CapabilitySessionFactory;
   /**
-   * Host-side grant narrowing before sandbox create. Must not use tools or a
-   * sandbox; empty or out-of-grant names fall back to the original grant.
+   * Host-side grant narrowing immediately before the capability session.
+   * Must not use tools or a sandbox; empty or out-of-grant names fall back
+   * to the original grant. The stored grant stays the ceiling.
    */
   narrowCapabilityGrant?: (input: {
     task: string;
     tools: readonly string[];
     grantContext?: AgentGrantContext;
-  }) => readonly string[] | Promise<readonly string[]>;
+  }) => GrantSelection | Promise<GrantSelection>;
   getPreviewConfig?: () => PreviewConfiguration | undefined;
   createId?: () => string;
   now?: () => number;
@@ -370,31 +372,51 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     });
   };
 
-  const applyGrantSelection = async (
+  const selectSessionGrant = async (
     record: RunRecord<Input>,
-  ): Promise<RunRecord<Input>> => {
+  ): Promise<McpGrant | undefined> => {
     const grant = record.capabilityGrant;
-    if (!grant || !dependencies.narrowCapabilityGrant) return record;
+    if (!grant) return undefined;
+    if (!dependencies.narrowCapabilityGrant) return grant;
+    progress(record.id, "Selecting tools");
     try {
       const selected = await dependencies.narrowCapabilityGrant({
         task: record.task,
         tools: grant.tools,
         grantContext: record.grantContext,
       });
-      if (cancellation.has(record.id)) return record;
+      if (cancellation.has(record.id)) return grant;
       const allowed = new Set(grant.tools);
-      const tools = selected.filter((name) => allowed.has(name));
-      const capabilityGrant = {
-        ...grant,
-        tools: tools.length ? tools : grant.tools,
-      };
-      store.update(record.id, { capabilityGrant });
-      return { ...record, capabilityGrant };
-    } catch {
-      return record;
+      const tools = selected.tools.filter((name) => allowed.has(name));
+      const chosen = tools.length ? tools : grant.tools;
+      const ceiling = grant.tools.length;
+      if (selected.reason === "narrowed" && tools.length) {
+        progress(
+          record.id,
+          undefined,
+          `Tools narrowed to ${chosen.length} of ${ceiling}`,
+        );
+      } else if (selected.reason === "picker-failed") {
+        progress(record.id, undefined, "Tool picker failed; using fallback");
+      } else if (selected.reason === "fallback" || !tools.length) {
+        progress(
+          record.id,
+          undefined,
+          chosen.length === ceiling
+            ? `Tool allowlist matched nothing; granting all ${ceiling}`
+            : `Tools narrowed to ${chosen.length} of ${ceiling}`,
+        );
+      } else {
+        progress(record.id, undefined);
+      }
+      return { ...grant, tools: chosen };
+    } catch (error) {
+      console.error("Tool picker failed", error);
+      progress(record.id, undefined, "Tool picker failed; using fallback");
+      return grant;
     }
   };
-  // ponytail: warm follow-ups keep the first-turn grant; re-pick if later turns starve for tools.
+  // ponytail: warm follow-ups keep the first-turn session; re-pick if later turns starve for tools.
 
   const clearIdle = (entry: WarmEntry): void => {
     if (entry.idleTimer) clearTimeout(entry.idleTimer);
@@ -475,8 +497,6 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       if (!dependencies.runtime.openWarmSession) {
         throw new Error("Runtime does not support warm Grill-linked runs");
       }
-      record = await applyGrantSelection(record);
-      if (cancellation.has(record.id)) return;
       if (dependencies.inputs?.prepare)
         progress(record.id, "Preparing workspace");
       workspace = (
@@ -499,8 +519,10 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       sandboxes.set(record.id, sandbox);
       store.update(record.id, { sandboxId: sandbox.id });
       if (cancellation.has(record.id)) return;
-      capabilitySession = record.capabilityGrant
-        ? await dependencies.capabilities?.create(record.capabilityGrant, {
+      const sessionGrant = await selectSessionGrant(record);
+      if (cancellation.has(record.id)) return;
+      capabilitySession = sessionGrant
+        ? await dependencies.capabilities?.create(sessionGrant, {
             workspace,
             sandbox,
             grantContext: record.grantContext,
@@ -583,8 +605,6 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     let previewGraceMs: number | undefined;
 
     try {
-      record = await applyGrantSelection(record);
-      if (cancellation.has(record.id)) return;
       if (dependencies.inputs?.prepare)
         progress(record.id, "Preparing workspace");
       workspace = (
@@ -615,8 +635,10 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       sandboxes.set(record.id, sandbox);
       store.update(record.id, { sandboxId: sandbox.id });
       if (cancellation.has(record.id)) return;
-      capabilitySession = record.capabilityGrant
-        ? await dependencies.capabilities?.create(record.capabilityGrant, { workspace, sandbox, grantContext: record.grantContext })
+      const sessionGrant = await selectSessionGrant(record);
+      if (cancellation.has(record.id)) return;
+      capabilitySession = sessionGrant
+        ? await dependencies.capabilities?.create(sessionGrant, { workspace, sandbox, grantContext: record.grantContext })
         : undefined;
       if (cancellation.has(record.id)) return;
 

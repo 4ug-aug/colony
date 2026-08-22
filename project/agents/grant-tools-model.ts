@@ -1,13 +1,7 @@
 import OpenAI from "openai";
-import { z } from "zod";
 import type { OpenAICompatibleModel } from "../runtime/openai-agents";
 import { normalizeModelBaseUrl } from "../runtime/openai-agents";
 import type { PickGrantedNames } from "./grant-tools";
-
-const PickedTools = z.object({
-  names: z.array(z.string()).optional(),
-  tools: z.array(z.string()).optional(),
-});
 
 const SYSTEM = `You assign tools to an agent for one request.
 You have no tools. Do not call tools. Do not explain.
@@ -26,40 +20,14 @@ const defaultComplete: GrantPickerComplete = async ({ model, messages }) => {
     baseURL: normalizeModelBaseUrl(model.baseUrl),
     timeout: 15_000,
   });
-  const request = {
+  const completion = await client.chat.completions.create({
     model: model.model,
     temperature: 0,
     max_tokens: 256,
     messages: [...messages],
-  };
-  try {
-    const completion = await client.chat.completions.create({
-      ...request,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "granted_tools",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              names: { type: "array", items: { type: "string" } },
-            },
-            required: ["names"],
-          },
-        },
-      },
-    });
-    return completion.choices[0]?.message?.content ?? "";
-  } catch {
-    // Custom OpenAI-compatible servers often lack json_schema.
-    const completion = await client.chat.completions.create({
-      ...request,
-      response_format: { type: "json_object" },
-    });
-    return completion.choices[0]?.message?.content ?? "";
-  }
+    response_format: { type: "json_object" },
+  });
+  return completion.choices[0]?.message?.content ?? "";
 };
 
 export function parsePickedNames(
@@ -70,9 +38,17 @@ export function parsePickedNames(
   const jsonText = trimmed.startsWith("{")
     ? trimmed
     : (trimmed.match(/\{[\s\S]*\}/)?.[0] ?? trimmed);
-  const parsed = PickedTools.safeParse(JSON.parse(jsonText));
-  if (!parsed.success) throw new Error("Grant picker returned invalid JSON");
-  const names = parsed.data.names ?? parsed.data.tools ?? [];
+  const parsed: unknown = JSON.parse(jsonText);
+  const names =
+    parsed &&
+    typeof parsed === "object" &&
+    "names" in parsed &&
+    Array.isArray((parsed as { names: unknown }).names)
+      ? (parsed as { names: unknown[] }).names
+      : undefined;
+  if (!names || !names.every((name) => typeof name === "string")) {
+    throw new Error("Grant picker returned invalid JSON");
+  }
   const allowedSet = new Set(allowed);
   return names.filter((name) => allowedSet.has(name));
 }

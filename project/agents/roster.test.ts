@@ -973,7 +973,7 @@ test("every person boots the configured sandbox provider", async () => {
   expect(booted).toEqual(["microvm", "microvm"]);
 });
 
-test("selectTools narrows the capability grant for this task", async () => {
+test("selectTools narrows session tools and keeps the stored grant", async () => {
   const runner: CommandRunner = {
     async run(args, options): Promise<CommandResult> {
       const stdout =
@@ -1004,8 +1004,10 @@ test("selectTools narrows the capability grant for this task", async () => {
     cursor: cursorConfig,
     model: modelConfig,
     adapters: [adapter],
-    selectTools: async ({ eligibleTools }) =>
-      eligibleTools.filter((name) => name === "github.compare"),
+    selectTools: async ({ eligibleTools }) => ({
+      tools: eligibleTools.filter((name) => name === "github.compare"),
+      reason: "narrowed",
+    }),
     createCapabilityEndpoint: () => ({
       url: "http://capabilities.example/mcp",
       close: async () => {},
@@ -1026,5 +1028,6 @@ test("selectTools narrows the capability grant for this task", async () => {
   }
   const run = executor.getRun(id)!;
   expect(run.state).toBe("succeeded");
-  expect(run.capabilityGrant?.tools).toEqual(["github.compare"]);
+  expect(run.capabilityGrant?.tools).toEqual(githubTools);
+  expect(run.preparation).toContain("Tools narrowed to 1 of 5");
 });

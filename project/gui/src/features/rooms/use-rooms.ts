@@ -536,6 +536,14 @@ export function useRooms(userId: string) {
     // of the tree, so a commit per step re-renders the whole Dashboard. Coalesce
     // a burst into one commit per frame. The buffer lives in the effect scope so
     // switching rooms discards it instead of leaking steps into the next room.
+    const discardPendingSteps = () => {
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame)
+        frame = undefined
+      }
+      pendingSteps = []
+    }
+
     const flushSteps = () => {
       frame = undefined
       if (!pendingSteps.length) return
@@ -557,6 +565,7 @@ export function useRooms(userId: string) {
           if (stopped) return
           if (event.type === 'room.snapshot') {
             if (event.room.id !== selectedRoomId) return
+            discardPendingSteps()
             setRooms((current) =>
               current.map((room) =>
                 room.id === event.room.id
@@ -666,6 +675,7 @@ export function useRooms(userId: string) {
         },
         onClose() {
           if (stopped) return
+          discardPendingSteps()
           if (attempts++ >= 5) {
             setConnection('disconnected')
             setError('Coordinator unavailable')

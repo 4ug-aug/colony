@@ -43,7 +43,6 @@ test('admin can read and save run tool assignment over HTTP', async () => {
     mode: 'all',
     tools: [],
     bundles: {},
-    defaultBundles: [],
   })
 
   const saved = await handler(

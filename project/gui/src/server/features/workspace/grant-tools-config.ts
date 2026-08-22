@@ -10,34 +10,26 @@ export type PublicGrantToolsConfig = {
   mode: CapabilityGrantMode
   tools: string[]
   bundles: Record<string, string[]>
-  defaultBundles: string[]
 }
 
 type StoredConfig = {
   mode: CapabilityGrantMode
   tools_json: string
   bundles_json: string
-  default_bundles_json: string
 }
 
-const MODES: readonly CapabilityGrantMode[] = [
-  'all',
-  'allowlist',
-  'bundles',
-  'model',
-]
+const MODES: readonly CapabilityGrantMode[] = ['all', 'allowlist', 'model']
 
 const empty: PublicGrantToolsConfig = {
   mode: 'all',
   tools: [],
   bundles: {},
-  defaultBundles: [],
 }
 
 const asMode = (value: unknown): CapabilityGrantMode => {
   if (typeof value === 'string' && MODES.includes(value as CapabilityGrantMode))
     return value as CapabilityGrantMode
-  throw new Error('Mode must be all, allowlist, bundles, or model')
+  throw new Error('Mode must be all, allowlist, or model')
 }
 
 const asNames = (value: unknown, label: string): string[] => {
@@ -112,7 +104,6 @@ const toPublic = (row: StoredConfig | undefined): PublicGrantToolsConfig => {
     mode: row.mode,
     tools: readJson<string[]>(row.tools_json, []),
     bundles: readJson<Record<string, string[]>>(row.bundles_json, {}),
-    defaultBundles: readJson<string[]>(row.default_bundles_json, []),
   }
 }
 
@@ -120,7 +111,7 @@ export function createWorkspaceGrantToolsConfig(sqlite: TransactionalSqlite) {
   const read = (): StoredConfig | undefined =>
     sqlite
       .prepare(
-        'SELECT mode, tools_json, bundles_json, default_bundles_json FROM workspace_grant_tools WHERE id = 1',
+        'SELECT mode, tools_json, bundles_json FROM workspace_grant_tools WHERE id = 1',
       )
       .get() as StoredConfig | undefined
 
@@ -132,24 +123,17 @@ export function createWorkspaceGrantToolsConfig(sqlite: TransactionalSqlite) {
       const mode = asMode(input.mode ?? 'all')
       const tools = asNames(input.tools, 'Tools')
       const bundles = asBundles(input.bundles)
-      const defaultBundles = asNames(input.defaultBundles, 'Default bundles')
       sqlite
         .prepare(
           `INSERT INTO workspace_grant_tools
-             (id, mode, tools_json, bundles_json, default_bundles_json)
-           VALUES (1, ?, ?, ?, ?)
+             (id, mode, tools_json, bundles_json)
+           VALUES (1, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              mode = excluded.mode,
              tools_json = excluded.tools_json,
-             bundles_json = excluded.bundles_json,
-             default_bundles_json = excluded.default_bundles_json`,
+             bundles_json = excluded.bundles_json`,
         )
-        .run(
-          mode,
-          JSON.stringify(tools),
-          JSON.stringify(bundles),
-          JSON.stringify(defaultBundles),
-        )
+        .run(mode, JSON.stringify(tools), JSON.stringify(bundles))
       return toPublic(read())
     },
     policy(): CapabilityGrantPolicy {
@@ -158,9 +142,6 @@ export function createWorkspaceGrantToolsConfig(sqlite: TransactionalSqlite) {
         mode: config.mode,
         ...(config.tools.length ? { tools: config.tools } : {}),
         ...(Object.keys(config.bundles).length ? { bundles: config.bundles } : {}),
-        ...(config.defaultBundles.length
-          ? { defaultBundles: config.defaultBundles }
-          : {}),
       }
     },
   }

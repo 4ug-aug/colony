@@ -3,16 +3,14 @@
  * tool schema. Selection is host-side: no sandbox, no tool loop.
  */
 
-export type CapabilityGrantMode = "all" | "allowlist" | "bundles" | "model";
+export type CapabilityGrantMode = "all" | "allowlist" | "model";
 
 export type CapabilityGrantPolicy = {
   mode: CapabilityGrantMode;
-  /** Tool names used by allowlist mode and as the model-mode fallback. */
+  /** Tool or bundle names used by allowlist mode and as the model-mode fallback. */
   tools?: readonly string[];
   /** Named groups. Bundle ids are selectable names that expand to tools. */
   bundles?: Readonly<Record<string, readonly string[]>>;
-  /** Bundle ids granted in bundles mode, and model fallback when `tools` is empty. */
-  defaultBundles?: readonly string[];
 };
 
 export type GrantedToolSelection = {
@@ -20,6 +18,13 @@ export type GrantedToolSelection = {
   eligibleTools: readonly string[];
   bundles?: Readonly<Record<string, readonly string[]>>;
   descriptions?: Readonly<Record<string, string>>;
+};
+
+export type GrantSelectionReason = "all" | "narrowed" | "fallback" | "picker-failed";
+
+export type GrantSelection = {
+  tools: readonly string[];
+  reason: GrantSelectionReason;
 };
 
 export type PickGrantedNames = (input: {
@@ -30,7 +35,7 @@ export type PickGrantedNames = (input: {
 
 export type SelectGrantedTools = (
   input: GrantedToolSelection,
-) => Promise<readonly string[]>;
+) => Promise<GrantSelection>;
 
 const DEFAULT_POLICY: CapabilityGrantPolicy = { mode: "all" };
 
@@ -38,19 +43,7 @@ export function expandGrantedNames(
   names: readonly string[],
   bundles: Readonly<Record<string, readonly string[]>> = {},
 ): string[] {
-  const expanded: string[] = [];
-  const seen = new Set<string>();
-  const add = (name: string) => {
-    if (seen.has(name)) return;
-    seen.add(name);
-    expanded.push(name);
-  };
-  for (const name of names) {
-    const group = bundles[name];
-    if (group) group.forEach(add);
-    else add(name);
-  }
-  return expanded;
+  return [...new Set(names.flatMap((name) => bundles[name] ?? [name]))];
 }
 
 export function intersectGrantedTools(
@@ -61,7 +54,7 @@ export function intersectGrantedTools(
   return selected.filter((name) => allowed.has(name));
 }
 
-export function candidateListing(input: GrantedToolSelection): {
+function candidateListing(input: GrantedToolSelection): {
   names: string[];
   listing: string;
 } {
@@ -85,12 +78,11 @@ function fallbackTools(
   eligible: readonly string[],
   bundles: Readonly<Record<string, readonly string[]>>,
 ): string[] {
-  const names = policy.tools?.length
-    ? policy.tools
-    : policy.defaultBundles?.length
-      ? policy.defaultBundles
-      : eligible;
-  const tools = intersectGrantedTools(expandGrantedNames(names, bundles), eligible);
+  if (!policy.tools?.length) return [...eligible];
+  const tools = intersectGrantedTools(
+    expandGrantedNames(policy.tools, bundles),
+    eligible,
+  );
   return tools.length ? tools : [...eligible];
 }
 
@@ -98,29 +90,27 @@ export async function selectGrantedTools(
   policy: CapabilityGrantPolicy = DEFAULT_POLICY,
   input: GrantedToolSelection,
   options: { pick?: PickGrantedNames } = {},
-): Promise<readonly string[]> {
+): Promise<GrantSelection> {
   const eligible = input.eligibleTools;
-  if (!eligible.length) return [];
-  const bundles = { ...policy.bundles, ...input.bundles };
-  const fallback = fallbackTools(policy, eligible, bundles);
-  const mode = policy.mode ?? "all";
+  if (!eligible.length) return { tools: [], reason: "all" };
+  if (policy.mode === "all") return { tools: eligible, reason: "all" };
 
-  if (mode === "all") return eligible;
-  if (mode === "allowlist") return fallback;
-  if (mode === "bundles") {
-    const names = policy.defaultBundles?.length
-      ? policy.defaultBundles
-      : Object.keys(bundles);
+  const bundles = { ...policy.bundles, ...input.bundles };
+
+  if (policy.mode === "allowlist") {
     const tools = intersectGrantedTools(
-      expandGrantedNames(names, bundles),
+      expandGrantedNames(policy.tools ?? [], bundles),
       eligible,
     );
-    return tools.length ? tools : fallback;
+    return tools.length
+      ? { tools, reason: "narrowed" }
+      : { tools: eligible, reason: "fallback" };
   }
 
+  const fallback = fallbackTools(policy, eligible, bundles);
   const { names, listing } = candidateListing({ ...input, bundles });
   try {
-    if (!options.pick) return fallback;
+    if (!options.pick) throw new Error("model mode requires pick");
     const picked = await options.pick({
       task: input.task,
       names,
@@ -130,15 +120,11 @@ export async function selectGrantedTools(
       expandGrantedNames(picked, bundles),
       eligible,
     );
-    return tools.length ? tools : fallback;
-  } catch {
-    return fallback;
+    return tools.length
+      ? { tools, reason: "narrowed" }
+      : { tools: fallback, reason: "fallback" };
+  } catch (error) {
+    console.error("Tool picker failed", error);
+    return { tools: fallback, reason: "picker-failed" };
   }
-}
-
-export function createGrantedToolSelector(
-  policy: () => CapabilityGrantPolicy,
-  options: { pick?: PickGrantedNames } = {},
-): SelectGrantedTools {
-  return (input) => selectGrantedTools(policy(), input, options);
 }

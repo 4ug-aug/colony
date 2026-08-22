@@ -273,6 +273,7 @@ export function createWorkspaceAgentsExecutor(options: {
       })
     : undefined;
 
+  const selectTools = options.selectTools;
   const executor = createRunExecutor<WorkspaceInput>({
     definitions: {
       resolve(id, grantContext) {
@@ -326,7 +327,7 @@ export function createWorkspaceAgentsExecutor(options: {
     sandboxes: options.sandboxProvider,
     runtime: createRoutingAgentRuntime({}),
     capabilities,
-    ...(options.selectTools
+    ...(selectTools
       ? {
           narrowCapabilityGrant: async ({ task, tools, grantContext }) => {
             const agentDefinitionId =
@@ -344,7 +345,7 @@ export function createWorkspaceAgentsExecutor(options: {
               const label = capabilityToolLabel(name);
               if (label) descriptions[name] = label;
             }
-            return options.selectTools!({
+            return selectTools({
               task,
               eligibleTools: tools,
               bundles,

@@ -7,7 +7,7 @@ const model = {
   model: "test-model",
 };
 
-test("parsePickedNames accepts names or tools and drops unknown ids", () => {
+test("parsePickedNames accepts names and drops unknown ids", () => {
   expect(
     parsePickedNames(
       '{"names":["workspace.get_issue","nope"]}',
@@ -16,10 +16,16 @@ test("parsePickedNames accepts names or tools and drops unknown ids", () => {
   ).toEqual(["workspace.get_issue"]);
   expect(
     parsePickedNames(
-      'Sure.\n{"tools":["github.compare"]}',
+      'Sure.\n{"names":["github.compare"]}',
       ["github.compare"],
     ),
   ).toEqual(["github.compare"]);
+});
+
+test("parsePickedNames rejects the tools alias", () => {
+  expect(() =>
+    parsePickedNames('{"tools":["github.compare"]}', ["github.compare"]),
+  ).toThrow("Grant picker returned invalid JSON");
 });
 
 test("OpenAI grant picker calls the SDK path with no tools", async () => {
@@ -41,4 +47,11 @@ test("OpenAI grant picker calls the SDK path with no tools", async () => {
   expect(seen?.messages).toHaveLength(2);
   expect(seen?.messages[0]?.content).toContain("You have no tools");
   expect(seen).not.toHaveProperty("tools");
+});
+
+test("grant picker source uses json_object only and does not import zod", async () => {
+  const source = await Bun.file(new URL("./grant-tools-model.ts", import.meta.url)).text();
+  expect(source).not.toContain('from "zod"');
+  expect(source).not.toContain("json_schema");
+  expect(source).toContain('type: "json_object"');
 });

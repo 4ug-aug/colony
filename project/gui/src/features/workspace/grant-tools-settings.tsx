@@ -1,6 +1,5 @@
 import { BrailleLoader } from '#/components/ui/braille-loader'
 import { Button } from '#/components/ui/button'
-import { Input } from '#/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -15,13 +14,12 @@ import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
-type GrantMode = 'all' | 'allowlist' | 'bundles' | 'model'
+type GrantMode = 'all' | 'allowlist' | 'model'
 
 type GrantToolsConfig = {
   mode: GrantMode
   tools: string[]
   bundles: Record<string, string[]>
-  defaultBundles: string[]
 }
 
 const grantToolsQueryKey = ['workspace-settings', 'grant-tools'] as const
@@ -29,7 +27,6 @@ const grantToolsQueryKey = ['workspace-settings', 'grant-tools'] as const
 const modeLabel: Record<GrantMode, string> = {
   all: 'All eligible tools',
   allowlist: 'Allowlist',
-  bundles: 'Named bundles',
   model: 'Model picker',
 }
 
@@ -98,9 +95,6 @@ function GrantToolsForm({
   const [mode, setMode] = useState<GrantMode>(config.mode)
   const [tools, setTools] = useState(config.tools.join('\n'))
   const [bundles, setBundles] = useState(bundleLines(config.bundles))
-  const [defaultBundles, setDefaultBundles] = useState(
-    config.defaultBundles.join(', '),
-  )
   const [formError, setFormError] = useState<string>()
 
   const save = useMutation({
@@ -108,14 +102,13 @@ function GrantToolsForm({
       apiJsonBody<GrantToolsConfig>(
         '/api/workspace/settings/grant-tools',
         'POST',
-        { mode, tools, bundles, defaultBundles },
+        { mode, tools, bundles },
         'Could not save run tools',
       ),
     onSuccess: (result) => {
       setMode(result.mode)
       setTools(result.tools.join('\n'))
       setBundles(bundleLines(result.bundles))
-      setDefaultBundles(result.defaultBundles.join(', '))
       setFormError(undefined)
       onSaved(result)
     },
@@ -160,8 +153,8 @@ function GrantToolsForm({
         <label className="grid gap-1">
           <span className="text-sm font-medium">Allowlist</span>
           <span className="text-xs text-muted-foreground">
-            One tool name per line. Used for allowlist mode and as the model
-            fallback.
+            Tool or bundle names, one per line. Used for allowlist mode and as
+            the model fallback.
           </span>
           <Textarea
             aria-label="Allowlist"
@@ -175,7 +168,7 @@ function GrantToolsForm({
           <span className="text-sm font-medium">Bundles</span>
           <span className="text-xs text-muted-foreground">
             One bundle per line: name: tool, tool. Capability ids are already
-            bundles.
+            bundles. Allowlist and fallback names may be bundle ids.
           </span>
           <Textarea
             aria-label="Bundles"
@@ -183,19 +176,6 @@ function GrantToolsForm({
             onChange={(event) => setBundles(event.target.value)}
             placeholder="issues: workspace.list_issues, workspace.get_issue"
             value={bundles}
-          />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-sm font-medium">Default bundles</span>
-          <span className="text-xs text-muted-foreground">
-            Comma-separated bundle names for bundles mode and model fallback.
-          </span>
-          <Input
-            aria-label="Default bundles"
-            disabled={busy}
-            onChange={(event) => setDefaultBundles(event.target.value)}
-            placeholder="issues"
-            value={defaultBundles}
           />
         </label>
         <div className="flex items-center gap-3">
