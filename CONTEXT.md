@@ -381,6 +381,14 @@ Connection to one agent definition. Links are not chosen when a run starts.
 Clearing a Connection's credentials also clears its links.
 _Avoid_: Connection attachment, capability grant, Skill attachment
 
+**Postgres tools**: First-party agent tools for a workspace-configured Postgres
+database, granted as the Connection capability `postgres.sql`. Credentials stay
+in the platform gateway. Access is Read or Read+Write; neither allows DELETE or
+schema changes. The workspace administrator is expected to create a matching
+Postgres role.
+_Avoid_: per-user database credentials, generic SQL dialect tools, sandbox
+database URL
+
 **Model endpoint**: The OpenAI-compatible provider URL selected by the
 workspace and resolved into one run's model configuration when that run's
 agent runtime kind is `openai-agents`. It may be a hosted service or a model
@@ -615,7 +623,7 @@ MCP session      -> short-lived technical access created from the grant
 
 Core capabilities (for example `workspace.room`, `workspace.issues`,
 `github.pull-requests`) are requested on the agent role. Connection
-capabilities (for example `asana.tasks`) are eligible only when that Connection
+capabilities (for example `asana.tasks`, `postgres.sql`) are eligible only when that Connection
 is Configured and linked to the agent definition. When a run is created, the
 platform resolves role requests, Connection links, and task context into a
 narrow, expiring grant.

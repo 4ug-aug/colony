@@ -2,7 +2,6 @@ import { migratedDatabase } from '#/server/test-db'
 import { expect, test } from 'bun:test'
 import { createWorkspaceConnections } from './workspace-connections'
 
-
 const withSecret = <T>(run: () => T): T => {
   const previous = process.env.BETTER_AUTH_SECRET
   process.env.BETTER_AUTH_SECRET = 'test-secret'
@@ -27,6 +26,7 @@ test('lists registry kinds as not configured by default', () => {
       'asana',
       'outline',
       'grafana',
+      'postgres',
     ])
     expect(listed.every((item) => !item.configured)).toBe(true)
   })
@@ -85,5 +85,43 @@ test('rejects linking while not configured and clears links with credentials', (
     expect(cleared.configured).toBe(false)
     expect(cleared.linkedAgentIds).toEqual([])
     expect(store.adaptersForAgent('antboy')).toEqual([])
+  })
+})
+
+test('saves postgres access mode and links the adapter to any person', () => {
+  withSecret(() => {
+    const { store } = createStore()
+    const saved = store.save({
+      kind: 'postgres',
+      fields: {
+        host: 'db.internal',
+        port: '5432',
+        database: 'app',
+        user: 'colony',
+        sslmode: 'require',
+        accessMode: 'readwrite',
+      },
+      apiKey: 'db-password',
+    })
+    expect(saved).toMatchObject({
+      configured: true,
+      values: {
+        host: 'db.internal',
+        port: '5432',
+        database: 'app',
+        user: 'colony',
+        sslmode: 'require',
+        accessMode: 'readwrite',
+      },
+    })
+    expect(store.setLinks('postgres', ['antboy', 'software-engineer'])).toEqual(
+      ['antboy', 'software-engineer'],
+    )
+    expect(store.adaptersForAgent('antboy')[0]?.capability?.id).toBe(
+      'postgres.sql',
+    )
+    expect(store.adaptersForAgent('software-engineer')[0]?.capability?.id).toBe(
+      'postgres.sql',
+    )
   })
 })

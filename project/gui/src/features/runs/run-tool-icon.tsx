@@ -6,6 +6,7 @@ import {
   siGrafana,
   siLinear,
   siOutline,
+  siPostgresql,
 } from 'simple-icons'
 
 const BRAND_PATHS: Record<string, string> = {
@@ -14,6 +15,7 @@ const BRAND_PATHS: Record<string, string> = {
   grafana: siGrafana.path,
   linear: siLinear.path,
   outline: siOutline.path,
+  postgres: siPostgresql.path,
 }
 
 const LUCIDE_ICONS: Record<string, LucideIcon> = {
@@ -43,13 +45,7 @@ export function toolIconId(tool?: string): string {
   return 'wrench'
 }
 
-function BrandGlyph({
-  path,
-  className,
-}: {
-  path: string
-  className?: string
-}) {
+function BrandGlyph({ path, className }: { path: string; className?: string }) {
   return (
     <svg
       aria-hidden="true"

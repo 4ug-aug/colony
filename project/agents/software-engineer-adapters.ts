@@ -9,6 +9,10 @@ import {
   type GrafanaConfiguration,
 } from "../mcp/grafana";
 import {
+  createPostgresMcpUpstream,
+  type PostgresConfiguration,
+} from "../mcp/postgres";
+import {
   createOutlineMcpUpstream,
   type OutlineConfiguration,
 } from "../mcp/outline";
@@ -227,6 +231,18 @@ export function createGrafanaAdapter(
     capability: {
       id: "grafana.observability",
       createUpstream: () => createGrafanaMcpUpstream(options),
+    },
+  };
+}
+
+/** Workspace-wide Postgres. Linked to any person, not role-hardcoded. */
+export function createPostgresAdapter(
+  options: PostgresConfiguration,
+): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "postgres.sql",
+      createUpstream: () => createPostgresMcpUpstream(options),
     },
   };
 }
