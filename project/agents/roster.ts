@@ -34,8 +34,10 @@ import type { Sandbox, SandboxProvider } from "../sandboxes";
 import {
   SOFTWARE_ENGINEER_ID,
   WORKSPACE_ROSTER,
+  capabilityToolLabel,
   rosterNotConfiguredMessage,
 } from "./roster-meta";
+import type { SelectGrantedTools } from "./grant-tools";
 
 export * from "./roster-meta";
 
@@ -123,6 +125,8 @@ export function createWorkspaceAgentsExecutor(options: {
   getPreviewConfig?: () => PreviewConfiguration | undefined;
   attachmentSource?: AttachmentSource;
   skillSource?: SkillSource;
+  /** Host-side grant narrowing. Must not use a sandbox or tools. */
+  selectTools?: SelectGrantedTools;
 }): WorkspaceAgentExecutor {
   const adapters = options.adapters ?? [];
   const repositories = adapters.flatMap((adapter) =>
@@ -269,6 +273,7 @@ export function createWorkspaceAgentsExecutor(options: {
       })
     : undefined;
 
+  const selectTools = options.selectTools;
   const executor = createRunExecutor<WorkspaceInput>({
     definitions: {
       resolve(id, grantContext) {
@@ -322,6 +327,33 @@ export function createWorkspaceAgentsExecutor(options: {
     sandboxes: options.sandboxProvider,
     runtime: createRoutingAgentRuntime({}),
     capabilities,
+    ...(selectTools
+      ? {
+          narrowCapabilityGrant: async ({ task, tools, grantContext }) => {
+            const agentDefinitionId =
+              grantContext?.agentDefinitionId ?? SOFTWARE_ENGINEER_ID;
+            const eligible = eligibleAdapters(agentDefinitionId, grantContext);
+            const requested = allRequested.get(agentDefinitionId);
+            const bundles = Object.fromEntries(
+              eligible.map((adapter) => [
+                adapter.id,
+                requested?.get(adapter.id) ?? adapter.tools ?? [],
+              ]),
+            );
+            const descriptions: Record<string, string> = {};
+            for (const name of tools) {
+              const label = capabilityToolLabel(name);
+              if (label) descriptions[name] = label;
+            }
+            return selectTools({
+              task,
+              eligibleTools: tools,
+              bundles,
+              descriptions,
+            });
+          },
+        }
+      : {}),
     getPreviewConfig: options.getPreviewConfig,
     inputs: createRepositoryWorkspaceProvisioner({
       sources: repositories.map((repository) => repository.source),

@@ -69,6 +69,9 @@ if (import.meta.main) {
     { createAppleContainerSandboxProvider },
     { createDockerSandboxProvider },
     { createSmolvmSandboxProvider },
+    { createWorkspaceGrantToolsConfig },
+    { selectGrantedTools },
+    { createOpenAIGrantPicker },
   ] = await Promise.all([
     import('../lib/auth'),
     import('./features/accounts/session-auth'),
@@ -84,11 +87,15 @@ if (import.meta.main) {
     import('../../../providers/apple-container-sandbox'),
     import('../../../providers/docker-sandbox'),
     import('../../../providers/smolvm-sandbox'),
+    import('./features/workspace/grant-tools-config'),
+    import('../../../agents/grant-tools'),
+    import('../../../agents/grant-tools-model'),
   ])
   const admissionStore = createAdmissionStore(sqlite)
   const llm = createWorkspaceLlmConfig(sqlite)
   const cursorRuntime = createWorkspaceCursorRuntimeConfig(sqlite)
   const preview = createWorkspacePreviewConfig(sqlite)
+  const grantTools = createWorkspaceGrantToolsConfig(sqlite)
   const connections = createWorkspaceConnections(sqlite)
   const skillsDirectory = skillDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
@@ -212,6 +219,10 @@ if (import.meta.main) {
       model: () => llm.model(),
       cursor: () => cursorRuntime.cursor(),
       getPreviewConfig: () => preview.preview(),
+      selectTools: (input) =>
+        selectGrantedTools(grantTools.policy(), input, {
+          pick: createOpenAIGrantPicker(() => llm.model()),
+        }),
       attachmentSource: createRoomAttachmentSource({
         store,
         directory: attachmentsDirectory,
@@ -503,6 +514,7 @@ if (import.meta.main) {
       llm,
       cursorRuntime,
       preview,
+      grantTools,
       skills,
       connections,
       listUsers: () => authContext.internalAdapter.listUsers(100),

@@ -14,6 +14,10 @@ import type {
   PreviewConfigInput,
   PublicPreviewConfig,
 } from '#/server/features/workspace/preview-config'
+import type {
+  GrantToolsConfigInput,
+  PublicGrantToolsConfig,
+} from '#/server/features/workspace/grant-tools-config'
 import type { WorkspaceSkillStore } from '#/server/features/workspace/workspace-skills'
 import type {
   ConnectionSaveInput,
@@ -66,6 +70,10 @@ export type AdmissionOptions = {
   preview?: {
     public(): PublicPreviewConfig
     save(input: PreviewConfigInput): PublicPreviewConfig
+  }
+  grantTools?: {
+    public(): PublicGrantToolsConfig
+    save(input: GrantToolsConfigInput): PublicGrantToolsConfig
   }
   skills?: WorkspaceSkillStore
   connections?: WorkspaceConnectionStore
@@ -327,6 +335,30 @@ export function createAdmissionHttpHandler(
                 error instanceof Error
                   ? error.message
                   : 'Invalid Preview configuration',
+            },
+            400,
+          )
+        }
+      }
+    }
+
+    if (
+      url.pathname === '/api/workspace/settings/grant-tools' &&
+      options.grantTools
+    ) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      if (request.method === 'GET') return json(options.grantTools.public())
+      if (request.method === 'POST') {
+        try {
+          return json(options.grantTools.save((await readBody(request)) ?? {}))
+        } catch (error) {
+          return json(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Invalid run tool configuration',
             },
             400,
           )
