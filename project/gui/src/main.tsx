@@ -8,7 +8,6 @@ import { attachDocWorkspaceSync } from '#/features/docs/doc-workspace-sync'
 import { attachIssueWorkspaceSync } from '#/features/issues/issue-workspace-sync'
 import { EntryShell } from '#/features/setup/entry-shell'
 import { ServerSelection } from '#/features/setup/server-selection'
-import { Dashboard } from '#/features/shell/dashboard'
 import { WindowDragRegion } from '#/features/shell/window-toolbar'
 import { initAuthClient } from '#/lib/auth-client'
 import { initInviteDeepLinks } from '#/lib/invite-deep-link'
@@ -19,9 +18,10 @@ import {
   isTauriRuntime,
 } from '#/lib/server-config'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { StrictMode, useCallback, useState } from 'react'
+import { lazy, StrictMode, Suspense, useCallback, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import type { DashboardUser } from './App'
 import './styles.css'
 
 const rootEl = document.getElementById('root')!
@@ -35,8 +35,20 @@ function connectConfiguredServer() {
   attachDocWorkspaceSync(queryClient)
 }
 
-type DashboardUser = Parameters<typeof Dashboard>[0]['user']
 type EntryPhase = 'entry' | 'exiting' | 'dashboard'
+
+// The sign-in screen needs none of the Dashboard, and the Dashboard carries the
+// room view, the tiptap composer and every feature page with it. Loading it on
+// demand keeps all of that out of first paint; `preloadDashboard` then warms the
+// chunk during the entry exit animation so Suspense rarely has to show anything.
+const Dashboard = lazy(() =>
+  import('#/features/shell/dashboard').then((module) => ({
+    default: module.Dashboard,
+  })),
+)
+const preloadDashboard = () => {
+  void import('#/features/shell/dashboard')
+}
 
 function EntryFlow({ needsServer }: { needsServer: boolean }) {
   const [selectingServer, setSelectingServer] = useState(needsServer)
@@ -55,6 +67,7 @@ function EntryFlow({ needsServer }: { needsServer: boolean }) {
     setSelectingServer(false)
   }, [])
   const onSession = useCallback((nextUser?: DashboardUser) => {
+    if (nextUser) preloadDashboard()
     setUser(nextUser)
     setPhase((current) => {
       if (!nextUser) return 'entry'
@@ -69,7 +82,9 @@ function EntryFlow({ needsServer }: { needsServer: boolean }) {
     <>
       {authReady && <App onSession={onSession} />}
       {phase === 'dashboard' && user ? (
-        <Dashboard user={user} onChangeServer={onChangeServer} />
+        <Suspense fallback={null}>
+          <Dashboard user={user} onChangeServer={onChangeServer} />
+        </Suspense>
       ) : (
         <EntryShell
           exiting={phase === 'exiting'}

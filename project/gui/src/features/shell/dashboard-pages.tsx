@@ -1,18 +1,59 @@
 import { StaticDither } from '#/components/static-dither'
-import { AccountSettingsPage } from '#/features/account/account-settings'
 import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
-import { BulletinsPage } from '#/features/bulletins/bulletins-page'
-import { ChatsPage } from '#/features/chats/chats-page'
-import { DocsPage } from '#/features/docs/docs-page'
-import { GrillsPage } from '#/features/grills/grills-page'
-import { IssuesPage } from '#/features/issues/issues-page'
 import type { IssueStatus } from '#/features/issues/types'
 import type { Author } from '#/features/rooms/types'
-import { SchedulesPage } from '#/features/schedules/schedules-page'
-import { VmsPage } from '#/features/vms/vms-page'
-import { WorkspaceSettingsPage } from '#/features/workspace/workspace-settings'
+import { lazy, Suspense } from 'react'
 import type { RefObject } from 'react'
 import type { DashboardView } from './dashboard-navigation'
+
+// One chunk per view. Only the room view ships in the Dashboard chunk itself,
+// so recharts (account, issues), cronstrue (schedules) and dnd-kit (bulletins)
+// stay out of the bundle until someone opens that view.
+const AccountSettingsPage = lazy(() =>
+  import('#/features/account/account-settings').then((module) => ({
+    default: module.AccountSettingsPage,
+  })),
+)
+const BulletinsPage = lazy(() =>
+  import('#/features/bulletins/bulletins-page').then((module) => ({
+    default: module.BulletinsPage,
+  })),
+)
+const ChatsPage = lazy(() =>
+  import('#/features/chats/chats-page').then((module) => ({
+    default: module.ChatsPage,
+  })),
+)
+const DocsPage = lazy(() =>
+  import('#/features/docs/docs-page').then((module) => ({
+    default: module.DocsPage,
+  })),
+)
+const GrillsPage = lazy(() =>
+  import('#/features/grills/grills-page').then((module) => ({
+    default: module.GrillsPage,
+  })),
+)
+const IssuesPage = lazy(() =>
+  import('#/features/issues/issues-page').then((module) => ({
+    default: module.IssuesPage,
+  })),
+)
+const SchedulesPage = lazy(() =>
+  import('#/features/schedules/schedules-page').then((module) => ({
+    default: module.SchedulesPage,
+  })),
+)
+const VmsPage = lazy(() =>
+  import('#/features/vms/vms-page').then((module) => ({
+    default: module.VmsPage,
+  })),
+)
+const WorkspaceSettingsPage = lazy(() =>
+  import('#/features/workspace/workspace-settings').then((module) => ({
+    default: module.WorkspaceSettingsPage,
+  })),
+)
 
 export function DashboardPages({
   view,
@@ -58,7 +99,7 @@ export function DashboardPages({
   onSelectedChatIdChange: (id: string | undefined) => void
 }) {
   return (
-    <>
+    <Suspense fallback={null}>
       {view === 'chat' && (
         <ChatsPage
           selectedId={selectedChatId}
@@ -117,6 +158,6 @@ export function DashboardPages({
           />
         </div>
       )}
-    </>
+    </Suspense>
   )
 }

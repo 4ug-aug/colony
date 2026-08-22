@@ -49,6 +49,12 @@ type MentionItem = {
   faceName?: string
 }
 
+function isLiveEditor(
+  editor: { isDestroyed: boolean; schema?: unknown } | null | undefined,
+): boolean {
+  return Boolean(editor && !editor.isDestroyed && editor.schema)
+}
+
 function ComposerMentionView({ node }: ReactNodeViewProps) {
   const id = String(node.attrs.id ?? '')
   const { data: agents = [] } = useAgentDefinitions()
@@ -385,7 +391,7 @@ export const MessageComposer = forwardRef<
   useEffect(() => {
     editingRef.current = editing
   }, [editing])
-  const serialize = () => editor.getText()
+  const serialize = () => (isLiveEditor(editor) ? editor.getText() : '')
   const addFiles = (next: FileList | File[]) => {
     if (disabled || sending || editing || hideAttachments) return
     setFiles((current) => [...current, ...Array.from(next)])
@@ -398,7 +404,7 @@ export const MessageComposer = forwardRef<
     try {
       if (await onSubmit(text, selectedFiles)) {
         setFiles([])
-        editor.commands.clearContent()
+        if (isLiveEditor(editor)) editor.commands.clearContent()
       }
     } finally {
       setSending(false)
@@ -455,19 +461,31 @@ export const MessageComposer = forwardRef<
       },
     },
     onUpdate: ({ editor: updatedEditor }) => {
+      if (!isLiveEditor(updatedEditor)) return
       skipNextValueSync.current = true
       onChange(updatedEditor.getText())
     },
   })
   const editorState = useEditorState({
     editor,
-    selector: ({ editor: currentEditor }) => ({
-      hasText: Boolean(currentEditor.getText().trim()),
-      bold: currentEditor.isActive('bold'),
-      italic: currentEditor.isActive('italic'),
-      bulletList: currentEditor.isActive('bulletList'),
-      code: currentEditor.isActive('code'),
-    }),
+    selector: ({ editor: currentEditor }) => {
+      if (!isLiveEditor(currentEditor)) {
+        return {
+          hasText: false,
+          bold: false,
+          italic: false,
+          bulletList: false,
+          code: false,
+        }
+      }
+      return {
+        hasText: Boolean(currentEditor.getText().trim()),
+        bold: currentEditor.isActive('bold'),
+        italic: currentEditor.isActive('italic'),
+        bulletList: currentEditor.isActive('bulletList'),
+        code: currentEditor.isActive('code'),
+      }
+    },
   })
 
   useImperativeHandle(
@@ -475,7 +493,7 @@ export const MessageComposer = forwardRef<
     () => ({
       mention(agentId) {
         const agent = agents.find(({ id }) => id === agentId)
-        if (!agent) return
+        if (!agent || !isLiveEditor(editor)) return
         editor
           .chain()
           .focus()
@@ -497,6 +515,7 @@ export const MessageComposer = forwardRef<
   )
 
   useEffect(() => {
+    if (!isLiveEditor(editor)) return
     if (skipNextValueSync.current) {
       skipNextValueSync.current = false
       return
@@ -506,10 +525,12 @@ export const MessageComposer = forwardRef<
   }, [editor, value])
 
   useEffect(() => {
+    if (!isLiveEditor(editor)) return
     editor.setEditable(!disabled)
   }, [editor, disabled])
 
   useEffect(() => {
+    if (!isLiveEditor(editor)) return
     editor.view.dispatch(editor.state.tr)
   }, [editor, roomName, editing])
 

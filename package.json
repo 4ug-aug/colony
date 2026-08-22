@@ -3,7 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@clack/prompts": "^1.7.0",
-    "smolmachines": "^1.8.3"
+    "@clack/prompts": "^1.7.0"
   }
 }

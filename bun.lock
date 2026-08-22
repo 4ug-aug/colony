@@ -6,7 +6,6 @@
       "name": "sweat-v2",
       "dependencies": {
         "@clack/prompts": "^1.7.0",
-        "smolmachines": "^1.8.3",
       },
     },
   },
@@ -22,7 +21,5 @@
     "fast-wrap-ansi": ["fast-wrap-ansi@0.2.2", "", { "dependencies": { "fast-string-width": "^3.0.2" } }, "sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q=="],
 
     "sisteransi": ["sisteransi@1.0.5", "", {}, "sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg=="],
-
-    "smolmachines": ["smolmachines@1.8.3", "", {}, "sha512-J6qNtle87lm4m5OfqseNYDK3IfdT4hL5lbBaGcBOjHxXt/urLZryCD0x9Y9l5LCHLhzg+5XUn9aw41N0yWBq5Q=="],
   }
 }

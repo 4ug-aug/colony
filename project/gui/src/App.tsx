@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { authClient } from '#/lib/auth-client'
-import { Dashboard } from '#/features/shell/dashboard'
+import type { Dashboard } from '#/features/shell/dashboard'
 
 export type DashboardUser = Parameters<typeof Dashboard>[0]['user']
 

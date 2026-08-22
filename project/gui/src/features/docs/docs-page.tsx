@@ -4,8 +4,6 @@ import { DocListItem } from './components/doc-list-item'
 import { DocDetail } from './components/doc-session'
 import { useDocs } from './use-docs'
 
-export { DocSessionHeader } from './components/doc-session'
-
 export function DocsPage({
   selectedId,
   onSelectedIdChange,

@@ -1,7 +1,7 @@
 import { Button } from '#/components/ui/button'
 import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import type { BulletinsPageHandle } from '#/features/bulletins/bulletins-page'
-import { DocSessionHeader } from '#/features/docs/docs-page'
+import { DocSessionHeader } from '#/features/docs/components/doc-session'
 import { GrillSessionHeader } from '#/features/grills/components/grill-session'
 import type { IssueStatus } from '#/features/issues/types'
 import { MembersPanel } from '#/features/members/members-panel'
