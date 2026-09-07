@@ -190,7 +190,6 @@ function LlmProviderForm({
         <div className="flex items-center gap-3">
           <Button
             disabled={busy}
-            variant="raised"
             onClick={() => save.mutate()}
           >
             {save.isPending ? <AgentThinking label="Saving" /> : 'Save provider'}

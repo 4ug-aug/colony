@@ -293,7 +293,6 @@ export function IssueFiltersBar({
         </Button>
         <Button
           type="button"
-          variant="raised"
           size="sm"
           title={`${modifier}+N`}
           onClick={onCreate}

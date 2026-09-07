@@ -1124,14 +1124,9 @@ a {
   --btn-raised-height: 2.25rem;
   position: relative;
   isolation: isolate;
-  overflow: hidden;
-  height: var(--btn-raised-height);
-  gap: 0.4rem;
-  padding-inline: 1.15rem;
   border-width: max(1px, calc(var(--btn-raised-height) * 0.02));
   border-style: solid;
   border-color: color-mix(in oklab, var(--primary) 74%, black);
-  border-radius: calc(var(--btn-raised-height) * 0.24);
   background-color: var(--primary);
   background-image: linear-gradient(
     to bottom,
@@ -1146,8 +1141,26 @@ a {
   box-shadow: none;
 }
 
-.btn-raised[data-size='sm'] {
-  --btn-raised-height: 1.75rem;
+.btn-raised[data-size='xs'],
+.btn-raised[data-size='icon-xs'] {
+  --btn-raised-height: 1.5rem;
+}
+
+.btn-raised[data-size='sm'],
+.btn-raised[data-size='icon-sm'] {
+  --btn-raised-height: 2rem;
+}
+
+.btn-raised[data-size='lg'],
+.btn-raised[data-size='icon-lg'] {
+  --btn-raised-height: 2.5rem;
+}
+
+.btn-raised[data-size='icon'],
+.btn-raised[data-size='icon-xs'],
+.btn-raised[data-size='icon-sm'],
+.btn-raised[data-size='icon-lg'] {
+  padding-inline: 0;
 }
 
 .btn-raised::before {
