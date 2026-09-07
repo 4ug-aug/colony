@@ -1,6 +1,7 @@
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
+import { toast } from '#/components/ui/toast'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -81,7 +82,6 @@ function PreviewForm({
   const [graceSeconds, setGraceSeconds] = useState(
     String(Math.floor(config.graceDurationMs / 1000)),
   )
-  const [formError, setFormError] = useState<string>()
 
   const save = useMutation({
     mutationFn: () =>
@@ -101,13 +101,16 @@ function PreviewForm({
       setPreviewCommand(result.previewCommand ?? '')
       setGuestPort(String(result.guestPort))
       setGraceSeconds(String(Math.floor(result.graceDurationMs / 1000)))
-      setFormError(undefined)
       onSaved(result)
+      toast.add({ type: 'success', title: 'Preview saved' })
     },
     onError: (reason) => {
-      setFormError(
-        reason instanceof Error ? reason.message : 'Could not save Preview',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not save Preview',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -118,11 +121,6 @@ function PreviewForm({
       title="Preview"
       description="Init must finish (pull, install). Preview is the long-running HTTP server. Guest port must match the listen port. Docker in the VM should use host networking."
     >
-      {formError && (
-        <p className="mb-3 text-sm text-destructive" role="alert">
-          {formError}
-        </p>
-      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1 sm:col-span-2">
           <span className="text-sm font-medium">Init command</span>

@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '#/components/ui/select'
 import { Textarea } from '#/components/ui/textarea'
+import { toast } from '#/components/ui/toast'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -95,7 +96,6 @@ function GrantToolsForm({
   const [mode, setMode] = useState<GrantMode>(config.mode)
   const [tools, setTools] = useState(config.tools.join('\n'))
   const [bundles, setBundles] = useState(bundleLines(config.bundles))
-  const [formError, setFormError] = useState<string>()
 
   const save = useMutation({
     mutationFn: () =>
@@ -109,13 +109,16 @@ function GrantToolsForm({
       setMode(result.mode)
       setTools(result.tools.join('\n'))
       setBundles(bundleLines(result.bundles))
-      setFormError(undefined)
       onSaved(result)
+      toast.add({ type: 'success', title: 'Run tools saved' })
     },
     onError: (reason) => {
-      setFormError(
-        reason instanceof Error ? reason.message : 'Could not save run tools',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not save run tools',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -126,11 +129,6 @@ function GrantToolsForm({
       title="Run tools"
       description="Each run already receives only eligible capabilities. Narrow further so the agent is not given every tool schema. The model picker uses the workspace LLM provider, has no tools, and does not start a sandbox."
     >
-      {formError && (
-        <p className="mb-3 text-sm text-destructive" role="alert">
-          {formError}
-        </p>
-      )}
       <div className="grid gap-3">
         <Select
           value={mode}
@@ -180,7 +178,11 @@ function GrantToolsForm({
         </label>
         <div className="flex items-center gap-3">
           <Button disabled={busy} onClick={() => save.mutate()}>
-            {save.isPending ? <AgentThinking label="Saving" /> : 'Save run tools'}
+            {save.isPending ? (
+              <AgentThinking label="Saving" />
+            ) : (
+              'Save run tools'
+            )}
           </Button>
         </div>
       </div>

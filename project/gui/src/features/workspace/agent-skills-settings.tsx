@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '#/components/ui/dialog'
+import { toast } from '#/components/ui/toast'
 import { AgentMark } from '#/features/agents/agent-mark'
 import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
 import { SettingsCard } from '#/features/workspace/settings-card'
@@ -91,7 +92,6 @@ export function AgentSkillsSettings() {
   const [dragActive, setDragActive] = useState(false)
   const [pendingSkillId, setPendingSkillId] = useState<string>()
   const [viewingSkillId, setViewingSkillId] = useState<string>()
-  const [actionError, setActionError] = useState<string>()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const acceptSkillFile = (file: File | undefined) => {
@@ -100,10 +100,12 @@ export function AgentSkillsSettings() {
       return
     }
     if (!isSkillPackageFile(file)) {
-      setActionError('Choose a SKILL.md or skill package zip')
+      toast.add({
+        type: 'error',
+        title: 'Choose a SKILL.md or skill package zip',
+      })
       return
     }
-    setActionError(undefined)
     setSkillFile(file)
   }
 
@@ -139,16 +141,17 @@ export function AgentSkillsSettings() {
     },
     onSuccess: () => {
       setSkillFile(null)
-      setActionError(undefined)
+      toast.add({ type: 'success', title: 'Skill imported' })
       void refreshSkills()
       refreshAgentDefinitions()
     },
     onError: (reason) => {
-      setActionError(
-        reason instanceof Error
-          ? reason.message
-          : 'Could not import skill package',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not import skill package',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -186,12 +189,15 @@ export function AgentSkillsSettings() {
       if (context?.previous) {
         queryClient.setQueryData(workspaceSkillsQueryKey, context.previous)
       }
-      setActionError(
-        reason instanceof Error ? reason.message : 'Could not delete skill',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not delete skill',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
     onSuccess: () => {
-      setActionError(undefined)
+      toast.add({ type: 'success', title: 'Skill deleted' })
       refreshAgentDefinitions()
     },
     onSettled: () => {
@@ -246,14 +252,14 @@ export function AgentSkillsSettings() {
       if (context?.previous) {
         queryClient.setQueryData(workspaceSkillsQueryKey, context.previous)
       }
-      setActionError(
-        reason instanceof Error
-          ? reason.message
-          : 'Could not update skill attachments',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not update skill attachments',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
     onSuccess: (result) => {
-      setActionError(undefined)
       queryClient.setQueryData<SkillsCatalog>(
         workspaceSkillsQueryKey,
         (current) =>
@@ -278,8 +284,6 @@ export function AgentSkillsSettings() {
   const attachments = data?.attachments ?? {}
   const agents = data?.agents ?? []
   const busy = importSkill.isPending || isFetching
-  const detailError =
-    skillDetail.error instanceof Error ? skillDetail.error.message : undefined
 
   return (
     <SettingsCard
@@ -293,11 +297,9 @@ export function AgentSkillsSettings() {
         </>
       }
     >
-      {(error || actionError || detailError) && (
+      {error && (
         <p className="mb-3 text-sm text-destructive" role="alert">
-          {actionError ??
-            detailError ??
-            (error instanceof Error ? error.message : 'Could not load skills')}
+          {error instanceof Error ? error.message : 'Could not load skills'}
         </p>
       )}
       <div className="grid gap-3">
@@ -529,6 +531,13 @@ export function AgentSkillsSettings() {
             {skillDetail.isPending && (
               <p className="text-sm text-muted-foreground" role="status">
                 <AgentThinking label="Loading skill" />
+              </p>
+            )}
+            {skillDetail.error && (
+              <p className="text-sm text-destructive" role="alert">
+                {skillDetail.error instanceof Error
+                  ? skillDetail.error.message
+                  : 'Could not load skill'}
               </p>
             )}
             {!skillDetail.isPending &&

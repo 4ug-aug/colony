@@ -39,6 +39,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '#/components/ui/tooltip'
+import { toast } from '#/components/ui/toast'
 import { AgentMark } from '#/features/agents/agent-mark'
 import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
 import { SettingsCard } from '#/features/workspace/settings-card'
@@ -108,7 +109,6 @@ function useWorkspaceConnections() {
 export function ConnectionSettings() {
   const queryClient = useQueryClient()
   const { data, isPending, error, isFetching } = useWorkspaceConnections()
-  const [actionError, setActionError] = useState<string>()
 
   const refreshAgentDefinitions = () =>
     void queryClient.refetchQueries({ queryKey: agentDefinitionsQueryKey })
@@ -143,11 +143,6 @@ export function ConnectionSettings() {
       title="Connections"
       description="Configure external providers and link them to agents. Clear removes credentials and all links for that connection."
     >
-      {actionError && (
-        <p className="mb-3 text-sm text-destructive" role="alert">
-          {actionError}
-        </p>
-      )}
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {data.connections.map((connection) => (
           <li key={connection.id} className="h-full">
@@ -155,9 +150,7 @@ export function ConnectionSettings() {
               agents={data.agents}
               connection={connection}
               refreshing={isFetching}
-              onError={setActionError}
               onUpdated={(next) => {
-                setActionError(undefined)
                 queryClient.setQueryData<ConnectionsCatalog>(
                   workspaceConnectionsQueryKey,
                   (current) =>
@@ -186,13 +179,11 @@ function ConnectionCard({
   agents,
   refreshing,
   onUpdated,
-  onError,
 }: {
   connection: PublicConnection
   agents: ConnectionAgent[]
   refreshing: boolean
   onUpdated: (connection: PublicConnection) => void
-  onError: (message: string | undefined) => void
 }) {
   const extraConfig = (connection.fieldSchema ?? []).length > 1
   const summary = extraConfig ? connectionSummary(connection) : undefined
@@ -201,7 +192,6 @@ function ConnectionCard({
     () => connection.values,
   )
   const [apiKey, setApiKey] = useState('')
-  const [formError, setFormError] = useState<string>()
 
   const save = useMutation({
     mutationFn: () =>
@@ -214,16 +204,20 @@ function ConnectionCard({
     onSuccess: (result) => {
       setApiKey('')
       setValues(result.connection.values)
-      setFormError(undefined)
       setEditing(false)
-      onError(undefined)
       onUpdated(result.connection)
+      toast.add({
+        type: 'success',
+        title: `${connection.name} saved`,
+      })
     },
     onError: (reason) => {
-      const message =
-        reason instanceof Error ? reason.message : 'Could not save connection'
-      setFormError(message)
-      onError(message)
+      toast.add({
+        type: 'error',
+        title: `Could not save ${connection.name}`,
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -244,15 +238,19 @@ function ConnectionCard({
     onSuccess: (next) => {
       setApiKey('')
       setValues(next.values)
-      setFormError(undefined)
-      onError(undefined)
       onUpdated(next)
+      toast.add({
+        type: 'success',
+        title: `${connection.name} cleared`,
+      })
     },
     onError: (reason) => {
-      const message =
-        reason instanceof Error ? reason.message : 'Could not clear connection'
-      setFormError(message)
-      onError(message)
+      toast.add({
+        type: 'error',
+        title: `Could not clear ${connection.name}`,
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -275,17 +273,15 @@ function ConnectionCard({
       return result.linkedAgentIds ?? agentDefinitionIds
     },
     onSuccess: (linkedAgentIds) => {
-      setFormError(undefined)
-      onError(undefined)
       onUpdated({ ...connection, linkedAgentIds })
     },
     onError: (reason) => {
-      const message =
-        reason instanceof Error
-          ? reason.message
-          : 'Could not update connection links'
-      setFormError(message)
-      onError(message)
+      toast.add({
+        type: 'error',
+        title: 'Could not update connection links',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -402,12 +398,6 @@ function ConnectionCard({
         </div>
       </div>
 
-      {formError && !editing && (
-        <p className="mt-2 text-sm text-destructive" role="alert">
-          {formError}
-        </p>
-      )}
-
       {extraConfig && connection.configured && summary && (
         <p className="mt-3 truncate font-mono text-xs text-muted-foreground">
           {summary}
@@ -437,11 +427,6 @@ function ConnectionCard({
                 {`${(connection.fieldSchema ?? []).map((field) => field.label).join(', ')}.`}
               </DialogDescription>
             </DialogHeader>
-            {formError && (
-              <p className="text-sm text-destructive" role="alert">
-                {formError}
-              </p>
-            )}
             <ConnectionFields
               apiKey={apiKey}
               busy={busy}
@@ -566,9 +551,7 @@ function ConnectionFields({
             <Input
               aria-label={`${connection.name} ${field.label}`}
               disabled={busy}
-              onChange={(event) =>
-                onFieldChange(field.key, event.target.value)
-              }
+              onChange={(event) => onFieldChange(field.key, event.target.value)}
               placeholder={field.label}
               type={field.kind === 'url' ? 'url' : 'text'}
               value={values[field.key] ?? ''}

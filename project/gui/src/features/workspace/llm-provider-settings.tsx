@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import { toast } from '#/components/ui/toast'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import {
@@ -60,7 +61,9 @@ export function LlmProviderSettings() {
     return (
       <SettingsCard title="LLM provider">
         <p className="text-sm text-destructive" role="alert">
-          {error instanceof Error ? error.message : 'Could not load LLM settings'}
+          {error instanceof Error
+            ? error.message
+            : 'Could not load LLM settings'}
         </p>
       </SettingsCard>
     )
@@ -92,7 +95,6 @@ function LlmProviderForm({
   )
   const [model, setModel] = useState(config.model ?? '')
   const [apiKey, setApiKey] = useState('')
-  const [formError, setFormError] = useState<string>()
 
   const save = useMutation({
     mutationFn: () =>
@@ -107,13 +109,16 @@ function LlmProviderForm({
       setBaseUrl(result.baseUrl ?? '')
       setModel(result.model ?? '')
       setApiKey('')
-      setFormError(undefined)
       onSaved(result)
+      toast.add({ type: 'success', title: 'LLM provider saved' })
     },
     onError: (reason) => {
-      setFormError(
-        reason instanceof Error ? reason.message : 'Could not save provider',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not save provider',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -124,11 +129,6 @@ function LlmProviderForm({
       title="LLM provider"
       description="Configure the OpenAI-compatible provider used for new agent runs."
     >
-      {formError && (
-        <p className="mb-3 text-sm text-destructive" role="alert">
-          {formError}
-        </p>
-      )}
       <div className="grid gap-3">
         <Select
           value={provider}
@@ -188,11 +188,12 @@ function LlmProviderForm({
           value={apiKey}
         />
         <div className="flex items-center gap-3">
-          <Button
-            disabled={busy}
-            onClick={() => save.mutate()}
-          >
-            {save.isPending ? <AgentThinking label="Saving" /> : 'Save provider'}
+          <Button disabled={busy} onClick={() => save.mutate()}>
+            {save.isPending ? (
+              <AgentThinking label="Saving" />
+            ) : (
+              'Save provider'
+            )}
           </Button>
           <span className="text-sm text-muted-foreground">
             {config.configured ? (

@@ -1,3 +1,14 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
@@ -9,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import { toast } from '#/components/ui/toast'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -21,10 +33,7 @@ type Invitation = {
   state: 'pending' | 'expired' | 'revoked' | 'redeemed'
 }
 
-const invitationsQueryKey = [
-  'workspace-settings',
-  'invitations',
-] as const
+const invitationsQueryKey = ['workspace-settings', 'invitations'] as const
 
 function useInvitations() {
   return useQuery({
@@ -42,12 +51,14 @@ function useInvitations() {
 
 export function InvitationSettings() {
   const queryClient = useQueryClient()
-  const { data: invitations = [], isPending, error, isFetching } =
-    useInvitations()
+  const {
+    data: invitations = [],
+    isPending,
+    error,
+    isFetching,
+  } = useInvitations()
   const [days, setDays] = useState<1 | 3 | 7>(3)
   const [newLink, setNewLink] = useState<string>()
-  const [copied, setCopied] = useState(false)
-  const [actionError, setActionError] = useState<string>()
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: invitationsQueryKey })
@@ -64,16 +75,16 @@ export function InvitationSettings() {
     },
     onSuccess: (url) => {
       setNewLink(url)
-      setCopied(false)
-      setActionError(undefined)
+      toast.add({ type: 'success', title: 'Invitation created' })
       void refresh()
     },
     onError: (reason) => {
-      setActionError(
-        reason instanceof Error
-          ? reason.message
-          : 'Could not create invitation',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not create invitation',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -86,48 +97,41 @@ export function InvitationSettings() {
         'Could not revoke invitation',
       ),
     onSuccess: () => {
-      setActionError(undefined)
+      toast.add({ type: 'success', title: 'Invitation revoked' })
       void refresh()
     },
     onError: (reason) => {
-      setActionError(
-        reason instanceof Error
-          ? reason.message
-          : 'Could not revoke invitation',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not revoke invitation',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
-
-  const revokeInvitation = (id: string) => {
-    if (!window.confirm('Revoke this invitation link?')) return
-    revoke.mutate(id)
-  }
 
   const copyInvitation = async () => {
     if (!newLink) return
     try {
       await navigator.clipboard.writeText(newLink)
-      setCopied(true)
-      setActionError(undefined)
+      toast.add({ type: 'success', title: 'Copied invitation link' })
     } catch {
-      setActionError('Could not copy the invitation link')
+      toast.add({ type: 'error', title: 'Could not copy the invitation link' })
     }
   }
 
-  const busy =
-    createInvitation.isPending || revoke.isPending || isFetching
+  const busy = createInvitation.isPending || revoke.isPending || isFetching
 
   return (
     <SettingsCard
       title="Invitation links"
       description="Create a single-use link to invite someone to this workspace."
     >
-      {(error || actionError) && (
+      {error && (
         <p className="mb-3 text-sm text-destructive" role="alert">
-          {actionError ??
-            (error instanceof Error
-              ? error.message
-              : 'Could not load invitations')}
+          {error instanceof Error
+            ? error.message
+            : 'Could not load invitations'}
         </p>
       )}
       {isPending && (
@@ -152,10 +156,7 @@ export function InvitationSettings() {
             </SelectGroup>
           </SelectContent>
         </Select>
-        <Button
-          disabled={busy}
-          onClick={() => createInvitation.mutate()}
-        >
+        <Button disabled={busy} onClick={() => createInvitation.mutate()}>
           {createInvitation.isPending ? (
             <AgentThinking label="Creating" />
           ) : (
@@ -172,7 +173,7 @@ export function InvitationSettings() {
             readOnly
           />
           <Button variant="outline" onClick={() => void copyInvitation()}>
-            {copied ? 'Copied' : 'Copy'}
+            Copy
           </Button>
         </div>
       )}
@@ -197,14 +198,34 @@ export function InvitationSettings() {
               </span>
             </span>
             {invitation.state === 'pending' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => revokeInvitation(invitation.id)}
-              >
-                Revoke
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger
+                  render={<Button variant="ghost" size="sm" disabled={busy} />}
+                >
+                  Revoke
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Revoke this invitation link?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The link will stop working immediately and cannot be
+                      reused.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      disabled={revoke.isPending}
+                      onClick={() => revoke.mutate(invitation.id)}
+                    >
+                      Revoke
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
         ))}

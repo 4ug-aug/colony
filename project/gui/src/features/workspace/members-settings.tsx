@@ -1,3 +1,14 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
 import {
@@ -9,6 +20,7 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { toast } from '#/components/ui/toast'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiFetch, apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -50,8 +62,6 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
     error,
     isFetching,
   } = useSettingsMembers()
-  const [actionError, setActionError] = useState<string>()
-  const [message, setMessage] = useState<string>()
   const [resetMember, setResetMember] = useState<Member>()
   const [newPassword, setNewPassword] = useState('')
 
@@ -63,31 +73,31 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
         { method: 'POST' },
       )
       if (!response.ok) throw new Error(`Could not ${action} member`)
+      return { member, action }
     },
-    onSuccess: () => {
-      setActionError(undefined)
+    onSuccess: ({ member, action }) => {
+      const name = member.username ?? member.name
+      toast.add({
+        type: 'success',
+        title: action === 'restore' ? 'Member restored' : 'Member suspended',
+        description:
+          action === 'restore'
+            ? `${name} can sign in again.`
+            : `${name} was signed out.`,
+      })
       void queryClient.invalidateQueries({
         queryKey: workspaceSettingsMembersQueryKey,
       })
     },
     onError: (reason) => {
-      setActionError(
-        reason instanceof Error ? reason.message : 'Could not update member',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not update member',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
-
-  const requestMemberChange = (member: Member) => {
-    const action = member.banned ? 'restore' : 'suspend'
-    if (
-      action === 'suspend' &&
-      !window.confirm(
-        `Suspend ${member.username ?? member.name} and sign them out?`,
-      )
-    )
-      return
-    changeMember.mutate(member)
-  }
 
   const resetPassword = useMutation({
     mutationFn: ({ member, password }: { member: Member; password: string }) =>
@@ -100,15 +110,20 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
     onSuccess: (_result, { member }) => {
       setResetMember(undefined)
       setNewPassword('')
-      setActionError(undefined)
-      setMessage(
-        `Password reset for ${member.username ?? member.name}; existing sessions were signed out.`,
-      )
+      toast.add({
+        type: 'success',
+        title: 'Password reset',
+        description: `Existing sessions for ${member.username ?? member.name} were signed out.`,
+      })
     },
-    onError: (reason) =>
-      setActionError(
-        reason instanceof Error ? reason.message : 'Could not reset password',
-      ),
+    onError: (reason) => {
+      toast.add({
+        type: 'error',
+        title: 'Could not reset password',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
+    },
   })
 
   const changeRole = useMutation({
@@ -126,36 +141,29 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
         'Could not update administrator access',
       ),
     onSuccess: (_result, { member, role }) => {
-      setActionError(undefined)
-      setMessage(
-        role === 'admin'
-          ? `${member.username ?? member.name} is now an administrator.`
-          : `Removed administrator from ${member.username ?? member.name}.`,
-      )
+      const name = member.username ?? member.name
+      toast.add({
+        type: 'success',
+        title:
+          role === 'admin' ? 'Administrator added' : 'Administrator removed',
+        description:
+          role === 'admin'
+            ? `${name} is now an administrator.`
+            : `${name} no longer has workspace settings access.`,
+      })
       void queryClient.invalidateQueries({
         queryKey: workspaceSettingsMembersQueryKey,
       })
     },
-    onError: (reason) =>
-      setActionError(
-        reason instanceof Error
-          ? reason.message
-          : 'Could not update administrator access',
-      ),
+    onError: (reason) => {
+      toast.add({
+        type: 'error',
+        title: 'Could not update administrator access',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
+    },
   })
-
-  const requestRoleChange = (member: Member) => {
-    const role = member.role === 'admin' ? 'user' : 'admin'
-    if (
-      role === 'user' &&
-      !window.confirm(
-        `Remove administrator from ${member.username ?? member.name}? They will lose workspace settings access.`,
-      )
-    )
-      return
-    setMessage(undefined)
-    changeRole.mutate({ member, role })
-  }
 
   const busy =
     changeMember.isPending ||
@@ -168,15 +176,9 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
       title="Members"
       description="Reset passwords, change administrator access, or suspend workspace access."
     >
-      {(error || actionError) && (
+      {error && (
         <p className="mb-3 text-sm text-destructive" role="alert">
-          {actionError ??
-            (error instanceof Error ? error.message : 'Could not load members')}
-        </p>
-      )}
-      {message && (
-        <p className="mb-3 text-sm text-muted-foreground" role="status">
-          {message}
+          {error instanceof Error ? error.message : 'Could not load members'}
         </p>
       )}
       {isPending ? (
@@ -211,32 +213,101 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
                     onClick={() => {
                       setResetMember(member)
                       setNewPassword('')
-                      setActionError(undefined)
-                      setMessage(undefined)
                     }}
                   >
                     Reset password
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => requestRoleChange(member)}
-                  >
-                    {member.role === 'admin'
-                      ? 'Remove administrator'
-                      : 'Make administrator'}
-                  </Button>
-                  {member.role !== 'admin' && (
+                  {member.role === 'admin' ? (
+                    <AlertDialog>
+                      <AlertDialogTrigger
+                        render={
+                          <Button variant="outline" size="sm" disabled={busy} />
+                        }
+                      >
+                        Remove administrator
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Remove administrator from{' '}
+                            {member.username ?? member.name}?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            They will lose workspace settings access.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            disabled={changeRole.isPending}
+                            onClick={() =>
+                              changeRole.mutate({ member, role: 'user' })
+                            }
+                          >
+                            Remove administrator
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  ) : (
                     <Button
                       variant="outline"
                       size="sm"
                       disabled={busy}
-                      onClick={() => requestMemberChange(member)}
+                      onClick={() =>
+                        changeRole.mutate({ member, role: 'admin' })
+                      }
                     >
-                      {member.banned ? 'Restore' : 'Suspend'}
+                      Make administrator
                     </Button>
                   )}
+                  {member.role !== 'admin' &&
+                    (member.banned ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => changeMember.mutate(member)}
+                      >
+                        Restore
+                      </Button>
+                    ) : (
+                      <AlertDialog>
+                        <AlertDialogTrigger
+                          render={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                            />
+                          }
+                        >
+                          Suspend
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Suspend {member.username ?? member.name}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              They will be signed out and cannot sign in until
+                              restored.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              variant="destructive"
+                              disabled={changeMember.isPending}
+                              onClick={() => changeMember.mutate(member)}
+                            >
+                              Suspend
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    ))}
                 </span>
               )}
             </div>
@@ -268,11 +339,6 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
                 Their existing sessions will be signed out.
               </DialogDescription>
             </DialogHeader>
-            {actionError && (
-              <p className="mt-4 text-sm text-destructive" role="alert">
-                {actionError}
-              </p>
-            )}
             <Input
               autoComplete="new-password"
               autoFocus

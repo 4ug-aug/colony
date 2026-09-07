@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import { toast } from '#/components/ui/toast'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -118,7 +119,6 @@ function CursorRuntimeForm({
 }) {
   const [cursorModel, setCursorModel] = useState(config.model ?? '')
   const [cursorApiKey, setCursorApiKey] = useState('')
-  const [formError, setFormError] = useState<string>()
   const { data: agents = [] } = useAgentDefinitions()
 
   const save = useMutation({
@@ -132,15 +132,16 @@ function CursorRuntimeForm({
     onSuccess: (result) => {
       setCursorModel(result.model ?? '')
       setCursorApiKey('')
-      setFormError(undefined)
       onSaved(result)
+      toast.add({ type: 'success', title: 'Cursor runtime saved' })
     },
     onError: (reason) => {
-      setFormError(
-        reason instanceof Error
-          ? reason.message
-          : 'Could not save Cursor runtime',
-      )
+      toast.add({
+        type: 'error',
+        title: 'Could not save Cursor runtime',
+        description:
+          reason instanceof Error ? reason.message : 'Please try again.',
+      })
     },
   })
 
@@ -165,11 +166,6 @@ function CursorRuntimeForm({
         </>
       }
     >
-      {formError && (
-        <p className="mb-3 text-sm text-destructive" role="alert">
-          {formError}
-        </p>
-      )}
       <div className="grid gap-3">
         <Input
           aria-label="Cursor API key"
