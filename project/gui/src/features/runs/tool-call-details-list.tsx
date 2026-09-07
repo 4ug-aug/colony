@@ -5,11 +5,9 @@ import {
 } from '#/components/ui/collapsible'
 import { cn } from '#/lib/utils'
 import { ChevronRight } from 'lucide-react'
-import {
-  formatStepText,
-  isFailedToolResult,
-  type ActivityItem,
-} from './run-activity'
+import { memo } from 'react'
+import { formatStepText, isFailedToolResult } from './run-activity'
+import type { ActivityItem } from './run-activity'
 import { ToolIcon } from './run-tool-icon'
 
 const panelClassName =
@@ -33,25 +31,81 @@ function statusLabel(result: ActivityItem['result'], failed: boolean): string {
   return failed ? 'Failed' : 'Completed'
 }
 
-function ToolCallDetailsRow({
+// Base UI mounts panel children on expansion, so closed rows do not format payloads.
+function ToolCallBody({
   item,
   compact,
   resultMaxLength,
+  failed,
 }: {
   item: ActivityItem
   compact: boolean
   resultMaxLength?: number
+  failed: boolean
 }) {
-  const name = toolName(item.step)
-  const failed = item.result ? isFailedToolResult(item.result.text) : false
   const argsText = formatStepText(item.step.text)
-  const resultText = item.result
-    ? formatStepText(item.result.text)
-    : undefined
+  const resultText = item.result ? formatStepText(item.result.text) : undefined
   const shownResult =
     resultText && resultMaxLength !== undefined
       ? resultText.slice(0, resultMaxLength)
       : resultText
+
+  return (
+    <div
+      className={cn(
+        'text-xs',
+        compact ? 'mt-1.5 space-y-2 pb-1.5 pl-5' : 'mt-2 space-y-3 pb-2 pl-5',
+      )}
+    >
+      {argsText && argsText !== '{}' ? (
+        <div>
+          <p className="mb-1 font-semibold">Arguments</p>
+          <pre
+            className={cn(
+              'overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted font-mono leading-4 text-muted-foreground',
+              compact
+                ? 'max-h-28 px-2 py-1.5 text-[0.7rem]'
+                : 'overflow-x-auto px-3 py-2 text-xs leading-5',
+            )}
+          >
+            {argsText}
+          </pre>
+        </div>
+      ) : null}
+      {shownResult ? (
+        <div>
+          <p className="mb-1 font-semibold">Result</p>
+          <pre
+            className={cn(
+              'overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted font-mono leading-4',
+              compact
+                ? 'max-h-28 px-2 py-1.5 text-[0.7rem]'
+                : 'overflow-x-auto px-3 py-2 text-xs leading-5',
+              failed ? 'text-destructive' : 'text-muted-foreground',
+            )}
+          >
+            {shownResult}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+const ToolCallDetailsRow = memo(function ToolCallDetailsRow({
+  step,
+  result,
+  compact,
+  resultMaxLength,
+}: {
+  step: ActivityItem['step']
+  result: ActivityItem['result']
+  compact: boolean
+  resultMaxLength?: number
+}) {
+  const item = { step, result }
+  const name = toolName(item.step)
+  const failed = item.result ? isFailedToolResult(item.result.text) : false
 
   return (
     <Collapsible className="text-xs text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none">
@@ -76,48 +130,16 @@ function ToolCallDetailsRow({
         />
       </CollapsibleTrigger>
       <CollapsibleContent className={panelClassName}>
-        <div
-          className={cn(
-            'text-xs',
-            compact ? 'mt-1.5 space-y-2 pb-1.5 pl-5' : 'mt-2 space-y-3 pb-2 pl-5',
-          )}
-        >
-          {argsText && argsText !== '{}' ? (
-            <div>
-              <p className="mb-1 font-semibold">Arguments</p>
-              <pre
-                className={cn(
-                  'overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted font-mono leading-4 text-muted-foreground',
-                  compact
-                    ? 'max-h-28 px-2 py-1.5 text-[0.7rem]'
-                    : 'overflow-x-auto px-3 py-2 text-xs leading-5',
-                )}
-              >
-                {argsText}
-              </pre>
-            </div>
-          ) : null}
-          {shownResult ? (
-            <div>
-              <p className="mb-1 font-semibold">Result</p>
-              <pre
-                className={cn(
-                  'overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted font-mono leading-4',
-                  compact
-                    ? 'max-h-28 px-2 py-1.5 text-[0.7rem]'
-                    : 'overflow-x-auto px-3 py-2 text-xs leading-5',
-                  failed ? 'text-destructive' : 'text-muted-foreground',
-                )}
-              >
-                {shownResult}
-              </pre>
-            </div>
-          ) : null}
-        </div>
+        <ToolCallBody
+          item={item}
+          compact={compact}
+          resultMaxLength={resultMaxLength}
+          failed={failed}
+        />
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})
 
 export function ToolCallDetailsList({
   items,
@@ -134,7 +156,8 @@ export function ToolCallDetailsList({
       {items.map((item) => (
         <ToolCallDetailsRow
           key={item.step.id}
-          item={item}
+          step={item.step}
+          result={item.result}
           compact={compact}
           resultMaxLength={resultMaxLength}
         />

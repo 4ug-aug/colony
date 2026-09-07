@@ -1138,9 +1138,15 @@ a {
   opacity: 1;
 }
 
+/* In @layer components so utilities like `absolute` can override it. */
+@layer components {
+  .btn-raised {
+    position: relative;
+  }
+}
+
 .btn-raised {
   --btn-raised-height: 2.25rem;
-  position: relative;
   isolation: isolate;
   border-width: max(1px, calc(var(--btn-raised-height) * 0.02));
   border-style: solid;
@@ -1154,7 +1160,7 @@ a {
   );
   color: var(--primary-foreground);
   font-size: calc(var(--btn-raised-height) * 0.37);
-  font-weight: 400;
+  font-weight: 550;
   line-height: 1;
   box-shadow: none;
 }

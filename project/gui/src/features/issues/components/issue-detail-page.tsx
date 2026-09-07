@@ -216,7 +216,7 @@ function SubIssuesSection({
                 onClick={() => onOpen(child.id)}
               >
                 <IssueStatusIcon status={child.status} />
-                <span className="w-14 shrink-0 tabular-nums text-muted-foreground">
+                <span className="w-[4.5rem] flex-none whitespace-nowrap tabular-nums text-muted-foreground">
                   {formatIssueId(child.number)}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{child.title}</span>

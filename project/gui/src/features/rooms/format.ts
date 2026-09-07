@@ -4,11 +4,13 @@ export function formatBytes(bytes: number): string {
     : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+const messageDateFormat = new Intl.DateTimeFormat(undefined, {
+  hour: 'numeric',
+  minute: '2-digit',
+  day: 'numeric',
+  month: 'long',
+})
+
 export function timestamp(value: number) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-    day: 'numeric',
-    month: "long"
-  }).format(value)
+  return messageDateFormat.format(value)
 }

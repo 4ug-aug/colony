@@ -9,7 +9,7 @@ import { MembersSettings } from '#/features/workspace/members-settings'
 import { PreviewSettings } from '#/features/workspace/preview-settings'
 
 const tabEnter =
-  'min-h-0 overflow-y-auto space-y-3 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 ease-out fill-mode-backwards motion-reduce:animate-none'
+  'p-1 no-scrollbar min-h-0 overflow-y-auto space-y-3 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 ease-out fill-mode-backwards motion-reduce:animate-none'
 
 export function WorkspaceSettingsPage({
   currentUserId,
