@@ -87,7 +87,8 @@ _Avoid_: Worker pool, shared server
 
 **Workspace administrator**: An account authorized to manage workspace-wide
 membership and settings. The first administrator is established through the
-server's one-time setup flow.
+server's one-time setup flow; later administrators are granted from Members
+in Workspace settings. A workspace always keeps at least one administrator.
 _Avoid_: Server operator, room owner
 
 **Workspace invitation**: A single-use authorization created by a workspace

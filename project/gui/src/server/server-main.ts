@@ -585,6 +585,11 @@ if (import.meta.main) {
         auth.api.banUser({ body: { userId }, headers: request.headers }),
       unbanUser: (request, userId) =>
         auth.api.unbanUser({ body: { userId }, headers: request.headers }),
+      setUserRole: (request, userId, role) =>
+        auth.api.setRole({
+          body: { userId, role },
+          headers: request.headers,
+        }),
       resetUserPassword: async (request, userId, newPassword) => {
         const response = await auth.api.setUserPassword({
           body: { userId, newPassword },

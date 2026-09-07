@@ -12,8 +12,8 @@ browser-delivered slice.
 2. If no account exists, the server creates a random one-time setup token,
    stores only its hash, and prints the plaintext once.
 3. A visitor presents that token and chooses an email, immutable username,
-   display name, and password. The account becomes the sole workspace
-   administrator and setup closes permanently.
+   display name, and password. The account becomes a workspace administrator
+   and setup closes permanently.
 4. Members sign in with either email or username plus password. The username is
    their primary visible name; a profile hovercard shows display name and
    email.
@@ -24,11 +24,13 @@ browser-delivered slice.
    default.
 7. A valid invitation lets its first holder choose their own email, username,
    display name, and password and enter the workspace.
-8. The administrator can revoke unused invitations and suspend or restore
-   member accounts. Suspension revokes sessions and blocks sign-in without
-   deleting shared history.
+8. The administrator can revoke unused invitations, make or remove other
+   administrators, and suspend or restore member accounts. Suspension revokes
+   sessions and blocks sign-in without deleting shared history. An
+   administrator cannot change their own role, and the workspace always keeps
+   at least one administrator.
 9. A signed-in member can change their password and revoke their other
-   sessions. The server operator can recover the sole administrator through a
+   sessions. The server operator can recover an administrator through a
    server-side password-reset command.
 
 ## Acceptance checks
@@ -45,8 +47,11 @@ browser-delivered slice.
 - Username uniqueness follows Better Auth's normalized username behavior.
 - The interface uses username as the primary author/member label and reveals
   display name and email only in profile details.
-- Only the administrator can create, list, and revoke workspace invitations or
-  suspend and restore members.
+- Only an administrator can create, list, and revoke workspace invitations,
+  make or remove other administrators, or suspend and restore members.
+- An administrator cannot change their own role.
+- Removing administrator access is rejected when it would leave the workspace
+  with no administrator.
 - Invitation creation supports only one, three, or seven days and defaults to
   three.
 - Expired, revoked, and redeemed invitations cannot be reused; their states
@@ -59,7 +64,6 @@ browser-delivered slice.
 ## Outside this slice
 
 - Tauri packaging and server selection
-- Multiple workspace administrators or role management
 - Invitation and password-reset email
 - Email verification
 - Username or email changes

@@ -188,7 +188,11 @@ function LlmProviderForm({
           value={apiKey}
         />
         <div className="flex items-center gap-3">
-          <Button disabled={busy} onClick={() => save.mutate()}>
+          <Button
+            disabled={busy}
+            variant="raised"
+            onClick={() => save.mutate()}
+          >
             {save.isPending ? <AgentThinking label="Saving" /> : 'Save provider'}
           </Button>
           <span className="text-sm text-muted-foreground">

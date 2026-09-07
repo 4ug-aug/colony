@@ -20,7 +20,7 @@ import {
   PopoverTrigger,
 } from '#/components/ui/popover'
 import { cn } from '#/lib/utils'
-import { BarChart3, ChevronDown, Plus, UserRound, X } from 'lucide-react'
+import { BarChart3, ChevronDown, UserRound, X } from 'lucide-react'
 import { useState } from 'react'
 import { EMPTY_ISSUE_FILTERS, issueFiltersActive } from '../issue-filters'
 import type { IssueListFilters } from '../issue-filters'
@@ -293,18 +293,17 @@ export function IssueFiltersBar({
         </Button>
         <Button
           type="button"
+          variant="raised"
           size="sm"
-          className="h-7 gap-1.5"
           title={`${modifier}+N`}
           onClick={onCreate}
         >
-          <Plus data-icon="inline-start" />
           New issue
           <KbdGroup className="pointer-events-none hidden sm:inline-flex opacity-80">
-            <Kbd className="bg-primary-foreground/15 text-primary-foreground">
+            <Kbd className="h-4 min-w-4 bg-primary-foreground/15 px-1 text-[0.5625rem] font-normal text-primary-foreground">
               {modifier}
             </Kbd>
-            <Kbd className="bg-primary-foreground/15 text-primary-foreground">
+            <Kbd className="h-4 min-w-4 bg-primary-foreground/15 px-1 text-[0.5625rem] font-normal text-primary-foreground">
               N
             </Kbd>
           </KbdGroup>

@@ -36,8 +36,11 @@ delivery is outside the initial slice.
 An invitation is an unbound bearer credential: whoever possesses it may redeem
 it first. Sweat does not claim email binding without email verification.
 
-The first account is the sole workspace administrator in this slice.
-Administrator promotion, demotion, and role management are deferred.
+The first account becomes a workspace administrator. Later administrators are
+granted from Members in Workspace settings using Better Auth's `setRole`,
+wrapped by admission HTTP rather than Better Auth's `/admin` routes. An
+administrator cannot change their own role, and the workspace always keeps at
+least one administrator.
 
 Administrator password recovery is a server-side operator command that sets a
 new password and revokes existing sessions. Automated reset email and

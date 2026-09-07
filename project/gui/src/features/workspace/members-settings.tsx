@@ -111,12 +111,62 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
       ),
   })
 
-  const busy = changeMember.isPending || resetPassword.isPending || isFetching
+  const changeRole = useMutation({
+    mutationFn: ({
+      member,
+      role,
+    }: {
+      member: Member
+      role: 'admin' | 'user'
+    }) =>
+      apiJsonBody(
+        `/api/workspace/settings/members/${member.id}/role`,
+        'POST',
+        { role },
+        'Could not update administrator access',
+      ),
+    onSuccess: (_result, { member, role }) => {
+      setActionError(undefined)
+      setMessage(
+        role === 'admin'
+          ? `${member.username ?? member.name} is now an administrator.`
+          : `Removed administrator from ${member.username ?? member.name}.`,
+      )
+      void queryClient.invalidateQueries({
+        queryKey: workspaceSettingsMembersQueryKey,
+      })
+    },
+    onError: (reason) =>
+      setActionError(
+        reason instanceof Error
+          ? reason.message
+          : 'Could not update administrator access',
+      ),
+  })
+
+  const requestRoleChange = (member: Member) => {
+    const role = member.role === 'admin' ? 'user' : 'admin'
+    if (
+      role === 'user' &&
+      !window.confirm(
+        `Remove administrator from ${member.username ?? member.name}? They will lose workspace settings access.`,
+      )
+    )
+      return
+    setMessage(undefined)
+    changeRole.mutate({ member, role })
+  }
+
+  const busy =
+    changeMember.isPending ||
+    resetPassword.isPending ||
+    changeRole.isPending ||
+    isFetching
 
   return (
     <SettingsCard
       title="Members"
-      description="Reset passwords, suspend, or restore workspace access."
+      description="Reset passwords, change administrator access, or suspend workspace access."
     >
       {(error || actionError) && (
         <p className="mb-3 text-sm text-destructive" role="alert">
@@ -145,6 +195,7 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
                   {member.username ?? member.name}
                 </span>
                 <span className="block truncate text-xs text-muted-foreground">
+                  {member.role === 'admin' ? 'Administrator · ' : ''}
                   {member.name !== (member.username ?? member.name)
                     ? `${member.name} · `
                     : ''}
@@ -152,7 +203,7 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
                 </span>
               </span>
               {member.id !== currentUserId && (
-                <span className="flex gap-2">
+                <span className="flex flex-wrap justify-end gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -165,6 +216,16 @@ export function MembersSettings({ currentUserId }: { currentUserId: string }) {
                     }}
                   >
                     Reset password
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => requestRoleChange(member)}
+                  >
+                    {member.role === 'admin'
+                      ? 'Remove administrator'
+                      : 'Make administrator'}
                   </Button>
                   {member.role !== 'admin' && (
                     <Button

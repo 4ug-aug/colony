@@ -35,6 +35,7 @@ test('administrator can reset a member password and disconnect sessions', async 
     listUsers: async () => [],
     banUser: async () => ({}),
     unbanUser: async () => ({}),
+    setUserRole: async () => ({}),
     resetUserPassword: async (_request, userId, newPassword) => {
       reset = { userId, newPassword }
       return Response.json({ success: true })
@@ -65,6 +66,218 @@ test('administrator can reset a member password and disconnect sessions', async 
   expect((await handler(request('admin'), url))?.status).toBe(200)
   expect(reset).toEqual({ userId: 'member', newPassword: 'new-password' })
   expect(disconnected).toBe('member')
+  sqlite.close()
+})
+
+const memberRoleUrl = (userId: string) =>
+  new URL(`http://localhost/api/workspace/settings/members/${userId}/role`)
+
+const memberRoleRequest = (cookie: string, userId: string, body: unknown) =>
+  new Request(memberRoleUrl(userId), {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+test('member cannot change another account role', async () => {
+  const sqlite = makeDatabase()
+  let changed: { userId: string; role: 'admin' | 'user' } | undefined
+  const handler = createAdmissionHttpHandler({
+    store: createAdmissionStore(sqlite),
+    createAccount: async () => Response.json({}),
+    listUsers: async () => [
+      { id: 'admin', name: 'Admin', email: 'admin@example.com', role: 'admin' },
+      {
+        id: 'member',
+        name: 'Member',
+        email: 'member@example.com',
+        role: 'user',
+      },
+    ],
+    banUser: async () => ({}),
+    unbanUser: async () => ({}),
+    resetUserPassword: async () => Response.json({ success: true }),
+    setUserRole: async (_request, userId, role) => {
+      changed = { userId, role }
+      return { user: { id: userId, role } }
+    },
+    authenticate: async (request) =>
+      request.headers.get('cookie') === 'admin'
+        ? { id: 'admin', name: 'admin', role: 'admin' }
+        : { id: 'member', name: 'member', role: 'user' },
+    guiOrigin: 'http://localhost:3000',
+    onSuspend: () => {},
+  })
+
+  expect(
+    (
+      await handler(
+        memberRoleRequest('member', 'member', { role: 'admin' }),
+        memberRoleUrl('member'),
+      )
+    )?.status,
+  ).toBe(403)
+  expect(changed).toBeUndefined()
+  sqlite.close()
+})
+
+test('administrator can make a member an administrator and later remove it', async () => {
+  const sqlite = makeDatabase()
+  const changed: { userId: string; role: 'admin' | 'user' }[] = []
+  const handler = createAdmissionHttpHandler({
+    store: createAdmissionStore(sqlite),
+    createAccount: async () => Response.json({}),
+    listUsers: async () => [
+      { id: 'admin', name: 'Admin', email: 'admin@example.com', role: 'admin' },
+      {
+        id: 'member',
+        name: 'Member',
+        email: 'member@example.com',
+        role: changed.at(-1)?.role ?? 'user',
+      },
+    ],
+    banUser: async () => ({}),
+    unbanUser: async () => ({}),
+    resetUserPassword: async () => Response.json({ success: true }),
+    setUserRole: async (_request, userId, role) => {
+      changed.push({ userId, role })
+      return { user: { id: userId, role } }
+    },
+    authenticate: async () => ({ id: 'admin', name: 'admin', role: 'admin' }),
+    guiOrigin: 'http://localhost:3000',
+    onSuspend: () => {},
+  })
+
+  const promoted = await handler(
+    memberRoleRequest('admin', 'member', { role: 'admin' }),
+    memberRoleUrl('member'),
+  )
+  expect(promoted?.status).toBe(200)
+  expect(changed).toEqual([{ userId: 'member', role: 'admin' }])
+
+  const demoted = await handler(
+    memberRoleRequest('admin', 'member', { role: 'user' }),
+    memberRoleUrl('member'),
+  )
+  expect(demoted?.status).toBe(200)
+  expect(changed).toEqual([
+    { userId: 'member', role: 'admin' },
+    { userId: 'member', role: 'user' },
+  ])
+  sqlite.close()
+})
+
+test('administrator cannot change their own role', async () => {
+  const sqlite = makeDatabase()
+  let changed: { userId: string; role: 'admin' | 'user' } | undefined
+  const handler = createAdmissionHttpHandler({
+    store: createAdmissionStore(sqlite),
+    createAccount: async () => Response.json({}),
+    listUsers: async () => [
+      { id: 'admin', name: 'Admin', email: 'admin@example.com', role: 'admin' },
+      { id: 'other', name: 'Other', email: 'other@example.com', role: 'admin' },
+    ],
+    banUser: async () => ({}),
+    unbanUser: async () => ({}),
+    resetUserPassword: async () => Response.json({ success: true }),
+    setUserRole: async (_request, userId, role) => {
+      changed = { userId, role }
+      return { user: { id: userId, role } }
+    },
+    authenticate: async () => ({ id: 'admin', name: 'admin', role: 'admin' }),
+    guiOrigin: 'http://localhost:3000',
+    onSuspend: () => {},
+  })
+
+  const response = await handler(
+    memberRoleRequest('admin', 'admin', { role: 'user' }),
+    memberRoleUrl('admin'),
+  )
+  expect(response?.status).toBe(400)
+  expect(await response?.json()).toEqual({
+    error: 'You cannot change your own role',
+  })
+  expect(changed).toBeUndefined()
+  sqlite.close()
+})
+
+test('demoting the last remaining administrator is rejected', async () => {
+  const sqlite = makeDatabase()
+  let changed: { userId: string; role: 'admin' | 'user' } | undefined
+  const handler = createAdmissionHttpHandler({
+    store: createAdmissionStore(sqlite),
+    createAccount: async () => Response.json({}),
+    listUsers: async () => [
+      {
+        id: 'other-admin',
+        name: 'Other',
+        email: 'other@example.com',
+        role: 'admin',
+      },
+      {
+        id: 'member',
+        name: 'Member',
+        email: 'member@example.com',
+        role: 'user',
+      },
+    ],
+    banUser: async () => ({}),
+    unbanUser: async () => ({}),
+    resetUserPassword: async () => Response.json({ success: true }),
+    setUserRole: async (_request, userId, role) => {
+      changed = { userId, role }
+      return { user: { id: userId, role } }
+    },
+    authenticate: async () => ({ id: 'admin', name: 'admin', role: 'admin' }),
+    guiOrigin: 'http://localhost:3000',
+    onSuspend: () => {},
+  })
+
+  const response = await handler(
+    memberRoleRequest('admin', 'other-admin', { role: 'user' }),
+    memberRoleUrl('other-admin'),
+  )
+  expect(response?.status).toBe(400)
+  expect(await response?.json()).toEqual({
+    error: 'The workspace must keep at least one administrator',
+  })
+  expect(changed).toBeUndefined()
+  sqlite.close()
+})
+
+test('member role changes require admin or user', async () => {
+  const sqlite = makeDatabase()
+  let changed: { userId: string; role: 'admin' | 'user' } | undefined
+  const handler = createAdmissionHttpHandler({
+    store: createAdmissionStore(sqlite),
+    createAccount: async () => Response.json({}),
+    listUsers: async () => [
+      { id: 'admin', name: 'Admin', email: 'admin@example.com', role: 'admin' },
+      {
+        id: 'member',
+        name: 'Member',
+        email: 'member@example.com',
+        role: 'user',
+      },
+    ],
+    banUser: async () => ({}),
+    unbanUser: async () => ({}),
+    resetUserPassword: async () => Response.json({ success: true }),
+    setUserRole: async (_request, userId, role) => {
+      changed = { userId, role }
+      return { user: { id: userId, role } }
+    },
+    authenticate: async () => ({ id: 'admin', name: 'admin', role: 'admin' }),
+    guiOrigin: 'http://localhost:3000',
+    onSuspend: () => {},
+  })
+
+  const response = await handler(
+    memberRoleRequest('admin', 'member', { role: 'owner' }),
+    memberRoleUrl('member'),
+  )
+  expect(response?.status).toBe(400)
+  expect(changed).toBeUndefined()
   sqlite.close()
 })
 
@@ -234,6 +447,7 @@ test('admission endpoints close open signup and enforce the administrator bounda
         return { ok: true }
       },
       unbanUser: async () => ({ ok: true }),
+      setUserRole: async () => ({}),
       resetUserPassword: async () => Response.json({ success: true }),
       createAccount,
     },

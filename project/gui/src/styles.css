@@ -53,33 +53,6 @@
   --sidebar-ring: oklch(0.714 0.014 41.2);
   --agent-software-engineer: oklch(0.6688 0.0684 214.7);
   --agent-antboy: oklch(0.8439 0.0746 20.74);
-  --room-conversation: #faf9f7;
-  --room-header: #f5f3ef;
-  --room-composer: #ffffff;
-  --room-composer-toolbar: #f7f5f2;
-  --room-composer-edge: #c9c0b4;
-  --room-text: #24211e;
-  --room-text-secondary: #6e675f;
-  --room-divider: rgba(36, 33, 30, 0.08);
-  --room-border: rgba(36, 33, 30, 0.18);
-  --room-message: #ffffff;
-  --room-message-border: #d8d2c9;
-  --room-message-border-hover: #beb5a8;
-  --room-message-hover: rgba(36, 33, 30, 0.04);
-  --room-tool-group: #ffffff;
-  --room-tool-group-border: #d8d2c9;
-  --room-tool-icon: #514a41;
-  --room-tool-active: #eeeae4;
-  --room-send: #493d30;
-  --room-send-foreground: #ffffff;
-  --room-send-border: #352b22;
-  --room-send-disabled: #e8e4de;
-  --room-send-disabled-foreground: #71695f;
-  --room-send-disabled-border: #d0c8bd;
-  --room-send-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 1px rgba(41, 37, 31, 0.2);
-  --room-composer-shadow:
-    0 2px 4px rgba(36, 33, 30, 0.04), 0 8px 24px rgba(36, 33, 30, 0.06);
 }
 
 .dark {
@@ -115,33 +88,36 @@
   --sidebar-accent-foreground: oklch(0.986 0.002 67.8);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.547 0.021 43.1);
-  --room-conversation: #242321;
-  --room-header: #292725;
-  --room-composer: #302e2b;
-  --room-composer-toolbar: #2b2926;
-  --room-composer-edge: #575046;
-  --room-text: #f2f0ec;
-  --room-text-secondary: #b7b1a8;
-  --room-divider: rgba(255, 255, 255, 0.08);
-  --room-border: rgba(255, 255, 255, 0.16);
-  --room-message: #2b2926;
-  --room-message-border: #49453f;
-  --room-message-border-hover: #625b51;
-  --room-message-hover: rgba(255, 255, 255, 0.05);
-  --room-tool-group: #302d29;
-  --room-tool-group-border: #514b43;
-  --room-tool-icon: #d2ccc3;
-  --room-tool-active: #454038;
-  --room-send: #e9ddc8;
-  --room-send-foreground: #29251f;
-  --room-send-border: #c7b89e;
-  --room-send-disabled: #393632;
-  --room-send-disabled-foreground: #b7b1a8;
-  --room-send-disabled-border: #514b43;
-  --room-send-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 1px rgba(0, 0, 0, 0.22);
-  --room-composer-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Room layout tokens alias the shared palette so rooms follow light/dark. */
+:root,
+.dark {
+  --room-conversation: var(--background);
+  --room-header: var(--background);
+  --room-composer: var(--background);
+  --room-composer-toolbar: var(--muted);
+  --room-composer-edge: var(--border);
+  --room-text: var(--foreground);
+  --room-text-secondary: var(--muted-foreground);
+  --room-divider: var(--border);
+  --room-border: var(--border);
+  --room-message: var(--card);
+  --room-message-border: var(--border);
+  --room-message-border-hover: color-mix(in oklab, var(--foreground) 18%, var(--border));
+  --room-message-hover: color-mix(in oklab, var(--muted) 40%, transparent);
+  --room-tool-group: var(--card);
+  --room-tool-group-border: var(--border);
+  --room-tool-icon: var(--foreground);
+  --room-tool-active: var(--muted);
+  --room-send: var(--primary);
+  --room-send-foreground: var(--primary-foreground);
+  --room-send-border: var(--primary);
+  --room-send-disabled: var(--muted);
+  --room-send-disabled-foreground: var(--muted-foreground);
+  --room-send-disabled-border: var(--border);
+  --room-send-shadow: none;
+  --room-composer-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 8%, transparent);
 }
 
 @theme inline {
@@ -1142,6 +1118,62 @@ a {
 .room-send:disabled svg,
 .room-send svg {
   opacity: 1;
+}
+
+.btn-raised {
+  --btn-raised-height: 2.25rem;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: var(--btn-raised-height);
+  gap: 0.4rem;
+  padding-inline: 1.15rem;
+  border-width: max(1px, calc(var(--btn-raised-height) * 0.02));
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--primary) 74%, black);
+  border-radius: calc(var(--btn-raised-height) * 0.24);
+  background-color: var(--primary);
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--primary) 86%, white) 0%,
+    var(--primary) 52%,
+    color-mix(in oklab, var(--primary) 88%, black) 100%
+  );
+  color: var(--primary-foreground);
+  font-size: calc(var(--btn-raised-height) * 0.37);
+  font-weight: 400;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.btn-raised[data-size='sm'] {
+  --btn-raised-height: 1.75rem;
+}
+
+.btn-raised::before {
+  content: '';
+  position: absolute;
+  inset: 0.05px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 38%, transparent);
+}
+
+.btn-raised:hover {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--primary) 80%, white) 0%,
+    var(--primary) 48%,
+    color-mix(in oklab, var(--primary) 82%, black) 100%
+  );
+}
+
+.dark .btn-raised {
+  border-color: color-mix(in oklab, var(--primary) 62%, black);
+}
+
+.dark .btn-raised::before {
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 46%, transparent);
 }
 
 @container room-pane (max-width: 640px) {

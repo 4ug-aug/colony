@@ -44,10 +44,8 @@ export function WorkspaceSettingsPage({
         </TabsContent>
 
         <TabsContent value="people" className={tabEnter}>
-          <div className="grid gap-3 md:grid-cols-2">
-            <InvitationSettings />
-            <MembersSettings currentUserId={currentUserId} />
-          </div>
+          <InvitationSettings />
+          <MembersSettings currentUserId={currentUserId} />
         </TabsContent>
       </Tabs>
     </main>

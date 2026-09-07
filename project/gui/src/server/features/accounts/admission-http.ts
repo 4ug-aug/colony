@@ -32,7 +32,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { canManageAgentAccess } from '#/server/features/agents/agent-access'
-import { WORKSPACE_PEOPLE, isSeededAgentId } from '#project/agents/roster-people'
+import {
+  WORKSPACE_PEOPLE,
+  isSeededAgentId,
+} from '#project/agents/roster-people'
 
 export type AccountInput = {
   email: string
@@ -64,6 +67,11 @@ export type AdmissionOptions = {
     userId: string,
     newPassword: string,
   ) => Promise<Response>
+  setUserRole: (
+    request: Request,
+    userId: string,
+    role: 'admin' | 'user',
+  ) => Promise<unknown>
   llm?: {
     public(): PublicLlmConfig
     save(input: LlmConfigInput): PublicLlmConfig
@@ -139,8 +147,7 @@ const accountFrom = (
     !username.trim()
   )
     return undefined
-  if (agentMentionHandles.has(username.trim().toLowerCase()))
-    return undefined
+  if (agentMentionHandles.has(username.trim().toLowerCase())) return undefined
   return {
     email: email.trim(),
     username: username.trim(),
@@ -272,6 +279,33 @@ export function createAdmissionHttpHandler(
       return user instanceof Response
         ? user
         : json({ users: await options.listUsers() })
+    }
+
+    const memberRole = url.pathname.match(
+      /^\/api\/workspace\/settings\/members\/([^/]+)\/role$/,
+    )
+    if (memberRole && request.method === 'POST') {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      const userId = memberRole[1]
+      if (userId === user.id)
+        return json({ error: 'You cannot change your own role' }, 400)
+      const role = (await readBody(request))?.role
+      if (role !== 'admin' && role !== 'user')
+        return json({ error: 'Role must be admin or user' }, 400)
+      if (role === 'user') {
+        const administrators = (await options.listUsers()).filter(
+          (account) => account.role === 'admin',
+        )
+        if (administrators.length <= 1)
+          return json(
+            {
+              error: 'The workspace must keep at least one administrator',
+            },
+            400,
+          )
+      }
+      return json(await options.setUserRole(request, userId, role))
     }
 
     const memberPassword = url.pathname.match(
@@ -504,11 +538,7 @@ export function createAdmissionHttpHandler(
     const connectionClear = url.pathname.match(
       /^\/api\/workspace\/settings\/connections\/([^/]+)\/clear$/,
     )
-    if (
-      connectionClear &&
-      options.connections &&
-      request.method === 'POST'
-    ) {
+    if (connectionClear && options.connections && request.method === 'POST') {
       const user = await administrator(request)
       if (user instanceof Response) return user
       const kind = decodeURIComponent(connectionClear[1]!)
@@ -530,15 +560,10 @@ export function createAdmissionHttpHandler(
     const connectionLinks = url.pathname.match(
       /^\/api\/workspace\/settings\/connections\/([^/]+)\/links$/,
     )
-    if (
-      connectionLinks &&
-      options.connections &&
-      request.method === 'PUT'
-    ) {
+    if (connectionLinks && options.connections && request.method === 'PUT') {
       const user = await administrator(request)
       if (user instanceof Response) return user
-      if (!canManageAgentAccess(user))
-        return json({ error: 'Forbidden' }, 403)
+      if (!canManageAgentAccess(user)) return json({ error: 'Forbidden' }, 403)
       const kind = decodeURIComponent(connectionLinks[1]!)
       const body = await readBody(request)
       const agentDefinitionIds = Array.isArray(body?.agentDefinitionIds)
@@ -580,9 +605,7 @@ export function createAdmissionHttpHandler(
       const skillId = decodeURIComponent(skillItem[1]!)
       if (request.method === 'GET') {
         const detail = await options.skills.readPackage(skillId)
-        return detail
-          ? json(detail)
-          : json({ error: 'Skill not found' }, 404)
+        return detail ? json(detail) : json({ error: 'Skill not found' }, 404)
       }
       if (request.method === 'DELETE') {
         await options.skills.delete(skillId)

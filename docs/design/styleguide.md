@@ -400,25 +400,20 @@ Always include `motion-reduce:animate-none` / `motion-reduce:transition-none`.
 
 ## Rooms
 
-Room conversation, header, and composer are a distinct surface stack. Do not
-reuse these colors on Private Chat or other pages.
+Room conversation, header, and composer reuse the shared semantic palette.
+Do not introduce a second Rooms-only color stack.
 
-| Surface | Light | Dark |
-|---|---|---|
-| Conversation | `#FAF9F7` | `#242321` |
-| Header | `#F5F3EF` | `#292725` |
-| Message fill | `#FFFFFF` | `#2B2926` |
-| Message border | `#D8D2C9` | `#49453F` |
-| Message hover border | `#BEB5A8` | `#625B51` |
-| Composer | `#FFFFFF` | `#302E2B` |
-| Composer edge | `#C9C0B4` | `#575046` |
-| Composer toolbar | `#F7F5F2` | `#2B2926` |
-| Tool group fill | `#FFFFFF` | `#302D29` |
-| Tool group border | `#D8D2C9` | `#514B43` |
-| Send | `#493D30` / `#FFFFFF` | `#E9DDC8` / `#29251F` |
-| Send disabled | `#E8E4DE` / `#71695F` | `#393632` / `#B7B1A8` |
-| Primary text | `#24211E` | `#F2F0EC` |
-| Secondary text | `#6E675F` | `#B7B1A8` |
+| Surface | Token |
+|---|---|
+| Conversation / header | `--background` |
+| Message fill | `--card` |
+| Message / composer / tool borders | `--border` |
+| Composer | `--background` |
+| Composer toolbar / tool hover | `--muted` |
+| Send | `--primary` / `--primary-foreground` |
+| Send disabled | `--muted` / `--muted-foreground` |
+| Primary text | `--foreground` |
+| Secondary text | `--muted-foreground` |
 
 Header stays 56px with a 16px room icon, 14px/600 name, 12px connection status,
 and one hairline divider — no shadow.
@@ -433,9 +428,8 @@ and never wrapping the full-width timeline row in a card.
 
 Each message is its own bubble:
 
-- Fill: `--room-message` (light `#FFFFFF` / dark `#2B2926`)
-- Border: `--room-message-border` (light `#D8D2C9` / dark `#49453F`), visible
-  at rest; hover `--room-message-border-hover` (`#BEB5A8` / `#625B51`)
+- Fill: `--card`
+- Border: `--border`, visible at rest; hover slightly stronger than `--border`
 - Geometry: content-sized, `max-width: min(100%, 76ch)`, `min-width: 0`,
   12px / 10px padding, 10px radius, 1px solid border, no drop shadow
 - Body 15px / 24px. Author line to bubble: 6px. Avatar-to-content: 12px.
@@ -452,16 +446,15 @@ Do not wrap each footer control in its own bordered badge.
 Hover/focus actions re-anchor to the message content (beside the bubble), never
 the far edge of the timeline, and must not cover text, timestamps, or links.
 
-The composer is the raised surface: 14px radius, `--room-composer-edge` border
-(`#C9C0B4` / `#575046`), layered shadow, toolbar strip. Focus-within changes
-the border to the Colony accent plus at most a 1px outer ring — no stacked
-glow. Toolbar controls keep their own focus rings.
+The composer is the raised surface: 14px radius, `--border`, `shadow-sm`,
+toolbar strip. Focus-within changes the border to `--primary` plus at most a
+1px outer ring — no stacked glow. Toolbar controls keep their own focus rings.
 
 Formatting and insert actions sit in two compact grouped containers (shared
-fill, 1px border, 8px radius, 28×28 tools). Send is a labeled 34px button
-(`Send` / `Save`) with a 16px icon — not the shared circular Button, and never
-dimmed with opacity when disabled. Use `--room-send*` tokens so disabled Send
-stays legible.
+fill, 1px border, 8px radius, 28×28 tools). Send is a labeled 34px `--primary`
+button (`Send` / `Save`) with a 16px icon — not the shared circular Button,
+and never dimmed with opacity when disabled. Disabled Send uses `--muted` so
+it stays legible.
 
 ## Applying this to another product
 
