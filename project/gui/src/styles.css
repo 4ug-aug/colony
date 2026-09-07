@@ -512,6 +512,22 @@ pre code {
   will-change: background-position;
 }
 
+/* Opacity animation runs without a React timer for each working indicator. */
+@keyframes agent-thinking-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  30%,
+  99.99% {
+    opacity: 0.12;
+  }
+}
+
+.agent-thinking-dot {
+  animation: agent-thinking-dot 640ms ease-out infinite;
+}
+
 @keyframes agent-thinking-star {
   0%,
   100% {
@@ -562,6 +578,7 @@ pre code {
   .mention-menu,
   .mention-menu.is-leaving,
   .room-fade-in,
+  .agent-thinking-dot,
   .agent-thinking-label,
   .agent-thinking-star,
   .agent-thinking-comet {

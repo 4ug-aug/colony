@@ -46,6 +46,21 @@ describe('applyIncomingReplies', () => {
 })
 
 describe('applyScrollMetrics', () => {
+  test('unchanged scroll regions preserve state identity', () => {
+    for (const state of [
+      initialThreadScrollState,
+      { atBottom: false, newReplyCount: 2 },
+    ]) {
+      expect(
+        applyScrollMetrics(state, {
+          scrollTop: state.atBottom ? 900 : 100,
+          scrollHeight: 1000,
+          clientHeight: 100,
+        }),
+      ).toBe(state)
+    }
+  })
+
   test('scrolling back to the bottom clears the New replies count', () => {
     const scrolledUp = { atBottom: false, newReplyCount: 3 }
     const next = applyScrollMetrics(scrolledUp, {

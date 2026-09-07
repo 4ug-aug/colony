@@ -44,9 +44,11 @@ export function applyScrollMetrics(
   metrics: ScrollMetrics,
   threshold = bottomThreshold,
 ): ThreadScrollState {
-  return isNearBottom(metrics, threshold)
-    ? { atBottom: true, newReplyCount: 0 }
-    : { ...state, atBottom: false }
+  const atBottom = isNearBottom(metrics, threshold)
+  const newReplyCount = atBottom ? 0 : state.newReplyCount
+  return state.atBottom === atBottom && state.newReplyCount === newReplyCount
+    ? state
+    : { atBottom, newReplyCount }
 }
 
 export function acknowledgeNewReplies(

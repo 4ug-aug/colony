@@ -31,6 +31,8 @@ import type {
 } from './types'
 import { useRoomThread } from './use-room-thread'
 
+const noMentions: string[] = []
+
 function ThreadResult({
   result,
   agentName,
@@ -46,7 +48,7 @@ function ThreadResult({
       createdAt={result.createdAt}
       text={result.text}
       attachments={[]}
-      mentionHandles={[]}
+      mentionHandles={noMentions}
       isAgent
     />
   )
@@ -196,7 +198,14 @@ function RoomThreadRailContent({
     target?.scrollIntoView({ block: 'center', behavior: 'instant' })
   }, [focusReplyId, replies])
 
+  const previousContentRef = useRef<
+    { replyCount: number; root: RoomMessage | undefined } | undefined
+  >(undefined)
   useLayoutEffect(() => {
+    const previous = previousContentRef.current
+    previousContentRef.current = { replyCount, root }
+    // Crossing the near-bottom threshold is not new content and must not snap the scroll.
+    if (previous?.replyCount === replyCount && previous.root === root) return
     if (focusReplyId) return
     const el = scrollRef.current
     if (el && scrollState.atBottom) el.scrollTop = el.scrollHeight
