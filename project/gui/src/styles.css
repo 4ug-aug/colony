@@ -53,6 +53,7 @@
   --sidebar-ring: oklch(0.714 0.014 41.2);
   --agent-software-engineer: oklch(0.6688 0.0684 214.7);
   --agent-antboy: oklch(0.8439 0.0746 20.74);
+  --agent-thinking-tone: #888888;
 }
 
 .dark {
