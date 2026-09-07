@@ -8,7 +8,6 @@ import {
 } from '#/features/agents/use-agent-definitions'
 import { isSeededAgentId } from '#project/agents/roster-people'
 import { useWorkspaceMembers } from '#/features/issues/use-workspace-members'
-import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJsonBody } from '#/lib/api-transport'
 import { ACCOUNT_COLORS, parseAccountColor } from '#/lib/account-color'
 import { cn } from '#/lib/utils'
@@ -26,6 +25,7 @@ import {
 } from '#/components/ui/alert-dialog'
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
+import { Card, CardContent } from '#/components/ui/card'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
 import {
@@ -44,9 +44,22 @@ import {
 } from '#/components/ui/sheet'
 import { Textarea } from '#/components/ui/textarea'
 import { Toggle } from '#/components/ui/toggle'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '#/components/ui/tooltip'
 import type { AgentDefinition } from '#/features/schedules/types'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Archive, CopyPlus, Lock, Plus, SquarePen, Users } from 'lucide-react'
+import {
+  Archive,
+  CircleQuestionMark,
+  CopyPlus,
+  Lock,
+  Plus,
+  SquarePen,
+  Users,
+} from 'lucide-react'
 import { useState } from 'react'
 import type { Author } from '#/features/rooms/types'
 
@@ -197,47 +210,59 @@ export function AgentsPage({ user }: { user: Author }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <main className="mx-auto flex w-full max-w-7xl flex-col gap-3 p-4 sm:p-6 lg:p-8">
           <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-          {agents.map((agent) => {
+          {agents.map((agent, index) => {
             const canEdit = agent.creatorAccountId === user.id
             const canArchive = canEdit && !isSeededAgentId(agent.id)
             return (
-              <SettingsCard
+              <Card
                 key={agent.id}
-                className="h-full"
-                title={agent.name}
-                leading={
-                  <AgentMark
-                    agentId={agent.id}
-                    color={agent.color}
-                    className="size-6"
-                  />
-                }
-                description={
-                  <>
-                    @{agent.id}
-                    {agent.visibility === 'private' ? ' · Private' : ''}
-                    {agent.includeRepository ? ' · GitHub' : ''}
-                  </>
-                }
+                size="sm"
+                className="h-full gap-0 bg-card/75 py-0 shadow-sm backdrop-blur-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-500 ease-out fill-mode-backwards motion-reduce:animate-none"
+                style={{ animationDelay: `${index * 60}ms` }}
               >
-                <p className="text-sm text-muted-foreground">
-                  {agent.description}
-                </p>
-                <AgentAttribution
-                  creatorName={accountName(members, agent.creatorAccountId)}
-                  updaterName={accountName(
-                    members,
-                    agent.updaterAccountId ?? agent.creatorAccountId,
-                  )}
-                  updatedAt={agent.updatedAt}
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
+                <CardContent className="flex min-h-0 flex-1 flex-col p-1.5 pb-0">
+                  <div className="flex min-h-20 flex-1 flex-col justify-start gap-1.5 rounded-md bg-background/80 px-3 py-3 shadow-sm ring-1 ring-foreground/10">
+                    <div className="flex items-center gap-2">
+                      <AgentMark
+                        agentId={agent.id}
+                        color={agent.color}
+                        className="size-6 shrink-0"
+                      />
+                      <p className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
+                        {agent.name}
+                      </p>
+                      <AgentAttribution
+                        creatorName={accountName(
+                          members,
+                          agent.creatorAccountId,
+                        )}
+                        updaterName={accountName(
+                          members,
+                          agent.updaterAccountId ?? agent.creatorAccountId,
+                        )}
+                        updatedAt={agent.updatedAt}
+                      />
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">
+                      @{agent.id}
+                      {agent.visibility === 'private' ? ' · Private' : ''}
+                      {agent.includeRepository ? ' · GitHub' : ''}
+                    </p>
+                    {agent.description ? (
+                      <p className="line-clamp-3 text-sm text-muted-foreground">
+                        {agent.description}
+                      </p>
+                    ) : null}
+                  </div>
+                </CardContent>
+                <div className="flex min-h-10 flex-wrap items-center gap-1 px-2 py-1 text-muted-foreground">
                   <AlertDialog>
                     <AlertDialogTrigger
                       render={
                         <Button
-                          size="sm"
+                          size="xs"
                           variant="ghost"
+                          className="text-muted-foreground"
                           disabled={duplicate.isPending}
                         />
                       }
@@ -274,8 +299,9 @@ export function AgentsPage({ user }: { user: Author }) {
                   </AlertDialog>
                   {canEdit && (
                     <Button
-                      size="sm"
+                      size="xs"
                       variant="ghost"
+                      className="text-muted-foreground"
                       onClick={() => openEdit(agent)}
                     >
                       <SquarePen data-icon="inline-start" />
@@ -287,8 +313,9 @@ export function AgentsPage({ user }: { user: Author }) {
                       <AlertDialogTrigger
                         render={
                           <Button
-                            size="sm"
+                            size="xs"
                             variant="ghost"
+                            className="text-muted-foreground"
                             disabled={archive.isPending}
                           />
                         }
@@ -327,7 +354,7 @@ export function AgentsPage({ user }: { user: Author }) {
                     </AlertDialog>
                   )}
                 </div>
-              </SettingsCard>
+              </Card>
             )
           })}
           </div>
@@ -565,17 +592,38 @@ function AgentAttribution({
   updatedAt?: number
 }) {
   if (!creatorName && updatedAt === undefined) return null
+  const created = creatorName ? `Created by ${creatorName}` : undefined
+  const updated =
+    updatedAt !== undefined
+      ? `Updated by ${updaterName ?? creatorName} ${formatRelativeTime(updatedAt)}`
+      : undefined
   return (
-    <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-      {creatorName ? <span>Created by {creatorName}</span> : null}
-      {updatedAt !== undefined ? (
-        <time
-          dateTime={new Date(updatedAt).toISOString()}
-          title={new Date(updatedAt).toLocaleString()}
-        >
-          {`Updated by ${updaterName ?? creatorName} ${formatRelativeTime(updatedAt)}`}
-        </time>
-      ) : null}
-    </p>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={[created, updated].filter(Boolean).join('. ')}
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          />
+        }
+      >
+        <CircleQuestionMark className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        className="flex max-w-xs flex-col gap-0.5 text-left"
+      >
+        {created ? <p>{created}</p> : null}
+        {updated && updatedAt !== undefined ? (
+          <time
+            dateTime={new Date(updatedAt).toISOString()}
+            title={new Date(updatedAt).toLocaleString()}
+          >
+            {updated}
+          </time>
+        ) : null}
+      </TooltipContent>
+    </Tooltip>
   )
 }
