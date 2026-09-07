@@ -121,11 +121,11 @@ test('account run analytics aggregate only the requested account', () => {
     "INSERT INTO room (id, name, visibility) VALUES ('research', 'Research', 'public')",
   )
   sqlite.run(`
-    INSERT INTO issue (id, number, title, status, priority, created_at, updated_at, owner_kind, owner_id, created_by_kind)
+    INSERT INTO issue (id, number, title, status, priority, created_at, updated_at, owner_kind, owner_id)
     VALUES
-      ('agent-created-open', 1, 'Open', 'todo', 'none', 0, 0, 'agent', 'software-engineer', 'agent'),
-      ('agent-completed', 2, 'Completed', 'done', 'none', 0, 0, 'agent', 'software-engineer', 'account'),
-      ('agent-created-done-by-user', 3, 'Done by user', 'done', 'none', 0, 0, 'account', 'user-1', 'agent');
+      ('agent-open', 1, 'Open', 'todo', 'none', 0, 0, 'agent', 'software-engineer'),
+      ('agent-completed', 2, 'Completed', 'done', 'none', 0, 0, 'agent', 'software-engineer'),
+      ('user-completed', 3, 'Done by user', 'done', 'none', 0, 0, 'account', 'user-1');
   `)
   seedMessages(sqlite, 'msg-1')
   const store = createSqliteRoomStore(sqlite)
@@ -215,7 +215,6 @@ test('account run analytics aggregate only the requested account', () => {
   expect(analytics).toMatchObject({
     delegations: 4,
     oneshots: 1,
-    agentCreatedIssues: 2,
     agentCompletedIssues: 1,
     runtimeMs: 16_000,
   })

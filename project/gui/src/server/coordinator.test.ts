@@ -307,14 +307,12 @@ test('account analytics are scoped to the authenticated account', async () => {
     const body = (await response.json()) as {
       analytics: {
         delegations: number
-        agentCreatedIssues: number
         agentCompletedIssues: number
         runtimeMs: number
       }
     }
     expect(body.analytics).toMatchObject({
       delegations: 1,
-      agentCreatedIssues: 0,
       agentCompletedIssues: 0,
       runtimeMs: 10,
     })

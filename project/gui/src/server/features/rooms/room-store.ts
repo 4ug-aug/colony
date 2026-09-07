@@ -142,7 +142,6 @@ export type OneshotUsage = Pick<
 export type AccountRunAnalytics = {
   delegations: number
   oneshots: number
-  agentCreatedIssues: number
   agentCompletedIssues: number
   runtimeMs: number
   rhythm: { day: string; delegations: number }[]
@@ -1026,7 +1025,6 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         .prepare(
           `SELECT COUNT(*) AS delegations,
                   (SELECT COUNT(*) FROM oneshot_usage WHERE account_id = ?) AS oneshots,
-                  (SELECT COUNT(*) FROM issue WHERE created_by_kind = 'agent') AS agent_created_issues,
                   (SELECT COUNT(*) FROM issue WHERE status = 'done' AND owner_kind = 'agent') AS agent_completed_issues,
                   COALESCE(SUM(CASE
                     WHEN room_run.state IN ('succeeded', 'failed', 'cancelled')
@@ -1044,7 +1042,6 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         .get(accountId, accountId, accountId) as {
         delegations: number
         oneshots: number
-        agent_created_issues: number
         agent_completed_issues: number
         runtime_ms: number
       }
@@ -1068,7 +1065,6 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       return {
         delegations: summary.delegations,
         oneshots: summary.oneshots,
-        agentCreatedIssues: summary.agent_created_issues,
         agentCompletedIssues: summary.agent_completed_issues,
         runtimeMs: summary.runtime_ms,
         rhythm: Array.from({ length: 7 }, (_, index) => {

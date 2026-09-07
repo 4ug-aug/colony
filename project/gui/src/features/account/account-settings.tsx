@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Box, CircleCheckBig, Clock, Zap, Waypoints } from 'lucide-react'
+import { Box, CircleCheckBig, Clock, Zap } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { AccountFace, AgentAnt } from '#/components/avatar'
 import { StaticDither } from '#/components/static-dither'
@@ -205,12 +205,6 @@ export function AccountSettingsPage({
 
   const metrics = [
     {
-      label: 'Issues created by agents',
-      value: analytics?.agentCreatedIssues ?? 0,
-      icon: Waypoints,
-      description: 'Workspace-wide Issues whose creator is an agent.',
-    },
-    {
       label: 'Tasks done by agents',
       value: analytics?.agentCompletedIssues ?? 0,
       icon: CircleCheckBig,
@@ -265,7 +259,7 @@ export function AccountSettingsPage({
           </TabsList>
 
           <TabsContent value="overview" className="space-y-3">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {metrics.map(
                 ({ label, value, icon: Icon, format, description }, index) => (
                   <Card
