@@ -13,3 +13,10 @@ export function runStatus(run: RoomRun, step?: Step) {
     return `is ${run.waitingOn.charAt(0).toLowerCase()}${run.waitingOn.slice(1)}`
   return run.state === 'preparing' ? 'is preparing' : 'is working'
 }
+
+export function runActivityLabel(state: RoomRun['state']) {
+  if (state === 'succeeded') return 'Completed'
+  if (state === 'failed') return 'Failed'
+  if (state === 'cancelled') return 'Cancelled'
+  return 'Working…'
+}

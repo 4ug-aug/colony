@@ -272,7 +272,7 @@ export function RoomView({
       <ResizablePanelGroup className="min-h-0 min-w-0 flex-1">
         <ResizablePanel className="min-h-0" id="room" minSize="20rem">
           <div
-            className="relative flex h-full min-h-0 min-w-0 flex-col"
+            className="room-pane relative flex h-full min-h-0 min-w-0 flex-col"
             onPointerDown={() => {
               if (activeRootId || activeSurface?.kind === 'activity')
                 closeSideSurface()
@@ -282,7 +282,7 @@ export function RoomView({
               <section
                 key={room?.id}
                 ref={scrollRef}
-                className="no-scrollbar flex h-full flex-col-reverse overflow-y-auto px-5 py-8 sm:px-8"
+                className="room-timeline no-scrollbar flex h-full flex-col-reverse overflow-y-auto"
                 aria-busy={loading}
                 onPointerDown={() => {
                   followRoomRef.current = false
@@ -313,7 +313,7 @@ export function RoomView({
               >
                 <div
                   ref={timelineRef}
-                  className="mx-auto w-full max-w-7xl shrink-0"
+                  className="w-full shrink-0"
                 >
                   {loadingOlder && (
                     <div
@@ -357,7 +357,7 @@ export function RoomView({
                 aria-hidden={atBottom}
                 tabIndex={atBottom ? -1 : 0}
                 data-visible={!atBottom}
-                className="scroll-to-bottom-button absolute right-5 bottom-4 rounded-sm shadow-md sm:right-8"
+                className="scroll-to-bottom-button absolute right-5 bottom-4 rounded-sm shadow-md"
                 onClick={() => {
                   const el = scrollRef.current
                   el?.scrollTo({
@@ -370,22 +370,21 @@ export function RoomView({
                 <ArrowDown data-icon="inline-end" />
               </Button>
             </div>
-            <div className="shrink-0 px-4 pb-4 sm:px-6">
-              <div className="mx-auto max-w-7xl rounded-xl border bg-background p-2.5 shadow-sm">
-                <MessageComposer
-                  key={room?.id}
-                  ref={composer}
-                  value={draft}
-                  onChange={setDraft}
-                  onSubmit={submit}
-                  disabled={loading || !room}
-                  roomName={room?.name ?? 'room'}
-                  mentionableAccounts={mentionableAccounts}
-                  editing={Boolean(editingMessage)}
-                  onCancelEdit={cancelEdit}
-                />
-              </div>
-              <div className="mx-auto max-w-7xl">
+            <div className="room-composer-dock shrink-0">
+              <MessageComposer
+                key={room?.id}
+                ref={composer}
+                value={draft}
+                onChange={setDraft}
+                onSubmit={submit}
+                disabled={loading || !room}
+                roomName={room?.name ?? 'room'}
+                mentionableAccounts={mentionableAccounts}
+                editing={Boolean(editingMessage)}
+                onCancelEdit={cancelEdit}
+                appearance="room"
+              />
+              <div>
                 <ActiveAgents
                   runs={runs}
                   latestStepByRun={latestStepByRun}
@@ -395,7 +394,7 @@ export function RoomView({
               </div>
               {error && (
                 <p
-                  className="mx-auto mt-2 max-w-5xl text-sm text-destructive"
+                  className="mt-2 text-sm text-destructive"
                   role="alert"
                 >
                   {error}

@@ -50,7 +50,7 @@ env:
 DEV_AGENT_IMAGE := sweat-agent:latest
 DEV_CURSOR_AGENT_IMAGE := sweat-agent-cursor:latest
 
-dev: migrate agent
+dev: migrate
 	@SWEAT_AGENT_IMAGE=$(DEV_AGENT_IMAGE) SWEAT_CURSOR_AGENT_IMAGE=$(DEV_CURSOR_AGENT_IMAGE) \
 		$(MAKE) --no-print-directory -j2 gui coordinator
 

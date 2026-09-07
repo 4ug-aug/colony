@@ -226,9 +226,21 @@ describe('buildFlatTimelineItems', () => {
     const items = buildFlatTimelineItems([trigger, other], [succeeded, failed])
 
     expect(items.map((item) => item.id)).toEqual(['trigger-1', 'other-1'])
-    expect(items[0]?.run).toEqual(succeeded)
-    expect(items[1]?.run).toEqual(failed)
+    expect(items[0]?.runs).toEqual([succeeded])
+    expect(items[1]?.runs).toEqual([failed])
     expect(items.every((item) => !('result' in item))).toBe(true)
+  })
+
+  test('keeps separate runs that share a trigger instead of collapsing them', () => {
+    const trigger: RoomMessage = {
+      ...root,
+      id: 'trigger-1',
+      createdAt: 100,
+    }
+    const first = run('run-1', 'trigger-1')
+    const second = { ...run('run-2', 'trigger-1'), state: 'failed' as const }
+    const items = buildFlatTimelineItems([trigger], [first, second])
+    expect(items[0]?.runs).toEqual([first, second])
   })
 
   test('groups only consecutive messages from the same author within five minutes', () => {

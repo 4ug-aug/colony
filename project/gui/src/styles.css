@@ -53,6 +53,33 @@
   --sidebar-ring: oklch(0.714 0.014 41.2);
   --agent-software-engineer: oklch(0.6688 0.0684 214.7);
   --agent-antboy: oklch(0.8439 0.0746 20.74);
+  --room-conversation: #faf9f7;
+  --room-header: #f5f3ef;
+  --room-composer: #ffffff;
+  --room-composer-toolbar: #f7f5f2;
+  --room-composer-edge: #c9c0b4;
+  --room-text: #24211e;
+  --room-text-secondary: #6e675f;
+  --room-divider: rgba(36, 33, 30, 0.08);
+  --room-border: rgba(36, 33, 30, 0.18);
+  --room-message: #ffffff;
+  --room-message-border: #d8d2c9;
+  --room-message-border-hover: #beb5a8;
+  --room-message-hover: rgba(36, 33, 30, 0.04);
+  --room-tool-group: #ffffff;
+  --room-tool-group-border: #d8d2c9;
+  --room-tool-icon: #514a41;
+  --room-tool-active: #eeeae4;
+  --room-send: #493d30;
+  --room-send-foreground: #ffffff;
+  --room-send-border: #352b22;
+  --room-send-disabled: #e8e4de;
+  --room-send-disabled-foreground: #71695f;
+  --room-send-disabled-border: #d0c8bd;
+  --room-send-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 1px rgba(41, 37, 31, 0.2);
+  --room-composer-shadow:
+    0 2px 4px rgba(36, 33, 30, 0.04), 0 8px 24px rgba(36, 33, 30, 0.06);
 }
 
 .dark {
@@ -88,6 +115,33 @@
   --sidebar-accent-foreground: oklch(0.986 0.002 67.8);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.547 0.021 43.1);
+  --room-conversation: #242321;
+  --room-header: #292725;
+  --room-composer: #302e2b;
+  --room-composer-toolbar: #2b2926;
+  --room-composer-edge: #575046;
+  --room-text: #f2f0ec;
+  --room-text-secondary: #b7b1a8;
+  --room-divider: rgba(255, 255, 255, 0.08);
+  --room-border: rgba(255, 255, 255, 0.16);
+  --room-message: #2b2926;
+  --room-message-border: #49453f;
+  --room-message-border-hover: #625b51;
+  --room-message-hover: rgba(255, 255, 255, 0.05);
+  --room-tool-group: #302d29;
+  --room-tool-group-border: #514b43;
+  --room-tool-icon: #d2ccc3;
+  --room-tool-active: #454038;
+  --room-send: #e9ddc8;
+  --room-send-foreground: #29251f;
+  --room-send-border: #c7b89e;
+  --room-send-disabled: #393632;
+  --room-send-disabled-foreground: #b7b1a8;
+  --room-send-disabled-border: #514b43;
+  --room-send-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 1px rgba(0, 0, 0, 0.22);
+  --room-composer-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 @theme inline {
@@ -398,10 +452,14 @@ pre code {
 
 @keyframes message-search-hit {
   0% {
-    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+    background-color: color-mix(
+      in oklab,
+      var(--primary) 22%,
+      var(--room-message)
+    );
   }
   100% {
-    background-color: transparent;
+    background-color: var(--room-message);
   }
 }
 
@@ -428,8 +486,7 @@ pre code {
   }
 }
 
-.message-search-hit {
-  border-radius: 0.5rem;
+.message-search-hit .room-message-bubble {
   animation: message-search-hit 1.6s ease-out;
 }
 
@@ -534,6 +591,20 @@ pre code {
     animation: none;
   }
 
+  .room-message,
+  .room-message-bubble,
+  .room-message-actions,
+  .room-composer,
+  .room-composer-tool,
+  .room-send,
+  .room-meta-control {
+    transition: none;
+  }
+
+  .room-send:active:not(:disabled) {
+    transform: none;
+  }
+
   .agent-thinking-label {
     color: var(--agent-thinking-tone);
     background-image: none;
@@ -629,5 +700,461 @@ a {
   body {
     background-color: var(--background);
     color: var(--foreground);
+  }
+}
+
+/* Room surface hierarchy — classes are Room-only; tokens live on :root / .dark
+   so portaled thread sheets still resolve the same colors. */
+.room-surface {
+  --foreground: var(--room-text);
+  --muted-foreground: var(--room-text-secondary);
+  background: var(--room-conversation);
+  color: var(--room-text);
+}
+
+.room-header {
+  height: 56px;
+  padding-inline: 20px;
+  background: var(--room-header);
+  border-bottom-color: var(--room-divider);
+  box-shadow: none;
+}
+
+.room-header .room-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--room-text);
+}
+
+.room-pane {
+  container-type: inline-size;
+  container-name: room-pane;
+}
+
+.room-timeline {
+  padding: 20px 24px 16px;
+}
+
+.room-thread-timeline {
+  padding: 16px;
+}
+
+.room-composer-dock {
+  margin: 0 20px 16px;
+}
+
+.room-thread-composer-dock {
+  margin: 0 12px 12px;
+}
+
+.room-message {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding-block: 0;
+  margin-top: 18px;
+  color: var(--room-text);
+}
+
+.room-message:first-child {
+  margin-top: 0;
+}
+
+.room-message--grouped {
+  margin-top: 6px;
+}
+
+.room-message-gutter,
+.room-message-avatar {
+  width: 32px;
+  flex-shrink: 0;
+}
+
+.room-message-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.room-message-author {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.room-message--grouped > .room-message-main > .room-message-edited {
+  display: inline-block;
+  margin-bottom: 6px;
+}
+
+.room-message-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--room-text);
+}
+
+.room-message-time,
+.room-message-edited {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--room-text-secondary);
+}
+
+.room-message-stack {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.room-message-bubble {
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: min(76ch, calc(100% - 44px));
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--room-message-border);
+  border-radius: 10px;
+  background: var(--room-message);
+  box-shadow: none;
+  transition: border-color 140ms ease;
+}
+
+.room-message:hover .room-message-bubble,
+.room-message:focus-within .room-message-bubble,
+.room-message[data-actions-open] .room-message-bubble {
+  border-color: var(--room-message-border-hover);
+}
+
+.room-message-body {
+  min-width: 0;
+  font-size: 15px;
+  line-height: 24px;
+  overflow-wrap: break-word;
+}
+
+.room-message-body .prose {
+  max-width: none;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.room-message-body .prose p + p {
+  margin-top: 8px;
+}
+
+.room-message-body .md-code-block,
+.room-message-body img,
+.room-message-body pre {
+  max-width: 100%;
+}
+
+.room-message-clamp-fade {
+  background-image: linear-gradient(to top, var(--room-message), transparent);
+}
+
+.room-message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  /* border-top: 1px solid var(--room-divider); */
+  font-size: 12px;
+}
+
+.room-message-actions {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: 2;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0;
+  padding: 4px;
+  border: 1px solid var(--room-message-border);
+  border-radius: 8px;
+  background: var(--room-composer);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.room-message:hover .room-message-actions,
+.room-message:focus-within .room-message-actions,
+.room-message[data-actions-open] .room-message-actions,
+.room-message-actions[data-visible] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.room-message-action {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--room-text-secondary);
+  outline: none;
+}
+
+.room-message-action:hover {
+  background: var(--room-tool-active);
+  color: var(--room-text);
+}
+
+.room-message-action:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.room-message-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.room-meta-control {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--room-text);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.room-meta-control:hover,
+.room-meta-control:focus-visible {
+  background: var(--room-message-hover);
+}
+
+.room-meta-control:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.room-meta-control--unread {
+  font-weight: 600;
+}
+
+.room-meta-secondary {
+  color: var(--room-text-secondary);
+  font-weight: 400;
+}
+
+.room-composer {
+  /* Clip the two-tone chrome to the radius. The mention menu is appended to
+     the relative ancestor outside this box so `bottom: 100%` is not clipped. */
+  overflow: hidden;
+  border: 1px solid var(--room-composer-edge);
+  border-radius: 14px;
+  background: var(--room-composer);
+  box-shadow: var(--room-composer-shadow);
+  outline: none;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.room-composer:focus-within {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow:
+    var(--room-composer-shadow),
+    0 0 0 1px color-mix(in oklab, var(--primary) 30%, transparent);
+}
+
+.room-composer-editor {
+  min-height: 56px;
+  padding: 12px 14px;
+}
+
+.room-composer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-top: 1px solid var(--room-divider);
+  background: var(--room-composer-toolbar);
+}
+
+.room-composer-tools {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.room-composer-tool-group {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--room-tool-group-border);
+  border-radius: 8px;
+  background: var(--room-tool-group);
+}
+
+.room-composer-tool {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--room-tool-icon);
+  outline: none;
+  opacity: 1;
+}
+
+.room-composer-tool:hover,
+.room-composer-tool[aria-pressed='true'] {
+  background: var(--room-tool-active);
+}
+
+.room-composer-tool:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.room-composer-tool:disabled {
+  cursor: not-allowed;
+  color: var(--room-text-secondary);
+  opacity: 1;
+}
+
+.room-composer-tool svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.8;
+}
+
+.room-send {
+  display: inline-flex;
+  height: 34px;
+  min-width: 6.75rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--room-send-border);
+  border-radius: 8px;
+  background: var(--room-send);
+  color: var(--room-send-foreground);
+  box-shadow: var(--room-send-shadow);
+  outline: none;
+  opacity: 1;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.room-send-label {
+  display: inline-grid;
+  justify-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.room-send-label::after {
+  content: 'Sending';
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+
+.room-send-label > span {
+  grid-area: 1 / 1;
+}
+
+.room-send svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: inherit;
+  opacity: 1;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.room-send:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.room-send:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.room-send:focus-visible {
+  box-shadow:
+    var(--room-send-shadow),
+    0 0 0 2px var(--ring);
+}
+
+.room-send:disabled {
+  border-color: var(--room-send-disabled-border);
+  background: var(--room-send-disabled);
+  color: var(--room-send-disabled-foreground);
+  box-shadow: none;
+  opacity: 1;
+  filter: none;
+  cursor: not-allowed;
+}
+
+.room-send[aria-busy='true'] {
+  border-color: var(--room-send-border);
+  background: var(--room-send);
+  color: var(--room-send-foreground);
+  box-shadow: var(--room-send-shadow);
+  cursor: progress;
+}
+
+.room-send:disabled svg,
+.room-send svg {
+  opacity: 1;
+}
+
+@container room-pane (max-width: 640px) {
+  .room-timeline {
+    padding-inline: 12px;
+  }
+
+  .room-composer-dock {
+    margin-inline: 12px;
+    margin-bottom: 12px;
+  }
+
+  .room-thread-timeline {
+    padding-inline: 12px;
   }
 }

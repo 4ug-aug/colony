@@ -10,6 +10,7 @@ import { useRooms } from '#/features/rooms/use-rooms'
 import { MachineSessionHeader } from '#/features/vms/components/machine-session'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
+import { cn } from '#/lib/utils'
 import {
   Box,
   CalendarClock,
@@ -244,14 +245,24 @@ export function Dashboard({
         }}
         user={user}
       />
-      <SidebarInset className="h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background">
+      <SidebarInset
+        className={cn(
+          'h-[calc(100svh-1rem-var(--titlebar,0px))] overflow-hidden border border-border/70 bg-background',
+          view === 'room' && 'room-surface',
+        )}
+      >
         {view !== 'account' &&
           view !== 'workspace' &&
           view !== 'chat' &&
           view !== 'agents' &&
           view !== 'issues' &&
           view !== 'bulletins' && (
-            <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+            <header
+              className={cn(
+                'flex h-14 shrink-0 items-center gap-2 border-b',
+                view === 'room' ? 'room-header' : 'px-4',
+              )}
+            >
               {view === 'vms' && selectedMachineId ? (
                 <MachineSessionHeader
                   machineId={selectedMachineId}
@@ -268,7 +279,11 @@ export function Dashboard({
                   ) : (
                     <Hash className="size-4 text-muted-foreground" />
                   )}
-                  <p className="font-semibold">
+                  <p
+                    className={
+                      view === 'room' ? 'room-title' : 'font-semibold'
+                    }
+                  >
                     {view === 'schedules'
                       ? 'Schedules'
                       : view === 'vms'

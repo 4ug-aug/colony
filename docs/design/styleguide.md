@@ -398,6 +398,71 @@ Always include `motion-reduce:animate-none` / `motion-reduce:transition-none`.
   `public/colony-mark.svg`.
 - Putting every action on-screen; hide rare actions in context menus / overflow.
 
+## Rooms
+
+Room conversation, header, and composer are a distinct surface stack. Do not
+reuse these colors on Private Chat or other pages.
+
+| Surface | Light | Dark |
+|---|---|---|
+| Conversation | `#FAF9F7` | `#242321` |
+| Header | `#F5F3EF` | `#292725` |
+| Message fill | `#FFFFFF` | `#2B2926` |
+| Message border | `#D8D2C9` | `#49453F` |
+| Message hover border | `#BEB5A8` | `#625B51` |
+| Composer | `#FFFFFF` | `#302E2B` |
+| Composer edge | `#C9C0B4` | `#575046` |
+| Composer toolbar | `#F7F5F2` | `#2B2926` |
+| Tool group fill | `#FFFFFF` | `#302D29` |
+| Tool group border | `#D8D2C9` | `#514B43` |
+| Send | `#493D30` / `#FFFFFF` | `#E9DDC8` / `#29251F` |
+| Send disabled | `#E8E4DE` / `#71695F` | `#393632` / `#B7B1A8` |
+| Primary text | `#24211E` | `#F2F0EC` |
+| Secondary text | `#6E675F` | `#B7B1A8` |
+
+Header stays 56px with a 16px room icon, 14px/600 name, 12px connection status,
+and one hairline divider — no shadow.
+
+Messages stay left-aligned for humans and agents. Identity comes from the
+author line and avatar — every message uses the same neutral bubble, not a
+colored agent border.
+
+Author 14px/600 and timestamp 11px secondary sit **above** the bubble, aligned
+to its left edge. The avatar stays in the left gutter; never inside the bubble
+and never wrapping the full-width timeline row in a card.
+
+Each message is its own bubble:
+
+- Fill: `--room-message` (light `#FFFFFF` / dark `#2B2926`)
+- Border: `--room-message-border` (light `#D8D2C9` / dark `#49453F`), visible
+  at rest; hover `--room-message-border-hover` (`#BEB5A8` / `#625B51`)
+- Geometry: content-sized, `max-width: min(100%, 76ch)`, `min-width: 0`,
+  12px / 10px padding, 10px radius, 1px solid border, no drop shadow
+- Body 15px / 24px. Author line to bubble: 6px. Avatar-to-content: 12px.
+
+Consecutive messages from the same author group under one avatar (6px apart;
+18px between groups). Grouped messages keep their own bubble and actions;
+repeated author/avatar stay hidden.
+
+A compact footer inside the bubble — only when run status or thread replies
+exist — uses 8px top margin and padding, one hairline divider, 12px text, and
+an 8px wrapping gap. Labels stay readable (`Completed`, `Failed`, `4 replies`).
+Do not wrap each footer control in its own bordered badge.
+
+Hover/focus actions re-anchor to the message content (beside the bubble), never
+the far edge of the timeline, and must not cover text, timestamps, or links.
+
+The composer is the raised surface: 14px radius, `--room-composer-edge` border
+(`#C9C0B4` / `#575046`), layered shadow, toolbar strip. Focus-within changes
+the border to the Colony accent plus at most a 1px outer ring — no stacked
+glow. Toolbar controls keep their own focus rings.
+
+Formatting and insert actions sit in two compact grouped containers (shared
+fill, 1px border, 8px radius, 28×28 tools). Send is a labeled 34px button
+(`Send` / `Save`) with a 16px icon — not the shared circular Button, and never
+dimmed with opacity when disabled. Use `--room-send*` tokens so disabled Send
+stays legible.
+
 ## Applying this to another product
 
 1. Copy the token table (light + dark) and `--radius: 0.625rem`.

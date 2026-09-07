@@ -40,8 +40,21 @@ export type FlatTimelineItem = {
   id: string
   message: RoomMessage
   createdAt: number
-  run?: RoomRun
+  runs: RoomRun[]
   grouped: boolean
+}
+
+/** Groups runs by the message that triggered them, preserving input order. */
+export function groupRunsByTrigger(
+  runs: readonly RoomRun[],
+): Map<string, RoomRun[]> {
+  const grouped = new Map<string, RoomRun[]>()
+  for (const run of runs) {
+    const list = grouped.get(run.triggerMessageId)
+    if (list) list.push(run)
+    else grouped.set(run.triggerMessageId, [run])
+  }
+  return grouped
 }
 
 /**
@@ -52,7 +65,7 @@ export function buildFlatTimelineItems(
   messages: readonly RoomMessage[],
   runs: readonly RoomRun[],
 ): FlatTimelineItem[] {
-  const statuses = new Map(runs.map((run) => [run.triggerMessageId, run]))
+  const statuses = groupRunsByTrigger(runs)
   const sorted = [...messages]
     .map((message) => ({
       id: message.id,
@@ -64,7 +77,7 @@ export function buildFlatTimelineItems(
     const previous = sorted[index - 1]
     return {
       ...item,
-      run: statuses.get(item.message.id),
+      runs: statuses.get(item.message.id) ?? [],
       grouped:
         previous != null &&
         previous.message.author.id === item.message.author.id &&

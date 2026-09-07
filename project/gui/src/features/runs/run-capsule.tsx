@@ -1,56 +1,60 @@
-import { ProviderIcon } from '#/components/provider-icon'
-import { AvatarGroup } from '#/components/ui/avatar'
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { useAgentName } from '#/features/agents/use-agent-definitions'
 import type { RoomRun } from '#/features/rooms/types'
 import { llmProviderName } from '#/lib/llm-provider'
 import { cn } from '#/lib/utils'
-import { Check, CircleX, X } from 'lucide-react'
-import { RunAvatar } from './run-avatar'
+import { Check, ChevronRight, CircleX, X } from 'lucide-react'
+import { runActivityLabel } from './run-helpers'
 
 export function RunCapsule({
   run,
   openRun,
+  showModel = false,
   className,
 }: {
   run: RoomRun
   openRun: (runId: string) => void
+  showModel?: boolean
   className?: string
 }) {
   const name = useAgentName(run.agentId)
-  const state =
-    run.state === 'succeeded'
-      ? 'completed'
-      : run.state === 'failed'
-        ? 'failed'
-        : run.state === 'cancelled'
-          ? 'cancelled'
-          : 'working'
+  const label = runActivityLabel(run.state)
+  const working = label === 'Working…'
+  const distinguish = showModel
+    ? `, ${llmProviderName(run.provider)} ${run.model}`
+    : ''
   return (
     <button
       type="button"
-      className={cn(
-        'mt-2 inline-flex h-8 items-center gap-1.5 rounded-md border bg-muted/30 py-1 pl-1 pr-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer',
-        className,
-      )}
-      aria-label={`View ${name} activity using ${llmProviderName(run.provider)}, ${state}`}
+      className={cn('room-meta-control', className)}
+      aria-label={`View ${name} activity, ${label}${distinguish}`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={() => openRun(run.id)}
     >
-      <AvatarGroup>
-        <RunAvatar run={run} />
-      </AvatarGroup>
-      <ProviderIcon provider={run.provider} className="size-3.5" />
-      {run.state === 'succeeded' ? (
-        <Check className="size-3.5 text-primary" />
+      {working ? (
+        <AgentThinking label="Working…" className="text-xs font-normal" />
       ) : run.state === 'failed' ? (
-        <CircleX className="size-3.5 text-destructive" />
+        <>
+          <CircleX className="size-3.5 text-destructive" aria-hidden="true" />
+          <span>Failed</span>
+        </>
       ) : run.state === 'cancelled' ? (
-        <X className="size-3.5" />
+        <>
+          <X className="size-3.5" aria-hidden="true" />
+          <span>Cancelled</span>
+        </>
       ) : (
-        <AgentThinking label="Working" />
+        <>
+          <Check className="size-3.5 text-green-500" aria-hidden="true" />
+          <span>Completed</span>
+        </>
       )}
-      <span>1</span>
+      {showModel && (
+        <span className="room-meta-secondary">
+          {llmProviderName(run.provider)} · {run.model}
+        </span>
+      )}
+      <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
     </button>
   )
 }

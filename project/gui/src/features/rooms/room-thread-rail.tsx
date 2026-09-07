@@ -1,6 +1,3 @@
-import { Avatar } from '#/components/avatar'
-import { timestamp } from './format'
-import { Markdown } from '#/components/markdown'
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
 import {
@@ -13,14 +10,13 @@ import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
-import { AttachmentView } from '#/features/rooms/attachment-view'
 import { RunCapsule } from '#/features/runs/run-capsule'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { ArrowDown, X } from 'lucide-react'
-import type { AnimationEvent } from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { MessageComposer } from './message-composer'
-import { runsForThread } from './thread-helpers'
+import { RoomMessageRow } from './room-message-row'
+import { groupRunsByTrigger, runsForThread } from './thread-helpers'
 import {
   acknowledgeNewReplies,
   applyIncomingReplies,
@@ -43,20 +39,16 @@ function ThreadResult({
   agentName: string
 }) {
   return (
-    <article className="flex gap-3" data-run-result-id={result.id}>
-      <Avatar author={{ id: result.agentId, name: agentName }} agent />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="font-semibold">{agentName}</span>
-          <time className="text-xs text-muted-foreground">
-            {timestamp(result.createdAt)}
-          </time>
-        </div>
-        <div className="mt-0.5 text-sm leading-6">
-          <Markdown>{result.text}</Markdown>
-        </div>
-      </div>
-    </article>
+    <RoomMessageRow
+      messageId={result.id}
+      author={{ id: result.agentId, name: agentName, kind: 'agent' }}
+      authorName={agentName}
+      createdAt={result.createdAt}
+      text={result.text}
+      attachments={[]}
+      mentionHandles={[]}
+      isAgent
+    />
   )
 }
 
@@ -67,9 +59,8 @@ function ThreadMessage({
   onEdit,
   focused,
   onFocusHandled,
-  run,
+  runs = [],
   openRun,
-  bubble = false,
 }: {
   message: RoomMessage
   mentionHandles: string[]
@@ -77,69 +68,40 @@ function ThreadMessage({
   onEdit?: (message: RoomMessage) => void
   focused?: boolean
   onFocusHandled?: () => void
-  run?: RoomRun
+  runs?: RoomRun[]
   openRun?: (runId: string) => void
-  /** Root message only — replies stay flush with the thread timeline. */
-  bubble?: boolean
 }) {
   const canEdit =
     Boolean(onEdit) &&
     message.author.kind !== 'agent' &&
     message.author.id === currentUserId
+  const metadata =
+    runs.length > 0 && openRun
+      ? runs.map((run) => (
+          <RunCapsule
+            key={run.id}
+            run={run}
+            openRun={openRun}
+            showModel={runs.length > 1}
+          />
+        ))
+      : undefined
   return (
-    <article
-      className={`group flex gap-3${focused ? ' message-search-hit' : ''}`}
-      data-message-id={message.id}
-      onAnimationEnd={
-        focused
-          ? (event: AnimationEvent<HTMLElement>) => {
-              if (event.animationName !== 'message-search-hit') return
-              onFocusHandled?.()
-            }
-          : undefined
-      }
-    >
-      <Avatar author={message.author} agent={message.author.kind === 'agent'} />
-      <div
-        className={
-          bubble
-            ? 'min-w-0 flex-1 rounded-lg border bg-muted/30 px-3 py-2'
-            : 'min-w-0 flex-1'
-        }
-      >
-        <div className="flex items-baseline gap-2">
-          <span className="font-semibold">{message.author.name}</span>
-          <time className="text-xs text-muted-foreground">
-            {timestamp(message.createdAt)}
-          </time>
-          {message.editedAt != null && (
-            <span className="text-xs text-muted-foreground">Edited</span>
-          )}
-          {canEdit && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-              onClick={() => onEdit?.(message)}
-            >
-              Edit
-            </Button>
-          )}
-        </div>
-        <div className="mt-0.5 text-sm leading-6">
-          <Markdown mentions={mentionHandles}>{message.text}</Markdown>
-        </div>
-        {message.attachments.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-start gap-2">
-            {message.attachments.map((attachment) => (
-              <AttachmentView attachment={attachment} key={attachment.id} />
-            ))}
-          </div>
-        )}
-        {run && openRun && <RunCapsule run={run} openRun={openRun} />}
-      </div>
-    </article>
+    <RoomMessageRow
+      messageId={message.id}
+      author={message.author}
+      authorName={message.author.name}
+      createdAt={message.createdAt}
+      edited={message.editedAt != null}
+      text={message.text}
+      attachments={message.attachments}
+      mentionHandles={mentionHandles}
+      isAgent={message.author.kind === 'agent'}
+      focused={focused}
+      onFocusHandled={onFocusHandled}
+      onEdit={canEdit ? () => onEdit?.(message) : undefined}
+      metadata={metadata}
+    />
   )
 }
 
@@ -199,12 +161,7 @@ function RoomThreadRailContent({
   )
   const { data: agents = [] } = useAgentDefinitions()
   const [editingReply, setEditingReply] = useState<RoomMessage>()
-  const threadRuns = new Map(
-    runsForThread(runs, root, replies).map((run) => [
-      run.triggerMessageId,
-      run,
-    ]),
-  )
+  const threadRuns = groupRunsByTrigger(runsForThread(runs, root, replies))
   const scrollRef = useRef<HTMLDivElement>(null)
   const timelineItems = [
     ...replies.map((reply) => ({
@@ -263,7 +220,7 @@ function RoomThreadRailContent({
 
   return (
     <>
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+      <div className="room-header flex h-14 shrink-0 items-center gap-2">
         <p className="font-semibold">Thread</p>
         <p className="text-xs text-muted-foreground">
           {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
@@ -284,7 +241,7 @@ function RoomThreadRailContent({
       <div className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}
-          className="h-full overflow-y-auto p-4"
+          className="room-thread-timeline h-full overflow-y-auto"
           onScroll={() => {
             const el = scrollRef.current
             if (!el) return
@@ -307,17 +264,16 @@ function RoomThreadRailContent({
           )}
           {root && (
             <>
-              <div className="border-b pb-4">
+              <div className="border-b border-[var(--room-divider)] pb-4">
                 <ThreadMessage
                   message={root}
                   mentionHandles={mentionHandles}
                   currentUserId={currentUserId}
-                  run={threadRuns.get(root.id)}
+                  runs={threadRuns.get(root.id) ?? []}
                   openRun={openRun}
-                  bubble
                 />
               </div>
-              <div className="space-y-4 pt-4">
+              <div className="pt-5">
                 {timelineItems.map((item) =>
                   'reply' in item ? (
                     <ThreadMessage
@@ -328,7 +284,7 @@ function RoomThreadRailContent({
                       onEdit={setEditingReply}
                       focused={focusReplyId === item.reply.id}
                       onFocusHandled={onFocusReplyHandled}
-                      run={threadRuns.get(item.reply.id)}
+                      runs={threadRuns.get(item.reply.id) ?? []}
                       openRun={openRun}
                     />
                   ) : (
@@ -365,22 +321,21 @@ function RoomThreadRailContent({
           </Button>
         )}
       </div>
-      <div className="shrink-0 p-3 pt-2">
-        <div className="rounded-xl border bg-background p-2.5 shadow-sm">
-          <MessageComposer
-            value={draftText}
-            onChange={onDraftChange}
-            onSubmit={submit}
-            disabled={!root}
-            roomName={roomName}
-            mentionableAccounts={mentionableAccounts}
-            editing={Boolean(editingReply)}
-            onCancelEdit={() => {
-              setEditingReply(undefined)
-              onDraftChange('')
-            }}
-          />
-        </div>
+      <div className="room-thread-composer-dock shrink-0">
+        <MessageComposer
+          value={draftText}
+          onChange={onDraftChange}
+          onSubmit={submit}
+          disabled={!root}
+          roomName={roomName}
+          mentionableAccounts={mentionableAccounts}
+          editing={Boolean(editingReply)}
+          onCancelEdit={() => {
+            setEditingReply(undefined)
+            onDraftChange('')
+          }}
+          appearance="room"
+        />
       </div>
     </>
   )
@@ -400,7 +355,7 @@ export function RoomThreadRail({
   if (inline)
     return (
       <aside
-        className={`flex h-full min-h-0 w-full flex-col bg-background ${
+        className={`flex h-full min-h-0 w-full flex-col bg-[var(--room-conversation)] ${
           exiting
             ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards duration-100'
             : 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards duration-200'
@@ -432,7 +387,7 @@ export function RoomThreadRail({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className="w-full max-w-none gap-0 p-0 sm:max-w-md"
+        className="room-surface flex w-full max-w-none flex-col gap-0 p-0 sm:max-w-md"
       >
         <SheetTitle className="sr-only">Thread</SheetTitle>
         <SheetDescription className="sr-only">

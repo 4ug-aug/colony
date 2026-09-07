@@ -21,6 +21,12 @@ import {
 } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '#/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '#/components/ui/tooltip'
+import { cn } from '#/lib/utils'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import {
   ComposerMention,
@@ -102,6 +108,41 @@ function SelectedFile({
   )
 }
 
+function RoomComposerTool({
+  label,
+  pressed,
+  onClick,
+  disabled,
+  Icon,
+}: {
+  label: string
+  pressed?: boolean
+  onClick: () => void
+  disabled: boolean
+  Icon: typeof Bold
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className="room-composer-tool"
+            aria-label={label}
+            aria-pressed={pressed}
+            disabled={disabled}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onClick}
+          />
+        }
+      >
+        <Icon strokeWidth={1.8} />
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export type MessageComposerHandle = {
   mention: (agentId: string) => void
 }
@@ -120,6 +161,7 @@ export const MessageComposer = forwardRef<
     hideMentions?: boolean
     hideAttachments?: boolean
     placeholder?: string
+    appearance?: 'default' | 'room'
   }
 >(function MessageComposer(
   {
@@ -134,6 +176,7 @@ export const MessageComposer = forwardRef<
     hideMentions = false,
     hideAttachments = false,
     placeholder,
+    appearance = 'default',
   },
   ref,
 ) {
@@ -236,7 +279,9 @@ export const MessageComposer = forwardRef<
     editorProps: {
       attributes: {
         class:
-          'min-h-12 max-h-40 overflow-y-auto px-1 py-1 text-sm leading-6 outline-none',
+          appearance === 'room'
+            ? 'min-h-8 max-h-40 overflow-y-auto text-[15px] leading-6 outline-none'
+            : 'min-h-12 max-h-40 overflow-y-auto px-1 py-1 text-sm leading-6 outline-none',
         'aria-label': placeholderRef.current ?? `Message #${roomName}`,
       },
       handleKeyDown: (_, event) => {
@@ -328,150 +373,267 @@ export const MessageComposer = forwardRef<
     editor.view.dispatch(editor.state.tr)
   }, [editor, roomName, editing])
 
+  const room = appearance === 'room'
   const control = (
     label: string,
     active: boolean,
     command: () => void,
     Icon: typeof Bold,
-  ): ReactNode => (
-    <Button
-      type="button"
-      variant={active ? 'secondary' : 'ghost'}
-      size="icon-xs"
-      aria-label={label}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={command}
-      disabled={disabled}
-    >
-      <Icon />
-    </Button>
+  ): ReactNode =>
+    room ? (
+      <RoomComposerTool
+        label={label}
+        pressed={active}
+        onClick={command}
+        disabled={disabled}
+        Icon={Icon}
+      />
+    ) : (
+      <Button
+        type="button"
+        variant={active ? 'secondary' : 'ghost'}
+        size="icon-xs"
+        aria-label={label}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={command}
+        disabled={disabled}
+      >
+        <Icon />
+      </Button>
+    )
+
+  const sendLabel = sending
+    ? editing
+      ? 'Saving'
+      : 'Sending'
+    : editing
+      ? 'Save'
+      : 'Send'
+  const sendAriaLabel = sending
+    ? editing
+      ? 'Saving message'
+      : 'Sending message'
+    : editing
+      ? 'Save message'
+      : 'Send message'
+  const showInsertGroup = !hideMentions || (!editing && !hideAttachments)
+  const formatControls = (
+    <>
+      {control(
+        'Bold',
+        editorState.bold,
+        () => editor.chain().focus().toggleBold().run(),
+        Bold,
+      )}
+      {control(
+        'Italic',
+        editorState.italic,
+        () => editor.chain().focus().toggleItalic().run(),
+        Italic,
+      )}
+      {control(
+        'Bullet list',
+        editorState.bulletList,
+        () => editor.chain().focus().toggleBulletList().run(),
+        List,
+      )}
+      {control(
+        'Inline code',
+        editorState.code,
+        () => editor.chain().focus().toggleCode().run(),
+        Code,
+      )}
+    </>
   )
 
   return (
     <div ref={containerRef} className="relative">
-      {editing && (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
-          <span>Editing message</span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={onCancelEdit}
-            disabled={disabled || sending}
+      <div className={room ? 'room-composer' : undefined}>
+        {editing && (
+          <div
+            className={cn(
+              'mb-2 flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground',
+              room && 'mx-3.5 mt-2.5 mb-0',
+            )}
           >
-            Cancel
-          </Button>
-        </div>
-      )}
-      <EditorContent
-        editor={editor}
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          if (editing || !event.dataTransfer.files.length) return
-          event.preventDefault()
-          addFiles(event.dataTransfer.files)
-        }}
-      />
-      {!editing && files.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {files.map((file, index) => (
-            <SelectedFile
-              key={`${file.name}-${file.size}-${index}`}
-              file={file}
-              disabled={disabled}
-              sending={sending}
-              remove={() =>
-                setFiles((current) =>
-                  current.filter((_, item) => item !== index),
-                )
-              }
-            />
-          ))}
-        </div>
-      )}
-      <div className="mt-1.5 flex items-center justify-between">
-        <div className="flex items-center gap-0.5 text-muted-foreground">
-          {control(
-            'Bold',
-            editorState.bold,
-            () => editor.chain().focus().toggleBold().run(),
-            Bold,
-          )}
-          {control(
-            'Italic',
-            editorState.italic,
-            () => editor.chain().focus().toggleItalic().run(),
-            Italic,
-          )}
-          {control(
-            'Bullet list',
-            editorState.bulletList,
-            () => editor.chain().focus().toggleBulletList().run(),
-            List,
-          )}
-          {control(
-            'Inline code',
-            editorState.code,
-            () => editor.chain().focus().toggleCode().run(),
-            Code,
-          )}
-          {!hideMentions && (
+            <span>Editing message</span>
             <Button
               type="button"
               variant="ghost"
-              size="icon-xs"
-              aria-label="Mention a teammate or agent"
-              onClick={() => editor.chain().focus().insertContent('@').run()}
-              disabled={disabled}
+              size="xs"
+              onClick={onCancelEdit}
+              disabled={disabled || sending}
             >
-              <AtSign />
+              Cancel
             </Button>
-          )}
-          {!editing && !hideAttachments && (
-            <>
-              <input
-                ref={fileInput}
-                type="file"
-                multiple
-                className="sr-only"
-                onChange={(event) => {
-                  if (event.target.files) addFiles(event.target.files)
-                  event.target.value = ''
-                }}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Attach files"
-                onClick={() => fileInput.current?.click()}
-                disabled={disabled || sending}
-              >
-                <Paperclip />
-              </Button>
-            </>
+          </div>
+        )}
+        <div className={room ? 'room-composer-editor' : undefined}>
+          <EditorContent
+            editor={editor}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              if (editing || !event.dataTransfer.files.length) return
+              event.preventDefault()
+              addFiles(event.dataTransfer.files)
+            }}
+          />
+          {!editing && files.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {files.map((file, index) => (
+                <SelectedFile
+                  key={`${file.name}-${file.size}-${index}`}
+                  file={file}
+                  disabled={disabled}
+                  sending={sending}
+                  remove={() =>
+                    setFiles((current) =>
+                      current.filter((_, item) => item !== index),
+                    )
+                  }
+                />
+              ))}
+            </div>
           )}
         </div>
-        <Button
-          type="button"
-          size="icon-sm"
-          className="rounded-full"
-          aria-label={
-            sending
-              ? editing
-                ? 'Saving message'
-                : 'Sending message'
-              : editing
-                ? 'Save message'
-                : 'Send message'
-          }
-          onClick={() => void submit()}
-          disabled={
-            (!editorState.hasText && !files.length) || disabled || sending
+        <div
+          className={
+            room
+              ? 'room-composer-toolbar'
+              : 'mt-1.5 flex items-center justify-between'
           }
         >
-          {sending ? editing ? 'Saving…' : 'Sending…' : <Send />}
-        </Button>
+          <div
+            className={
+              room
+                ? 'room-composer-tools'
+                : 'flex items-center gap-0.5 text-muted-foreground'
+            }
+          >
+            {room ? (
+              <div
+                className="room-composer-tool-group"
+                role="group"
+                aria-label="Formatting"
+              >
+                {formatControls}
+              </div>
+            ) : (
+              formatControls
+            )}
+            {room ? (
+              showInsertGroup && (
+                <div
+                  className="room-composer-tool-group"
+                  role="group"
+                  aria-label="Insert"
+                >
+                  {!hideMentions && (
+                    <RoomComposerTool
+                      label="Mention a teammate or agent"
+                      onClick={() =>
+                        editor.chain().focus().insertContent('@').run()
+                      }
+                      disabled={disabled}
+                      Icon={AtSign}
+                    />
+                  )}
+                  {!editing && !hideAttachments && (
+                    <>
+                      <input
+                        ref={fileInput}
+                        type="file"
+                        multiple
+                        className="sr-only"
+                        onChange={(event) => {
+                          if (event.target.files) addFiles(event.target.files)
+                          event.target.value = ''
+                        }}
+                      />
+                      <RoomComposerTool
+                        label="Attach files"
+                        onClick={() => fileInput.current?.click()}
+                        disabled={disabled || sending}
+                        Icon={Paperclip}
+                      />
+                    </>
+                  )}
+                </div>
+              )
+            ) : (
+              <>
+                {!hideMentions && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Mention a teammate or agent"
+                    onClick={() =>
+                      editor.chain().focus().insertContent('@').run()
+                    }
+                    disabled={disabled}
+                  >
+                    <AtSign />
+                  </Button>
+                )}
+                {!editing && !hideAttachments && (
+                  <>
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      multiple
+                      className="sr-only"
+                      onChange={(event) => {
+                        if (event.target.files) addFiles(event.target.files)
+                        event.target.value = ''
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Attach files"
+                      onClick={() => fileInput.current?.click()}
+                      disabled={disabled || sending}
+                    >
+                      <Paperclip />
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+          {room ? (
+            <button
+              type="button"
+              className="room-send"
+              aria-label={sendAriaLabel}
+              aria-busy={sending || undefined}
+              onClick={() => void submit()}
+              disabled={
+                (!editorState.hasText && !files.length) || disabled || sending
+              }
+            >
+              <span className="room-send-label">
+                <span>{sendLabel}</span>
+              </span>
+              <Send aria-hidden="true" />
+            </button>
+          ) : (
+            <Button
+              type="button"
+              size="icon-sm"
+              className="rounded-full"
+              aria-label={sendAriaLabel}
+              onClick={() => void submit()}
+              disabled={
+                (!editorState.hasText && !files.length) || disabled || sending
+              }
+            >
+              {sending ? editing ? 'Saving…' : 'Sending…' : <Send />}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )

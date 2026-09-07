@@ -1,5 +1,6 @@
 import type { Author } from '#/features/rooms/types'
 import { AgentMark } from '#/features/agents/agent-mark'
+import { cn } from '#/lib/utils'
 import {
   HoverCard,
   HoverCardContent,
@@ -51,15 +52,25 @@ export function Avatar({
   author,
   agent = false,
   details = true,
+  className,
 }: {
   author: Author
   agent?: boolean
   details?: boolean
+  className?: string
 }) {
   const avatar = agent ? (
-    <AgentMark agentId={author.id} className="mt-0.5 size-8" />
+    <AgentMark
+      agentId={author.id}
+      className={cn('mt-0.5 size-8', className)}
+    />
   ) : (
-    <AccountFace name={author.name} image={author.image} color={author.color} />
+    <AccountFace
+      name={author.name}
+      image={author.image}
+      color={author.color}
+      className={cn('mt-0.5 size-9 text-sm', className)}
+    />
   )
   if (!details || agent || (!author.email && !author.displayName)) return avatar
   return (
