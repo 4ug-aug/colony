@@ -15,6 +15,7 @@ export type RunStep = Step & {
  * interpolated into SQL, so it must come from this list.
  */
 export type RunStepTable = 'issue_run_step' | 'schedule_run_step'
+type StepLookupTable = RunStepTable | 'run_step'
 
 export type RunTable = 'room_run' | 'issue_run' | 'schedule_run'
 
@@ -89,6 +90,26 @@ export function createRunStepStore(
     listSteps: (runId) =>
       (sqlite.prepare(select).all(runId) as StepRow[]).map(stepFrom),
   }
+}
+
+/** Max-idx step per run. `runIds` empty returns an empty map (SQL forbids `IN ()`). */
+export function latestStepsByRunIds(
+  sqlite: Sqlite,
+  table: StepLookupTable,
+  runIds: readonly string[],
+): Map<string, RunStep> {
+  const map = new Map<string, RunStep>()
+  if (runIds.length === 0) return map
+  const placeholders = runIds.map(() => '?').join(', ')
+  const rows = sqlite
+    .prepare(
+      `SELECT ${STEP_COLUMNS} FROM ${table} s
+       WHERE s.run_id IN (${placeholders})
+         AND s.idx = (SELECT MAX(s2.idx) FROM ${table} s2 WHERE s2.run_id = s.run_id)`,
+    )
+    .all(...runIds) as StepRow[]
+  for (const row of rows) map.set(row.run_id, stepFrom(row))
+  return map
 }
 
 export const STALE_RUN_ERROR = 'Server restarted before the run completed.'

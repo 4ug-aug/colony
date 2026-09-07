@@ -21,7 +21,7 @@ import { terminal } from '#/features/runs/run-helpers'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { Plus } from 'lucide-react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { formatIssueId } from '../format'
 import { IssueDeleteButton } from './issue-delete-menu'
 import { IssueStatusIcon } from './issue-icons'
@@ -252,12 +252,14 @@ function pickLiveWorkRun(
 
 export function IssueDetailPage({
   issueId,
+  focusRunId,
   onBack,
   onOpenIssue,
   onAddSubIssue,
   onOpenMachine,
 }: {
   issueId: string
+  focusRunId?: string
   onBack: () => void
   onOpenIssue: (issueId: string) => void
   onAddSubIssue: (parentId: string) => void
@@ -266,8 +268,15 @@ export function IssueDetailPage({
   const { issue, isPending, isError, error } = useIssue(issueId)
   const { data: issues = [] } = useIssues()
   const { data: runs = [] } = useIssueRuns(issue?.id)
-  const [tab, setTab] = useState('description')
-  const [selectedRunId, setSelectedRunId] = useState<string>()
+  const [tab, setTab] = useState(focusRunId ? 'live-work' : 'description')
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(
+    focusRunId,
+  )
+  useEffect(() => {
+    if (!focusRunId) return
+    setSelectedRunId(focusRunId)
+    setTab('live-work')
+  }, [focusRunId])
   const parent = issue?.parentId
     ? issues.find((candidate) => candidate.id === issue.parentId)
     : undefined

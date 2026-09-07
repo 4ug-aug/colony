@@ -4,6 +4,7 @@ import type { Sqlite } from '#/server/sqlite'
 import {
   createRunStepStore,
   failStaleRuns,
+  latestStepsByRunIds as selectLatestSteps,
   type RunStep,
 } from '#/server/features/runs/run-storage'
 
@@ -91,6 +92,9 @@ export interface ScheduleStore {
     scheduleId: string,
     options: { limit: number; cursor?: string },
   ): { runs: ScheduleRun[]; nextCursor?: string }
+  listActiveRuns(): ScheduleRun[]
+  listRecentTerminalRuns(since: number): ScheduleRun[]
+  latestStepsByRunIds(runIds: readonly string[]): Map<string, RunStep>
   appendStep(step: RunStep): void
   listSteps(runId: string): RunStep[]
   failStaleRuns(now: number): ScheduleRun[]
@@ -471,6 +475,17 @@ export function createSqliteScheduleStore(sqlite: Sqlite): ScheduleStore {
           : {}),
       }
     },
+    listActiveRuns: () =>
+      selectRun(sqlite, "WHERE r.state IN ('preparing', 'running')"),
+    listRecentTerminalRuns: (since) =>
+      selectRun(
+        sqlite,
+        `WHERE r.state IN ('succeeded', 'failed', 'cancelled')
+         AND r.completed_at IS NOT NULL AND r.completed_at >= ?`,
+        since,
+      ),
+    latestStepsByRunIds: (runIds) =>
+      selectLatestSteps(sqlite, 'schedule_run_step', runIds),
     failStaleRuns: (now) =>
       failStaleRuns(sqlite, 'schedule_run', now).flatMap((id) => {
         const run = selectRun(sqlite, 'WHERE r.id = ?', id)[0]

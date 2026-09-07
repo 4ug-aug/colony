@@ -1,6 +1,10 @@
 import type { RunState } from '#project/runs'
 import type { RunSummary } from '#/server/features/runs/run-control'
-import { failStaleRuns, type RunStep } from '#/server/features/runs/run-storage'
+import {
+  failStaleRuns,
+  latestStepsByRunIds as selectLatestSteps,
+  type RunStep,
+} from '#/server/features/runs/run-storage'
 import type { Sqlite } from '#/server/sqlite'
 
 export const GENERAL_ROOM_ID = 'general' as const
@@ -199,6 +203,9 @@ export interface RoomStore {
     now?: number,
   ) => AccountRunAnalytics
   listRuns(roomId: string): RoomRun[]
+  listActiveRunsForUser(userId: string): RoomRun[]
+  listRecentTerminalRunsForUser(userId: string, since: number): RoomRun[]
+  latestStepsByRunIds(runIds: readonly string[]): Map<string, StoredStep>
   createMessage(
     message: RoomMessageInput,
     attachments?: NewRoomAttachment[],
@@ -627,6 +634,28 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           `SELECT id, room_id, requested_by_id AS author_id, requested_by_name AS author_name, requested_by_image AS author_image, task, agent_id, provider, model, state, created_at, started_at, completed_at, exit_code, error, stdout, stderr, trigger_message_id FROM room_run ${where} ORDER BY created_at, id`,
         )
         .all(...values) as RunRow[]
+    ).map(runFrom)
+  const selectAccessibleRuns = (
+    userId: string,
+    extraWhere: string,
+    ...values: unknown[]
+  ): RoomRun[] =>
+    (
+      sqlite
+        .prepare(
+          `SELECT room_run.id, room_run.room_id, room_run.requested_by_id AS author_id,
+                  room_run.requested_by_name AS author_name, room_run.requested_by_image AS author_image,
+                  room_run.task, room_run.agent_id, room_run.provider, room_run.model, room_run.state,
+                  room_run.created_at, room_run.started_at, room_run.completed_at, room_run.exit_code,
+                  room_run.error, room_run.stdout, room_run.stderr, room_run.trigger_message_id
+           FROM room_run
+           JOIN room ON room.id = room_run.room_id
+           WHERE (room.visibility = 'public'
+              OR room.id IN (SELECT room_id FROM room_member WHERE user_id = ?))
+             ${extraWhere}
+           ORDER BY room_run.created_at, room_run.id`,
+        )
+        .all(userId, ...values) as RunRow[]
     ).map(runFrom)
   const values = (run: RoomRun) => [
     run.id,
@@ -1077,6 +1106,36 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       }
     },
     listRuns: (roomId) => selectRuns('WHERE room_id = ?', roomId),
+    listActiveRunsForUser: (userId) =>
+      selectAccessibleRuns(
+        userId,
+        "AND room_run.state IN ('preparing', 'running')",
+      ),
+    listRecentTerminalRunsForUser: (userId, since) =>
+      selectAccessibleRuns(
+        userId,
+        `AND room_run.state IN ('succeeded', 'failed', 'cancelled')
+         AND room_run.completed_at IS NOT NULL
+         AND room_run.completed_at >= ?`,
+        since,
+      ),
+    latestStepsByRunIds: (runIds) => {
+      const steps = selectLatestSteps(sqlite, 'run_step', runIds)
+      const byId = new Map(
+        selectRuns(
+          runIds.length
+            ? `WHERE id IN (${runIds.map(() => '?').join(', ')})`
+            : 'WHERE 0',
+          ...runIds,
+        ).map((run) => [run.id, run]),
+      )
+      const map = new Map<string, StoredStep>()
+      for (const [runId, step] of steps) {
+        const run = byId.get(runId)
+        map.set(runId, { ...step, roomId: run?.roomId ?? '' })
+      }
+      return map
+    },
     createMessage: (message, attachments = []) => {
       const run = () => {
         if (hasRootId) {

@@ -46,6 +46,7 @@ import { createSchedulesHttp } from './features/schedules/schedules-http'
 import { createBulletinsHttp } from './features/bulletins/bulletins-http'
 import { createRoomsHttp } from './features/rooms/rooms-http'
 import { createMembersHttp } from './features/rooms/members-http'
+import { createActiveRunsHttp } from './features/runs/active-runs-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
 import { createOneshotSession } from './features/oneshots/oneshot-session'
 import { type ChatStore } from './features/chats/chat-store'
@@ -666,6 +667,12 @@ export function createCoordinator(options: {
     oneshotSession,
     agentDefinitions,
   })
+  const activeRunsHttp = createActiveRunsHttp({
+    roomStore: options.store,
+    issueStore: options.issueStore,
+    scheduleStore: options.scheduleStore,
+    liveRun: (id) => options.control.getRun(id),
+  })
   const chatLinkedRuns = options.chatStore
     ? createChatLinkedRuns({
         startWarm: ({
@@ -839,6 +846,7 @@ export function createCoordinator(options: {
         (bulletinsHttp ? await bulletinsHttp(request, url, user) : undefined) ??
         (chatsHttp ? await chatsHttp(request, url, user) : undefined) ??
         (await oneshotsHttp(request, url, user)) ??
+        (await activeRunsHttp(request, url, user)) ??
         (await roomsHttp(request, url, user)) ??
         (await membersHttp(request, url, user))
       if (handled) return cors(handled)

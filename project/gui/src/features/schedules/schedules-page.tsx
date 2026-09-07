@@ -1,6 +1,6 @@
 import { AgentMark } from '#/features/agents/agent-mark'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { previewCron } from './cron'
 import { ScheduleHistoryPage } from './components/schedule-history-page'
@@ -47,8 +47,14 @@ const errorMessage = (reason: unknown) =>
   reason instanceof Error ? reason.message : 'Please try again.'
 
 export function SchedulesPage({
+  selectedId,
+  activityRunId,
+  onSelectedIdChange,
   onOpenMachine,
 }: {
+  selectedId?: string
+  activityRunId?: string
+  onSelectedIdChange?: (id: string | undefined) => void
   onOpenMachine?: (sandboxId: string) => void
 }) {
   const {
@@ -74,6 +80,16 @@ export function SchedulesPage({
   const [formError, setFormError] = useState<string>()
   const [historyScheduleId, setHistoryScheduleId] = useState<string>()
   const [selectedRunId, setSelectedRunId] = useState<string>()
+  useEffect(() => {
+    if (!onSelectedIdChange) return
+    if (selectedId) {
+      setHistoryScheduleId(selectedId)
+      if (activityRunId) setSelectedRunId(activityRunId)
+      return
+    }
+    setHistoryScheduleId(undefined)
+    setSelectedRunId(undefined)
+  }, [selectedId, activityRunId, onSelectedIdChange])
   const preview = useMemo(() => {
     try {
       return previewCron(cronExpression, timezone)
@@ -96,6 +112,7 @@ export function SchedulesPage({
   const openHistory = (scheduleId: string) => {
     setHistoryScheduleId(scheduleId)
     setSelectedRunId(undefined)
+    onSelectedIdChange?.(scheduleId)
   }
   const startCreate = () => {
     setEditingId(undefined)
@@ -147,6 +164,7 @@ export function SchedulesPage({
           onBack={() => {
             setHistoryScheduleId(undefined)
             setSelectedRunId(undefined)
+            onSelectedIdChange?.(undefined)
           }}
           onOpenMachine={onOpenMachine}
         />

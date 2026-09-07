@@ -5,6 +5,7 @@ import { TooltipProvider } from '#/components/ui/tooltip'
 import { SignIn } from '#/features/auth/sign-in'
 import { attachBulletinWorkspaceSync } from '#/features/bulletins/bulletin-workspace-sync'
 import { attachIssueWorkspaceSync } from '#/features/issues/issue-workspace-sync'
+import { attachActiveRunsWorkspaceSync } from '#/features/runs/use-active-workspace-runs'
 import { attachScheduleWorkspaceSync } from '#/features/schedules/schedule-workspace-sync'
 import { EntryShell } from '#/features/setup/entry-shell'
 import { ServerSelection } from '#/features/setup/server-selection'
@@ -33,6 +34,7 @@ function connectConfiguredServer() {
   attachIssueWorkspaceSync(queryClient)
   attachBulletinWorkspaceSync(queryClient)
   attachScheduleWorkspaceSync(queryClient)
+  attachActiveRunsWorkspaceSync(queryClient)
 }
 
 type EntryPhase = 'entry' | 'exiting' | 'dashboard'

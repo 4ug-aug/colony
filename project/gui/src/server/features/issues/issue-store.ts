@@ -3,6 +3,7 @@ import type { Sqlite } from '#/server/sqlite'
 import {
   createRunStepStore,
   failStaleRuns,
+  latestStepsByRunIds as selectLatestSteps,
   type RunStep,
 } from '#/server/features/runs/run-storage'
 import {
@@ -69,6 +70,9 @@ export interface IssueStore {
   updateRun(run: IssueRun): void
   getRun(id: string): IssueRun | undefined
   listRuns(issueId: string): IssueRun[]
+  listActiveRuns(): IssueRun[]
+  listRecentTerminalRuns(since: number): IssueRun[]
+  latestStepsByRunIds(runIds: readonly string[]): Map<string, RunStep>
   appendStep(step: RunStep): void
   listSteps(runId: string): RunStep[]
   hasActiveRun(issueId: string): boolean
@@ -612,6 +616,17 @@ export function createSqliteIssueStore(
     },
     getRun: (id) => selectRuns(sqlite, 'WHERE id = ?', id)[0],
     listRuns: (issueId) => selectRuns(sqlite, 'WHERE issue_id = ?', issueId),
+    listActiveRuns: () =>
+      selectRuns(sqlite, "WHERE state IN ('preparing', 'running')"),
+    listRecentTerminalRuns: (since) =>
+      selectRuns(
+        sqlite,
+        `WHERE state IN ('succeeded', 'failed', 'cancelled')
+         AND completed_at IS NOT NULL AND completed_at >= ?`,
+        since,
+      ),
+    latestStepsByRunIds: (runIds) =>
+      selectLatestSteps(sqlite, 'issue_run_step', runIds),
     hasActiveRun: (issueId) => {
       const row = sqlite
         .prepare(

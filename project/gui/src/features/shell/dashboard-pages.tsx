@@ -56,6 +56,9 @@ export function DashboardPages({
   onIssueCreateChange,
   selectedIssueId,
   onSelectedIssueIdChange,
+  activityRunId,
+  selectedScheduleId,
+  onSelectedScheduleIdChange,
   selectedMachineId,
   onSelectedMachineIdChange,
   onOpenMachine,
@@ -69,6 +72,9 @@ export function DashboardPages({
   onIssueCreateChange: (open: boolean, status?: IssueStatus) => void
   selectedIssueId: string | undefined
   onSelectedIssueIdChange: (id: string | undefined) => void
+  activityRunId: string | undefined
+  selectedScheduleId: string | undefined
+  onSelectedScheduleIdChange: (id: string | undefined) => void
   selectedMachineId: string | undefined
   onSelectedMachineIdChange: (id: string | undefined) => void
   onOpenMachine?: (sandboxId: string) => void
@@ -94,7 +100,14 @@ export function DashboardPages({
           <WorkspaceSettingsPage currentUserId={user.id} />
         </div>
       )}
-      {view === 'schedules' && <SchedulesPage onOpenMachine={onOpenMachine} />}
+      {view === 'schedules' && (
+        <SchedulesPage
+          selectedId={selectedScheduleId}
+          activityRunId={activityRunId}
+          onSelectedIdChange={onSelectedScheduleIdChange}
+          onOpenMachine={onOpenMachine}
+        />
+      )}
       {view === 'agents' && <AgentsPage user={user} />}
       {view === 'issues' && (
         <IssuesPage
@@ -103,6 +116,7 @@ export function DashboardPages({
           onCreateOpenChange={onIssueCreateChange}
           selectedId={selectedIssueId}
           onSelectedIdChange={onSelectedIssueIdChange}
+          activityRunId={activityRunId}
           onOpenMachine={onOpenMachine}
         />
       )}

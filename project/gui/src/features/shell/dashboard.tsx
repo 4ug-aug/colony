@@ -6,6 +6,8 @@ import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageSearchCommand } from '#/features/rooms/message-search-command'
 import { navigationForSearchHit } from '#/features/rooms/message-search-navigation'
 import type { Author } from '#/features/rooms/types'
+import { activityLocation } from '#/features/runs/colony-activity-state'
+import type { WorkspaceActivityRun } from '#/server/features/runs/workspace-activity'
 import { useRooms } from '#/features/rooms/use-rooms'
 import { MachineSessionHeader } from '#/features/vms/components/machine-session'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
@@ -87,6 +89,9 @@ export function Dashboard({
   const selectedIssueId = view === 'issues' ? location.id : undefined
   const selectedMachineId = view === 'vms' ? location.id : undefined
   const selectedChatId = view === 'chat' ? location.id : undefined
+  const selectedScheduleId = view === 'schedules' ? location.id : undefined
+  const activityRunId =
+    location.surface?.kind === 'activity' ? location.surface.runId : undefined
   const selectRef = useRef(select)
   selectRef.current = select
 
@@ -108,6 +113,23 @@ export function Dashboard({
     )
       return
     const next = openThreadSurface(location, rootId, threadFocusReplyId)
+    writeDashboardLocation(user.id, next)
+    applyLocation(next)
+  }
+  const openWorkspaceActivity = (run: WorkspaceActivityRun) => {
+    const target = activityLocation(run)
+    const next: DashboardLocation = {
+      view: target.view,
+      id: target.id,
+      surface: { kind: 'activity', runId: target.runId },
+    }
+    if (
+      location.view === next.view &&
+      location.id === next.id &&
+      location.surface?.kind === 'activity' &&
+      location.surface.runId === target.runId
+    )
+      return
     writeDashboardLocation(user.id, next)
     applyLocation(next)
   }
@@ -188,6 +210,7 @@ export function Dashboard({
         accountId={user.id}
         onOpenSearch={() => setSearchOpen(true)}
         onOpenOneshot={() => setOneshotOpen(true)}
+        onOpenActivity={openWorkspaceActivity}
       />
       <MessageSearchCommand
         open={searchOpen}
@@ -356,6 +379,11 @@ export function Dashboard({
             selectedIssueId={selectedIssueId}
             onSelectedIssueIdChange={(id) =>
               navigate({ view: 'issues', ...(id ? { id } : {}) })
+            }
+            activityRunId={activityRunId}
+            selectedScheduleId={selectedScheduleId}
+            onSelectedScheduleIdChange={(id) =>
+              navigate({ view: 'schedules', ...(id ? { id } : {}) })
             }
             selectedMachineId={selectedMachineId}
             onSelectedMachineIdChange={(id) =>

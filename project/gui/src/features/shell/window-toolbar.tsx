@@ -3,6 +3,8 @@ import { Button } from '#/components/ui/button'
 import { Kbd, KbdGroup } from '#/components/ui/kbd'
 import { SidebarTrigger } from '#/components/ui/sidebar'
 import { ActiveIssueTiming } from '#/features/issues/components/active-issue-timing'
+import { ColonyActivity } from '#/features/runs/colony-activity'
+import type { WorkspaceActivityRun } from '#/server/features/runs/workspace-activity'
 import { isTauriRuntime } from '#/lib/server-config'
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react'
 import type { CSSProperties } from 'react'
@@ -104,10 +106,12 @@ export function WindowToolbar({
   accountId,
   onOpenSearch,
   onOpenOneshot,
+  onOpenActivity,
 }: {
   accountId: string
   onOpenSearch?: () => void
   onOpenOneshot?: () => void
+  onOpenActivity?: (run: WorkspaceActivityRun) => void
 }) {
   const tauri = isTauriRuntime()
   const search =
@@ -118,11 +122,16 @@ export function WindowToolbar({
     onOpenOneshot != null ? (
       <OneshotShortcutButton onOpenOneshot={onOpenOneshot} />
     ) : null
+  const activity =
+    onOpenActivity != null ? (
+      <ColonyActivity onOpenActivity={onOpenActivity} />
+    ) : null
   const timing = <ActiveIssueTiming accountId={accountId} />
 
   if (!tauri) {
     return (
       <div className="pointer-events-auto fixed top-2 right-2 z-30 flex items-center gap-1">
+        {activity}
         {timing}
         {oneshot}
         {search}
@@ -169,6 +178,7 @@ export function WindowToolbar({
         </Button>
       </div>
       <div className="pointer-events-auto flex items-center gap-1 pr-2">
+        {activity}
         {timing}
         {oneshot}
         {search}

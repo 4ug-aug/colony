@@ -137,6 +137,19 @@ function fakeStore(
       }
       return stale.map((run) => runs.get(run.id)!)
     },
+    listActiveRuns: () =>
+      [...runs.values()].filter(
+        (run) => run.state === 'preparing' || run.state === 'running',
+      ),
+    listRecentTerminalRuns: (since) =>
+      [...runs.values()].filter(
+        (run) =>
+          (run.state === 'succeeded' ||
+            run.state === 'failed' ||
+            run.state === 'cancelled') &&
+          (run.completedAt ?? 0) >= since,
+      ),
+    latestStepsByRunIds: () => new Map(),
     appendStep: () => undefined,
     listSteps: () => [],
   }

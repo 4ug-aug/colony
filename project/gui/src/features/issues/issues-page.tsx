@@ -22,6 +22,7 @@ export function IssuesPage({
   onCreateOpenChange,
   selectedId,
   onSelectedIdChange,
+  activityRunId,
   onOpenMachine,
 }: {
   createOpen: boolean
@@ -29,6 +30,7 @@ export function IssuesPage({
   onCreateOpenChange: (open: boolean, status?: IssueStatus) => void
   selectedId?: string
   onSelectedIdChange: (id: string | undefined) => void
+  activityRunId?: string
   onOpenMachine?: (sandboxId: string) => void
 }) {
   const { data: session } = authClient.useSession()
@@ -115,6 +117,7 @@ export function IssuesPage({
         <IssueDetailPage
           key={selectedId}
           issueId={selectedId}
+          focusRunId={activityRunId}
           onBack={() => onSelectedIdChange(undefined)}
           onOpenIssue={onSelectedIdChange}
           onAddSubIssue={(parentId) => openCreate(undefined, parentId)}
