@@ -278,10 +278,12 @@ export const MessageComposer = forwardRef<
     editable: !disabled,
     editorProps: {
       attributes: {
-        class:
+        class: cn(
+          '[caret-animation:manual]',
           appearance === 'room'
             ? 'min-h-8 max-h-40 overflow-y-auto text-[15px] leading-6 outline-none'
             : 'min-h-12 max-h-40 overflow-y-auto px-1 py-1 text-sm leading-6 outline-none',
+        ),
         'aria-label': placeholderRef.current ?? `Message #${roomName}`,
       },
       handleKeyDown: (_, event) => {

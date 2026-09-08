@@ -366,7 +366,7 @@ export function RoomThreadRail({
       <aside
         className={`flex h-full min-h-0 w-full flex-col bg-[var(--room-conversation)] ${
           exiting
-            ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards duration-100'
+            ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards duration-200'
             : 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards duration-200'
         }`}
         aria-label="Thread"
