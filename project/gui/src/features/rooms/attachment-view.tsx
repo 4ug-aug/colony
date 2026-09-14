@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { Download, X } from 'lucide-react'
 import { Button } from '#/components/ui/button'
@@ -6,8 +6,8 @@ import { toast } from '#/components/ui/toast'
 import { formatBytes } from './format'
 import type { RoomAttachment } from './types'
 import {
+  fetchAttachmentObjectUrl,
   useAttachmentBlob,
-  useEnsureAttachmentObjectUrl,
 } from './use-attachment-blob'
 
 const previewTypes = new Set([
@@ -20,11 +20,37 @@ const previewTypes = new Set([
 export function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
   const [open, setOpen] = useState(false)
   const preview = previewTypes.has(attachment.contentType)
-  const { url } = useAttachmentBlob(attachment.id, preview)
-  const ensureAttachmentObjectUrl = useEnsureAttachmentObjectUrl()
+  const previewRef = useRef<HTMLElement>(null)
+  const setPreviewRef = (element: HTMLElement | null) => {
+    previewRef.current = element
+  }
+  const [nearViewport, setNearViewport] = useState(
+    () => !preview || typeof IntersectionObserver === 'undefined',
+  )
+  const { url } = useAttachmentBlob(attachment.id, preview && nearViewport)
+  useEffect(() => {
+    if (!preview || nearViewport) return
+    const element = previewRef.current
+    if (!element || typeof IntersectionObserver === 'undefined') {
+      setNearViewport(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setNearViewport(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '300px' },
+    )
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [nearViewport, preview])
   const download = async () => {
+    let objectUrl: string | undefined
     try {
-      const objectUrl = await ensureAttachmentObjectUrl(attachment.id)
+      objectUrl = await fetchAttachmentObjectUrl(attachment.id)
       const link = document.createElement('a')
       link.href = objectUrl
       link.download = attachment.filename
@@ -40,12 +66,20 @@ export function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
         description: attachment.filename,
         type: 'error',
       })
+    } finally {
+      if (objectUrl) {
+        const temporaryUrl = objectUrl
+        setTimeout(() => URL.revokeObjectURL(temporaryUrl), 0)
+      }
     }
   }
   if (preview && url)
     return (
       <>
-        <div className="relative w-fit max-w-full rounded-lg bg-muted p-2">
+        <div
+          ref={setPreviewRef}
+          className="relative w-fit max-w-full rounded-lg bg-muted p-2"
+        >
           <button
             type="button"
             className="block max-w-full"
@@ -55,6 +89,8 @@ export function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
             <img
               src={url}
               alt={attachment.filename}
+              loading="lazy"
+              decoding="async"
               className="h-auto max-h-[20rem] w-auto max-w-[min(100%,28rem)] rounded-md border object-contain bg-muted"
             />
           </button>
@@ -79,6 +115,8 @@ export function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
               <img
                 src={url}
                 alt={attachment.filename}
+                loading="lazy"
+                decoding="async"
                 className="block h-auto max-h-[min(70dvh,40rem)] w-auto max-w-[min(70vw,56rem)] object-contain"
               />
               <div className="absolute top-3 right-3 flex gap-2">
@@ -107,6 +145,7 @@ export function AttachmentView({ attachment }: { attachment: RoomAttachment }) {
     <button
       type="button"
       className="flex max-w-full items-center gap-2 rounded-md border px-2 py-1 text-left text-xs hover:bg-muted"
+      ref={preview ? setPreviewRef : undefined}
       onClick={() => void download()}
     >
       <span className="truncate">{attachment.filename}</span>

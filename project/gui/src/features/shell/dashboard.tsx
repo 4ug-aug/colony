@@ -58,8 +58,6 @@ export function Dashboard({
     room,
     messages,
     runs,
-    latestStepByRun,
-    liveStepsByRun,
     loading,
     connection,
     error,
@@ -340,8 +338,6 @@ export function Dashboard({
             room={room}
             messages={messages}
             runs={runs}
-            latestStepByRun={latestStepByRun}
-            liveStepsByRun={liveStepsByRun}
             loading={loading}
             error={error}
             draft={draft}

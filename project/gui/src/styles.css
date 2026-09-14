@@ -748,6 +748,8 @@ a {
   padding-block: 0;
   margin-top: 18px;
   color: var(--room-text);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
 }
 
 .room-message:first-child {

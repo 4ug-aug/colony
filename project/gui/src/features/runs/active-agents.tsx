@@ -14,19 +14,27 @@ import {
 import { RunAvatar } from './run-avatar'
 import { terminal, runStatus } from './run-helpers'
 import type { RoomRun } from '#/features/rooms/types'
-import type { Step } from './step-label'
+import { useRoomLiveSteps } from '#/features/rooms/room-live-steps'
 
-export function ActiveAgents({
-  runs,
-  latestStepByRun,
-  cancel,
-  openRun,
-}: {
+type ActiveAgentsProps = {
+  roomId: string | undefined
   runs: RoomRun[]
-  latestStepByRun: Map<string, Step>
   cancel: (runId: string) => void
   openRun: (runId: string) => void
-}) {
+}
+
+export function ActiveAgents(props: ActiveAgentsProps) {
+  if (!props.roomId) return null
+  return <ActiveAgentsWithSteps {...props} roomId={props.roomId} />
+}
+
+function ActiveAgentsWithSteps({
+  roomId,
+  runs,
+  cancel,
+  openRun,
+}: ActiveAgentsProps & { roomId: string }) {
+  const { latestStepByRun } = useRoomLiveSteps(roomId)
   const { data: agents = [] } = useAgentDefinitions()
   const activeRuns = runs.filter((run) => !terminal(run.state))
   if (!activeRuns.length) return null

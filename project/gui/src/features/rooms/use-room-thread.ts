@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '#/lib/api-transport'
 import { runResultsForThread } from './thread-helpers'
+import { useEffect, useMemo } from 'react'
 import type { RoomMessage, RoomRun, RoomThread, RunResultReply } from './types'
 
 const emptyResults: RoomThread['results'] = []
@@ -33,9 +34,11 @@ export function useRoomThread(
   liveReplies: RoomMessage[] = [],
   runs: readonly RoomRun[] = [],
 ) {
+  const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['room-thread', roomId, rootId],
     enabled: Boolean(roomId && rootId),
+    gcTime: 0,
     queryFn: async (): Promise<RoomThread> => {
       const response = await apiFetch(
         `/api/rooms/${roomId}/messages/${rootId}/thread`,
@@ -52,22 +55,41 @@ export function useRoomThread(
       return body
     },
   })
-  const replies = mergeReplies(query.data?.replies ?? [], liveReplies)
-  const root =
-    query.data?.root ??
-    (rootId && roomId
-      ? {
-          id: rootId,
-          roomId,
-          author: { id: '', name: '' },
-          text: '',
-          createdAt: 0,
-          attachments: [],
-        }
-      : undefined)
-  const results = mergeResults(
-    query.data?.results ?? emptyResults,
-    runResultsForThread(runs, root, replies),
+  useEffect(
+    () => () => {
+      queryClient.removeQueries({
+        queryKey: ['room-thread', roomId, rootId],
+        exact: true,
+      })
+    },
+    [queryClient, roomId, rootId],
+  )
+  const replies = useMemo(
+    () => mergeReplies(query.data?.replies ?? [], liveReplies),
+    [liveReplies, query.data?.replies],
+  )
+  const root = useMemo(
+    () =>
+      query.data?.root ??
+      (rootId && roomId
+        ? {
+            id: rootId,
+            roomId,
+            author: { id: '', name: '' },
+            text: '',
+            createdAt: 0,
+            attachments: [],
+          }
+        : undefined),
+    [query.data?.root, roomId, rootId],
+  )
+  const liveResults = useMemo(
+    () => runResultsForThread(runs, root, replies),
+    [replies, root, runs],
+  )
+  const results = useMemo(
+    () => mergeResults(query.data?.results ?? emptyResults, liveResults),
+    [liveResults, query.data?.results],
   )
   return {
     root: query.data?.root,

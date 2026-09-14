@@ -248,3 +248,4 @@ const commits = await new Promise<number>((resolve) => {
 console.log(
   `\nBurst of ${burstArrivals} steps (${arrivalsPerFrame} per frame): ${burstArrivals} commits before, ${commits} after`,
 )
+process.exit(0)

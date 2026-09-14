@@ -34,7 +34,6 @@ import type {
 } from '#/features/rooms/types'
 import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
-import type { Step } from '#/features/runs/step-label'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { ArrowDown } from 'lucide-react'
 import type { RefObject } from 'react'
@@ -49,8 +48,6 @@ export function RoomView({
   room,
   messages,
   runs,
-  latestStepByRun,
-  liveStepsByRun,
   loading,
   error,
   draft,
@@ -80,8 +77,6 @@ export function RoomView({
   room: Room | undefined
   messages: RoomMessage[]
   runs: RoomRun[]
-  latestStepByRun: Map<string, Step>
-  liveStepsByRun: Map<string, Step[]>
   loading: boolean
   error: string | undefined
   draft: string
@@ -386,8 +381,8 @@ export function RoomView({
               />
               <div>
                 <ActiveAgents
+                  roomId={room?.id}
                   runs={runs}
-                  latestStepByRun={latestStepByRun}
                   cancel={(runId) => void cancel(runId)}
                   openRun={openActivity}
                 />
@@ -430,7 +425,6 @@ export function RoomView({
           key={activeRun.id}
           run={activeRun}
           triggerMessage={activityTriggerMessage}
-          liveSteps={liveStepsByRun.get(activeRun.id) ?? []}
           onClose={closeSideSurface}
           onCancel={() => void cancel(activeRun.id)}
           onOpenMachine={openMachine}

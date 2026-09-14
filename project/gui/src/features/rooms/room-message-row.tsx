@@ -5,7 +5,8 @@ import { MessageActionToolbar } from './message-action-toolbar'
 import { AttachmentView } from './attachment-view'
 import { timestamp } from './format'
 import type { Author, RoomAttachment } from './types'
-import { useState, type AnimationEvent, type ReactNode } from 'react'
+import { memo, useState } from 'react'
+import type { AnimationEvent, ReactNode } from 'react'
 
 const agentMessageClampChars = 520
 
@@ -48,7 +49,7 @@ function AgentMessageBody({
   )
 }
 
-export function RoomMessageRow({
+export const RoomMessageRow = memo(function RoomMessageRow({
   messageId,
   author,
   authorName,
@@ -57,6 +58,7 @@ export function RoomMessageRow({
   text,
   attachments,
   mentionHandles,
+  coarsePointer = false,
   isAgent,
   grouped = false,
   clampAgentBody = false,
@@ -74,6 +76,7 @@ export function RoomMessageRow({
   text: string
   attachments: RoomAttachment[]
   mentionHandles: string[]
+  coarsePointer?: boolean
   isAgent: boolean
   grouped?: boolean
   clampAgentBody?: boolean
@@ -140,6 +143,7 @@ export function RoomMessageRow({
           </div>
           <MessageActionToolbar
             text={text}
+            coarsePointer={coarsePointer}
             onReply={onReply}
             onEdit={onEdit}
             onOpenChange={setActionsOpen}
@@ -148,4 +152,4 @@ export function RoomMessageRow({
       </div>
     </article>
   )
-}
+})

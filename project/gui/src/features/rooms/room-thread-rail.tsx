@@ -13,7 +13,7 @@ import {
 import { RunCapsule } from '#/features/runs/run-capsule'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { ArrowDown, X } from 'lucide-react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MessageComposer } from './message-composer'
 import { RoomMessageRow } from './room-message-row'
 import { groupRunsByTrigger, runsForThread } from './thread-helpers'
@@ -33,12 +33,14 @@ import { useRoomThread } from './use-room-thread'
 
 const noMentions: string[] = []
 
-function ThreadResult({
+const ThreadResult = memo(function ThreadResult({
   result,
   agentName,
+  coarsePointer,
 }: {
   result: RunResultReply
   agentName: string
+  coarsePointer: boolean
 }) {
   return (
     <RoomMessageRow
@@ -49,12 +51,13 @@ function ThreadResult({
       text={result.text}
       attachments={[]}
       mentionHandles={noMentions}
+      coarsePointer={coarsePointer}
       isAgent
     />
   )
-}
+})
 
-function ThreadMessage({
+const ThreadMessage = memo(function ThreadMessage({
   message,
   mentionHandles,
   currentUserId,
@@ -63,6 +66,7 @@ function ThreadMessage({
   onFocusHandled,
   runs = [],
   openRun,
+  coarsePointer,
 }: {
   message: RoomMessage
   mentionHandles: string[]
@@ -72,6 +76,7 @@ function ThreadMessage({
   onFocusHandled?: () => void
   runs?: RoomRun[]
   openRun?: (runId: string) => void
+  coarsePointer: boolean
 }) {
   const canEdit =
     Boolean(onEdit) &&
@@ -98,6 +103,7 @@ function ThreadMessage({
       text={message.text}
       attachments={message.attachments}
       mentionHandles={mentionHandles}
+      coarsePointer={coarsePointer}
       isAgent={message.author.kind === 'agent'}
       focused={focused}
       onFocusHandled={onFocusHandled}
@@ -105,7 +111,7 @@ function ThreadMessage({
       metadata={metadata}
     />
   )
-}
+})
 
 function RoomThreadRailContent({
   roomId,
@@ -162,21 +168,29 @@ function RoomThreadRailContent({
     runs,
   )
   const { data: agents = [] } = useAgentDefinitions()
+  const coarsePointer = useMediaQuery('(pointer: coarse)')
   const [editingReply, setEditingReply] = useState<RoomMessage>()
-  const threadRuns = groupRunsByTrigger(runsForThread(runs, root, replies))
+  const threadRuns = useMemo(
+    () => groupRunsByTrigger(runsForThread(runs, root, replies)),
+    [replies, root, runs],
+  )
   const scrollRef = useRef<HTMLDivElement>(null)
-  const timelineItems = [
-    ...replies.map((reply) => ({
-      id: reply.id,
-      createdAt: reply.createdAt,
-      reply,
-    })),
-    ...results.map((result) => ({
-      id: result.id,
-      createdAt: result.createdAt,
-      result,
-    })),
-  ].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+  const timelineItems = useMemo(
+    () =>
+      [
+        ...replies.map((reply) => ({
+          id: reply.id,
+          createdAt: reply.createdAt,
+          reply,
+        })),
+        ...results.map((result) => ({
+          id: result.id,
+          createdAt: result.createdAt,
+          result,
+        })),
+      ].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)),
+    [replies, results],
+  )
   const replyCount = replies.length + results.length
 
   const [scrollState, setScrollState] = useState(initialThreadScrollState)
@@ -280,6 +294,7 @@ function RoomThreadRailContent({
                   currentUserId={currentUserId}
                   runs={threadRuns.get(root.id) ?? []}
                   openRun={openRun}
+                  coarsePointer={coarsePointer}
                 />
               </div>
               <div className="pt-5">
@@ -295,12 +310,14 @@ function RoomThreadRailContent({
                       onFocusHandled={onFocusReplyHandled}
                       runs={threadRuns.get(item.reply.id) ?? []}
                       openRun={openRun}
+                      coarsePointer={coarsePointer}
                     />
                   ) : (
                     <ThreadResult
                       key={item.id}
                       result={item.result}
                       agentName={agentNameFrom(agents, item.result.agentId)}
+                      coarsePointer={coarsePointer}
                     />
                   ),
                 )}

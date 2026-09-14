@@ -91,4 +91,14 @@ describe('mergeLiveSteps', () => {
     const current = new Map([['run-1', [step('a', 1)]]])
     expect(mergeLiveSteps(current, [])).toBe(current)
   })
+
+  test('handles a 10k arrival burst in one linear batch', () => {
+    const merged = mergeLiveSteps(
+      new Map(),
+      Array.from({ length: 10_000 }, (_, index) =>
+        arrival(step(`step-${index}`, index)),
+      ),
+    )
+    expect(merged.get('run-1')).toHaveLength(10_000)
+  })
 })

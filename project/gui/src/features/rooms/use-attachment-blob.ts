@@ -1,18 +1,12 @@
-import {
-  QueryClient,
-  queryOptions,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query'
+import { queryOptions, useQuery } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '#/lib/api-transport'
-
-const attachmentGcTime = 30 * 60 * 1000
 
 function attachmentQueryKey(id: string) {
   return ['attachment', id] as const
 }
 
-async function fetchAttachmentObjectUrl(id: string): Promise<string> {
+export async function fetchAttachmentObjectUrl(id: string): Promise<string> {
   const response = await apiFetch(`/api/attachments/${id}`)
   if (!response.ok) throw new Error(`Failed to load attachment ${id}`)
   return URL.createObjectURL(await response.blob())
@@ -23,7 +17,7 @@ function attachmentQueryOptions(id: string) {
     queryKey: attachmentQueryKey(id),
     queryFn: () => fetchAttachmentObjectUrl(id),
     staleTime: Infinity,
-    gcTime: attachmentGcTime,
+    gcTime: 0,
   })
 }
 
@@ -48,10 +42,4 @@ export function useAttachmentBlob(id: string, enabled = true) {
     isPending: query.isPending,
     isError: query.isError,
   }
-}
-
-export function useEnsureAttachmentObjectUrl() {
-  const queryClient = useQueryClient()
-  return (id: string) =>
-    queryClient.ensureQueryData(attachmentQueryOptions(id))
 }

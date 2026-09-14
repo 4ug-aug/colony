@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   apiFetch,
   connectRoomStream,
@@ -14,7 +15,6 @@ import type {
   RoomStreamMessage,
   WorkspaceStreamMessage,
 } from './types'
-import type { Step } from '#/features/runs/step-label'
 import { mergeLatestSteps, mergeLiveSteps } from './room-step-batch'
 import type { StepArrival } from './room-step-batch'
 import { toast } from '#/components/ui/toast'
@@ -30,6 +30,8 @@ import {
 import type { RoomNotification } from './room-notifications'
 import { setAppDockBadge } from '#/lib/dock-badge'
 import { useWindowActive, windowIsActiveNow } from '#/lib/window-active'
+import { roomLiveStepsQueryKey } from './room-live-steps'
+import type { RoomLiveSteps } from './room-live-steps'
 import {
   runResultAsLiveReply,
   threadRootIdForTrigger,
@@ -56,6 +58,21 @@ function mergeRuns(runs: RoomRun[], incoming: RoomRun[]) {
   for (const run of incoming) byId.set(run.id, run)
   return [...byId.values()].sort(
     (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+  )
+}
+
+export function reconcileRoomSnapshotRuns(
+  runs: RoomRun[],
+  snapshot: RoomRun[],
+) {
+  const snapshotIds = new Set(snapshot.map((run) => run.id))
+  return mergeRuns(
+    runs.filter(
+      (run) =>
+        (run.state !== 'preparing' && run.state !== 'running') ||
+        snapshotIds.has(run.id),
+    ),
+    snapshot,
   )
 }
 
@@ -130,12 +147,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
     Record<string, RoomMessage['replySummary']>
   >({})
   const pendingFocusRef = useRef<string | undefined>(undefined)
-  const [latestStepByRun, setLatestStepByRun] = useState<Map<string, Step>>(
-    new Map(),
-  )
-  const [liveStepsByRun, setLiveStepsByRun] = useState<Map<string, Step[]>>(
-    new Map(),
-  )
   const [loading, setLoading] = useState(true)
   const [connection, setConnection] = useState<
     'connecting' | 'connected' | 'reconnecting' | 'disconnected'
@@ -160,6 +171,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
   const [seenVersion, setSeenVersion] = useState(0)
   const lastDockBadgeRef = useRef<boolean | null>(null)
   const roomsRef = useRef(rooms)
+  const queryClient = useQueryClient()
 
   const windowActive = useWindowActive()
   messagesRef.current = messages
@@ -562,8 +574,22 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       if (!pendingSteps.length) return
       const batch = pendingSteps
       pendingSteps = []
-      setLatestStepByRun((current) => mergeLatestSteps(current, batch))
-      setLiveStepsByRun((current) => mergeLiveSteps(current, batch))
+      queryClient.setQueryData<RoomLiveSteps>(
+        roomLiveStepsQueryKey(selectedRoomId),
+        (current) => {
+          const currentSteps = current ?? {
+            latestStepByRun: new Map(),
+            liveStepsByRun: new Map(),
+          }
+          return {
+            latestStepByRun: mergeLatestSteps(
+              currentSteps.latestStepByRun,
+              batch,
+            ),
+            liveStepsByRun: mergeLiveSteps(currentSteps.liveStepsByRun, batch),
+          }
+        },
+      )
     }
 
     const connect = () => {
@@ -622,15 +648,23 @@ export function useRooms(userId: string, viewingRoom: boolean) {
               // snapshot; live overlays for other loaded roots stay put.
               acceptServerMessages(event.messages)
               setMessages((current) => mergeMessages(current, event.messages))
-              runsRef.current = mergeRuns(runsRef.current, event.runs)
+              runsRef.current = reconcileRoomSnapshotRuns(
+                runsRef.current,
+                event.runs,
+              )
               setRuns(runsRef.current)
               setLoading(false)
             }
-            setLatestStepByRun(
-              new Map(event.latestSteps.map((s) => [s.runId, s])),
-            )
-            setLiveStepsByRun(
-              new Map(event.latestSteps.map((step) => [step.runId, [step]])),
+            queryClient.setQueryData<RoomLiveSteps>(
+              roomLiveStepsQueryKey(selectedRoomId),
+              {
+                latestStepByRun: new Map(
+                  event.latestSteps.map((s) => [s.runId, s]),
+                ),
+                liveStepsByRun: new Map(
+                  event.latestSteps.map((step) => [step.runId, [step]]),
+                ),
+              },
             )
             if (
               isActivelyViewingRoom({
@@ -713,6 +747,10 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       if (retry) clearTimeout(retry)
       if (frame !== undefined) cancelAnimationFrame(frame)
       roomSocket.current?.close()
+      queryClient.removeQueries({
+        queryKey: roomLiveStepsQueryKey(selectedRoomId),
+        exact: true,
+      })
     }
   }, [
     acceptServerMessages,
@@ -723,6 +761,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
     recordMessageActivity,
     recordThreadReply,
     recordThreadReplyEdit,
+    queryClient,
     selectedRoomId,
   ])
 
@@ -825,8 +864,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
     room: rooms.find(({ id }) => id === selectedRoomId),
     messages: messagesForTimeline,
     runs,
-    latestStepByRun,
-    liveStepsByRun,
     loading,
     connection,
     error,
@@ -858,8 +895,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       setRuns([])
       setNextCursor(undefined)
       setLoadingOlder(false)
-      setLatestStepByRun(new Map())
-      setLiveStepsByRun(new Map())
       setMentionableAccounts([])
       setLoading(true)
       setConnection('connecting')
@@ -887,8 +922,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       setRuns([])
       setNextCursor(undefined)
       setLoadingOlder(false)
-      setLatestStepByRun(new Map())
-      setLiveStepsByRun(new Map())
       setMentionableAccounts([])
       setLoading(true)
       setConnection('connecting')
@@ -929,8 +962,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
         setRuns([])
         setNextCursor(undefined)
         setLoadingOlder(false)
-        setLatestStepByRun(new Map())
-        setLiveStepsByRun(new Map())
         setLoading(true)
         setConnection('connecting')
         return result

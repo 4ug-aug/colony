@@ -6,14 +6,9 @@ import {
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { toast } from '#/components/ui/toast'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '#/components/ui/tooltip'
-import { useMediaQuery } from '#/hooks/use-media-query'
 import { Copy, Ellipsis, MessageCircle, SquarePen } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
+import type { ReactNode } from 'react'
 
 export function roomMessageActionsVisible({
   coarsePointer,
@@ -44,37 +39,32 @@ function ActionButton({
   children: ReactNode
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            className="room-message-action"
-            aria-label={label}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={onClick}
-          />
-        }
-      >
-        {children}
-      </TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
-    </Tooltip>
+    <button
+      type="button"
+      className="room-message-action"
+      aria-label={label}
+      title={label}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={onClick}
+    >
+      {children}
+    </button>
   )
 }
 
 export function MessageActionToolbar({
   text,
+  coarsePointer = false,
   onReply,
   onEdit,
   onOpenChange,
 }: {
   text: string
+  coarsePointer?: boolean
   onReply?: () => void
   onEdit?: () => void
   onOpenChange?: (open: boolean) => void
 }) {
-  const coarsePointer = useMediaQuery('(pointer: coarse)')
   const [menuOpen, setMenuOpen] = useState(false)
   const visible = roomMessageActionsVisible({ coarsePointer, menuOpen })
 
@@ -97,6 +87,7 @@ export function MessageActionToolbar({
                 type="button"
                 className="room-message-action"
                 aria-label="Message actions"
+                title="Message actions"
                 onPointerDown={(event) => event.stopPropagation()}
               />
             }

@@ -29,15 +29,23 @@ export function mergeLiveSteps(
 ): Map<string, Step[]> {
   if (!batch.length) return current
   const next = new Map(current)
-  for (const { runId, step } of batch) {
-    const steps = next.get(runId) ?? []
-    const index = steps.findIndex(({ id }) => id === step.id)
-    next.set(
-      runId,
-      index < 0
-        ? [...steps, step]
-        : steps.map((existing) => (existing.id === step.id ? step : existing)),
-    )
+  const byRun = new Map<string, StepArrival[]>()
+  for (const arrival of batch) {
+    const arrivals = byRun.get(arrival.runId)
+    if (arrivals) arrivals.push(arrival)
+    else byRun.set(arrival.runId, [arrival])
+  }
+  for (const [runId, arrivals] of byRun) {
+    const steps = [...(current.get(runId) ?? [])]
+    const indexes = new Map(steps.map((step, index) => [step.id, index]))
+    for (const { step } of arrivals) {
+      const index = indexes.get(step.id)
+      if (index == null) {
+        indexes.set(step.id, steps.length)
+        steps.push(step)
+      } else steps[index] = step
+    }
+    next.set(runId, steps)
   }
   return next
 }

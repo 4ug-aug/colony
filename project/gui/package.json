@@ -18,6 +18,7 @@
     "db:generate": "bunx drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "bun run src/server/migrate.ts",
     "benchmark:room": "bun run benchmarks/room-load.ts",
+    "benchmark:memory": "bun run benchmarks/memory.ts",
     "benchmark:timeline": "bun run benchmarks/timeline-render.tsx",
     "seed:admin": "bun run src/server/seed-admin.ts",
     "coordinator": "bun --watch run src/server/server-main.ts",

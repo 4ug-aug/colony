@@ -17,6 +17,7 @@ import { RunActivitySplitHeader } from './run-activity-dither'
 import { terminal } from './run-helpers'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { ToolCallDetailsList } from './tool-call-details-list'
+import { useRoomLiveSteps } from '#/features/rooms/room-live-steps'
 import type { Step } from './step-label'
 import { stepLabel } from './step-label'
 
@@ -273,7 +274,6 @@ export function RunActivityContent({
 export function RunActivityRail({
   run,
   triggerMessage,
-  liveSteps,
   onClose,
   onCancel,
   onOpenMachine,
@@ -284,7 +284,6 @@ export function RunActivityRail({
 }: {
   run: ActivityRun
   triggerMessage?: TriggerMessage
-  liveSteps: Step[]
   onClose: () => void
   onCancel: () => void
   onOpenMachine?: (sandboxId: string) => void
@@ -295,6 +294,8 @@ export function RunActivityRail({
   onExited?: () => void
 }) {
   const inline = useInlineRail()
+  const { liveStepsByRun } = useRoomLiveSteps(run.roomId)
+  const liveSteps = liveStepsByRun.get(run.id) ?? []
   const [persistedSteps, setPersistedSteps] = useState<Step[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
