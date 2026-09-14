@@ -51,7 +51,7 @@ Do not send `repositoryBase`. Discard with `DELETE /api/oneshots/<run-id>` when 
 
 Oneshot grant: no Room tools; single bounded Task; complete answer in the final response; no waiting on clarifying questions.
 
-Antboy: no GitHub checkout or PR tools; do not invent missing context; do not use `workspace.post_message` for the final result; only call granted tools; shell is inspection / light work under `/work`.
+Antboy: no GitHub checkout or PR tools; do not invent missing context; do not use `workspace.post_message` for the final result; only call granted tools; no shell.
 
 When those connections exist: Issues via `workspace.*_issue*`; Outline via `outline.list_documents` then `outline.fetch` (`resource: "document"`); Grafana via targeted queries, not full dashboard JSON; Asana when asked.
 

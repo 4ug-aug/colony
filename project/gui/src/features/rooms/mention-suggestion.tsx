@@ -122,39 +122,44 @@ function MentionMenu({
   )
 }
 
+type SuggestionRenderProps = {
+  items: MentionItem[]
+  command: (item: MentionItem) => void
+  clientRect?: (() => DOMRect | null) | null
+  loading?: boolean
+  query?: string
+  text?: string
+}
+
 export function suggestionMenu(
   mentionOpen: { current: boolean },
   container: { current: HTMLDivElement | null },
   queryClient: QueryClient,
+  itemsFor?: (query: string) => MentionItem[],
 ): {
-  onStart: (props: {
-    items: MentionItem[]
-    command: (item: MentionItem) => void
-    clientRect?: (() => DOMRect | null) | null
-  }) => void
-  onUpdate: (props: {
-    items: MentionItem[]
-    command: (item: MentionItem) => void
-    clientRect?: (() => DOMRect | null) | null
-  }) => void
+  onStart: (props: SuggestionRenderProps) => void
+  onUpdate: (props: SuggestionRenderProps) => void
   onKeyDown: ({ event }: { event: KeyboardEvent }) => boolean
   onExit: () => void
 } {
   let popup: HTMLDivElement | undefined
   let root: Root | undefined
   let selected = 0
-  let current:
-    | {
-        items: MentionItem[]
-        command: (item: MentionItem) => void
-        clientRect?: (() => DOMRect | null) | null
-      }
-    | undefined
-  const render = (props: {
-    items: MentionItem[]
-    command: (item: MentionItem) => void
-    clientRect?: (() => DOMRect | null) | null
-  }) => {
+  let current: SuggestionRenderProps | undefined
+  const dismiss = () => {
+    root?.unmount()
+    popup?.remove()
+    popup = undefined
+    root = undefined
+    selected = 0
+    current = undefined
+    mentionOpen.current = false
+  }
+  const withItems = (props: SuggestionRenderProps): SuggestionRenderProps => {
+    if (props.items.length || !itemsFor) return props
+    return { ...props, items: itemsFor(props.query ?? ''), loading: false }
+  }
+  const paint = (props: SuggestionRenderProps) => {
     current = props
     if (!root) return
     // Detached createRoot does not inherit the app QueryClient; AgentMark needs one.
@@ -168,24 +173,60 @@ export function suggestionMenu(
       </QueryClientProvider>,
     )
   }
+  const mount = (props: SuggestionRenderProps) => {
+    if (popup) {
+      root?.unmount()
+      popup.remove()
+      root = undefined
+      popup = undefined
+    }
+    popup = document.createElement('div')
+    popup.className = 'mention-menu'
+    popup.hidden = props.items.length === 0
+    popup.setAttribute('role', 'listbox')
+    popup.setAttribute('aria-label', 'People and agents')
+    ;(container.current ?? document.body).appendChild(popup)
+    root = createRoot(popup)
+    selected = Math.min(selected, Math.max(0, props.items.length - 1))
+    mentionOpen.current = true
+    paint(props)
+  }
   return {
     onStart(props) {
-      popup = document.createElement('div')
-      popup.className = 'mention-menu'
-      popup.setAttribute('role', 'listbox')
-      popup.setAttribute('aria-label', 'People and agents')
-      ;(container.current ?? document.body).appendChild(popup)
-      root = createRoot(popup)
-      render(props)
-      mentionOpen.current = true
+      mount(withItems(props))
     },
     onUpdate(props) {
-      selected = Math.min(selected, Math.max(0, props.items.length - 1))
-      render(props)
+      if (!mentionOpen.current) return
+      // Opening often arrives as `{ text: '', loading: true }`. Only close
+      // once TipTap has finished loading and the trigger is actually gone.
+      if (!props.loading && props.text === '') {
+        dismiss()
+        return
+      }
+      // TipTap clears items and sets loading on every keystroke while it
+      // re-fetches. Keep the current list so typing @ and filtering stay snappy.
+      if (props.loading) return
+      const next = withItems(props)
+      selected = Math.min(selected, Math.max(0, next.items.length - 1))
+      if (!popup) {
+        mount(next)
+        return
+      }
+      popup.hidden = next.items.length === 0
+      paint(next)
     },
     onKeyDown({ event }: { event: KeyboardEvent }) {
       const props = current
       if (!props) return false
+      // Backspace/Delete of the bare "@" runs before TipTap's async view
+      // update, so close here or the list stays on screen.
+      if (
+        (event.key === 'Backspace' || event.key === 'Delete') &&
+        !props.query
+      ) {
+        dismiss()
+        return false
+      }
       if (!props.items.length) return false
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         selected =
@@ -193,7 +234,7 @@ export function suggestionMenu(
             (event.key === 'ArrowDown' ? 1 : -1) +
             props.items.length) %
           props.items.length
-        render(props)
+        paint(props)
         return true
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
@@ -205,26 +246,7 @@ export function suggestionMenu(
       return false
     },
     onExit() {
-      const leaving = popup
-      const leavingRoot = root
-      if (leaving) {
-        leaving.classList.add('is-leaving')
-        let removed = false
-        const remove = () => {
-          if (removed) return
-          removed = true
-          leavingRoot?.unmount()
-          leaving.remove()
-        }
-        leaving.addEventListener('animationend', remove, { once: true })
-        // Fallback in case the animation never fires (e.g. reduced motion).
-        setTimeout(remove, 200)
-      }
-      popup = undefined
-      root = undefined
-      selected = 0
-      current = undefined
-      mentionOpen.current = false
+      dismiss()
     },
   }
 }

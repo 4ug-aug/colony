@@ -27,6 +27,8 @@ fails with the accepted list.
 Superseded by [ADR 0028](0028-every-person-boots-the-configured-sandbox.md):
 golden-fork sandboxes cut a microVM boot to 0.23s, so the cost this ADR
 avoided no longer exists and every person boots the configured provider again.
+[ADR 0029](0029-github-access-is-the-coding-environment.md) restores the split
+because persons without GitHub access have no shell.
 
 Rejected: keying the choice on the person's runtime kind or agent image
 (the same rule stated indirectly, and it breaks the moment a cursor person

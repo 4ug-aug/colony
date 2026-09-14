@@ -96,29 +96,19 @@
 .dark {
   --room-conversation: var(--background);
   --room-header: var(--background);
-  --room-composer: var(--background);
-  --room-composer-toolbar: var(--muted);
-  --room-composer-edge: var(--border);
   --room-text: var(--foreground);
   --room-text-secondary: var(--muted-foreground);
   --room-divider: var(--border);
   --room-border: var(--border);
   --room-message: var(--card);
   --room-message-border: var(--border);
-  --room-message-border-hover: color-mix(in oklab, var(--foreground) 18%, var(--border));
+  --room-message-border-hover: color-mix(
+    in oklab,
+    var(--foreground) 18%,
+    var(--border)
+  );
   --room-message-hover: color-mix(in oklab, var(--muted) 40%, transparent);
-  --room-tool-group: var(--card);
-  --room-tool-group-border: var(--border);
-  --room-tool-icon: var(--foreground);
   --room-tool-active: var(--muted);
-  --room-send: var(--primary);
-  --room-send-foreground: var(--primary-foreground);
-  --room-send-border: var(--primary);
-  --room-send-disabled: var(--muted);
-  --room-send-disabled-foreground: var(--muted-foreground);
-  --room-send-disabled-border: var(--border);
-  --room-send-shadow: none;
-  --room-composer-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 8%, transparent);
 }
 
 @theme inline {
@@ -396,35 +386,6 @@ pre code {
   border-radius: 0.75rem;
   background: var(--popover);
   box-shadow: 0 12px 32px rgb(0 0 0 / 14%);
-  transform-origin: bottom center;
-  animation: mention-menu-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.mention-menu.is-leaving {
-  pointer-events: none;
-  animation: mention-menu-out 120ms ease-in forwards;
-}
-
-@keyframes mention-menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.35rem) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes mention-menu-out {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(0.35rem) scale(0.98);
-  }
 }
 
 @keyframes message-search-hit {
@@ -575,8 +536,6 @@ pre code {
   .entry-form,
   .entry-form--exiting,
   .entry-shell-frame--exiting,
-  .mention-menu,
-  .mention-menu.is-leaving,
   .room-fade-in,
   .agent-thinking-dot,
   .agent-thinking-label,
@@ -588,15 +547,8 @@ pre code {
   .room-message,
   .room-message-bubble,
   .room-message-actions,
-  .room-composer,
-  .room-composer-tool,
-  .room-send,
   .room-meta-control {
     transition: none;
-  }
-
-  .room-send:active:not(:disabled) {
-    transform: none;
   }
 
   .agent-thinking-label {
@@ -879,7 +831,7 @@ a {
   padding: 4px;
   border: 1px solid var(--room-message-border);
   border-radius: 8px;
-  background: var(--room-composer);
+  background: var(--background);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
   opacity: 0;
   pointer-events: none;
@@ -956,188 +908,6 @@ a {
 .room-meta-secondary {
   color: var(--room-text-secondary);
   font-weight: 400;
-}
-
-.room-composer {
-  /* Clip the two-tone chrome to the radius. The mention menu is appended to
-     the relative ancestor outside this box so `bottom: 100%` is not clipped. */
-  overflow: hidden;
-  border: 1px solid var(--room-composer-edge);
-  border-radius: 14px;
-  background: var(--room-composer);
-  box-shadow: var(--room-composer-shadow);
-  outline: none;
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease;
-}
-
-.room-composer:focus-within {
-  border-color: var(--primary);
-  outline: none;
-  box-shadow:
-    var(--room-composer-shadow),
-    0 0 0 1px color-mix(in oklab, var(--primary) 30%, transparent);
-}
-
-.room-composer-editor {
-  min-height: 56px;
-  padding: 12px 14px;
-}
-
-.room-composer-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 8px;
-  border-top: 1px solid var(--room-divider);
-  background: var(--room-composer-toolbar);
-}
-
-.room-composer-tools {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.room-composer-tool-group {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  padding: 2px;
-  border: 1px solid var(--room-tool-group-border);
-  border-radius: 8px;
-  background: var(--room-tool-group);
-}
-
-.room-composer-tool {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--room-tool-icon);
-  outline: none;
-  opacity: 1;
-}
-
-.room-composer-tool:hover,
-.room-composer-tool[aria-pressed='true'] {
-  background: var(--room-tool-active);
-}
-
-.room-composer-tool:focus-visible {
-  box-shadow: 0 0 0 2px var(--ring);
-}
-
-.room-composer-tool:disabled {
-  cursor: not-allowed;
-  color: var(--room-text-secondary);
-  opacity: 1;
-}
-
-.room-composer-tool svg {
-  width: 16px;
-  height: 16px;
-  stroke-width: 1.8;
-}
-
-.room-send {
-  display: inline-flex;
-  height: 34px;
-  min-width: 6.75rem;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid var(--room-send-border);
-  border-radius: 8px;
-  background: var(--room-send);
-  color: var(--room-send-foreground);
-  box-shadow: var(--room-send-shadow);
-  outline: none;
-  opacity: 1;
-  transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease,
-    box-shadow 140ms ease;
-}
-
-.room-send-label {
-  display: inline-grid;
-  justify-items: center;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.room-send-label::after {
-  content: 'Sending';
-  grid-area: 1 / 1;
-  visibility: hidden;
-}
-
-.room-send-label > span {
-  grid-area: 1 / 1;
-}
-
-.room-send svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: inherit;
-  opacity: 1;
-  stroke: currentColor;
-  stroke-width: 2;
-}
-
-.room-send:hover:not(:disabled) {
-  filter: brightness(1.06);
-}
-
-.room-send:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
-}
-
-.room-send:focus-visible {
-  box-shadow:
-    var(--room-send-shadow),
-    0 0 0 2px var(--ring);
-}
-
-.room-send:disabled {
-  border-color: var(--room-send-disabled-border);
-  background: var(--room-send-disabled);
-  color: var(--room-send-disabled-foreground);
-  box-shadow: none;
-  opacity: 1;
-  filter: none;
-  cursor: not-allowed;
-}
-
-.room-send[aria-busy='true'] {
-  border-color: var(--room-send-border);
-  background: var(--room-send);
-  color: var(--room-send-foreground);
-  box-shadow: var(--room-send-shadow);
-  cursor: progress;
-}
-
-.room-send:disabled svg,
-.room-send svg {
-  opacity: 1;
 }
 
 /* In @layer components so utilities like `absolute` can override it. */

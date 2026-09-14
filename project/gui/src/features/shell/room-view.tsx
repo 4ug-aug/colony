@@ -306,10 +306,7 @@ export function RoomView({
                   setAtBottom(nextAtBottom)
                 }}
               >
-                <div
-                  ref={timelineRef}
-                  className="w-full shrink-0"
-                >
+                <div ref={timelineRef} className="w-full shrink-0">
                   {loadingOlder && (
                     <div
                       className="flex justify-center pb-4 text-sm text-muted-foreground"
@@ -377,7 +374,6 @@ export function RoomView({
                 mentionableAccounts={mentionableAccounts}
                 editing={Boolean(editingMessage)}
                 onCancelEdit={cancelEdit}
-                appearance="room"
               />
               <div>
                 <ActiveAgents
@@ -388,10 +384,7 @@ export function RoomView({
                 />
               </div>
               {error && (
-                <p
-                  className="mt-2 text-sm text-destructive"
-                  role="alert"
-                >
+                <p className="mt-2 text-sm text-destructive" role="alert">
                   {error}
                 </p>
               )}

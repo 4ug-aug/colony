@@ -51,6 +51,8 @@ export interface AgentDefinition {
     maxOutputBytes: number;
     maxSteps: number;
   };
+  /** Coding environment: repository, shell, and the configured sandbox provider. */
+  githubAccess?: boolean;
 }
 
 export interface AgentDefinitionResolver {

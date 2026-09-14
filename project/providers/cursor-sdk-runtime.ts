@@ -27,6 +27,9 @@ export function createCursorSdkRuntime(options: {
         // Packages live under /app; sandbox workdir is /work for the agent cwd.
         NODE_PATH: "/app/node_modules",
         ...capabilitySessionEnv(request),
+        ...(request.definition.githubAccess
+          ? { SWEAT_ALLOW_SHELL: "1" }
+          : {}),
       };
     },
   });

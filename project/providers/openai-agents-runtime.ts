@@ -39,6 +39,9 @@ export function createOpenAIAgentsRuntime(options: {
         SWEAT_MODEL_NAME: model.model,
         SWEAT_SKILLS_ROOT: "/work/.agents/skills",
         ...capabilitySessionEnv(request),
+        ...(request.definition.githubAccess
+          ? { SWEAT_ALLOW_SHELL: "1" }
+          : {}),
       };
     },
   });

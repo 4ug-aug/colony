@@ -230,7 +230,7 @@ const MAX_STEP_TEXT_BYTES = 16 * 1024;
 
 export function createRunExecutor<Input extends RunInput = never>(dependencies: {
   definitions: AgentDefinitionResolver;
-  /** One provider, or a choice per person — a microVM costs more than a container. */
+  /** One provider, or GitHub access vs container when the operator chose smolvm. */
   sandboxes: SandboxProvider | ((definition: AgentDefinition) => SandboxProvider);
   runtime: AgentProvider;
   store?: RunStore<Input>;

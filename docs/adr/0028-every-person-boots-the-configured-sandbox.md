@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0029
 ---
 
 # Every person boots the configured sandbox provider
@@ -44,6 +44,11 @@ every `machine start`.
 This supersedes [ADR 0027](0027-container-sandbox-for-people-without-a-repository.md)
 and restores [ADR 0024](0024-smolvm-default-sandbox-provider.md) to its
 original meaning: the default sandbox provider is the default for everyone.
+
+Superseded by [ADR 0029](0029-github-access-is-the-coding-environment.md):
+GitHub access is the coding-environment grant (repository, GitHub tools, shell,
+and the configured sandbox). Persons without it do not need a microVM because
+they have no shell; they boot `SWEAT_CONTAINER_PROVIDER` again.
 
 Rejected: keeping the split and documenting the rootless-Docker drop-in as a
 requirement (two sandbox mechanisms, two networking stories, and the drop-in

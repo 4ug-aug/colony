@@ -8,3 +8,7 @@ test("antboy searches Outline with list_documents and reads with fetch", () => {
   expect(antboyRole.instructions).toContain('resource "document"');
   expect(antboyRole.instructions).toContain(WEB_TOOL_INSTRUCTIONS);
 });
+
+test("antboy instructions do not offer a shell", () => {
+  expect(antboyRole.instructions.toLowerCase()).not.toContain("shell");
+});

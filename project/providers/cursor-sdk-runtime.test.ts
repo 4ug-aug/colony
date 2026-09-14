@@ -51,6 +51,47 @@ test("the Cursor runtime passes the definition and task to its container command
   expect(typeof _onOutput).toBe("function");
 });
 
+test("the Cursor runtime sets SWEAT_ALLOW_SHELL only with GitHub access", async () => {
+  const envFor = async (githubAccess?: boolean) => {
+    let env: Record<string, string> | undefined;
+    const runtime = createCursorSdkRuntime();
+    await runtime.run(
+      {
+        id: "sandbox-1",
+        exec: async (value) => {
+          env = value.env as Record<string, string>;
+          return { exitCode: 0, stdout: "done", stderr: "" };
+        },
+        dispose: async () => {},
+      },
+      {
+        task: "t",
+        definition: {
+          id: "agent",
+          instructions: "x",
+          requestedCapabilities: [],
+          ...(githubAccess === undefined ? {} : { githubAccess }),
+          runtime: {
+            kind: "cursor",
+            image: "sweat-agent-cursor:latest",
+            cursor: { apiKey: "cursor-secret", model: "composer-2.5" },
+          },
+          executionPolicy: {
+            maxDurationMs: 1000,
+            maxOutputBytes: 1000,
+            maxSteps: 100,
+          },
+        },
+      },
+    );
+    return env;
+  };
+
+  expect((await envFor(true))?.SWEAT_ALLOW_SHELL).toBe("1");
+  expect((await envFor(false))?.SWEAT_ALLOW_SHELL).toBeUndefined();
+  expect((await envFor())?.SWEAT_ALLOW_SHELL).toBeUndefined();
+});
+
 test("the Cursor runtime rejects openai-agents definitions", async () => {
   const runtime = createCursorSdkRuntime();
   await expect(

@@ -85,7 +85,9 @@ function RecentChats({
   return (
     <div className="@container">
       <div className="flex h-8 items-center rounded-t-md bg-muted/60 px-3">
-        <p className="text-xs font-medium text-muted-foreground">Recent chats</p>
+        <p className="text-xs font-medium text-muted-foreground">
+          Recent chats
+        </p>
       </div>
       <ul className="rounded-b-md border border-t-0 border-border/50">
         {recent.map((chat) => (
@@ -270,7 +272,7 @@ export function ChatsPage({
       </div>
 
       <div className="shrink-0 px-4 pb-4">
-        <div className="mx-auto max-w-3xl rounded-xl border bg-background p-2.5 shadow-sm">
+        <div className="mx-auto max-w-3xl">
           {turnActive && selectedId ? (
             <div className="mb-2 flex justify-end">
               <Button

@@ -59,6 +59,7 @@ try {
             }
           : undefined,
         skillsRoot: Bun.env.SWEAT_SKILLS_ROOT,
+        allowShell: Bun.env.SWEAT_ALLOW_SHELL === "1",
       },
       {
         session,

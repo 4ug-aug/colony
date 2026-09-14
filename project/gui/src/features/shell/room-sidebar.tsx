@@ -194,8 +194,8 @@ export function RoomSidebar({
               <SidebarMenuItem key={agent.id}>
                 <HoverCard>
                   <HoverCardTrigger
-                    delay={150}
-                    closeDelay={200}
+                    delay={50}
+                    closeDelay={50}
                     render={
                       <SidebarMenuButton
                         aria-label={`${agent.name}. View capabilities.`}

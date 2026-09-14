@@ -360,7 +360,6 @@ function RoomThreadRailContent({
             setEditingReply(undefined)
             onDraftChange('')
           }}
-          appearance="room"
         />
       </div>
     </>

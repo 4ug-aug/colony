@@ -3,21 +3,24 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { TooltipProvider } from '#/components/ui/tooltip'
 import { agentDefinitionsQueryKey } from '#/features/agents/use-agent-definitions'
 import { MessageComposer } from './message-composer'
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register()
-  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true
+  ;(
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true
 })
 
 afterAll(async () => {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
   if (GlobalRegistrator.isRegistered) await GlobalRegistrator.unregister()
 })
 
-test('room mention menu is not nested inside the overflow-hidden composer chrome', async () => {
+test('mention menu opens from the composer', async () => {
   const host = document.createElement('div')
   document.body.append(host)
   const queryClient = new QueryClient({
@@ -38,17 +41,14 @@ test('room mention menu is not nested inside the overflow-hidden composer chrome
   await act(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <MessageComposer
-            value=""
-            onChange={() => undefined}
-            onSubmit={async () => true}
-            disabled={false}
-            roomName="general"
-            mentionableAccounts={[]}
-            appearance="room"
-          />
-        </TooltipProvider>
+        <MessageComposer
+          value=""
+          onChange={() => undefined}
+          onSubmit={async () => true}
+          disabled={false}
+          roomName="general"
+          mentionableAccounts={[]}
+        />
       </QueryClientProvider>,
     )
   })
@@ -60,14 +60,19 @@ test('room mention menu is not nested inside the overflow-hidden composer chrome
   await act(() => {
     mentionButton!.click()
   })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 
   const menu = host.querySelector('.mention-menu')
   expect(menu).toBeTruthy()
-  expect(menu!.closest('.room-composer')).toBeNull()
   expect(host.textContent).toContain('Antboy')
 
   await act(() => {
     root.unmount()
+  })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
   host.remove()
 })

@@ -363,9 +363,12 @@ Connection to one agent definition. Links are not chosen when a run starts.
 Clearing a Connection's credentials also clears its links.
 _Avoid_: Connection attachment, capability grant, Skill attachment
 
-**GitHub access**: Agent-definition configuration that both prepares the
-workspace's single configured GitHub repository under `/work` and makes its
-scoped GitHub read and pull-request tools eligible for the run.
+**GitHub access**: Agent-definition configuration that prepares the
+workspace's single configured GitHub repository under `/work`, makes its
+scoped GitHub read and pull-request tools eligible, enables the runtime
+shell, and boots the run on the configured sandbox provider (`smolvm` by
+default). Without it the person is a collaborator: MCP tools and attachments
+only, no shell, container sandbox.
 _Avoid_: Connection link, GitHub credential, repository-only access
 
 **Postgres tools**: First-party agent tools for a workspace-configured Postgres
@@ -486,12 +489,13 @@ existing Agent slugs are preserved, and they receive no permanent built-in
 editing or archival exception.
 
 **software-engineer**: The coding person. Runtime kind `cursor`, with GitHub
-and repository checkout among its capabilities when granted.
+access (repository checkout, shell, and the configured sandbox) when granted.
 _Avoid_: software-engineer-cursor, Cursor engineer
 
 **antboy**: A non-GitHub collaborator person. Runtime kind `openai-agents`,
-with room, task, wiki, shell, and attachment access when granted, but no GitHub
-capability and no repository clone into `/work`.
+with room, task, wiki, and attachment access when granted, but no GitHub
+capability, no repository clone into `/work`, no shell, and a container
+sandbox rather than a microVM.
 _Avoid_: general-purpose agent, assistant
 
 A **run/job** selects an agent definition and supplies its task plus optional
@@ -509,9 +513,11 @@ contract regardless of the technology underneath (microVM or container). The
 operator selects among `smolvm` (the default), `apple-container`, and
 `docker`. Preview — bring-up, port forward, grace — is part of that contract.
 Docker-in-VM is how the smolvm adapter lets a Git-workspace person's image run
-the project's own containers. See
-[ADR 0007](docs/adr/0007-compose-sandbox-provider-explicitly.md) and
-[ADR 0024](docs/adr/0024-smolvm-default-sandbox-provider.md).
+the project's own containers. GitHub access selects that configured provider
+(smolvm by default); persons without it boot `SWEAT_CONTAINER_PROVIDER`. See
+[ADR 0007](docs/adr/0007-compose-sandbox-provider-explicitly.md),
+[ADR 0024](docs/adr/0024-smolvm-default-sandbox-provider.md), and
+[ADR 0029](docs/adr/0029-github-access-is-the-coding-environment.md).
 _Avoid_: Runtime, agent provider, agent runtime kind
 
 ## Runtime and models
@@ -647,11 +653,12 @@ A run binds its granted MCP session to the generic runtime. The runtime
 connects to the gateway and exposes only the tools in that session; agents
 never receive a provider endpoint or credential.
 
-An agent that can execute arbitrary shell code effectively has its run's
-granted capabilities. Mitigate this with narrow grants, short expirations,
-auditing, and network egress policy; do not rely on hiding a tool credential
-from shell subprocesses. Consequential writes require no per-call operator
-approval once the platform has issued the run's narrow grant.
+An agent with GitHub access can execute arbitrary shell code and effectively
+has its run's granted capabilities. Mitigate this with narrow grants, short
+expirations, auditing, and network egress policy; do not rely on hiding a
+tool credential from shell subprocesses. Consequential writes require no
+per-call operator approval once the platform has issued the run's narrow
+grant. Agents without GitHub access have no runtime shell.
 
 ## Flagged ambiguities
 

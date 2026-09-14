@@ -25,6 +25,7 @@ try {
       apiKey,
       model: required("SWEAT_CURSOR_MODEL"),
       cwd: "/work",
+      allowShell: process.env.SWEAT_ALLOW_SHELL === "1",
       capabilitySession:
         process.env.SWEAT_MCP_URL && process.env.SWEAT_MCP_TOKEN
           ? {

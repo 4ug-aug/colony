@@ -372,6 +372,61 @@ test("runCursorAgent passes only inline MCP gateway session", async () => {
   });
 });
 
+test("denied shell is passed on create and resume", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "sweat-cursor-no-shell-"));
+  const statePath = join(directory, "agent-id");
+  const seen: Array<{
+    mode: "create" | "resume";
+    disallowedTools?: readonly string[];
+  }> = [];
+  const agent = {
+    agentId: "agent-no-shell",
+    async send() {
+      return {
+        async *stream() {},
+        async wait() {
+          return { status: "finished", result: "ok" };
+        },
+      };
+    },
+    async [Symbol.asyncDispose]() {},
+  };
+
+  try {
+    const request = {
+      task: "turn",
+      instructions: "Interview",
+      agentId: "interviewer",
+      apiKey: "k",
+      model: "composer-2.5",
+      allowShell: false,
+    };
+    const dependencies = {
+      createAgent: async (options: { disallowedTools?: readonly string[] }) => {
+        seen.push({ mode: "create", disallowedTools: options.disallowedTools });
+        return agent;
+      },
+      resumeAgent: async (
+        _agentId: string,
+        options: { disallowedTools?: readonly string[] },
+      ) => {
+        seen.push({ mode: "resume", disallowedTools: options.disallowedTools });
+        return agent;
+      },
+    };
+
+    await runCursorAgentPersisted(request, statePath, dependencies);
+    await runCursorAgentPersisted(request, statePath, dependencies);
+
+    expect(seen).toEqual([
+      { mode: "create", disallowedTools: ["shell"] },
+      { mode: "resume", disallowedTools: ["shell"] },
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("openCursorAgentSession multi-send keeps one Agent instance", async () => {
   let createCount = 0;
   let disposeCount = 0;

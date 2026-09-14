@@ -146,6 +146,8 @@ export function createWorkspaceAgentsExecutor(options: {
     close(): Promise<void>;
   };
   sandboxProvider: SandboxProvider;
+  /** Persons without GitHub access; omitted means everyone uses sandboxProvider. */
+  containerProvider?: SandboxProvider;
   getPreviewConfig?: () => PreviewConfiguration | undefined;
   attachmentSource?: AttachmentSource;
   skillSource?: SkillSource;
@@ -291,41 +293,42 @@ export function createWorkspaceAgentsExecutor(options: {
           ...requestedCapabilitiesFor(person.githubAccess),
           ...linkedCapabilities,
         ];
-        if (person.kind === "cursor") {
-          if (!options.cursor) return undefined;
-          return {
-            id: person.id,
-            instructions: instructionsForInvocation(
-              person.instructions,
-              grantContext,
-            ),
-            requestedCapabilities,
-            runtime: {
-              kind: "cursor",
-              image,
-              cursor: options.cursor(),
-            },
-            executionPolicy: defaultLimits,
-          } satisfies AgentDefinition;
-        }
-        if (!options.model) return undefined;
-        return {
+        const snapshot = {
           id: person.id,
           instructions: instructionsForInvocation(
             person.instructions,
             grantContext,
           ),
           requestedCapabilities,
+          githubAccess: person.githubAccess,
+          executionPolicy: defaultLimits,
+        };
+        if (person.kind === "cursor") {
+          if (!options.cursor) return undefined;
+          return {
+            ...snapshot,
+            runtime: {
+              kind: "cursor",
+              image,
+              cursor: options.cursor(),
+            },
+          } satisfies AgentDefinition;
+        }
+        if (!options.model) return undefined;
+        return {
+          ...snapshot,
           runtime: {
             kind: "openai-agents",
             image,
             model: options.model(),
           },
-          executionPolicy: defaultLimits,
         } satisfies AgentDefinition;
       },
     },
-    sandboxes: options.sandboxProvider,
+    sandboxes: (definition) =>
+      definition.githubAccess
+        ? options.sandboxProvider
+        : (options.containerProvider ?? options.sandboxProvider),
     runtime: createRoutingAgentRuntime({}),
     capabilities,
     ...(selectTools

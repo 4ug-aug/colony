@@ -55,6 +55,51 @@ test("the OpenAI runtime passes the definition and task to its container command
   expect(typeof _onOutput).toBe("function");
 });
 
+test("the OpenAI runtime sets SWEAT_ALLOW_SHELL only with GitHub access", async () => {
+  const envFor = async (githubAccess?: boolean) => {
+    let env: Record<string, string> | undefined;
+    const runtime = createOpenAIAgentsRuntime();
+    await runtime.run(
+      {
+        id: "sandbox-1",
+        exec: async (value) => {
+          env = value.env as Record<string, string>;
+          return { exitCode: 0, stdout: "done", stderr: "" };
+        },
+        dispose: async () => {},
+      },
+      {
+        task: "t",
+        definition: {
+          id: "agent",
+          instructions: "x",
+          requestedCapabilities: [],
+          ...(githubAccess === undefined ? {} : { githubAccess }),
+          runtime: {
+            kind: "openai-agents",
+            image: "sweat-agent:latest",
+            model: {
+              baseUrl: "https://models.example/v1",
+              apiKey: "secret",
+              model: "test",
+            },
+          },
+          executionPolicy: {
+            maxDurationMs: 1000,
+            maxOutputBytes: 1000,
+            maxSteps: 100,
+          },
+        },
+      },
+    );
+    return env;
+  };
+
+  expect((await envFor(true))?.SWEAT_ALLOW_SHELL).toBe("1");
+  expect((await envFor(false))?.SWEAT_ALLOW_SHELL).toBeUndefined();
+  expect((await envFor())?.SWEAT_ALLOW_SHELL).toBeUndefined();
+});
+
 test("the OpenAI runtime routes a host-local model through the container host", async () => {
   let request: { env: Record<string, string> } | undefined;
   const runtime = createOpenAIAgentsRuntime();

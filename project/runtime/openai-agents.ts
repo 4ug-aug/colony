@@ -44,6 +44,8 @@ export interface AgentRuntimeRequest {
   capabilitySession?: CapabilitySessionBinding;
   /** Staged Agent Skills root inside the sandbox (e.g. /work/.agents/skills). */
   skillsRoot?: string;
+  /** Runtime-builtin shell. Default true for unit tests; CLI is fail-closed. */
+  allowShell?: boolean;
 }
 
 export function normalizeModelBaseUrl(baseUrl: string): string {
@@ -300,6 +302,12 @@ export class CompatibleResponsesModel extends OpenAIResponsesModel {
   }
 }
 
+export function openaiSandboxCapabilities(allowShell: boolean) {
+  return Capabilities.default().filter(
+    (capability) => allowShell || capability.type !== "shell",
+  );
+}
+
 export function createModelProvider(
   model: OpenAICompatibleModel,
 ): ModelProvider {
@@ -380,7 +388,7 @@ export async function runAgent(
         : [],
     },
     capabilities: [
-      ...Capabilities.default(),
+      ...openaiSandboxCapabilities(request.allowShell !== false),
       ...(skillsCapability ? [skillsCapability] : []),
     ],
   });

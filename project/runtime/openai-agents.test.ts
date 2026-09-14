@@ -18,6 +18,7 @@ import {
   normalizeModelBaseUrl,
   openOpenAIAgentSession,
   rewriteVllmMcpCalls,
+  openaiSandboxCapabilities,
   runAgent,
   sanitizeOutputStatuses,
   sanitizeUsageDetails,
@@ -759,4 +760,63 @@ test("a reloaded MemorySession prepends the first user task on the next runAgent
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("openaiSandboxCapabilities keeps filesystem when shell is denied", () => {
+  const withShell = openaiSandboxCapabilities(true).map((capability) => capability.type);
+  const withoutShell = openaiSandboxCapabilities(false).map(
+    (capability) => capability.type,
+  );
+  expect(withShell).toContain("shell");
+  expect(withoutShell).not.toContain("shell");
+  expect(withoutShell).toContain("filesystem");
+});
+
+test("allowShell false does not offer exec_command to the model", async () => {
+  const offered: string[] = [];
+  const client = new OpenAI({
+    apiKey: "test-key",
+    baseURL: "https://models.example/v1",
+  });
+  class InspectToolsModel extends OpenAIResponsesModel {
+    override async *getStreamedResponse(
+      request: ModelRequest,
+    ): AsyncIterable<ResponseStreamEvent> {
+      for (const tool of request.tools ?? []) {
+        if ("name" in tool && typeof tool.name === "string") {
+          offered.push(tool.name);
+        }
+      }
+      yield {
+        type: "response_done",
+        response: {
+          id: "response-1",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          output: [{
+            type: "message" as const,
+            role: "assistant" as const,
+            status: "completed" as const,
+            content: [{ type: "output_text" as const, text: "no shell" }],
+          }],
+        },
+      };
+    }
+  }
+
+  await runAgent(
+    {
+      task: "Use the shell tool.",
+      instructions: "Use tools when needed.",
+      agentId: "antboy",
+      model: {
+        baseUrl: "https://models.example/v1",
+        apiKey: "test-key",
+        model: "test-model",
+      },
+      allowShell: false,
+    },
+    { model: new InspectToolsModel(client, "test-model") },
+  );
+
+  expect(offered).not.toContain("exec_command");
 });

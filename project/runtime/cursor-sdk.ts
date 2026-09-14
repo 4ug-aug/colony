@@ -16,6 +16,8 @@ export interface CursorAgentRuntimeRequest {
   model: string;
   cwd?: string;
   capabilitySession?: CursorCapabilitySession;
+  /** Runtime-builtin shell. Default true for unit tests; CLI is fail-closed. */
+  allowShell?: boolean;
 }
 
 /** Stable envelope fields from Cursor SDK stream events. Payloads are unknown. */
@@ -70,6 +72,7 @@ export type CursorAgentFactory = (options: {
       headers: Record<string, string>;
     }
   >;
+  disallowedTools?: readonly string[];
 }) => Promise<CursorSdkAgent>;
 
 export type CursorAgentResumeFactory = (
@@ -200,6 +203,7 @@ export async function openCursorAgentSession(
       settingSources: ["project" as const],
     },
     ...(mcpServers ? { mcpServers } : {}),
+    ...(request.allowShell === false ? { disallowedTools: ["shell"] } : {}),
   };
 
   const agent = request.resumeAgentId

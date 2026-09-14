@@ -107,6 +107,7 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
 
   const run = executor.getRun(id)!;
   expect(run.definition.id).toBe(SOFTWARE_ENGINEER_ID);
+  expect(run.definition.githubAccess).toBe(true);
   expect(run.definition.runtime.kind).toBe("cursor");
   expect(run.definition.runtime.cursor?.model).toBe("composer-2.5");
   expect(run.definition.runtime.image).toBe("sweat-agent-cursor:test");
@@ -728,7 +729,44 @@ test("client-safe roster presentation never reaches role instructions", async ()
   expect(seen.size).toBeGreaterThan(1);
 });
 
-test("every person boots the configured sandbox provider", async () => {
+test("GitHub access boots the microVM; others boot the container", async () => {
+  const booted: string[] = [];
+  const provider = (name: string) => ({
+    create: async () => {
+      booted.push(name);
+      return {
+        id: name,
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        dispose: async () => {},
+      };
+    },
+  });
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    sandboxProvider: provider("microvm"),
+    containerProvider: provider("container"),
+  });
+
+  const antboyId = executor.startRun({
+    task: "work",
+    agentDefinitionId: ANTBOY_ID,
+  });
+  const engineerId = executor.startRun({
+    task: "work",
+    agentDefinitionId: SOFTWARE_ENGINEER_ID,
+  });
+  for (const id of [antboyId, engineerId]) {
+    while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+      await Bun.sleep(0);
+    }
+  }
+
+  expect(booted).toEqual(["container", "microvm"]);
+  expect(executor.getRun(antboyId)?.definition.githubAccess).toBe(false);
+});
+
+test("omitted containerProvider boots every person on the sandbox provider", async () => {
   const booted: string[] = [];
   const provider = (name: string) => ({
     create: async () => {

@@ -533,8 +533,9 @@ export function AgentsPage({ user }: { user: Author }) {
               </div>
             </div>
             {isAdmin && (
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-start gap-2 text-sm">
                 <Checkbox
+                  className="mt-0.5"
                   checked={form.githubAccess}
                   onCheckedChange={(checked) =>
                     setForm((current) => ({
@@ -543,8 +544,15 @@ export function AgentsPage({ user }: { user: Author }) {
                     }))
                   }
                 />
-                <GitHubIcon className="size-3.5" />
-                GitHub access
+                <span>
+                  <span className="flex items-center gap-2">
+                    <GitHubIcon className="size-3.5" />
+                    GitHub access
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    Also enables shell and the coding sandbox.
+                  </span>
+                </span>
               </label>
             )}
             {error ? (
