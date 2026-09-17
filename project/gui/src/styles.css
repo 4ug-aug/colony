@@ -232,25 +232,6 @@ body {
   }
 }
 
-.scroll-to-bottom-button {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(0.5rem);
-  transition:
-    opacity 200ms ease-out,
-    transform 200ms ease-out,
-    visibility 0s linear 200ms;
-  visibility: hidden;
-}
-
-.scroll-to-bottom-button[data-visible='true'] {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-  transition-delay: 0s;
-  visibility: visible;
-}
-
 a {
   color: var(--primary);
   text-decoration-color: color-mix(in oklab, var(--primary) 40%, transparent);
@@ -428,16 +409,6 @@ pre code {
   animation: message-search-hit 1.6s ease-out;
 }
 
-@keyframes room-fade-in {
-  from {
-    opacity: 0;
-  }
-}
-
-.room-fade-in {
-  animation: room-fade-in 150ms ease-out both;
-}
-
 /* Compute currentColor on the wrapper, then inherit the resolved color.
    Without this, the label's `color: transparent` makes the shimmer gradient
    (which uses currentColor) disappear. */
@@ -536,7 +507,6 @@ pre code {
   .entry-form,
   .entry-form--exiting,
   .entry-shell-frame--exiting,
-  .room-fade-in,
   .agent-thinking-dot,
   .agent-thinking-label,
   .agent-thinking-star,

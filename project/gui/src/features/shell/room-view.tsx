@@ -1,30 +1,9 @@
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from '#/components/ui/resizable'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageComposer } from '#/features/rooms/message-composer'
 import { RoomThreadRail } from '#/features/rooms/room-thread-rail'
 import { Timeline } from '#/features/rooms/room-timeline'
-import type { ThreadDrafts } from '#/features/rooms/thread-drafts'
-import {
-  emptyThreadDrafts,
-  threadDraft,
-  withThreadDraft,
-  withoutThreadDraft,
-} from '#/features/rooms/thread-drafts'
-import type {
-  ThreadTransitionState,
-  ThreadTransitionSurface,
-} from '#/features/rooms/thread-transition'
-import {
-  finishThreadExit,
-  requestThreadSurface,
-  sameThreadSurface,
-} from '#/features/rooms/thread-transition'
 import type {
   Author,
   MentionableAccount,
@@ -34,7 +13,6 @@ import type {
 } from '#/features/rooms/types'
 import { ActiveAgents } from '#/features/runs/active-agents'
 import { RunActivityRail } from '#/features/runs/run-activity-rail'
-import { useMediaQuery } from '#/hooks/use-media-query'
 import { ArrowDown } from 'lucide-react'
 import type { RefObject } from 'react'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -60,7 +38,6 @@ export function RoomView({
   mentionableAccounts,
   loadOlder,
   loadingOlder,
-  hasOlderMessages,
   threadAttentionRootIds,
   focusMessageId,
   clearFocusMessage,
@@ -93,7 +70,6 @@ export function RoomView({
   mentionableAccounts: MentionableAccount[]
   loadOlder: () => unknown
   loadingOlder: boolean
-  hasOlderMessages: boolean
   threadAttentionRootIds: string[]
   focusMessageId: string | undefined
   clearFocusMessage: () => void
@@ -108,7 +84,6 @@ export function RoomView({
   >
   openMachine?: (sandboxId: string) => void
 }) {
-  const inlineRail = useMediaQuery('(min-width: 1024px)')
   // Markdown is memo()'d, so this has to keep its identity between renders or
   // every message re-parses on every commit.
   const mentionHandles = useMemo(
@@ -118,14 +93,6 @@ export function RoomView({
     ],
     [user.name, mentionableAccounts],
   )
-  const threadWidthRef = useRef(localStorage.getItem('thread.width') ?? '26rem')
-  const threadDraftsRef = useRef<ThreadDrafts>(emptyThreadDrafts)
-  const [transition, setTransition] = useState<ThreadTransitionState>({
-    phase: 'closed',
-  })
-  const [lastSurfaceTarget, setLastSurfaceTarget] = useState<
-    ThreadTransitionSurface | undefined
-  >(undefined)
   const [editingMessage, setEditingMessage] = useState<RoomMessage>()
   const scrollRef = useRef<HTMLElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -197,223 +164,130 @@ export function RoomView({
     el?.scrollIntoView({ block: 'center', behavior: 'instant' })
   }, [focusMessageId, loading, messages])
 
-  // The thread rail and Run Activity rail are one side surface: opening one
-  // always exits the other first (see thread-transition.ts), and the target
-  // it should show comes from history-backed `location.surface` so app-level
-  // Back/Forward restores or closes it without ever stacking both rails.
-  const surfaceTarget: ThreadTransitionSurface | undefined =
-    surface?.kind === 'thread'
-      ? { kind: 'thread', rootId: surface.rootId }
-      : surface?.kind === 'activity'
-        ? { kind: 'activity', runId: surface.runId }
-        : undefined
-  if (!sameThreadSurface(lastSurfaceTarget, surfaceTarget)) {
-    setLastSurfaceTarget(surfaceTarget)
-    setTransition((current) => requestThreadSurface(current, surfaceTarget))
-  }
-  const activeSurface =
-    transition.phase === 'closed' ? undefined : transition.surface
-  const surfaceExiting = transition.phase === 'exiting'
   const activeRun =
-    activeSurface?.kind === 'activity'
-      ? runs.find(({ id }) => id === activeSurface.runId)
+    surface?.kind === 'activity'
+      ? runs.find(({ id }) => id === surface.runId)
       : undefined
-  const activeRootId =
-    activeSurface?.kind === 'thread' ? activeSurface.rootId : undefined
+  const activeRootId = surface?.kind === 'thread' ? surface.rootId : undefined
   const activityTriggerMessage = activeRun
     ? messages.find(({ id }) => id === activeRun.triggerMessageId)
     : undefined
-  const threadRail =
-    activeRootId && room ? (
-      <RoomThreadRail
-        key={activeRootId}
-        roomId={room.id}
-        roomName={`${room.name} thread`}
-        rootId={activeRootId}
-        liveReplies={threadReplies[activeRootId] ?? []}
-        runs={runs}
-        openRun={openActivity}
-        mentionHandles={mentionHandles}
-        mentionableAccounts={mentionableAccounts}
-        currentUserId={user.id}
-        onClose={closeSideSurface}
-        sendReply={sendReply}
-        editMessage={edit}
-        focusReplyId={
-          surface?.kind === 'thread' ? surface.focusReplyId : undefined
-        }
-        onFocusReplyHandled={clearThreadFocus}
-        draftText={threadDraft(threadDraftsRef.current, activeRootId)}
-        onDraftChange={(text) => {
-          threadDraftsRef.current = withThreadDraft(
-            threadDraftsRef.current,
-            activeRootId,
-            text,
-          )
-        }}
-        onDraftSubmitted={() => {
-          threadDraftsRef.current = withoutThreadDraft(
-            threadDraftsRef.current,
-            activeRootId,
-          )
-        }}
-        exiting={surfaceExiting}
-        onExited={() => setTransition(finishThreadExit)}
-      />
-    ) : null
 
   return (
     <div className="flex min-h-0 flex-1">
-      <ResizablePanelGroup className="min-h-0 min-w-0 flex-1">
-        <ResizablePanel className="min-h-0" id="room" minSize="20rem">
-          <div
-            className="room-pane relative flex h-full min-h-0 min-w-0 flex-col"
+      <div
+        className="room-pane relative flex min-h-0 min-w-0 flex-1 flex-col"
+        onPointerDown={() => {
+          if (surface) closeSideSurface()
+        }}
+      >
+        <div className="relative min-h-0 flex-1">
+          <section
+            key={room?.id}
+            ref={scrollRef}
+            className="room-timeline no-scrollbar flex h-full flex-col-reverse overflow-y-auto"
+            aria-busy={loading}
             onPointerDown={() => {
-              if (activeRootId || activeSurface?.kind === 'activity')
-                closeSideSurface()
+              followRoomRef.current = false
+            }}
+            onTouchMove={() => {
+              followRoomRef.current = false
+            }}
+            onWheel={() => {
+              followRoomRef.current = false
+            }}
+            onScroll={() => {
+              const el = scrollRef.current
+              if (!el) return
+              if (
+                el.scrollHeight - el.clientHeight - Math.abs(el.scrollTop) <=
+                historyTopThreshold
+              )
+                void loadOlder()
+              const nextAtBottom =
+                Math.abs(el.scrollTop) < bottomScrollThreshold
+              atBottomRef.current = nextAtBottom
+              setAtBottom(nextAtBottom)
             }}
           >
-            <div className="relative min-h-0 flex-1">
-              <section
-                key={room?.id}
-                ref={scrollRef}
-                className="room-timeline no-scrollbar flex h-full flex-col-reverse overflow-y-auto"
-                aria-busy={loading}
-                onPointerDown={() => {
-                  followRoomRef.current = false
-                }}
-                onTouchMove={() => {
-                  followRoomRef.current = false
-                }}
-                onWheel={() => {
-                  followRoomRef.current = false
-                }}
-                onScroll={() => {
-                  const el = scrollRef.current
-                  if (!el) return
-                  if (
-                    el.scrollHeight -
-                      el.clientHeight -
-                      Math.abs(el.scrollTop) <=
-                      historyTopThreshold &&
-                    hasOlderMessages &&
-                    !loadingOlder
-                  )
-                    void loadOlder()
-                  const nextAtBottom =
-                    Math.abs(el.scrollTop) < bottomScrollThreshold
-                  atBottomRef.current = nextAtBottom
-                  setAtBottom(nextAtBottom)
-                }}
-              >
-                <div ref={timelineRef} className="w-full shrink-0">
-                  {loadingOlder && (
-                    <div
-                      className="flex justify-center pb-4 text-sm text-muted-foreground"
-                      role="status"
-                    >
-                      <AgentThinking label="Loading older messages…" />
-                    </div>
-                  )}
-                  {loading ? (
-                    <div
-                      className="flex justify-center py-12 text-sm text-muted-foreground"
-                      role="status"
-                    >
-                      <AgentThinking label="Loading room…" />
-                    </div>
-                  ) : (
-                    <div className="room-fade-in">
-                      <Timeline
-                        messages={messages}
-                        runs={runs}
-                        openRun={openActivity}
-                        currentUserId={user.id}
-                        focusMessageId={focusMessageId}
-                        onFocusHandled={clearFocusMessage}
-                        unreadThreadRootIds={threadAttentionRootIds}
-                        onEdit={(message) => {
-                          setEditingMessage(message)
-                          setDraft(message.text)
-                        }}
-                        onOpenThread={(nextRootId) => openThread(nextRootId)}
-                        mentionHandles={mentionHandles}
-                      />
-                    </div>
-                  )}
+            <div ref={timelineRef} className="w-full shrink-0">
+              {loadingOlder && (
+                <div
+                  className="flex justify-center pb-4 text-sm text-muted-foreground"
+                  role="status"
+                >
+                  <AgentThinking label="Loading older messages…" />
                 </div>
-              </section>
-              <Button
-                type="button"
-                size="sm"
-                aria-hidden={atBottom}
-                tabIndex={atBottom ? -1 : 0}
-                data-visible={!atBottom}
-                className="scroll-to-bottom-button absolute right-5 bottom-4 rounded-sm shadow-md"
-                onClick={() => {
-                  const el = scrollRef.current
-                  el?.scrollTo({
-                    top: 0,
-                    behavior: 'smooth',
-                  })
-                }}
-              >
-                To the bottom
-                <ArrowDown data-icon="inline-end" />
-              </Button>
-            </div>
-            <div className="room-composer-dock shrink-0">
-              <MessageComposer
-                key={room?.id}
-                ref={composer}
-                value={draft}
-                onChange={setDraft}
-                onSubmit={submit}
-                disabled={loading || !room}
-                roomName={room?.name ?? 'room'}
-                mentionableAccounts={mentionableAccounts}
-                editing={Boolean(editingMessage)}
-                onCancelEdit={cancelEdit}
-              />
-              <div>
-                <ActiveAgents
-                  roomId={room?.id}
+              )}
+              {loading ? (
+                <div
+                  className="flex justify-center py-12 text-sm text-muted-foreground"
+                  role="status"
+                >
+                  <AgentThinking label="Loading room…" />
+                </div>
+              ) : (
+                <Timeline
+                  messages={messages}
                   runs={runs}
-                  cancel={(runId) => void cancel(runId)}
                   openRun={openActivity}
+                  currentUserId={user.id}
+                  focusMessageId={focusMessageId}
+                  onFocusHandled={clearFocusMessage}
+                  unreadThreadRootIds={threadAttentionRootIds}
+                  onEdit={(message) => {
+                    setEditingMessage(message)
+                    setDraft(message.text)
+                  }}
+                  onOpenThread={openThread}
+                  mentionHandles={mentionHandles}
                 />
-              </div>
-              {error && (
-                <p className="mt-2 text-sm text-destructive" role="alert">
-                  {error}
-                </p>
               )}
             </div>
-          </div>
-        </ResizablePanel>
-        {inlineRail && threadRail ? (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel
-              className="min-h-0"
-              defaultSize={threadWidthRef.current}
-              groupResizeBehavior="preserve-pixel-size"
-              id="thread"
-              maxSize="40rem"
-              minSize="20rem"
-              onResize={(size, _id, prev) => {
-                if (prev == null) return
-                const next = `${Math.round(size.inPixels)}px`
-                threadWidthRef.current = next
-                localStorage.setItem('thread.width', next)
-              }}
+          </section>
+          {!atBottom && (
+            <Button
+              type="button"
+              size="sm"
+              className="absolute right-5 bottom-4 rounded-sm shadow-md"
+              onClick={() =>
+                scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+              }
             >
-              {threadRail}
-            </ResizablePanel>
-          </>
-        ) : null}
-      </ResizablePanelGroup>
-      {activeSurface?.kind === 'activity' && activeRun && (
+              To the bottom
+              <ArrowDown data-icon="inline-end" />
+            </Button>
+          )}
+        </div>
+        <div className="room-composer-dock shrink-0">
+          <MessageComposer
+            key={room?.id}
+            ref={composer}
+            value={draft}
+            onChange={setDraft}
+            onSubmit={submit}
+            disabled={loading || !room}
+            roomName={room?.name ?? 'room'}
+            mentionableAccounts={mentionableAccounts}
+            editing={Boolean(editingMessage)}
+            onCancelEdit={cancelEdit}
+          />
+          <div>
+            <ActiveAgents
+              roomId={room?.id}
+              runs={runs}
+              cancel={(runId) => void cancel(runId)}
+              openRun={openActivity}
+            />
+          </div>
+          {error && (
+            <p className="mt-2 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+      {activeRun && (
         <RunActivityRail
           key={activeRun.id}
           run={activeRun}
@@ -421,11 +295,29 @@ export function RoomView({
           onClose={closeSideSurface}
           onCancel={() => void cancel(activeRun.id)}
           onOpenMachine={openMachine}
-          exiting={surfaceExiting}
-          onExited={() => setTransition(finishThreadExit)}
         />
       )}
-      {!inlineRail && threadRail}
+      {activeRootId && room && (
+        <RoomThreadRail
+          key={activeRootId}
+          roomId={room.id}
+          roomName={`${room.name} thread`}
+          rootId={activeRootId}
+          liveReplies={threadReplies[activeRootId] ?? []}
+          runs={runs}
+          openRun={openActivity}
+          mentionHandles={mentionHandles}
+          mentionableAccounts={mentionableAccounts}
+          currentUserId={user.id}
+          onClose={closeSideSurface}
+          sendReply={sendReply}
+          editMessage={edit}
+          focusReplyId={
+            surface?.kind === 'thread' ? surface.focusReplyId : undefined
+          }
+          onFocusReplyHandled={clearThreadFocus}
+        />
+      )}
     </div>
   )
 }

@@ -2,12 +2,9 @@ import { Markdown } from '#/components/markdown'
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '#/components/ui/sheet'
+import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
+import { useRoomLiveSteps } from '#/features/rooms/room-live-steps'
+import { RoomSideRail } from '#/features/shell/room-side-rail'
 import { accountFaceStyle, accountInitials } from '#/lib/account-color'
 import { apiFetch } from '#/lib/api-transport'
 import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
@@ -15,11 +12,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { groupActivity, mergeSteps, pairSteps } from './run-activity'
 import { RunActivitySplitHeader } from './run-activity-dither'
 import { terminal } from './run-helpers'
-import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
-import { ToolCallDetailsList } from './tool-call-details-list'
-import { useRoomLiveSteps } from '#/features/rooms/room-live-steps'
 import type { Step } from './step-label'
 import { stepLabel } from './step-label'
+import { ToolCallDetailsList } from './tool-call-details-list'
 
 export type Person = { name: string; image?: string; color?: string }
 export type ActivityRun = {
@@ -42,19 +37,6 @@ export type ActivityRun = {
   sandboxId?: string
 }
 export type TriggerMessage = { author: Person; text: string }
-
-function useInlineRail() {
-  const [inline, setInline] = useState(
-    () => window.matchMedia('(min-width: 1024px)').matches,
-  )
-  useEffect(() => {
-    const query = window.matchMedia('(min-width: 1024px)')
-    const update = () => setInline(query.matches)
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
-  return inline
-}
 
 function PersonAvatar({ person }: { person: Person }) {
   return (
@@ -203,10 +185,7 @@ export function RunActivityContent({
           <div className="space-y-3">
             {groups.map((group, index) =>
               group.kind === 'reasoning' ? (
-                <article
-                  key={group.item.step.id}
-                  className="text-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300"
-                >
+                <article key={group.item.step.id} className="text-sm">
                   <div className="mb-1 flex items-center justify-between text-xs font-medium text-muted-foreground">
                     <span>Reasoning</span>
                     <time>
@@ -234,7 +213,7 @@ export function RunActivityContent({
         </section>
 
         {run.state === 'succeeded' && (
-          <section className="border-t pt-5 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
+          <section className="border-t pt-5">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="size-4 text-primary" />
               Result
@@ -277,23 +256,13 @@ export function RunActivityRail({
   onClose,
   onCancel,
   onOpenMachine,
-  stepsPath,
-  variant = 'rail',
-  exiting = false,
-  onExited,
 }: {
   run: ActivityRun
   triggerMessage?: TriggerMessage
   onClose: () => void
   onCancel: () => void
   onOpenMachine?: (sandboxId: string) => void
-  stepsPath?: string
-  variant?: 'rail' | 'inline'
-  /** Playing the exit transition before the next surface enters (never stacked). */
-  exiting?: boolean
-  onExited?: () => void
 }) {
-  const inline = useInlineRail()
   const { liveStepsByRun } = useRoomLiveSteps(run.roomId)
   const liveSteps = liveStepsByRun.get(run.id) ?? []
   const [persistedSteps, setPersistedSteps] = useState<Step[]>([])
@@ -310,12 +279,9 @@ export function RunActivityRail({
     setPersistedSteps([])
     setLoading(true)
     setError(undefined)
-    void apiFetch(
-      stepsPath ?? `/api/rooms/${run.roomId}/runs/${run.id}/steps`,
-      {
-        signal: controller.signal,
-      },
-    )
+    void apiFetch(`/api/rooms/${run.roomId}/runs/${run.id}/steps`, {
+      signal: controller.signal,
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error('Could not load run activity')
         const data = (await response.json()) as { steps: Step[] }
@@ -333,7 +299,7 @@ export function RunActivityRail({
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [reload, run.id, run.roomId, stepsPath])
+  }, [reload, run.id, run.roomId])
 
   const content = (
     <RunActivityContent
@@ -343,63 +309,21 @@ export function RunActivityRail({
       loading={loading}
       error={error}
       onRetry={() => setReload((value) => value + 1)}
-      onClose={variant === 'inline' ? undefined : onClose}
+      onClose={onClose}
       onCancel={onCancel}
       onOpenMachine={onOpenMachine}
       attribution={run.attribution}
     />
   )
 
-  if (variant === 'inline')
-    return (
-      <div className="flex min-h-0 flex-1 flex-col" aria-label="Run activity">
-        {content}
-      </div>
-    )
-
-  if (inline)
-    return (
-      <aside
-        className={`flex w-[26rem] shrink-0 flex-col border-l bg-background duration-200 ${
-          exiting
-            ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards'
-            : 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards'
-        }`}
-        aria-label="Run activity"
-        onAnimationEnd={
-          exiting
-            ? (event) => {
-                if (event.target !== event.currentTarget) return
-                onExited?.()
-              }
-            : undefined
-        }
-      >
-        {content}
-      </aside>
-    )
-
   return (
-    <Sheet
-      open={!exiting}
-      onOpenChange={(open) => {
-        if (!open && !exiting) onClose()
-      }}
-      onOpenChangeComplete={(open) => {
-        if (!open && exiting) onExited?.()
-      }}
+    <RoomSideRail
+      label="Run activity"
+      description="Agent assignment, execution activity, and result"
+      className="bg-background"
+      onClose={onClose}
     >
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className="w-full max-w-none gap-0 p-0 sm:max-w-md"
-      >
-        <SheetTitle className="sr-only">Run activity</SheetTitle>
-        <SheetDescription className="sr-only">
-          Agent assignment, execution activity, and result
-        </SheetDescription>
-        {content}
-      </SheetContent>
-    </Sheet>
+      {content}
+    </RoomSideRail>
   )
 }

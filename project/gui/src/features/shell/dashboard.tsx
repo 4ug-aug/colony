@@ -79,7 +79,6 @@ export function Dashboard({
     mentionableAccounts,
     loadOlder,
     loadingOlder,
-    hasOlderMessages,
     notificationByRoom,
     threadAttentionRootIds,
     clearThreadAttention,
@@ -350,7 +349,6 @@ export function Dashboard({
             mentionableAccounts={mentionableAccounts}
             loadOlder={loadOlder}
             loadingOlder={loadingOlder}
-            hasOlderMessages={hasOlderMessages}
             threadAttentionRootIds={threadAttentionRootIds}
             focusMessageId={focusMessageId}
             clearFocusMessage={clearFocusMessage}

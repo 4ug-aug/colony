@@ -1,21 +1,21 @@
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '#/components/ui/sheet'
-import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
 import { RunCapsule } from '#/features/runs/run-capsule'
+import { RoomSideRail } from '#/features/shell/room-side-rail'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { ArrowDown, X } from 'lucide-react'
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MessageComposer } from './message-composer'
 import { RoomMessageRow } from './room-message-row'
+import {
+  clearThreadDraft,
+  setThreadDraft,
+  threadDraft,
+} from './thread-drafts'
 import { groupRunsByTrigger, runsForThread } from './thread-helpers'
 import {
   acknowledgeNewReplies,
@@ -113,25 +113,7 @@ const ThreadMessage = memo(function ThreadMessage({
   )
 })
 
-function RoomThreadRailContent({
-  roomId,
-  roomName,
-  rootId,
-  liveReplies,
-  runs = [],
-  openRun,
-  mentionHandles,
-  mentionableAccounts,
-  currentUserId,
-  onClose,
-  sendReply,
-  editMessage,
-  focusReplyId,
-  onFocusReplyHandled,
-  draftText,
-  onDraftChange,
-  onDraftSubmitted,
-}: {
+export type RoomThreadRailProps = {
   roomId: string
   roomName: string
   rootId: string
@@ -155,12 +137,33 @@ function RoomThreadRailContent({
   /** A search hit's matching reply id to scroll to and highlight once loaded. */
   focusReplyId?: string
   onFocusReplyHandled?: () => void
-  /** The one in-memory draft kept for this root across rail switching/closing. */
-  draftText: string
-  onDraftChange: (text: string) => void
-  /** Clears this root's draft after a reply or edit is submitted successfully. */
-  onDraftSubmitted: () => void
-}) {
+}
+
+function RoomThreadRailContent({
+  roomId,
+  roomName,
+  rootId,
+  liveReplies,
+  runs = [],
+  openRun,
+  mentionHandles,
+  mentionableAccounts,
+  currentUserId,
+  onClose,
+  sendReply,
+  editMessage,
+  focusReplyId,
+  onFocusReplyHandled,
+}: RoomThreadRailProps) {
+  const [draftText, setDraftText] = useState(() => threadDraft(rootId))
+  const onDraftChange = (text: string) => {
+    setThreadDraft(rootId, text)
+    setDraftText(text)
+  }
+  const onDraftSubmitted = () => {
+    clearThreadDraft(rootId)
+    setDraftText('')
+  }
   const { root, replies, results, isLoading, error } = useRoomThread(
     roomId,
     rootId,
@@ -367,59 +370,18 @@ function RoomThreadRailContent({
 }
 
 export function RoomThreadRail({
-  exiting = false,
-  onExited,
+  onClose,
   ...contentProps
-}: Parameters<typeof RoomThreadRailContent>[0] & {
-  /** Playing the exit transition before the next surface enters (never stacked). */
-  exiting?: boolean
-  onExited?: () => void
-}) {
-  const inline = useMediaQuery('(min-width: 1024px)')
-
-  if (inline)
-    return (
-      <aside
-        className={`flex h-full min-h-0 w-full flex-col bg-[var(--room-conversation)] ${
-          exiting
-            ? 'animate-out fade-out-0 slide-out-to-right-2 fill-mode-forwards duration-200'
-            : 'animate-in fade-in-0 slide-in-from-right-2 fill-mode-backwards duration-200'
-        }`}
-        aria-label="Thread"
-        onAnimationEnd={
-          exiting
-            ? (event) => {
-                if (event.target !== event.currentTarget) return
-                onExited?.()
-              }
-            : undefined
-        }
-      >
-        <RoomThreadRailContent {...contentProps} />
-      </aside>
-    )
-
+}: RoomThreadRailProps) {
   return (
-    <Sheet
-      open={!exiting}
-      onOpenChange={(open) => {
-        if (!open && !exiting) contentProps.onClose?.()
-      }}
-      onOpenChangeComplete={(open) => {
-        if (!open && exiting) onExited?.()
-      }}
+    <RoomSideRail
+      label="Thread"
+      description="Thread root, replies, and composer"
+      className="bg-[var(--room-conversation)]"
+      sheetClassName="room-surface"
+      onClose={() => onClose?.()}
     >
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className="room-surface flex w-full max-w-none flex-col gap-0 p-0 sm:max-w-md"
-      >
-        <SheetTitle className="sr-only">Thread</SheetTitle>
-        <SheetDescription className="sr-only">
-          Thread root, replies, and composer
-        </SheetDescription>
-        <RoomThreadRailContent {...contentProps} />
-      </SheetContent>
-    </Sheet>
+      <RoomThreadRailContent onClose={onClose} {...contentProps} />
+    </RoomSideRail>
   )
 }

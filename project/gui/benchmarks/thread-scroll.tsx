@@ -32,7 +32,6 @@ const body =
   '## Update\n\nCompleted the **implementation** and checked `scrollTop`.\n\n- First check passed\n- Second check passed\n\n```ts\nconst ready = true\n```\n\n'.repeat(
     5,
   )
-const noop = () => {}
 const empty: never[] = []
 function sample(count: number, results: boolean, thinking = false) {
   const client = new QueryClient({
@@ -86,9 +85,6 @@ function sample(count: number, results: boolean, thinking = false) {
               liveReplies={liveReplies}
               mentionHandles={empty}
               mentionableAccounts={empty}
-              draftText=""
-              onDraftChange={noop}
-              onDraftSubmitted={noop}
               sendReply={async () => undefined}
               editMessage={async () => undefined}
             />

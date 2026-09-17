@@ -136,7 +136,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
     Record<string, RoomMessage[]>
   >({})
   const [runs, setRuns] = useState<RoomRun[]>([])
-  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [focusMessageId, setFocusMessageId] = useState<string>()
   const runsRef = useRef<RoomRun[]>([])
@@ -291,7 +290,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       runsRef.current = mergeRuns([], page.runs)
       setRuns(runsRef.current)
       nextCursorRef.current = page.nextCursor
-      setNextCursor(page.nextCursor)
     },
     [acceptServerMessages],
   )
@@ -635,7 +633,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
                 runsRef.current = mergeRuns([], event.runs)
                 setRuns(runsRef.current)
                 nextCursorRef.current = event.nextCursor
-                setNextCursor(event.nextCursor)
                 historyReadyRef.current = true
                 if (focusId) {
                   setFocusMessageId(focusId)
@@ -807,7 +804,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       runsRef.current = mergeRuns(runsRef.current, page.runs)
       setRuns((current) => mergeRuns(current, page.runs))
       nextCursorRef.current = page.nextCursor
-      setNextCursor(page.nextCursor)
       setError(undefined)
     } catch (reason) {
       if (selectedRoomRef.current === roomId)
@@ -893,7 +889,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       clearLiveThreadActivity()
       serverSummariesRef.current = {}
       setRuns([])
-      setNextCursor(undefined)
       setLoadingOlder(false)
       setMentionableAccounts([])
       setLoading(true)
@@ -920,7 +915,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       clearLiveThreadActivity()
       serverSummariesRef.current = {}
       setRuns([])
-      setNextCursor(undefined)
       setLoadingOlder(false)
       setMentionableAccounts([])
       setLoading(true)
@@ -960,7 +954,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
         clearLiveThreadActivity()
         serverSummariesRef.current = {}
         setRuns([])
-        setNextCursor(undefined)
         setLoadingOlder(false)
         setLoading(true)
         setConnection('connecting')
@@ -1094,7 +1087,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
     },
     loadOlder,
     loadingOlder,
-    hasOlderMessages: Boolean(nextCursor),
     cancel: (runId: string) =>
       selectedRoomId
         ? request(`/api/rooms/${selectedRoomId}/runs/${runId}/cancel`)
