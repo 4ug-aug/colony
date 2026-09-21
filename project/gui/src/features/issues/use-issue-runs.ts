@@ -7,11 +7,11 @@ import {
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import type { Issue, IssueRun } from './types'
 import type { IssueRunStep } from '#/server/features/issues/issue-store'
-import { upsertIssueInCache } from './use-issues'
+import { invalidateIssues } from './use-issues'
 
 export type { IssueRunStep }
 
-function issueRunsQueryKey(issueId: string) {
+export function issueRunsQueryKey(issueId: string) {
   return ['issue-runs', issueId] as const
 }
 
@@ -106,8 +106,8 @@ export function useStartIssueRun() {
       if (!data.issue || !data.run) throw new Error('Unable to start run')
       return { issue: data.issue, run: data.run }
     },
-    onSuccess: ({ issue, run }) => {
-      upsertIssueInCache(queryClient, issue)
+    onSuccess: ({ run }) => {
+      invalidateIssues(queryClient)
       upsertIssueRunInCache(queryClient, run)
     },
   })
@@ -128,6 +128,7 @@ export function useCancelIssueRun() {
     },
     onSuccess: (run) => {
       upsertIssueRunInCache(queryClient, run)
+      invalidateIssues(queryClient)
     },
   })
 }

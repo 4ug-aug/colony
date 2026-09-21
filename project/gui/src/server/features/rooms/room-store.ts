@@ -179,6 +179,11 @@ export interface RoomStore {
   /** True when rootId is a top-level message in the same room (not itself a reply). */
   canReplyTo(roomId: string, rootId: string): boolean
   getThread(roomId: string, rootId: string): RoomThread | undefined
+  /** Top-level root with its computed replySummary, without loading the thread body. */
+  getRootWithReplySummary(
+    roomId: string,
+    rootId: string,
+  ): RoomMessage | undefined
   /** Distinct non-agent author ids across a thread's root and replies. */
   listThreadParticipantIds(roomId: string, rootId: string): string[]
   latestMessageFromOther(
@@ -590,6 +595,20 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     if (!row) return undefined
     return hydrateMessages(roomId, [row])[0]
   }
+  const getRootWithReplySummary = (
+    roomId: string,
+    rootId: string,
+  ): RoomMessage | undefined => {
+    if (!hasRootId) return undefined
+    const rootRow = sqlite
+      .prepare(
+        `${messageSelect} WHERE m.room_id = ? AND m.id = ? AND ${topLevelOnly}`,
+      )
+      .get(roomId, rootId) as MessageRow | undefined
+    if (!rootRow) return undefined
+    const [root] = attachReplySummaries(hydrateMessages(roomId, [rootRow]))
+    return root
+  }
   const latestMessageFromOther = (
     roomId: string,
     userId: string,
@@ -981,6 +1000,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       ).map(userFrom),
     listMessages: messages,
     getMessage,
+    getRootWithReplySummary,
     canReplyTo: (roomId, rootId) => {
       if (!hasRootId) return false
       const row = sqlite
@@ -991,13 +1011,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       return Boolean(row)
     },
     getThread: (roomId, rootId) => {
-      if (!hasRootId) return undefined
-      const rootRow = sqlite
-        .prepare(
-          `${messageSelect} WHERE m.room_id = ? AND m.id = ? AND ${topLevelOnly}`,
-        )
-        .get(roomId, rootId) as MessageRow | undefined
-      if (!rootRow) return undefined
+      const root = getRootWithReplySummary(roomId, rootId)
+      if (!root) return undefined
       const replyRows = sqlite
         .prepare(
           `${messageSelect}
@@ -1021,9 +1036,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         stdout: string
         completed_at: number
       }[]
-      const [root] = attachReplySummaries(hydrateMessages(roomId, [rootRow]))
       return {
-        root: root!,
+        root,
         replies: hydrateMessages(roomId, replyRows),
         results: resultRows.map((row) => ({
           id: row.id,

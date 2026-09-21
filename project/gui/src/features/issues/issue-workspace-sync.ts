@@ -1,33 +1,43 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { connectWorkspaceStream } from '#/lib/api-transport'
-import { terminal } from '#/features/runs/run-helpers'
-import type { Issue, IssueRun } from './types'
+import type { IssueRun } from './types'
 import type { IssueRunStep } from '#/server/features/issues/issue-store'
 import {
   appendIssueRunStepInCache,
+  issueRunsQueryKey,
   upsertIssueRunInCache,
 } from './use-issue-runs'
-import {
-  issuesQueryKey,
-  removeIssueFromCache,
-  upsertIssueInCache,
-} from './use-issues'
+import { invalidateIssues } from './use-issues'
 
-function setIssueActiveRun(
+type IssueWorkspaceEvent =
+  | { type: 'workspace.snapshot' }
+  | { type: 'issue.created' }
+  | { type: 'issue.changed' }
+  | { type: 'issue.deleted'; issueId: string }
+  | { type: 'issue_run.created'; run: IssueRun }
+  | { type: 'issue_run.changed'; run: IssueRun }
+  | { type: 'issue_run.step'; runId: string; step: IssueRunStep }
+
+export function applyIssueWorkspaceEvent(
   queryClient: QueryClient,
-  issueId: string,
-  hasActiveRun: boolean,
+  event: IssueWorkspaceEvent,
 ) {
-  queryClient.setQueryData(issuesQueryKey, (current: Issue[] | undefined) => {
-    if (!current) return current
-    return current.map((issue) => {
-      if (issue.id !== issueId) return issue
-      if (hasActiveRun) return { ...issue, hasActiveRun: true }
-      if (!issue.hasActiveRun) return issue
-      const { hasActiveRun: _removed, ...rest } = issue
-      return rest
-    })
-  })
+  if (
+    event.type === 'workspace.snapshot' ||
+    event.type === 'issue.created' ||
+    event.type === 'issue.changed'
+  )
+    invalidateIssues(queryClient)
+  if (event.type === 'issue.deleted') {
+    invalidateIssues(queryClient)
+    queryClient.removeQueries({ queryKey: issueRunsQueryKey(event.issueId) })
+  }
+  if (event.type === 'issue_run.created' || event.type === 'issue_run.changed') {
+    upsertIssueRunInCache(queryClient, event.run)
+    invalidateIssues(queryClient)
+  }
+  if (event.type === 'issue_run.step')
+    appendIssueRunStepInCache(queryClient, event.runId, event.step)
 }
 
 let detachIssueWorkspaceSync: (() => void) | undefined
@@ -36,35 +46,10 @@ export function attachIssueWorkspaceSync(queryClient: QueryClient) {
   detachIssueWorkspaceSync?.()
   const handle = connectWorkspaceStream({
     onMessage(data) {
-      const event = JSON.parse(data) as {
-        type: string
-        issue?: Issue
-        issueId?: string
-        run?: IssueRun
-        runId?: string
-        step?: IssueRunStep
-      }
-      if (
-        (event.type === 'issue.created' || event.type === 'issue.changed') &&
-        event.issue
+      applyIssueWorkspaceEvent(
+        queryClient,
+        JSON.parse(data) as IssueWorkspaceEvent,
       )
-        upsertIssueInCache(queryClient, event.issue)
-      if (event.type === 'issue.deleted' && event.issueId)
-        removeIssueFromCache(queryClient, event.issueId)
-      if (
-        (event.type === 'issue_run.created' ||
-          event.type === 'issue_run.changed') &&
-        event.run
-      ) {
-        upsertIssueRunInCache(queryClient, event.run)
-        setIssueActiveRun(
-          queryClient,
-          event.run.issueId,
-          !terminal(event.run.state),
-        )
-      }
-      if (event.type === 'issue_run.step' && event.runId && event.step)
-        appendIssueRunStepInCache(queryClient, event.runId, event.step)
     },
   })
   detachIssueWorkspaceSync = () => handle.close()

@@ -1,42 +1,26 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '#/lib/api-transport'
-import { runResultsForThread } from './thread-helpers'
-import { useEffect, useMemo } from 'react'
-import type { RoomMessage, RoomRun, RoomThread, RunResultReply } from './types'
+import { useEffect } from 'react'
+import type { RoomThread } from './types'
 
-const emptyResults: RoomThread['results'] = []
-
-function mergeReplies(persisted: RoomMessage[], live: RoomMessage[]) {
-  const byId = new Map(persisted.map((message) => [message.id, message]))
-  for (const message of live) byId.set(message.id, message)
-  return [...byId.values()].sort(
-    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-  )
-}
-
-function mergeResults(persisted: RunResultReply[], live: RunResultReply[]) {
-  const byId = new Map(persisted.map((result) => [result.id, result]))
-  for (const result of live) byId.set(result.id, result)
-  return [...byId.values()].sort(
-    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-  )
+export function roomThreadQueryKey(roomId: string, rootId?: string) {
+  return rootId
+    ? (['room-thread', roomId, rootId] as const)
+    : (['room-thread', roomId] as const)
 }
 
 /**
- * Fetches the durable thread for a root message and layers in replies
- * received live over the room stream (passed in from `useRooms`).
- * Successful Room-linked run finals from `runs` are merged the same way so
- * an open rail shows a just-finished result without waiting on refetch.
+ * Fetches the durable thread for a root message.
+ * Opening the thread acknowledges its Thread Attention; the Room and
+ * other threads are left untouched.
  */
 export function useRoomThread(
   roomId: string | undefined,
   rootId: string | undefined,
-  liveReplies: RoomMessage[] = [],
-  runs: readonly RoomRun[] = [],
 ) {
   const queryClient = useQueryClient()
   const query = useQuery({
-    queryKey: ['room-thread', roomId, rootId],
+    queryKey: roomThreadQueryKey(roomId ?? '', rootId ?? ''),
     enabled: Boolean(roomId && rootId),
     gcTime: 0,
     queryFn: async (): Promise<RoomThread> => {
@@ -57,44 +41,18 @@ export function useRoomThread(
   })
   useEffect(
     () => () => {
+      if (!roomId || !rootId) return
       queryClient.removeQueries({
-        queryKey: ['room-thread', roomId, rootId],
+        queryKey: roomThreadQueryKey(roomId, rootId),
         exact: true,
       })
     },
     [queryClient, roomId, rootId],
   )
-  const replies = useMemo(
-    () => mergeReplies(query.data?.replies ?? [], liveReplies),
-    [liveReplies, query.data?.replies],
-  )
-  const root = useMemo(
-    () =>
-      query.data?.root ??
-      (rootId && roomId
-        ? {
-            id: rootId,
-            roomId,
-            author: { id: '', name: '' },
-            text: '',
-            createdAt: 0,
-            attachments: [],
-          }
-        : undefined),
-    [query.data?.root, roomId, rootId],
-  )
-  const liveResults = useMemo(
-    () => runResultsForThread(runs, root, replies),
-    [replies, root, runs],
-  )
-  const results = useMemo(
-    () => mergeResults(query.data?.results ?? emptyResults, liveResults),
-    [liveResults, query.data?.results],
-  )
   return {
     root: query.data?.root,
-    replies,
-    results,
+    replies: query.data?.replies ?? [],
+    results: query.data?.results ?? [],
     isLoading: query.isLoading,
     error: query.error instanceof Error ? query.error.message : undefined,
     refetch: query.refetch,

@@ -71,7 +71,6 @@ export function Dashboard({
     send,
     sendReply,
     edit,
-    threadReplies,
     cancel,
     draft,
     setDraft,
@@ -345,7 +344,6 @@ export function Dashboard({
             sendReply={sendReply}
             edit={edit}
             cancel={cancel}
-            threadReplies={threadReplies}
             mentionableAccounts={mentionableAccounts}
             loadOlder={loadOlder}
             loadingOlder={loadingOlder}

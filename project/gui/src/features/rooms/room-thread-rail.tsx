@@ -117,7 +117,6 @@ export type RoomThreadRailProps = {
   roomId: string
   roomName: string
   rootId: string
-  liveReplies: RoomMessage[]
   /** Room-wide runs; filtered down to this thread's root and replies. */
   runs?: RoomRun[]
   openRun?: (runId: string) => void
@@ -143,7 +142,6 @@ function RoomThreadRailContent({
   roomId,
   roomName,
   rootId,
-  liveReplies,
   runs = [],
   openRun,
   mentionHandles,
@@ -167,8 +165,6 @@ function RoomThreadRailContent({
   const { root, replies, results, isLoading, error } = useRoomThread(
     roomId,
     rootId,
-    liveReplies,
-    runs,
   )
   const { data: agents = [] } = useAgentDefinitions()
   const coarsePointer = useMediaQuery('(pointer: coarse)')

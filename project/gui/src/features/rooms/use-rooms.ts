@@ -32,11 +32,7 @@ import { setAppDockBadge } from '#/lib/dock-badge'
 import { useWindowActive, windowIsActiveNow } from '#/lib/window-active'
 import { roomLiveStepsQueryKey } from './room-live-steps'
 import type { RoomLiveSteps } from './room-live-steps'
-import {
-  runResultAsLiveReply,
-  threadRootIdForTrigger,
-  withLiveThreadSummaries,
-} from './thread-helpers'
+import { roomThreadQueryKey } from './use-room-thread'
 
 function upsert<T extends { id: string }>(items: T[], item: T) {
   const index = items.findIndex(({ id }) => id === item.id)
@@ -51,6 +47,11 @@ function mergeMessages(messages: RoomMessage[], incoming: RoomMessage[]) {
   return [...byId.values()].sort(
     (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
   )
+}
+
+function mergeLoadedMessage(messages: RoomMessage[], incoming: RoomMessage) {
+  if (!messages.some((message) => message.id === incoming.id)) return messages
+  return mergeMessages(messages, [incoming])
 }
 
 function mergeRuns(runs: RoomRun[], incoming: RoomRun[]) {
@@ -129,22 +130,11 @@ export function useRooms(userId: string, viewingRoom: boolean) {
   >({})
   const [selectedRoomId, setSelectedRoomId] = useState<string>()
   const [messages, setMessages] = useState<RoomMessage[]>([])
-  const [threadReplies, setThreadReplies] = useState<
-    Record<string, RoomMessage[]>
-  >({})
-  const [liveThreadResults, setLiveThreadResults] = useState<
-    Record<string, RoomMessage[]>
-  >({})
   const [runs, setRuns] = useState<RoomRun[]>([])
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [focusMessageId, setFocusMessageId] = useState<string>()
   const runsRef = useRef<RoomRun[]>([])
   const messagesRef = useRef<RoomMessage[]>([])
-  const threadRepliesRef = useRef(threadReplies)
-  const replyRootByIdRef = useRef<Record<string, string>>({})
-  const serverSummariesRef = useRef<
-    Record<string, RoomMessage['replySummary']>
-  >({})
   const pendingFocusRef = useRef<string | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const [connection, setConnection] = useState<
@@ -174,148 +164,28 @@ export function useRooms(userId: string, viewingRoom: boolean) {
 
   const windowActive = useWindowActive()
   messagesRef.current = messages
-  threadRepliesRef.current = threadReplies
   selectedRoomRef.current = selectedRoomId
   viewingRoomRef.current = viewingRoom
   roomsRef.current = rooms
 
-  const captureServerSummaries = useCallback((list: readonly RoomMessage[]) => {
-    for (const message of list) {
-      if (message.rootId != null) continue
-      serverSummariesRef.current[message.id] = message.replySummary
-    }
-  }, [])
-
-  const clearLiveThreadActivity = useCallback((rootIds?: ReadonlySet<string>) => {
-    if (!rootIds) {
-      setThreadReplies({})
-      setLiveThreadResults({})
-      threadRepliesRef.current = {}
-      replyRootByIdRef.current = {}
-      return
-    }
-    if (rootIds.size === 0) return
-    setThreadReplies((current) => {
-      let changed = false
-      const next = { ...current }
-      for (const rootId of rootIds) {
-        if (!(rootId in next)) continue
-        delete next[rootId]
-        changed = true
-      }
-      if (!changed) return current
-      threadRepliesRef.current = next
-      return next
-    })
-    setLiveThreadResults((current) => {
-      let changed = false
-      const next = { ...current }
-      for (const rootId of rootIds) {
-        if (!(rootId in next)) continue
-        delete next[rootId]
-        changed = true
-      }
-      return changed ? next : current
-    })
-  }, [])
-
-  const acceptServerMessages = useCallback(
-    (list: RoomMessage[], options?: { replaceLive?: 'all' }) => {
-      captureServerSummaries(list)
-      if (options?.replaceLive === 'all') {
-        clearLiveThreadActivity()
-        return
-      }
-      // Fresh server summaries are authoritative for these roots — drop any
-      // live overlays that would otherwise double-count against them.
-      clearLiveThreadActivity(
-        new Set(
-          list
-            .filter((message) => message.rootId == null)
-            .map((message) => message.id),
-        ),
-      )
+  const invalidateRoomThread = useCallback(
+    (rootId?: string) => {
+      const roomId = selectedRoomRef.current
+      if (!roomId) return
+      void queryClient.invalidateQueries({
+        queryKey: roomThreadQueryKey(roomId, rootId),
+      })
     },
-    [captureServerSummaries, clearLiveThreadActivity],
+    [queryClient],
   )
 
-  const recordThreadReply = useCallback((reply: RoomMessage) => {
-    const rootId = reply.rootId
-    if (!rootId) return
-    replyRootByIdRef.current[reply.id] = rootId
-    setThreadReplies((current) => {
-      const next = {
-        ...current,
-        [rootId]: mergeMessages(current[rootId] ?? [], [reply]),
-      }
-      threadRepliesRef.current = next
-      return next
-    })
+  const applyHistoryPage = useCallback((page: RoomHistoryPage) => {
+    setMessages(page.messages)
+    messagesRef.current = page.messages
+    runsRef.current = mergeRuns([], page.runs)
+    setRuns(runsRef.current)
+    nextCursorRef.current = page.nextCursor
   }, [])
-
-  const recordThreadReplyEdit = useCallback((reply: RoomMessage) => {
-    const rootId = reply.rootId
-    if (!rootId) return
-    replyRootByIdRef.current[reply.id] = rootId
-    setThreadReplies((current) => {
-      const list = current[rootId]
-      if (!list) return current
-      const next = { ...current, [rootId]: mergeMessages(list, [reply]) }
-      threadRepliesRef.current = next
-      return next
-    })
-  }, [])
-
-  const recordLiveThreadResult = useCallback((run: RoomRun) => {
-    if (run.state !== 'succeeded') return
-    const rootId =
-      threadRootIdForTrigger(
-        run.triggerMessageId,
-        messagesRef.current,
-        threadRepliesRef.current,
-      ) ?? replyRootByIdRef.current[run.triggerMessageId]
-    if (!rootId) return
-    const live = runResultAsLiveReply(run, rootId)
-    setLiveThreadResults((current) => ({
-      ...current,
-      [rootId]: mergeMessages(current[rootId] ?? [], [live]),
-    }))
-  }, [])
-
-  const applyHistoryPage = useCallback(
-    (page: RoomHistoryPage) => {
-      acceptServerMessages(page.messages, { replaceLive: 'all' })
-      setMessages(page.messages)
-      messagesRef.current = page.messages
-      runsRef.current = mergeRuns([], page.runs)
-      setRuns(runsRef.current)
-      nextCursorRef.current = page.nextCursor
-    },
-    [acceptServerMessages],
-  )
-
-  const messagesForTimeline = useMemo(
-    () =>
-      withLiveThreadSummaries(
-        messages.map((message) => {
-          if (message.rootId != null) return message
-          if (
-            !Object.prototype.hasOwnProperty.call(
-              serverSummariesRef.current,
-              message.id,
-            )
-          )
-            return message
-          return {
-            ...message,
-            replySummary: serverSummariesRef.current[message.id],
-          }
-        }),
-        threadReplies,
-        liveThreadResults,
-      ),
-    [messages, threadReplies, liveThreadResults],
-  )
 
   const loadAroundFocus = useCallback(
     async (roomId: string, messageId: string) => {
@@ -628,7 +498,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
               ) {
                 void loadAroundFocus(selectedRoomId, focusId)
               } else {
-                acceptServerMessages(event.messages, { replaceLive: 'all' })
                 setMessages(mergeMessages([], event.messages))
                 runsRef.current = mergeRuns([], event.runs)
                 setRuns(runsRef.current)
@@ -641,9 +510,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
                 setLoading(false)
               }
             } else {
-              // Partial reconnect window: baselines refresh for roots in the
-              // snapshot; live overlays for other loaded roots stay put.
-              acceptServerMessages(event.messages)
+              // Partial reconnect window: keep previously loaded history.
               setMessages((current) => mergeMessages(current, event.messages))
               runsRef.current = reconcileRoomSnapshotRuns(
                 runsRef.current,
@@ -652,6 +519,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
               setRuns(runsRef.current)
               setLoading(false)
             }
+            invalidateRoomThread()
             queryClient.setQueryData<RoomLiveSteps>(
               roomLiveStepsQueryKey(selectedRoomId),
               {
@@ -683,12 +551,16 @@ export function useRooms(userId: string, viewingRoom: boolean) {
             event.message.roomId === selectedRoomId
           ) {
             if (event.message.rootId) {
-              if (event.type === 'message.created')
-                recordThreadReply(event.message)
-              else recordThreadReplyEdit(event.message)
+              invalidateRoomThread(event.message.rootId)
+            } else if (event.type === 'message.created') {
+              setMessages((current) =>
+                mergeMessages(current, [event.message]),
+              )
             } else {
-              acceptServerMessages([event.message])
-              setMessages((current) => mergeMessages(current, [event.message]))
+              setMessages((current) =>
+                mergeLoadedMessage(current, event.message),
+              )
+              invalidateRoomThread(event.message.id)
             }
             if (event.type === 'message.created')
               recordMessageActivity({
@@ -704,7 +576,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
           ) {
             runsRef.current = mergeRuns(runsRef.current, [event.run])
             setRuns((current) => mergeRuns(current, [event.run]))
-            recordLiveThreadResult(event.run)
           }
           if (
             event.type === 'run.step' &&
@@ -750,14 +621,11 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       })
     }
   }, [
-    acceptServerMessages,
     acknowledge,
+    invalidateRoomThread,
     loadAroundFocus,
     markRoomSeen,
-    recordLiveThreadResult,
     recordMessageActivity,
-    recordThreadReply,
-    recordThreadReplyEdit,
     queryClient,
     selectedRoomId,
   ])
@@ -799,7 +667,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       }
       if (!response.ok) throw new Error(page.error ?? 'Unable to load history')
       if (selectedRoomRef.current !== roomId) return
-      acceptServerMessages(page.messages)
       setMessages((current) => mergeMessages(current, page.messages))
       runsRef.current = mergeRuns(runsRef.current, page.runs)
       setRuns((current) => mergeRuns(current, page.runs))
@@ -814,7 +681,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       loadingOlderRef.current = false
       setLoadingOlder(false)
     }
-  }, [acceptServerMessages, selectedRoomId])
+  }, [selectedRoomId])
 
   useEffect(() => {
     if (!selectedRoomId) return
@@ -858,7 +725,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
   return {
     rooms,
     room: rooms.find(({ id }) => id === selectedRoomId),
-    messages: messagesForTimeline,
+    messages,
     runs,
     loading,
     connection,
@@ -886,8 +753,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       nextCursorRef.current = undefined
       loadingOlderRef.current = false
       setMessages([])
-      clearLiveThreadActivity()
-      serverSummariesRef.current = {}
       setRuns([])
       setLoadingOlder(false)
       setMentionableAccounts([])
@@ -912,8 +777,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       nextCursorRef.current = undefined
       loadingOlderRef.current = false
       setMessages([])
-      clearLiveThreadActivity()
-      serverSummariesRef.current = {}
       setRuns([])
       setLoadingOlder(false)
       setMentionableAccounts([])
@@ -951,8 +814,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
         nextCursorRef.current = undefined
         loadingOlderRef.current = false
         setMessages([])
-        clearLiveThreadActivity()
-        serverSummariesRef.current = {}
         setRuns([])
         setLoadingOlder(false)
         setLoading(true)
@@ -974,7 +835,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       return result
     },
     createError,
-    threadReplies,
     sendReply: async (rootId: string, text: string, files: File[] = []) => {
       if (!selectedRoomId) return
       let result: RoomMessage | undefined
@@ -1009,7 +869,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'Request failed')
       }
-      if (result) recordThreadReply(result)
+      if (result) invalidateRoomThread(rootId)
       return result
     },
     send: async (text: string, files: File[] = []) => {
@@ -1047,7 +907,6 @@ export function useRooms(userId: string, viewingRoom: boolean) {
         setError(reason instanceof Error ? reason.message : 'Request failed')
       }
       if (result) {
-        acceptServerMessages([result.message])
         setMessages((current) => mergeMessages(current, [result.message]))
         if (result.run) {
           runsRef.current = mergeRuns(runsRef.current, [result.run])
@@ -1079,10 +938,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'Request failed')
       }
-      if (result) {
-        if (result.rootId) recordThreadReplyEdit(result)
-        else setMessages((current) => mergeMessages(current, [result]))
-      }
+      if (result?.rootId) invalidateRoomThread(result.rootId)
       return result
     },
     loadOlder,

@@ -364,7 +364,6 @@ async function runScenario(scenario: Scenario): Promise<Report> {
               roomId: 'bench',
               roomName: 'Benchmark',
               rootId,
-              liveReplies: empty,
               mentionHandles: empty,
               mentionableAccounts: empty,
               sendReply: async () => undefined,

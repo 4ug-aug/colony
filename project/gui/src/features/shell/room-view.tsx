@@ -34,7 +34,6 @@ export function RoomView({
   sendReply,
   edit,
   cancel,
-  threadReplies,
   mentionableAccounts,
   loadOlder,
   loadingOlder,
@@ -66,7 +65,6 @@ export function RoomView({
   ) => Promise<RoomMessage | undefined>
   edit: (messageId: string, text: string) => Promise<RoomMessage | undefined>
   cancel: (runId: string) => unknown
-  threadReplies: Record<string, RoomMessage[]>
   mentionableAccounts: MentionableAccount[]
   loadOlder: () => unknown
   loadingOlder: boolean
@@ -303,7 +301,6 @@ export function RoomView({
           roomId={room.id}
           roomName={`${room.name} thread`}
           rootId={activeRootId}
-          liveReplies={threadReplies[activeRootId] ?? []}
           runs={runs}
           openRun={openActivity}
           mentionHandles={mentionHandles}

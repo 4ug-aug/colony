@@ -2934,7 +2934,6 @@ test('POST reply is linked to its root, excluded from flat history, and returned
       `${base.replace('http', 'ws')}/api/rooms/general/stream`,
     )
     expect((await socket.next()).type).toBe('room.snapshot')
-    const nextEvent = socket.next()
 
     const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
       method: 'POST',
@@ -2950,9 +2949,18 @@ test('POST reply is linked to its root, excluded from flat history, and returned
     }
     expect(reply.rootId).toBe(root.id)
 
-    const event = await nextEvent
-    expect(event.type).toBe('message.created')
-    expect((event.message as RoomMessage).rootId).toBe(root.id)
+    const created = await socket.next()
+    expect(created.type).toBe('message.created')
+    expect((created.message as RoomMessage).rootId).toBe(root.id)
+    const updated = await socket.next()
+    expect(updated.type).toBe('message.updated')
+    expect((updated.message as RoomMessage).id).toBe(root.id)
+    expect((updated.message as RoomMessage).replySummary).toEqual({
+      replyCount: 1,
+      participants: [{ id: 'user-1', name: 'Ada' }],
+      latestReplyAt: reply.createdAt,
+    })
+    expect(store.getMessage(GENERAL_ROOM_ID, root.id)?.replySummary).toBeUndefined()
     socket.socket.close()
 
     const flat = await fetch(`${base}/api/rooms/general/messages`, {
@@ -2977,6 +2985,121 @@ test('POST reply is linked to its root, excluded from flat history, and returned
     }
     expect(threadBody.root.id).toBe(root.id)
     expect(threadBody.replies.map(({ id }) => id)).toEqual([reply.id])
+    expect(threadBody.root.replySummary?.replyCount).toBe(1)
+    const again = await fetch(`${base}/api/rooms/general/messages`, {
+      headers: { origin: 'http://gui.test' },
+    })
+    const againBody = (await again.json()) as { messages: RoomMessage[] }
+    expect(againBody.messages[0]?.replySummary?.replyCount).toBe(1)
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('a fresh top-level message.created is not re-read through getThread and has no chip', async () => {
+  const store = roomStore()
+  let getThreadCalls = 0
+  const getThread = store.getThread.bind(store)
+  store.getThread = (roomId, rootId) => {
+    getThreadCalls++
+    return getThread(roomId, rootId)
+  }
+  const { coordinator, base } = await makeCoordinator({ store })
+  try {
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    expect((await socket.next()).type).toBe('room.snapshot')
+    const created = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Hello room' }),
+    })
+    expect(created.status).toBe(201)
+    const event = await socket.next()
+    expect(event.type).toBe('message.created')
+    expect((event.message as RoomMessage).replySummary).toBeUndefined()
+    expect(
+      store.getMessage(GENERAL_ROOM_ID, (event.message as RoomMessage).id)
+        ?.replySummary,
+    ).toBeUndefined()
+    expect(getThreadCalls).toBe(0)
+    await expectNoEvent(socket)
+    socket.socket.close()
+  } finally {
+    coordinator.stop()
+  }
+})
+
+test('a root edit broadcasts the summarized root so the chip is not clobbered', async () => {
+  const store = roomStore()
+  const { coordinator, base } = await makeCoordinator({ store })
+  try {
+    const rootResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Root question' }),
+    })
+    const { message: root } = (await rootResponse.json()) as {
+      message: RoomMessage
+    }
+    const replyResponse = await fetch(`${base}/api/rooms/general/messages`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://gui.test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Reply text', rootId: root.id }),
+    })
+    expect(replyResponse.status).toBe(201)
+    const { message: reply } = (await replyResponse.json()) as {
+      message: RoomMessage
+    }
+
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    expect((await socket.next()).type).toBe('room.snapshot')
+
+    let getThreadCalls = 0
+    const getThread = store.getThread.bind(store)
+    store.getThread = (roomId, rootId) => {
+      getThreadCalls++
+      return getThread(roomId, rootId)
+    }
+
+    const patched = await fetch(
+      `${base}/api/rooms/general/messages/${root.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          origin: 'http://gui.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ text: 'Edited root question' }),
+      },
+    )
+    expect(patched.status).toBe(200)
+    const updated = await socket.next()
+    expect(updated.type).toBe('message.updated')
+    expect((updated.message as RoomMessage).id).toBe(root.id)
+    expect((updated.message as RoomMessage).text).toBe('Edited root question')
+    expect((updated.message as RoomMessage).replySummary).toEqual({
+      replyCount: 1,
+      participants: [{ id: 'user-1', name: 'Ada' }],
+      latestReplyAt: reply.createdAt,
+    })
+    expect(
+      store.getMessage(GENERAL_ROOM_ID, root.id)?.replySummary,
+    ).toBeUndefined()
+    expect(getThreadCalls).toBe(0)
+    socket.socket.close()
   } finally {
     coordinator.stop()
   }
@@ -3013,8 +3136,18 @@ test('a top-level mention run is bound to its trigger as the invocation root, an
       },
     ])
 
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    expect((await socket.next()).type).toBe('room.snapshot')
     control.finish(run.id, 'succeeded', 'Fixed it, tests are green.')
     await Bun.sleep(5)
+    expect((await socket.next()).type).toBe('run.changed')
+    const summary = await socket.next()
+    expect(summary.type).toBe('message.updated')
+    expect((summary.message as RoomMessage).id).toBe(trigger.id)
+    expect((summary.message as RoomMessage).replySummary?.replyCount).toBe(1)
+    socket.socket.close()
 
     // The flat Room feed keeps only the trigger message; the run's capsule
     // and result never appear there as a second Room message.
@@ -3240,8 +3373,18 @@ test("a successful run from a reply mention counts as a thread reply and is incl
     })
     const { run } = (await replyResponse.json()) as { run: RoomRun }
 
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    expect((await socket.next()).type).toBe('room.snapshot')
     control.finish(run.id, 'succeeded', 'Done, from the thread.')
     await Bun.sleep(5)
+    expect((await socket.next()).type).toBe('run.changed')
+    const summary = await socket.next()
+    expect(summary.type).toBe('message.updated')
+    expect((summary.message as RoomMessage).id).toBe(root.id)
+    expect((summary.message as RoomMessage).replySummary?.replyCount).toBe(2)
+    socket.socket.close()
 
     const thread = await fetch(
       `${base}/api/rooms/general/messages/${root.id}/thread`,
@@ -3306,7 +3449,14 @@ test('a failed run from a reply mention creates no thread reply and does not inf
     })
     const { run } = (await replyResponse.json()) as { run: RoomRun }
 
+    const socket = await open(
+      `${base.replace('http', 'ws')}/api/rooms/general/stream`,
+    )
+    expect((await socket.next()).type).toBe('room.snapshot')
     control.finish(run.id, 'failed', 'boom')
+    expect((await socket.next()).type).toBe('run.changed')
+    await expectNoEvent(socket)
+    socket.socket.close()
 
     const thread = await fetch(
       `${base}/api/rooms/general/messages/${root.id}/thread`,

@@ -517,6 +517,13 @@ export function createCoordinator(options: {
     if (!trigger) return undefined
     return trigger.rootId ?? trigger.id
   }
+  const rootWithSummary = (roomId: string, rootId: string) =>
+    options.store.getRootWithReplySummary(roomId, rootId)
+  const broadcastRootSummary = (roomId: string, rootId: string) => {
+    const root = rootWithSummary(roomId, rootId)
+    if (!root) return
+    broadcastRoom(roomId, { type: 'message.updated', message: root })
+  }
   const notifyRunTerminal = (run: RoomRun): void => {
     const eligible = new Set(
       options.store.listMentionableAccounts(run.roomId).map(({ id }) => id),
@@ -569,12 +576,22 @@ export function createCoordinator(options: {
       changed.state === 'cancelled'
     )
       notifyRunTerminal(changed)
-    if (changed.state === 'succeeded')
+    if (changed.state === 'succeeded') {
       notifySuccessfulRunThreadAttention(changed)
+      const rootId = threadRootIdForRun(changed)
+      if (rootId) broadcastRootSummary(changed.roomId, rootId)
+    }
   }
   const unsubscribe = options.control.subscribe(project)
   const unsubscribeMessages = options.messages.subscribe((event) => {
-    broadcastRoom(event.message.roomId, event)
+    const message =
+      event.type === 'message.updated' && event.message.rootId == null
+        ? (rootWithSummary(event.message.roomId, event.message.id) ??
+          event.message)
+        : event.message
+    broadcastRoom(event.message.roomId, { ...event, message })
+    if (event.type === 'message.created' && event.message.rootId)
+      broadcastRootSummary(event.message.roomId, event.message.rootId)
     if (event.type !== 'message.created') return
     for (const account of mentionedAccounts(
       event.message.text,

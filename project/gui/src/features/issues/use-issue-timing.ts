@@ -12,7 +12,6 @@ import {
 import { apiFetch } from '#/lib/api-transport'
 import {
   issuesQueryKey,
-  upsertIssueInCache,
   useUpdateIssue,
   type UpdateIssueInput,
 } from './use-issues'
@@ -49,9 +48,7 @@ export function useIssueTiming() {
       const cached = issues?.find((issue) => issue.id === issueId)
       if (cached) return cached
       try {
-        const issue = await fetchIssue(issueId)
-        upsertIssueInCache(queryClient, issue)
-        return issue
+        return await fetchIssue(issueId)
       } catch {
         return undefined
       }

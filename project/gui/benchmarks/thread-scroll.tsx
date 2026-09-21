@@ -2,6 +2,7 @@
 // Run: NODE_ENV=development CHECK_SCROLL=1 bun run benchmarks/thread-scroll.tsx
 // Timers are replayed every five scroll updates (~80 ms at 60 Hz); CSS paint is not measured.
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import type { RoomMessage, RoomThread } from '../src/features/rooms/types'
 
 GlobalRegistrator.register({ width: 1440, height: 900 })
 let requests = 0
@@ -28,6 +29,8 @@ const { RoomThreadRail } =
   await import('../src/features/rooms/room-thread-rail')
 const { agentDefinitionsQueryKey } =
   await import('../src/features/agents/use-agent-definitions')
+const { roomThreadQueryKey } =
+  await import('../src/features/rooms/use-room-thread')
 const body =
   '## Update\n\nCompleted the **implementation** and checked `scrollTop`.\n\n- First check passed\n- Second check passed\n\n```ts\nconst ready = true\n```\n\n'.repeat(
     5,
@@ -38,7 +41,7 @@ function sample(count: number, results: boolean, thinking = false) {
     defaultOptions: { queries: { staleTime: Infinity, retry: false } },
   })
   client.setQueryData(agentDefinitionsQueryKey, [])
-  const message = (id: string) => ({
+  const message = (id: string): RoomMessage => ({
     id,
     roomId: 'bench',
     author: { id: 'ada', name: 'Ada' },
@@ -46,7 +49,7 @@ function sample(count: number, results: boolean, thinking = false) {
     createdAt: 1,
     attachments: [],
   })
-  client.setQueryData(['room-thread', 'bench', 'root'], {
+  client.setQueryData<RoomThread>(roomThreadQueryKey('bench', 'root'), {
     root: message('root'),
     replies: results
       ? []
@@ -64,7 +67,6 @@ function sample(count: number, results: boolean, thinking = false) {
   document.body.append(host)
   const root = createRoot(host)
   let commits = 0
-  let liveReplies: ReturnType<typeof message>[] = []
   const render = () =>
     flushSync(() =>
       root.render(
@@ -82,7 +84,6 @@ function sample(count: number, results: boolean, thinking = false) {
               roomId="bench"
               roomName="Benchmark"
               rootId="root"
-              liveReplies={liveReplies}
               mentionHandles={empty}
               mentionableAccounts={empty}
               sendReply={async () => undefined}
@@ -142,14 +143,29 @@ function sample(count: number, results: boolean, thinking = false) {
         button.textContent.includes('new reply'),
       )
     scroll(200)
-    liveReplies = [message('incoming-1')]
+    const incoming = [message('incoming-1')]
+    client.setQueryData<RoomThread>(
+      roomThreadQueryKey('bench', 'root'),
+      (current) => ({
+        root: current?.root ?? message('root'),
+        replies: incoming,
+        results: current?.results ?? [],
+      }),
+    )
     render()
     if (el.scrollTop !== 200 || !hasBanner())
       throw new Error('incoming reply must preserve position and show banner')
     scroll(3260)
     if (hasBanner() || Number(el.scrollTop) !== 3260)
       throw new Error('near-bottom scroll must clear banner without jumping')
-    liveReplies = [...liveReplies, message('incoming-2')]
+    client.setQueryData<RoomThread>(
+      roomThreadQueryKey('bench', 'root'),
+      (current) => ({
+        root: current?.root ?? message('root'),
+        replies: [...(current?.replies ?? []), message('incoming-2')],
+        results: current?.results ?? [],
+      }),
+    )
     render()
     if (el.scrollTop !== el.scrollHeight)
       throw new Error('new reply must follow when near bottom')

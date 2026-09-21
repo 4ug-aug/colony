@@ -1330,6 +1330,51 @@ test('getThread returns the complete root and chronological replies, excluded fr
   sqlite.close()
 })
 
+test('getRootWithReplySummary attaches the computed chip without loading the thread body', () => {
+  const sqlite = database()
+  const store = createSqliteRoomStore(sqlite)
+  store.createMessage({
+    id: 'root-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-1', name: 'Ada' },
+    text: 'Root question',
+    createdAt: 1,
+  })
+  store.createMessage({
+    id: 'reply-1',
+    roomId: GENERAL_ROOM_ID,
+    author: { kind: 'user', id: 'user-2', name: 'Bob' },
+    text: 'First reply',
+    createdAt: 2,
+    rootId: 'root-1',
+  })
+  store.createRun(
+    makeRun({
+      id: 'run-succeeded',
+      triggerMessageId: 'root-1',
+      state: 'succeeded',
+      completedAt: 5,
+      stdout: 'Fixed it.',
+    }),
+  )
+
+  const summarized = store.getRootWithReplySummary(GENERAL_ROOM_ID, 'root-1')
+  expect(summarized?.id).toBe('root-1')
+  expect(summarized?.replySummary).toEqual({
+    replyCount: 2,
+    participants: [
+      { id: 'software-engineer', name: 'software-engineer' },
+      { id: 'user-2', name: 'Bob' },
+    ],
+    latestReplyAt: 5,
+  })
+  expect(store.getMessage(GENERAL_ROOM_ID, 'root-1')?.replySummary).toBeUndefined()
+  expect(store.getRootWithReplySummary(GENERAL_ROOM_ID, 'missing')).toBeUndefined()
+  expect(store.getRootWithReplySummary(GENERAL_ROOM_ID, 'reply-1')).toBeUndefined()
+
+  sqlite.close()
+})
+
 test('getThread includes a succeeded run result as a chronological, non-message reply and excludes failed/cancelled runs and Run Activity', () => {
   const sqlite = database()
   const store = createSqliteRoomStore(sqlite)

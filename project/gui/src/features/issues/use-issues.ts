@@ -13,75 +13,15 @@ import type {
   IssueRun,
   IssueStatus,
 } from './types'
+import {
+  issueRunsQueryKey,
+  upsertIssueRunInCache,
+} from './use-issue-runs'
 
 export const issuesQueryKey = ['issues'] as const
 
-function upsertIssueRun(
-  queryClient: QueryClient,
-  run: IssueRun,
-) {
-  queryClient.setQueryData(
-    ['issue-runs', run.issueId],
-    (current: IssueRun[] | undefined) => {
-      const runs = current ?? []
-      const index = runs.findIndex(({ id }) => id === run.id)
-      if (index < 0)
-        return [run, ...runs].sort((a, b) => b.createdAt - a.createdAt)
-      return runs
-        .map((existing) => (existing.id === run.id ? run : existing))
-        .sort((a, b) => b.createdAt - a.createdAt)
-    },
-  )
-}
-
-function upsertIssue(issues: Issue[], issue: Issue): Issue[] {
-  const index = issues.findIndex(({ id }) => id === issue.id)
-  if (index < 0) return [...issues, issue].sort((a, b) => a.number - b.number)
-  return issues.map((current) => (current.id === issue.id ? issue : current))
-}
-
-/** Recompute parent childProgress from the live list (server field goes stale on upsert). */
-function withDerivedChildProgress(issues: Issue[]): Issue[] {
-  const totals = new Map<string, { done: number; total: number }>()
-  for (const issue of issues) {
-    if (!issue.parentId) continue
-    const current = totals.get(issue.parentId) ?? { done: 0, total: 0 }
-    current.total += 1
-    if (issue.status === 'done') current.done += 1
-    totals.set(issue.parentId, current)
-  }
-  return issues.map((issue) => {
-    const progress = totals.get(issue.id)
-    if (!progress) {
-      if (!issue.childProgress) return issue
-      const { childProgress: _removed, ...rest } = issue
-      return rest
-    }
-    return { ...issue, childProgress: progress }
-  })
-}
-
-export function upsertIssueInCache(queryClient: QueryClient, issue: Issue) {
-  queryClient.setQueryData(issuesQueryKey, (current: Issue[] | undefined) =>
-    withDerivedChildProgress(upsertIssue(current ?? [], issue)),
-  )
-}
-
-export function removeIssueFromCache(queryClient: QueryClient, issueId: string) {
-  queryClient.setQueryData(issuesQueryKey, (current: Issue[] | undefined) => {
-    if (!current) return current
-    return withDerivedChildProgress(
-      current
-        .filter((issue) => issue.id !== issueId)
-        .map((issue) => {
-          if (issue.parentId !== issueId) return issue
-          const { parentId: _removed, ...rest } = issue
-          return rest
-        }),
-    )
-  })
-  queryClient.removeQueries({ queryKey: ['issue', issueId] })
-  queryClient.removeQueries({ queryKey: ['issue-runs', issueId] })
+export function invalidateIssues(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: issuesQueryKey })
 }
 
 async function fetchIssues(): Promise<Issue[]> {
@@ -90,7 +30,7 @@ async function fetchIssues(): Promise<Issue[]> {
     undefined,
     'Unable to load issues',
   )
-  return withDerivedChildProgress(data.issues)
+  return data.issues
 }
 
 export function useIssues(options?: { enabled?: boolean }) {
@@ -101,38 +41,22 @@ export function useIssues(options?: { enabled?: boolean }) {
   })
 }
 
-async function fetchIssue(ref: string): Promise<Issue> {
-  const data = await apiJson<{ issue?: Issue }>(
-    `/api/issues/${encodeURIComponent(ref)}`,
-    undefined,
-    'Unable to load issue',
-  )
-  if (!data.issue) throw new Error('Unable to load issue')
-  return data.issue
-}
-
-/** Prefer list cache; fetch single issue only when missing. Accepts id or COL-N. */
+/** Select from the complete unpaginated list. Accepts id or COL-N. */
 export function useIssue(id: string | undefined) {
   const list = useIssues()
-  const cached = id
+  const issue = id
     ? list.data?.find(
-        (issue) =>
-          issue.id === id ||
-          formatIssueId(issue.number).toLowerCase() === id.toLowerCase(),
+        (candidate) =>
+          candidate.id === id ||
+          formatIssueId(candidate.number).toLowerCase() === id.toLowerCase(),
       )
     : undefined
 
-  const detail = useQuery({
-    queryKey: ['issue', id] as const,
-    queryFn: () => fetchIssue(id!),
-    enabled: Boolean(id) && !cached && !list.isPending,
-  })
-
   return {
-    issue: cached ?? detail.data,
-    isPending: Boolean(id) && !cached && (list.isPending || detail.isPending),
-    isError: !cached && detail.isError,
-    error: detail.error,
+    issue,
+    isPending: Boolean(id) && list.isPending,
+    isError: Boolean(id) && list.isError,
+    error: list.error,
   }
 }
 
@@ -187,9 +111,9 @@ export function useCreateIssue() {
       if (!data.issue) throw new Error('Unable to create issue')
       return { issue: data.issue, ...(data.run ? { run: data.run } : {}) }
     },
-    onSuccess: ({ issue, run }) => {
-      upsertIssueInCache(queryClient, issue)
-      if (run) upsertIssueRun(queryClient, run)
+    onSuccess: ({ run }) => {
+      invalidateIssues(queryClient)
+      if (run) upsertIssueRunInCache(queryClient, run)
     },
   })
 }
@@ -208,8 +132,8 @@ export function useUpdateIssue() {
       if (!data.issue) throw new Error('Unable to update issue')
       return data.issue
     },
-    onSuccess: (issue) => {
-      upsertIssueInCache(queryClient, issue)
+    onSuccess: () => {
+      invalidateIssues(queryClient)
     },
   })
 }
@@ -233,9 +157,9 @@ export function useAssignIssue() {
       if (!data.issue) throw new Error('Unable to assign issue')
       return { issue: data.issue, ...(data.run ? { run: data.run } : {}) }
     },
-    onSuccess: ({ issue, run }) => {
-      upsertIssueInCache(queryClient, issue)
-      if (run) upsertIssueRun(queryClient, run)
+    onSuccess: ({ run }) => {
+      invalidateIssues(queryClient)
+      if (run) upsertIssueRunInCache(queryClient, run)
     },
   })
 }
@@ -244,10 +168,16 @@ export function useDeleteIssue() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (id: string): Promise<void> => {
-      await apiJsonBody(`/api/issues/${id}`, 'DELETE', undefined, 'Unable to delete issue')
+      await apiJsonBody(
+        `/api/issues/${id}`,
+        'DELETE',
+        undefined,
+        'Unable to delete issue',
+      )
     },
     onSuccess: (_data, id) => {
-      removeIssueFromCache(queryClient, id)
+      invalidateIssues(queryClient)
+      queryClient.removeQueries({ queryKey: issueRunsQueryKey(id) })
     },
   })
 }
