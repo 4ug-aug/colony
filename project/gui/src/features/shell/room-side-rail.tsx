@@ -7,29 +7,29 @@ import {
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { cn } from '#/lib/utils'
 import type { ReactNode } from 'react'
+import { useDashboardStore } from './dashboard-store'
 
 export function RoomSideRail({
   label,
   description,
   className,
   sheetClassName,
-  onClose,
   children,
 }: {
   label: string
   description: string
   className?: string
   sheetClassName?: string
-  onClose: () => void
   children: ReactNode
 }) {
   const inline = useMediaQuery('(min-width: 1024px)')
+  const closeSideSurface = useDashboardStore.getState().closeSideSurface
 
   if (inline)
     return (
       <aside
         className={cn(
-          'flex h-full min-h-0 w-[26rem] shrink-0 flex-col border-l',
+          'flex h-full min-h-0 w-[32rem] shrink-0 flex-col border-l',
           className,
         )}
         aria-label={label}
@@ -42,7 +42,7 @@ export function RoomSideRail({
     <Sheet
       open
       onOpenChange={(open) => {
-        if (!open) onClose()
+        if (!open) closeSideSurface()
       }}
     >
       <SheetContent

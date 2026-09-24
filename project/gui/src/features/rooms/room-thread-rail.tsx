@@ -5,17 +5,14 @@ import {
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
 import { RunCapsule } from '#/features/runs/run-capsule'
+import { useDashboardStore } from '#/features/shell/dashboard-store'
 import { RoomSideRail } from '#/features/shell/room-side-rail'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { ArrowDown, X } from 'lucide-react'
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MessageComposer } from './message-composer'
 import { RoomMessageRow } from './room-message-row'
-import {
-  clearThreadDraft,
-  setThreadDraft,
-  threadDraft,
-} from './thread-drafts'
+import { clearThreadDraft, setThreadDraft, threadDraft } from './thread-drafts'
 import { groupRunsByTrigger, runsForThread } from './thread-helpers'
 import {
   acknowledgeNewReplies,
@@ -123,7 +120,6 @@ export type RoomThreadRailProps = {
   mentionHandles: string[]
   mentionableAccounts: MentionableAccount[]
   currentUserId?: string
-  onClose?: () => void
   sendReply: (
     rootId: string,
     text: string,
@@ -147,7 +143,6 @@ function RoomThreadRailContent({
   mentionHandles,
   mentionableAccounts,
   currentUserId,
-  onClose,
   sendReply,
   editMessage,
   focusReplyId,
@@ -168,6 +163,7 @@ function RoomThreadRailContent({
   )
   const { data: agents = [] } = useAgentDefinitions()
   const coarsePointer = useMediaQuery('(pointer: coarse)')
+  const closeSideSurface = useDashboardStore.getState().closeSideSurface
   const [editingReply, setEditingReply] = useState<RoomMessage>()
   const threadRuns = useMemo(
     () => groupRunsByTrigger(runsForThread(runs, root, replies)),
@@ -247,18 +243,16 @@ function RoomThreadRailContent({
         <p className="text-xs text-muted-foreground">
           {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
         </p>
-        {onClose && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="ml-auto"
-            aria-label="Close thread"
-            onClick={onClose}
-          >
-            <X />
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="ml-auto"
+          aria-label="Close thread"
+          onClick={closeSideSurface}
+        >
+          <X />
+        </Button>
       </div>
       <div className="relative min-h-0 flex-1">
         <div
@@ -365,19 +359,15 @@ function RoomThreadRailContent({
   )
 }
 
-export function RoomThreadRail({
-  onClose,
-  ...contentProps
-}: RoomThreadRailProps) {
+export function RoomThreadRail(props: RoomThreadRailProps) {
   return (
     <RoomSideRail
       label="Thread"
       description="Thread root, replies, and composer"
       className="bg-[var(--room-conversation)]"
       sheetClassName="room-surface"
-      onClose={() => onClose?.()}
     >
-      <RoomThreadRailContent onClose={onClose} {...contentProps} />
+      <RoomThreadRailContent {...props} />
     </RoomSideRail>
   )
 }

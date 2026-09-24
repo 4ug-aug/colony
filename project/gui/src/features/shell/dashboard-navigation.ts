@@ -95,57 +95,6 @@ export function readDashboardLocation(
   }
 }
 
-/** Opens (or switches to) a thread rooted at `rootId` in the same surface. */
-export function openThreadSurface(
-  location: DashboardLocation,
-  rootId: string,
-  focusReplyId?: string,
-): DashboardLocation {
-  return {
-    ...location,
-    surface: {
-      kind: 'thread',
-      rootId,
-      ...(focusReplyId ? { focusReplyId } : {}),
-    },
-  }
-}
-
-/**
- * Opens Run Activity in the same surface, replacing any open thread. If a
- * thread was open, its root is remembered so `closeSurface` can restore it.
- */
-export function openActivitySurface(
-  location: DashboardLocation,
-  runId: string,
-): DashboardLocation {
-  const fromRootId =
-    location.surface?.kind === 'thread' ? location.surface.rootId : undefined
-  return {
-    ...location,
-    surface: {
-      kind: 'activity',
-      runId,
-      ...(fromRootId ? { fromRootId } : {}),
-    },
-  }
-}
-
-/**
- * Closes the current side surface. Closing a Run Activity that replaced a
- * thread restores that thread instead of leaving the surface empty.
- */
-export function closeSurface(location: DashboardLocation): DashboardLocation {
-  const surface = location.surface
-  if (surface?.kind === 'activity' && surface.fromRootId)
-    return {
-      ...location,
-      surface: { kind: 'thread', rootId: surface.fromRootId },
-    }
-  const { surface: _current, ...rest } = location
-  return rest
-}
-
 export function writeDashboardLocation(
   accountId: string,
   location: DashboardLocation,

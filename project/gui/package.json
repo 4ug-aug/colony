@@ -64,7 +64,8 @@
     "simple-icons": "16.28.0",
     "tailwind-merge": "^3.0.2",
     "tailwindcss": "^4.1.18",
-    "tw-animate-css": "^1.3.6"
+    "tw-animate-css": "^1.3.6",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.6",

@@ -3,7 +3,7 @@ import { Markdown } from '#/components/markdown'
 import { Button } from '#/components/ui/button'
 import { MessageActionToolbar } from './message-action-toolbar'
 import { AttachmentView } from './attachment-view'
-import { timestamp } from './format'
+import { clockTime } from './format'
 import type { Author, RoomAttachment } from './types'
 import { memo, useState } from 'react'
 import type { AnimationEvent, ReactNode } from 'react'
@@ -87,6 +87,7 @@ export const RoomMessageRow = memo(function RoomMessageRow({
   metadata?: ReactNode
 }) {
   const [actionsOpen, setActionsOpen] = useState(false)
+  const postedAt = clockTime(createdAt)
   return (
     <article
       className={`room-message ${grouped ? 'room-message--grouped' : ''}${
@@ -104,52 +105,62 @@ export const RoomMessageRow = memo(function RoomMessageRow({
       }
     >
       {grouped ? (
-        <div className="room-message-gutter" aria-hidden="true" />
+        <div className="room-message-gutter">
+          <time
+            className="room-message-gutter-time"
+            dateTime={new Date(createdAt).toISOString()}
+          >
+            {postedAt}
+          </time>
+        </div>
       ) : (
         <Avatar
           author={author}
           agent={isAgent}
-          className="room-message-avatar mt-0 size-8 text-xs"
+          className="room-message-avatar mt-0 size-9 rounded-lg text-xs"
         />
       )}
       <div className="room-message-main">
         {!grouped && (
           <div className="room-message-author">
             <span className="room-message-name">{authorName}</span>
-            <time className="room-message-time">{timestamp(createdAt)}</time>
+            <time
+              className="room-message-time"
+              dateTime={new Date(createdAt).toISOString()}
+            >
+              {postedAt}
+            </time>
             {edited && <span className="room-message-edited">Edited</span>}
           </div>
         )}
-        {grouped && edited && (
-          <span className="room-message-edited">Edited</span>
-        )}
-        <div className="room-message-stack">
-          <div className="room-message-bubble">
-            <div className="room-message-body">
-              {isAgent && clampAgentBody ? (
-                <AgentMessageBody text={text} mentions={mentionHandles} />
-              ) : (
-                <Markdown mentions={mentionHandles}>{text}</Markdown>
-              )}
-            </div>
-            {attachments.length > 0 && (
-              <div className="mt-2 flex flex-wrap items-start gap-2">
-                {attachments.map((attachment) => (
-                  <AttachmentView attachment={attachment} key={attachment.id} />
-                ))}
-              </div>
+        <div className="room-message-bubble">
+          <div className="room-message-body">
+            {isAgent && clampAgentBody ? (
+              <AgentMessageBody text={text} mentions={mentionHandles} />
+            ) : (
+              <Markdown mentions={mentionHandles}>{text}</Markdown>
             )}
-            {metadata && <div className="room-message-meta">{metadata}</div>}
+            {grouped && edited && (
+              <span className="room-message-edited">Edited</span>
+            )}
           </div>
-          <MessageActionToolbar
-            text={text}
-            coarsePointer={coarsePointer}
-            onReply={onReply}
-            onEdit={onEdit}
-            onOpenChange={setActionsOpen}
-          />
+          {attachments.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-start gap-2">
+              {attachments.map((attachment) => (
+                <AttachmentView attachment={attachment} key={attachment.id} />
+              ))}
+            </div>
+          )}
+          {metadata && <div className="room-message-meta">{metadata}</div>}
         </div>
       </div>
+      <MessageActionToolbar
+        text={text}
+        coarsePointer={coarsePointer}
+        onReply={onReply}
+        onEdit={onEdit}
+        onOpenChange={setActionsOpen}
+      />
     </article>
   )
 })

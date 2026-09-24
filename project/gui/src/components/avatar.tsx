@@ -30,7 +30,7 @@ export function AccountFace({
   if (image)
     return (
       <img
-        className={`shrink-0 rounded-full object-cover ${className}`}
+        className={cn('shrink-0 rounded-full object-cover', className)}
         src={image}
         alt=""
         title={title}
@@ -38,7 +38,10 @@ export function AccountFace({
     )
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full font-semibold ${className}`}
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-full font-semibold',
+        className,
+      )}
       style={accountFaceStyle(name, color)}
       aria-hidden="true"
       title={title}

@@ -85,7 +85,11 @@ function EntryFlow({ needsServer }: { needsServer: boolean }) {
       {authReady && <App onSession={onSession} />}
       {phase === 'dashboard' && user ? (
         <Suspense fallback={null}>
-          <Dashboard user={user} onChangeServer={onChangeServer} />
+          <Dashboard
+            key={user.id}
+            user={user}
+            onChangeServer={onChangeServer}
+          />
         </Suspense>
       ) : (
         <EntryShell

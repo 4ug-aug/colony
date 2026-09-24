@@ -16,7 +16,7 @@ import { RunActivityRail } from '#/features/runs/run-activity-rail'
 import { ArrowDown } from 'lucide-react'
 import type { RefObject } from 'react'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { DashboardSideSurface } from './dashboard-navigation'
+import { useDashboardStore } from './dashboard-store'
 
 const bottomScrollThreshold = 150
 const historyTopThreshold = 80
@@ -41,12 +41,6 @@ export function RoomView({
   focusMessageId,
   clearFocusMessage,
   composer,
-  surface,
-  openThread,
-  openActivity,
-  closeSideSurface,
-  clearThreadFocus,
-  pendingThreadFocusRef,
   openMachine,
 }: {
   user: Author
@@ -72,16 +66,14 @@ export function RoomView({
   focusMessageId: string | undefined
   clearFocusMessage: () => void
   composer: RefObject<MessageComposerHandle | null>
-  surface: DashboardSideSurface | undefined
-  openThread: (rootId: string, threadFocusReplyId?: string) => void
-  openActivity: (runId: string) => void
-  closeSideSurface: () => void
-  clearThreadFocus: () => void
-  pendingThreadFocusRef: RefObject<
-    { rootId: string; focusReplyId: string } | undefined
-  >
   openMachine?: (sandboxId: string) => void
 }) {
+  const surface = useDashboardStore((state) => state.location.surface)
+  const pendingThreadFocus = useDashboardStore(
+    (state) => state.pendingThreadFocus,
+  )
+  const { openThread, openActivity, closeSideSurface, clearThreadFocus } =
+    useDashboardStore.getState()
   // Markdown is memo()'d, so this has to keep its identity between renders or
   // every message re-parses on every commit.
   const mentionHandles = useMemo(
@@ -145,11 +137,11 @@ export function RoomView({
   }, [room?.id])
 
   useLayoutEffect(() => {
-    const pending = pendingThreadFocusRef.current
-    if (!pending || focusMessageId !== pending.rootId) return
-    pendingThreadFocusRef.current = undefined
-    openThread(pending.rootId, pending.focusReplyId)
-  }, [focusMessageId])
+    if (!pendingThreadFocus || focusMessageId !== pendingThreadFocus.rootId)
+      return
+    useDashboardStore.setState({ pendingThreadFocus: undefined })
+    openThread(pendingThreadFocus.rootId, pendingThreadFocus.focusReplyId)
+  }, [focusMessageId, pendingThreadFocus, openThread])
 
   useLayoutEffect(() => {
     if (!focusMessageId || loading) return
@@ -290,7 +282,6 @@ export function RoomView({
           key={activeRun.id}
           run={activeRun}
           triggerMessage={activityTriggerMessage}
-          onClose={closeSideSurface}
           onCancel={() => void cancel(activeRun.id)}
           onOpenMachine={openMachine}
         />
@@ -306,7 +297,6 @@ export function RoomView({
           mentionHandles={mentionHandles}
           mentionableAccounts={mentionableAccounts}
           currentUserId={user.id}
-          onClose={closeSideSurface}
           sendReply={sendReply}
           editMessage={edit}
           focusReplyId={

@@ -6,32 +6,17 @@ import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageSearchCommand } from '#/features/rooms/message-search-command'
 import { navigationForSearchHit } from '#/features/rooms/message-search-navigation'
 import type { Author } from '#/features/rooms/types'
-import { activityLocation } from '#/features/runs/colony-activity-state'
-import type { WorkspaceActivityRun } from '#/server/features/runs/workspace-activity'
 import { useRooms } from '#/features/rooms/use-rooms'
 import { MachineSessionHeader } from '#/features/vms/components/machine-session'
 import { useStoredBoolean } from '#/hooks/use-stored-boolean'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { cn } from '#/lib/utils'
-import {
-  Box,
-  CalendarClock,
-  Hash,
-  Lock,
-  Wifi,
-  WifiOff,
-} from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import type { DashboardLocation, DashboardView } from './dashboard-navigation'
-import {
-  closeSurface,
-  historyDirection,
-  openActivitySurface,
-  openThreadSurface,
-  readDashboardLocation,
-  writeDashboardLocation,
-} from './dashboard-navigation'
+import { Box, CalendarClock, Hash, Lock, Wifi, WifiOff } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { DashboardView } from './dashboard-navigation'
+import { historyDirection } from './dashboard-navigation'
 import { DashboardPages } from './dashboard-pages'
+import { useDashboardStore } from './dashboard-store'
 import { RoomSidebar } from './room-sidebar'
 import { RoomView } from './room-view'
 import { WindowToolbar, titleBarVars } from './window-toolbar'
@@ -44,14 +29,11 @@ export function Dashboard({
   onChangeServer: () => void
 }) {
   const [sidebarOpen, setSidebarOpen] = useStoredBoolean('sidebar.open', true)
-  const [location, setLocation] = useState<DashboardLocation>(() => {
-    const pathIssue = window.location.pathname.match(/^\/issues\/([^/]+)$/)
-    if (pathIssue)
-      return { view: 'issues', id: decodeURIComponent(pathIssue[1]!) }
-    return (
-      readDashboardLocation(window.history.state, user.id) ?? { view: 'room' }
-    )
-  })
+  const accountId = useDashboardStore((state) => state.accountId)
+  const location = useDashboardStore((state) => state.location)
+  const ready = accountId === user.id
+  const { navigate, openWorkspaceActivity, applyFromHistory, bootstrap } =
+    useDashboardStore.getState()
   const view = location.view
   const {
     rooms,
@@ -81,7 +63,7 @@ export function Dashboard({
     notificationByRoom,
     threadAttentionRootIds,
     clearThreadAttention,
-  } = useRooms(user.id, view === 'room')
+  } = useRooms(user.id, ready && view === 'room')
   const selectedIssueId = view === 'issues' ? location.id : undefined
   const selectedMachineId = view === 'vms' ? location.id : undefined
   const selectedChatId = view === 'chat' ? location.id : undefined
@@ -90,70 +72,6 @@ export function Dashboard({
     location.surface?.kind === 'activity' ? location.surface.runId : undefined
   const selectRef = useRef(select)
   selectRef.current = select
-
-  const applyLocation = (next: DashboardLocation) => {
-    setLocation(next)
-    if (next.view === 'room' && next.id) select(next.id)
-  }
-  const navigate = (next: DashboardLocation) => {
-    if (next.view === location.view && next.id === location.id) return
-    writeDashboardLocation(user.id, next)
-    applyLocation(next)
-  }
-  const openThread = (rootId: string, threadFocusReplyId?: string) => {
-    clearThreadAttention(rootId)
-    if (
-      location.surface?.kind === 'thread' &&
-      location.surface.rootId === rootId &&
-      location.surface.focusReplyId === threadFocusReplyId
-    )
-      return
-    const next = openThreadSurface(location, rootId, threadFocusReplyId)
-    writeDashboardLocation(user.id, next)
-    applyLocation(next)
-  }
-  const openWorkspaceActivity = (run: WorkspaceActivityRun) => {
-    const target = activityLocation(run)
-    const next: DashboardLocation = {
-      view: target.view,
-      id: target.id,
-      surface: { kind: 'activity', runId: target.runId },
-    }
-    if (
-      location.view === next.view &&
-      location.id === next.id &&
-      location.surface?.kind === 'activity' &&
-      location.surface.runId === target.runId
-    )
-      return
-    writeDashboardLocation(user.id, next)
-    applyLocation(next)
-  }
-  const openActivity = (runId: string) => {
-    if (
-      location.surface?.kind === 'activity' &&
-      location.surface.runId === runId
-    )
-      return
-    const next = openActivitySurface(location, runId)
-    writeDashboardLocation(user.id, next)
-    applyLocation(next)
-  }
-  const closeSideSurface = () => {
-    const next = closeSurface(location)
-    writeDashboardLocation(user.id, next)
-    applyLocation(next)
-  }
-  const clearThreadFocus = () => {
-    if (location.surface?.kind !== 'thread' || !location.surface.focusReplyId)
-      return
-    const next: DashboardLocation = {
-      ...location,
-      surface: { kind: 'thread', rootId: location.surface.rootId },
-    }
-    writeDashboardLocation(user.id, next, true)
-    applyLocation(next)
-  }
   const [issueCreate, setIssueCreate] = useState<{
     open: boolean
     status?: IssueStatus
@@ -170,23 +88,44 @@ export function Dashboard({
       : undefined
   const [searchOpen, setSearchOpen] = useState(false)
   const [oneshotOpen, setOneshotOpen] = useState(false)
-  const pendingThreadFocusRef = useRef<
-    { rootId: string; focusReplyId: string } | undefined
-  >(undefined)
   const composer = useRef<MessageComposerHandle>(null)
 
+  useLayoutEffect(() => {
+    bootstrap(user.id)
+    return () =>
+      useDashboardStore.setState(useDashboardStore.getInitialState(), true)
+  }, [bootstrap, user.id])
+
   useEffect(() => {
-    writeDashboardLocation(user.id, location, true)
-    if (location.view === 'room' && location.id) selectRef.current(location.id)
-    const onPopState = (event: PopStateEvent) => {
-      const next = readDashboardLocation(event.state, user.id)
-      if (!next) return
-      setLocation(next)
-      if (next.view === 'room' && next.id) selectRef.current(next.id)
-    }
+    if (ready && location.view === 'room' && location.id)
+      selectRef.current(location.id)
+  }, [ready, location.view, location.id])
+
+  useEffect(() => {
+    const surface = location.surface
+    if (
+      ready &&
+      view === 'room' &&
+      (!location.id || location.id === room?.id) &&
+      surface?.kind === 'thread' &&
+      threadAttentionRootIds.includes(surface.rootId)
+    )
+      clearThreadAttention(surface.rootId)
+  }, [
+    ready,
+    view,
+    location.id,
+    location.surface,
+    room?.id,
+    threadAttentionRootIds,
+    clearThreadAttention,
+  ])
+
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => applyFromHistory(event.state)
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [user.id])
+  }, [applyFromHistory])
 
   useWindowKeydown((event) => {
     const direction = historyDirection(event)
@@ -195,6 +134,8 @@ export function Dashboard({
     if (direction < 0) window.history.back()
     else window.history.forward()
   })
+
+  if (!ready) return null
 
   return (
     <SidebarProvider
@@ -216,12 +157,15 @@ export function Dashboard({
           const target = navigationForSearchHit(hit)
           navigate({ view: 'room', id: target.roomId })
           if (target.kind === 'thread') {
-            pendingThreadFocusRef.current = {
-              rootId: target.rootId,
-              focusReplyId: target.focusReplyId,
-            }
+            useDashboardStore.setState({
+              pendingThreadFocus: {
+                rootId: target.rootId,
+                focusReplyId: target.focusReplyId,
+              },
+            })
             openMessage(target.roomId, target.rootId)
           } else {
+            useDashboardStore.setState({ pendingThreadFocus: undefined })
             openMessage(target.roomId, target.messageId)
           }
         }}
@@ -299,9 +243,7 @@ export function Dashboard({
                     <Hash className="size-4 text-muted-foreground" />
                   )}
                   <p
-                    className={
-                      view === 'room' ? 'room-title' : 'font-semibold'
-                    }
+                    className={view === 'room' ? 'room-title' : 'font-semibold'}
                   >
                     {view === 'schedules'
                       ? 'Schedules'
@@ -351,12 +293,6 @@ export function Dashboard({
             focusMessageId={focusMessageId}
             clearFocusMessage={clearFocusMessage}
             composer={composer}
-            surface={location.surface}
-            openThread={openThread}
-            openActivity={openActivity}
-            closeSideSurface={closeSideSurface}
-            clearThreadFocus={clearThreadFocus}
-            pendingThreadFocusRef={pendingThreadFocusRef}
             openMachine={openMachine}
           />
         ) : (

@@ -5,8 +5,11 @@ import { ProviderIcon } from '#/components/provider-icon'
 import { useTheme } from '#/components/theme-provider'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
-import { llmProviderName, type RuntimeProvider } from '#/lib/llm-provider'
-import { terminal, type RunState } from './run-helpers'
+import { useDashboardStore } from '#/features/shell/dashboard-store'
+import { llmProviderName } from '#/lib/llm-provider'
+import type { RuntimeProvider } from '#/lib/llm-provider'
+import { terminal } from './run-helpers'
+import type { RunState } from './run-helpers'
 
 function DitherTile({
   active,
@@ -59,7 +62,7 @@ export function RunActivitySplitHeader({
   state,
   status,
   skills = [],
-  onClose,
+  showClose = false,
   onCancel,
   onOpenMachine,
 }: {
@@ -70,10 +73,11 @@ export function RunActivitySplitHeader({
   state: RunState
   status: string
   skills?: readonly { name: string; description: string }[]
-  onClose?: () => void
+  showClose?: boolean
   onCancel: () => void
   onOpenMachine?: () => void
 }) {
+  const closeSideSurface = useDashboardStore.getState().closeSideSurface
   return (
     <header className="shrink-0 border-b p-3">
       <div className="flex min-h-24 overflow-hidden rounded-xl border bg-background shadow-sm">
@@ -112,13 +116,13 @@ export function RunActivitySplitHeader({
               Cancel
             </Button>
           )}
-          {onClose ? (
+          {showClose ? (
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
               aria-label="Close run activity"
-              onClick={onClose}
+              onClick={closeSideSurface}
             >
               <X />
             </Button>

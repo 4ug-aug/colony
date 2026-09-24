@@ -11,6 +11,15 @@ const messageDateFormat = new Intl.DateTimeFormat(undefined, {
   month: 'long',
 })
 
+const messageClockFormat = new Intl.DateTimeFormat(undefined, {
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
 export function timestamp(value: number) {
   return messageDateFormat.format(value)
+}
+
+export function clockTime(value: number) {
+  return messageClockFormat.format(value)
 }

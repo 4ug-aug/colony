@@ -660,6 +660,28 @@ tool credential from shell subprocesses. Consequential writes require no
 per-call operator approval once the platform has issued the run's narrow
 grant. Agents without GitHub access have no runtime shell.
 
+## Classifier-assisted retrieval direction (not yet implemented)
+
+An agent should be able to select relevant items from a collection without
+loading the full collection into its reasoning context. It supplies selection
+criteria; retrieval and classification happen outside that context, returning
+compact candidates that the agent can inspect individually.
+
+The initial workflow selects candidates for inspection, not automatic bulk
+changes: the agent reads an item's source content before deciding to change
+it through its existing tools. Colony's own Issues are the first test source;
+Asana tasks should follow, with Linear issues a potential source when that
+integration is added. Collection scope remains an open decision.
+
+Results initially contain a bounded page of likely matches and counts of
+likely and uncertain candidates. The agent can request further pages and
+inspect uncertain candidates separately; uncertainty does not silently remove
+an item from review.
+
+> **Agent:** "Find tickets that suggest customers are blocked during onboarding."
+> **Tool:** "Here are candidate tickets to inspect."
+> **Agent:** "Read this candidate before I decide whether to update it."
+
 ## Flagged ambiguities
 
 - "inbox" was used to mean a new agent-writable mailbox — resolved: **Inbox**

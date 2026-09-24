@@ -59,10 +59,10 @@ export function RunActivityContent({
   loading,
   error,
   onRetry,
-  onClose,
   onCancel,
   onOpenMachine,
   attribution,
+  showClose = false,
 }: {
   run: ActivityRun
   triggerMessage?: TriggerMessage
@@ -70,10 +70,10 @@ export function RunActivityContent({
   loading: boolean
   error?: string
   onRetry: () => void
-  onClose?: () => void
   onCancel: () => void
   onOpenMachine?: (sandboxId: string) => void
   attribution?: string
+  showClose?: boolean
 }) {
   const { data: agents = [] } = useAgentDefinitions()
   const agentDefinition = agents.find((entry) => entry.id === run.agentId)
@@ -116,7 +116,7 @@ export function RunActivityContent({
         state={run.state}
         status={status}
         skills={skills}
-        onClose={onClose}
+        showClose={showClose}
         onCancel={onCancel}
         onOpenMachine={
           onOpenMachine && sandboxId
@@ -253,13 +253,11 @@ export function RunActivityContent({
 export function RunActivityRail({
   run,
   triggerMessage,
-  onClose,
   onCancel,
   onOpenMachine,
 }: {
   run: ActivityRun
   triggerMessage?: TriggerMessage
-  onClose: () => void
   onCancel: () => void
   onOpenMachine?: (sandboxId: string) => void
 }) {
@@ -309,7 +307,7 @@ export function RunActivityRail({
       loading={loading}
       error={error}
       onRetry={() => setReload((value) => value + 1)}
-      onClose={onClose}
+      showClose
       onCancel={onCancel}
       onOpenMachine={onOpenMachine}
       attribution={run.attribution}
@@ -321,7 +319,6 @@ export function RunActivityRail({
       label="Run activity"
       description="Agent assignment, execution activity, and result"
       className="bg-background"
-      onClose={onClose}
     >
       {content}
     </RoomSideRail>
