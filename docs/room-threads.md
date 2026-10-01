@@ -57,9 +57,10 @@ is a view over Room content, not a separate container or mini-Room.
 ## Rail behavior
 
 - Only one thread is open at once.
-- Wide windows use a fixed-width right rail; narrow windows use a full-height
-  sheet. This matches Run Activity behavior without requiring identical visual
-  design.
+- Wide windows use a right rail resizable from its left edge (drag, or focus
+  the edge and use the arrow keys); the width is shared with Run Activity and
+  remembered. Narrow windows use a full-height sheet. This matches Run
+  Activity behavior without requiring identical visual design.
 - Opening, closing, or switching rails happens immediately, without animations.
 - Opening Run Activity replaces the thread in the same surface. Back returns
   to the thread; the two rails never stack.
