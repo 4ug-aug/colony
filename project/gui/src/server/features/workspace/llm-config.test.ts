@@ -75,3 +75,21 @@ test('OpenAI supplies its default base URL when the form leaves it blank', () =>
     else process.env.BETTER_AUTH_SECRET = previous
   }
 })
+
+test('stores an optional context window and rejects implausible ones', () => {
+  const previous = process.env.BETTER_AUTH_SECRET
+  process.env.BETTER_AUTH_SECRET = 'test-secret'
+  try {
+    const { config } = createConfig()
+    const base = { provider: 'custom', baseUrl: 'http://localhost:8000/v1', model: 'qwen', apiKey: 'k' }
+    expect(config.save({ ...base, contextTokens: '32768' })).toMatchObject({ contextTokens: 32768 })
+    expect(config.model().contextTokens).toBe(32768)
+    expect(() => config.save({ ...base, contextTokens: '12.5' })).toThrow('Context window')
+    expect(() => config.save({ ...base, contextTokens: 100 })).toThrow('Context window')
+    expect(config.save({ ...base, contextTokens: '' })).not.toHaveProperty('contextTokens')
+    expect(config.model()).not.toHaveProperty('contextTokens')
+  } finally {
+    if (previous === undefined) delete process.env.BETTER_AUTH_SECRET
+    else process.env.BETTER_AUTH_SECRET = previous
+  }
+})

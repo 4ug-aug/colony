@@ -1,4 +1,5 @@
 import {
+    type AgentInputItem,
     MemorySession,
     OpenAIChatCompletionsModel,
     OpenAIResponsesModel,
@@ -760,6 +761,50 @@ test("a reloaded MemorySession prepends the first user task on the next runAgent
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("runAgent compacts an oversized session before calling the model", async () => {
+  const inputs: unknown[] = [];
+  const client = new OpenAI({
+    apiKey: "test-key",
+    baseURL: "https://models.example/v1",
+    fetch: async (_url, init) => {
+      inputs.push(JSON.parse(String(init?.body ?? "{}")).input);
+      return responsesStream("resp-1", "done");
+    },
+  });
+  const session = new MemorySession({
+    initialItems: [
+      { role: "user", content: "Refactor the parser." },
+      ...Array.from({ length: 30 }, (_, index) => [
+        { type: "function_call", callId: `c${index}`, name: "exec_command", arguments: "{}" },
+        { type: "function_call_result", callId: `c${index}`, name: "exec_command", status: "completed", output: "x".repeat(2_000) },
+      ]).flat(),
+    ] as AgentInputItem[],
+  });
+  const steps: Step[] = [];
+
+  await runAgent(
+    {
+      task: "Now add tests.",
+      instructions: "Be brief.",
+      agentId: "antboy",
+      model: { baseUrl: "https://models.example/v1", apiKey: "test-key", model: "test-model", contextTokens: 8_000 },
+    },
+    {
+      modelProvider: { getModel: () => new CompatibleResponsesModel(client, "test-model") },
+      session,
+      summarize: async () => "Parser refactor is half done.",
+      onStep: (step) => steps.push(step),
+    },
+  );
+
+  const sent = JSON.stringify(inputs[0]);
+  expect(sent).toContain("Parser refactor is half done.");
+  expect(sent).toContain("Now add tests.");
+  expect(sent.length / 4).toBeLessThan(8_000);
+  expect(JSON.stringify(await session.getItems())).toContain("Parser refactor is half done.");
+  expect(steps.find((step) => step.tool === "compact_context" && step.kind === "tool_result")?.text).toContain("Summarized context");
 });
 
 test("openaiSandboxCapabilities keeps filesystem when shell is denied", () => {

@@ -48,6 +48,7 @@ try {
           baseUrl: required("SWEAT_MODEL_BASE_URL"),
           apiKey,
           model: required("SWEAT_MODEL_NAME"),
+          contextTokens: Number(Bun.env.SWEAT_MODEL_CONTEXT_TOKENS) || undefined,
         },
         capabilitySession: mcpUrl && mcpToken
           ? {

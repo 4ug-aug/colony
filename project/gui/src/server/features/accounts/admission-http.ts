@@ -343,6 +343,7 @@ export function createAdmissionHttpHandler(
               provider: body?.provider,
               baseUrl: typeof body?.baseUrl === 'string' ? body.baseUrl : '',
               model: typeof body?.model === 'string' ? body.model : '',
+              contextTokens: body?.contextTokens,
               ...(typeof body?.apiKey === 'string'
                 ? { apiKey: body.apiKey }
                 : {}),

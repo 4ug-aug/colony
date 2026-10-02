@@ -37,6 +37,9 @@ export function createOpenAIAgentsRuntime(options: {
         SWEAT_MODEL_BASE_URL: guestModelBaseUrl(model.baseUrl, sandbox.hostGateway),
         SWEAT_MODEL_API_KEY: model.apiKey,
         SWEAT_MODEL_NAME: model.model,
+        ...(model.contextTokens
+          ? { SWEAT_MODEL_CONTEXT_TOKENS: String(model.contextTokens) }
+          : {}),
         SWEAT_SKILLS_ROOT: "/work/.agents/skills",
         ...capabilitySessionEnv(request),
         ...(request.definition.githubAccess
