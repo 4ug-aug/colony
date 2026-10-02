@@ -30,8 +30,6 @@ import {
   type WorkspaceAgentsPort,
 } from "../mcp/workspace-agents";
 import { createWebSearchMcpUpstream } from "../mcp/web-search";
-import { commandFailure } from "../sandboxes";
-import { STEP_TEXT_LIMIT } from "../runtime/step";
 import { rosterParticipant } from "./roster-meta";
 
 export function createWorkspaceSoftwareEngineerAdapter(options: {
@@ -197,7 +195,6 @@ export function createGitHubSoftwareEngineerAdapter(options: {
   octokit: Octokit;
   repository: string;
   base: string;
-  verifyCommand?: string;
   /** After a successful Issue-linked publish, bind the PR head branch on the Issue. */
   bindIssueBranch?: (issueId: string, branch: string) => void;
 }): WorkspaceAgentAdapter {
@@ -214,67 +211,48 @@ export function createGitHubSoftwareEngineerAdapter(options: {
         fallbackRevision: options.base,
       }),
     },
-    ...(options.verifyCommand
-      ? {
-          capability: {
-            id: "github.pull-requests",
-            resources: [{ provider: "github", repository: options.repository }],
-            createUpstream: ({ workspace, sandbox, grantContext }) => {
-              if (workspace?.git?.repository !== options.repository) {
-                throw new Error(
-                  "GitHub capability and prepared repository must match",
-                );
-              }
-              if (!sandbox) {
-                throw new Error(
-                  "A sandbox is required to verify a pull request",
-                );
-              }
-              const base = grantContext?.repositoryBase ?? options.base;
-              const branch = workspace.git.branch;
-              const issueId = grantContext?.issueId;
-              const upstream = createGitHubMcpUpstream({
-                octokit: options.octokit,
-                repository: options.repository,
-                workspace: workspace.path,
-                branch,
-                baseCommit: workspace.git.baseCommit,
-                base,
-                verify: async () => {
-                  const result = await sandbox.exec({
-                    command: ["sh", "-lc", options.verifyCommand!],
-                    workdir: "/work",
-                  });
-                  if (result.exitCode === 0) return;
-                  throw new Error(
-                    commandFailure("Verification", result, STEP_TEXT_LIMIT),
-                  );
-                },
-              });
-              if (!options.bindIssueBranch || !issueId) return upstream;
-              return {
-                listTools: () => upstream.listTools(),
-                async callTool(name, args) {
-                  const result = await upstream.callTool(name, args);
-                  if (name === "github.create_pull_request") {
-                    try {
-                      options.bindIssueBranch!(issueId, branch);
-                    } catch (error) {
-                      console.error(
-                        "Failed to bind Issue branch after pull request",
-                        issueId,
-                        branch,
-                        error,
-                      );
-                    }
-                  }
-                  return result;
-                },
-              };
-            },
-          },
+    capability: {
+      id: "github.pull-requests",
+      resources: [{ provider: "github", repository: options.repository }],
+      createUpstream: ({ workspace, grantContext }) => {
+        if (workspace?.git?.repository !== options.repository) {
+          throw new Error(
+            "GitHub capability and prepared repository must match",
+          );
         }
-      : {}),
+        const base = grantContext?.repositoryBase ?? options.base;
+        const branch = workspace.git.branch;
+        const issueId = grantContext?.issueId;
+        const upstream = createGitHubMcpUpstream({
+          octokit: options.octokit,
+          repository: options.repository,
+          workspace: workspace.path,
+          branch,
+          baseCommit: workspace.git.baseCommit,
+          base,
+        });
+        if (!options.bindIssueBranch || !issueId) return upstream;
+        return {
+          listTools: () => upstream.listTools(),
+          async callTool(name, args) {
+            const result = await upstream.callTool(name, args);
+            if (name === "github.create_pull_request") {
+              try {
+                options.bindIssueBranch!(issueId, branch);
+              } catch (error) {
+                console.error(
+                  "Failed to bind Issue branch after pull request",
+                  issueId,
+                  branch,
+                  error,
+                );
+              }
+            }
+            return result;
+          },
+        };
+      },
+    },
   };
 }
 

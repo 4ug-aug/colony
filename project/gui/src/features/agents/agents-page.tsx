@@ -12,6 +12,7 @@ import { apiJsonBody } from '#/lib/api-transport'
 import { ACCOUNT_COLORS, parseAccountColor } from '#/lib/account-color'
 import { cn } from '#/lib/utils'
 import { GitHubIcon } from '#/components/github-icon'
+import { useGitHubSettings } from '#/features/workspace/github-settings'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,6 +94,8 @@ export function AgentsPage({ user }: { user: Author }) {
   const [hexInput, setHexInput] = useState<string>(ACCOUNT_COLORS[0]!)
   const [error, setError] = useState<string>()
   const isAdmin = user.role === 'admin'
+  const github = useGitHubSettings(isAdmin)
+  const githubReady = github.data?.configured ?? true
   const previewInk = agentInk(form.color)
   const previewId = editing?.id ?? (form.name.trim() || 'agent')
   const parsedHex = hexInput.trim() ? parseAccountColor(hexInput) : undefined
@@ -537,6 +540,7 @@ export function AgentsPage({ user }: { user: Author }) {
                 <Checkbox
                   className="mt-0.5"
                   checked={form.githubAccess}
+                  disabled={!githubReady && !form.githubAccess}
                   onCheckedChange={(checked) =>
                     setForm((current) => ({
                       ...current,
@@ -550,7 +554,9 @@ export function AgentsPage({ user }: { user: Author }) {
                     GitHub access
                   </span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    Also enables shell and the coding sandbox.
+                    {githubReady
+                      ? 'Also enables shell and the coding sandbox.'
+                      : 'Configure GitHub in Workspace settings → Integrations first.'}
                   </span>
                 </span>
               </label>

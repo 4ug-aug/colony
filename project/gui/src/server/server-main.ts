@@ -64,7 +64,7 @@ if (import.meta.main) {
       createWebSearchAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
-    { createGitHubTokenClient },
+    { createWorkspaceGitHubConfig },
     { createMcpGatewayHttpServer },
     { createAppleContainerClient },
     { createAppleContainerSandboxProvider },
@@ -82,7 +82,7 @@ if (import.meta.main) {
     import('./features/workspace/preview-config'),
     import('../../../agents/roster'),
     import('../../../agents/software-engineer-adapters'),
-    import('../../../mcp/github'),
+    import('./features/workspace/github-config'),
     import('../../../mcp/http'),
     import('../../../sdk/src'),
     import('../../../providers/apple-container-sandbox'),
@@ -98,6 +98,14 @@ if (import.meta.main) {
   const preview = createWorkspacePreviewConfig(sqlite)
   const grantTools = createWorkspaceGrantToolsConfig(sqlite)
   const connections = createWorkspaceConnections(sqlite)
+  const githubConfig = createWorkspaceGitHubConfig(sqlite)
+  const legacyGitHubEnv = Object.keys(process.env).filter(
+    (key) => key.startsWith('SWEAT_GITHUB_') || key === 'SWEAT_VERIFY_COMMAND',
+  )
+  if (legacyGitHubEnv.length)
+    process.stderr.write(
+      `Ignoring ${legacyGitHubEnv.join(', ')}: configure GitHub in Workspace settings → Integrations.\n`,
+    )
   const skillsDirectory = skillDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
   )
@@ -106,10 +114,12 @@ if (import.meta.main) {
     directory: skillsDirectory,
   })
   const authContext = await auth.$context
-  const githubRepository = process.env.SWEAT_GITHUB_REPOSITORY
   const store = createSqliteRoomStore(sqlite)
   const scheduleStore = createSqliteScheduleStore(sqlite)
-  const issueStore = createSqliteIssueStore(sqlite, githubRepository)
+  const issueStore = createSqliteIssueStore(
+    sqlite,
+    () => githubConfig.public().repository,
+  )
   const bulletinStore = createSqliteBulletinStore(sqlite)
   const chatStore = createSqliteChatStore(sqlite)
   const agentDefinitionStore = createAgentDefinitionStore(sqlite)
@@ -120,16 +130,7 @@ if (import.meta.main) {
     .get() as { id: string } | undefined
   if (firstAdmin) agentDefinitionStore.ensureSeeded(firstAdmin.id)
   const linearAccessToken = process.env.LINEAR_MCP_API_KEY
-  const githubBase = process.env.SWEAT_GITHUB_BASE ?? 'main'
   const agentCaCertificate = process.env.SWEAT_AGENT_CA_CERT
-  if (githubRepository && !process.env.SWEAT_GITHUB_TOKEN?.trim()) {
-    throw new Error(
-      'SWEAT_GITHUB_TOKEN is required when SWEAT_GITHUB_REPOSITORY is set. See docs/github-token.md.',
-    )
-  }
-  const github = githubRepository
-    ? createGitHubTokenClient(process.env.SWEAT_GITHUB_TOKEN ?? '')
-    : undefined
   const issueNotify = {
     onCreated: (_issue: Issue) => {},
     onChanged: (_issue: Issue) => {},
@@ -437,27 +438,24 @@ if (import.meta.main) {
               }),
             ]
           : []),
-        ...(github && githubRepository
-          ? [
-              createGitHubSoftwareEngineerAdapter({
-                octokit: github,
-                repository: githubRepository,
-                base: githubBase,
-                verifyCommand: process.env.SWEAT_VERIFY_COMMAND,
-                bindIssueBranch: (issueId, branch) => {
-                  const issue = issueStore.getIssue(issueId)
-                  if (!issue || issue.branch) return
-                  const updated = issueStore.updateIssue(
-                    issueId,
-                    { branch },
-                    Date.now(),
-                  )
-                  issueNotify.onChanged(updated)
-                },
-              }),
-            ]
-          : []),
       ],
+      githubAdapter: () => {
+        const config = githubConfig.current()
+        if (!config) return undefined
+        return createGitHubSoftwareEngineerAdapter({
+          ...config,
+          bindIssueBranch: (issueId, branch) => {
+            const issue = issueStore.getIssue(issueId)
+            if (!issue || issue.branch) return
+            const updated = issueStore.updateIssue(
+              issueId,
+              { branch },
+              Date.now(),
+            )
+            issueNotify.onChanged(updated)
+          },
+        })
+      },
       createCapabilityEndpoint: (gateway, context) => {
         const server = createMcpGatewayHttpServer({
           gateway,
@@ -567,6 +565,7 @@ if (import.meta.main) {
       store: admissionStore,
       llm,
       cursorRuntime,
+      github: githubConfig,
       preview,
       grantTools,
       skills,

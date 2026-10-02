@@ -188,7 +188,6 @@ test("GitHub PR merge base uses grantContext.repositoryBase when set", async () 
     }),
     repository: "acme/widgets",
     base: "main",
-    verifyCommand: "true",
   });
 
   const workspace = await preparedGitWorkspace("sweat-base-");
@@ -245,7 +244,6 @@ test("GitHub PR publish binds the run branch onto the Issue", async () => {
     }),
     repository: "acme/widgets",
     base: "main",
-    verifyCommand: "true",
     bindIssueBranch: (issueId, branch) => {
       bindings.push({ issueId, branch });
     },
@@ -291,7 +289,6 @@ test("GitHub PR publish skips Issue branch bind without issueId", async () => {
     }),
     repository: "acme/widgets",
     base: "main",
-    verifyCommand: "true",
     bindIssueBranch: (issueId, branch) => {
       bindings.push({ issueId, branch });
     },

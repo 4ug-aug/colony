@@ -134,6 +134,8 @@ export function createWorkspaceAgentsExecutor(options: {
   /** Explicit Cursor agent image for software-engineer. */
   cursorImage?: string;
   adapters?: readonly WorkspaceAgentAdapter[];
+  /** Workspace GitHub setting, resolved on every use; undefined when not configured. */
+  githubAdapter?: () => WorkspaceAgentAdapter | undefined;
   /** Configured + linked Connection adapters for one agent, resolved at grant time. */
   connectionAdapters?: (
     agentDefinitionId: string,
@@ -159,9 +161,13 @@ export function createWorkspaceAgentsExecutor(options: {
   const repositories = adapters.flatMap((adapter) =>
     adapter.repository ? [adapter.repository] : [],
   );
-  if (repositories.length > 1) {
+  if (repositories.length + (options.githubAdapter ? 1 : 0) > 1) {
     throw new Error("A workspace roster currently supports one repository adapter");
   }
+  const currentRepositories = () => {
+    const github = options.githubAdapter?.()?.repository;
+    return github ? [...repositories, github] : repositories;
+  };
   const capabilityAdapters = adapters.flatMap((adapter) =>
     adapter.capability ? [adapter.capability] : [],
   );
@@ -228,7 +234,9 @@ export function createWorkspaceAgentsExecutor(options: {
   ): CapabilityAdapter[] => {
     const requested = requestedFor(agentDefinitionId);
     if (!requested) return [];
-    const fromRole = capabilityAdapters.filter((adapter) => {
+    const github = options.githubAdapter?.()?.capability;
+    const roleAdapters = github ? [...capabilityAdapters, github] : capabilityAdapters;
+    const fromRole = roleAdapters.filter((adapter) => {
       if (!requested.has(adapter.id)) return false;
       return adapter.applies ? adapter.applies({ grantContext }) : true;
     });
@@ -248,7 +256,9 @@ export function createWorkspaceAgentsExecutor(options: {
   };
 
   const needsCapabilityEndpoint =
-    capabilityAdapters.length > 0 || Boolean(options.connectionAdapters);
+    capabilityAdapters.length > 0 ||
+    Boolean(options.connectionAdapters) ||
+    Boolean(options.githubAdapter);
   if (needsCapabilityEndpoint && !options.createCapabilityEndpoint) {
     throw new Error("A capability endpoint is required for workspace agent adapters");
   }
@@ -360,7 +370,7 @@ export function createWorkspaceAgentsExecutor(options: {
       : {}),
     getPreviewConfig: options.getPreviewConfig,
     inputs: createRepositoryWorkspaceProvisioner({
-      sources: repositories.map((repository) => repository.source),
+      sources: () => currentRepositories().map((repository) => repository.source),
       attachmentSource: options.attachmentSource,
       skillSource: options.skillSource,
     }),
@@ -400,6 +410,12 @@ export function createWorkspaceAgentsExecutor(options: {
       ) {
         throw new Error(`Unknown agent definition: ${agentDefinitionId}`);
       }
+      const repositoriesForRun = person.githubAccess ? currentRepositories() : [];
+      if (person.githubAccess && options.githubAdapter && !repositoriesForRun.length) {
+        throw new Error(
+          "GitHub isn't configured. An admin can set it up in Workspace settings → GitHub.",
+        );
+      }
       const eligible = eligibleAdapters(agentDefinitionId, grantContext);
 
       const requested = requestedFor(agentDefinitionId)!;
@@ -414,19 +430,17 @@ export function createWorkspaceAgentsExecutor(options: {
             )
             .join("\n")}`
         : "";
-      const repoInputs = person.githubAccess
-        ? repositories.map((repository) => {
-            const input = grantContext.repositoryBase
-              ? {
-                  ...repository.input,
-                  revision: grantContext.repositoryBase,
-                }
-              : repository.input;
-            return grantContext.mergeRevisions?.length
-              ? { ...input, mergeRevisions: grantContext.mergeRevisions }
-              : input;
-          })
-        : [];
+      const repoInputs = repositoriesForRun.map((repository) => {
+        const input = grantContext.repositoryBase
+          ? {
+              ...repository.input,
+              revision: grantContext.repositoryBase,
+            }
+          : repository.input;
+        return grantContext.mergeRevisions?.length
+          ? { ...input, mergeRevisions: grantContext.mergeRevisions }
+          : input;
+      });
       return executor.startRun({
         ...runRequest,
         grantContext,

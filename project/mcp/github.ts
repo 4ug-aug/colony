@@ -1,4 +1,5 @@
-import { App, Octokit } from "octokit";
+import { createAppAuth } from "@octokit/auth-app";
+import { Octokit, RequestError } from "octokit";
 import { boundStepText } from "../runtime/step";
 import { createMcpGateway, type McpGateway, type McpTool, type McpUpstream } from "./gateway";
 
@@ -370,20 +371,124 @@ async function getPullRequest(options: {
   };
 }
 
-export async function createGitHubAppInstallationClient(options: {
+/** Installation-authenticated client; @octokit/auth-app mints and renews the hour-long tokens. */
+export function createGitHubAppInstallationClient(options: {
   appId: string;
   privateKey: string;
   installationId: number;
-}): Promise<Octokit> {
-  return new App({ appId: options.appId, privateKey: options.privateKey })
-    .getInstallationOctokit(options.installationId);
+}): Octokit {
+  return new Octokit({ authStrategy: createAppAuth, auth: options });
 }
 
-export function createGitHubTokenClient(token: string): Octokit {
-  const auth = token.trim();
-  if (!auth) throw new Error("GitHub token is required");
-  return new Octokit({ auth });
+const httpStatus = (error: unknown): number | undefined =>
+  error instanceof RequestError ? error.status : undefined;
+
+type GitHubAppCredentials = {
+  appId: string;
+  privateKey: string;
+  /** Test seam for GitHub HTTP. */
+  fetch?: typeof fetch;
+};
+
+const appClient = (options: GitHubAppCredentials, installationId?: number) =>
+  new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: options.appId,
+      privateKey: options.privateKey,
+      ...(installationId === undefined ? {} : { installationId }),
+    },
+    ...(options.fetch ? { request: { fetch: options.fetch } } : {}),
+  });
+
+async function appSlug(app: Octokit, appId: string): Promise<string> {
+  try {
+    return (await app.rest.apps.getAuthenticated()).data?.slug ?? appId;
+  } catch (error) {
+    if (httpStatus(error) === 401)
+      throw new Error("GitHub rejected the App ID or private key");
+    throw error;
+  }
 }
+
+async function repoInstallation(
+  app: Octokit,
+  repository: string,
+  slug: string,
+): Promise<number> {
+  try {
+    return (await app.rest.apps.getRepoInstallation(repositoryParts(repository))).data.id;
+  } catch (error) {
+    if (httpStatus(error) === 404)
+      throw new Error(
+        `GitHub App isn't installed on ${repository}. Install it: ${gitHubAppInstallUrl(slug)}`,
+      );
+    throw error;
+  }
+}
+
+/** Checks the App against the repository before it is saved as the workspace GitHub setting. */
+export async function connectGitHubApp(
+  options: GitHubAppCredentials & { repository: string; base: string },
+): Promise<{ slug: string; installationId: number }> {
+  const app = appClient(options);
+  const slug = await appSlug(app, options.appId);
+  const installationId = await repoInstallation(app, options.repository, slug);
+  try {
+    await appClient(options, installationId).rest.repos.getBranch({
+      ...repositoryParts(options.repository),
+      branch: options.base,
+    });
+  } catch (error) {
+    if (httpStatus(error) === 404)
+      throw new Error(`Branch ${options.base} doesn't exist in ${options.repository}`);
+    throw error;
+  }
+  return { slug, installationId };
+}
+
+export type GitHubAppRepository = { fullName: string; defaultBranch: string };
+
+/** Every repository the App can reach, across all of its installations. */
+export async function listGitHubAppRepositories(
+  options: GitHubAppCredentials,
+): Promise<GitHubAppRepository[]> {
+  const app = appClient(options);
+  await appSlug(app, options.appId);
+  const installations = await app.paginate(app.rest.apps.listInstallations, { per_page: 100 });
+  const repositories = (
+    await Promise.all(
+      installations.map((installation) => {
+        const client = appClient(options, installation.id);
+        return client.paginate(client.rest.apps.listReposAccessibleToInstallation, {
+          per_page: 100,
+        });
+      }),
+    )
+  ).flat();
+  return repositories
+    .map((repository) => ({
+      fullName: repository.full_name,
+      defaultBranch: repository.default_branch,
+    }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+export async function listGitHubAppBranches(
+  options: GitHubAppCredentials & { repository: string },
+): Promise<string[]> {
+  const app = appClient(options);
+  const slug = await appSlug(app, options.appId);
+  const client = appClient(options, await repoInstallation(app, options.repository, slug));
+  const branches = await client.paginate(client.rest.repos.listBranches, {
+    ...repositoryParts(options.repository),
+    per_page: 100,
+  });
+  return branches.map((branch) => branch.name);
+}
+
+export const gitHubAppInstallUrl = (slug: string): string =>
+  `https://github.com/apps/${encodeURIComponent(slug)}/installations/new`;
 
 export function createGitHubMcpUpstream(options: {
   octokit: Octokit;
@@ -392,7 +497,6 @@ export function createGitHubMcpUpstream(options: {
   branch: string;
   baseCommit: string;
   base: string;
-  verify?: () => Promise<void>;
 }): McpUpstream {
   const repository = repositoryParts(options.repository);
 
@@ -428,7 +532,6 @@ export function createGitHubMcpUpstream(options: {
       const input = parsePullRequestRequest(args);
       const workspace = await workspaceState(options);
       if (!workspace.commits.length) throw new Error("Workspace HEAD has no commits to publish");
-      await options.verify?.();
       const branch = await remoteBranch({ octokit: options.octokit, repository, branch: options.branch });
       if (branch) {
         if (branch.tree === workspace.tree) {
@@ -542,7 +645,6 @@ export function createGitHubMcpGateway(options: {
   branch: string;
   baseCommit: string;
   base: string;
-  verify?: () => Promise<void>;
   now?: () => Date;
   createToken?: () => string;
 }): McpGateway {

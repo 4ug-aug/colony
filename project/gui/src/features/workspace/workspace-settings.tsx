@@ -2,6 +2,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { AgentSkillsSettings } from '#/features/workspace/agent-skills-settings'
 import { ConnectionSettings } from '#/features/workspace/connection-settings'
 import { CursorRuntimeSettings } from '#/features/workspace/cursor-runtime-settings'
+import { GitHubSettings } from '#/features/workspace/github-settings'
 import { GrantToolsSettings } from '#/features/workspace/grant-tools-settings'
 import { InvitationSettings } from '#/features/workspace/invitation-settings'
 import { LlmProviderSettings } from '#/features/workspace/llm-provider-settings'
@@ -39,6 +40,7 @@ export function WorkspaceSettingsPage({
         </TabsContent>
 
         <TabsContent value="integrations" className={tabEnter}>
+          <GitHubSettings />
           <ConnectionSettings />
           <AgentSkillsSettings />
         </TabsContent>

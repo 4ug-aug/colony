@@ -392,17 +392,19 @@ export function resolveIssue(
 
 export function createSqliteIssueStore(
   sqlite: Sqlite,
-  githubRepository?: string,
+  githubRepository: () => string | undefined = () => undefined,
 ): IssueStore {
-  const issues = (where = '', ...values: unknown[]): Issue[] =>
-    selectIssues(sqlite, where, ...values).map((issue) =>
-      githubRepository && issue.effectiveBranch
+  const issues = (where = '', ...values: unknown[]): Issue[] => {
+    const repository = githubRepository()
+    return selectIssues(sqlite, where, ...values).map((issue) =>
+      repository && issue.effectiveBranch
         ? {
             ...issue,
-            branchUrl: `https://github.com/${githubRepository}/tree/${issue.effectiveBranch.split('/').map(encodeURIComponent).join('/')}`,
+            branchUrl: `https://github.com/${repository}/tree/${issue.effectiveBranch.split('/').map(encodeURIComponent).join('/')}`,
           }
         : issue,
     )
+  }
 
   const toChild = (issue: Issue): IssueChild => ({
     id: issue.id,
