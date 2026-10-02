@@ -4,6 +4,7 @@ import { createGitHubRepositoryCheckoutSource } from "../inputs/github";
 import { createAsanaMcpUpstream } from "../mcp/asana";
 import { createGitHubMcpUpstream } from "../mcp/github";
 import { createLinearMcpUpstream } from "../mcp/linear";
+import { createPaymoMcpUpstream } from "../mcp/paymo";
 import {
   createGrafanaMcpUpstream,
   type GrafanaConfiguration,
@@ -187,6 +188,25 @@ export function createPostgresAdapter(
     capability: {
       id: "postgres.sql",
       createUpstream: () => createPostgresMcpUpstream(options),
+    },
+  };
+}
+
+/** Paymo time tracking. Logs time only as the run's responsible account, matched by email. */
+export function createPaymoAdapter(options: {
+  apiKey: string;
+  accountEmail: (accountId: string) => string | undefined;
+}): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "paymo.time",
+      createUpstream: ({ grantContext }) => {
+        const accountId = grantContext?.responsibleAccountId;
+        return createPaymoMcpUpstream({
+          apiKey: options.apiKey,
+          requesterEmail: accountId ? options.accountEmail(accountId) : undefined,
+        });
+      },
     },
   };
 }

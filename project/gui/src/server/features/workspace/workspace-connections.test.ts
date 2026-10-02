@@ -27,6 +27,7 @@ test('lists registry kinds as not configured by default', () => {
       'outline',
       'grafana',
       'postgres',
+      'paymo',
     ])
     expect(listed.every((item) => !item.configured)).toBe(true)
   })

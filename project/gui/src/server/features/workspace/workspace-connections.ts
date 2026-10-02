@@ -85,6 +85,13 @@ export function createWorkspaceConnections(
       )
       .get(kind) as StoredConnection | undefined
 
+  const accountEmail = (accountId: string): string | undefined =>
+    (
+      sqlite.prepare('SELECT email FROM user WHERE id = ?').get(accountId) as
+        | { email: string }
+        | undefined
+    )?.email
+
   const listLinkedAgentIds = (kind: string): string[] =>
     (
       sqlite
@@ -243,6 +250,7 @@ export function createWorkspaceConnections(
         const adapter = kind.createAdapter({
           fields: parseFields(row.fields_json),
           apiKey: decrypt(secret),
+          accountEmail,
         })
         if (!adapter.capability) return [adapter]
         return [

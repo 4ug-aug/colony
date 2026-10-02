@@ -41,6 +41,14 @@ export const capabilityPresentation: Record<
       "asana.add_task_comment": "Add comments",
     },
   },
+  "paymo.time": {
+    name: "Paymo time",
+    tools: {
+      "paymo.list_projects": "List projects",
+      "paymo.list_tasks": "List tasks",
+      "paymo.add_time": "Log your time",
+    },
+  },
   "outline.documents": {
     name: "Outline wiki",
     tools: {

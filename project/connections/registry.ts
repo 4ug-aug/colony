@@ -3,8 +3,10 @@ import {
   createAsanaSoftwareEngineerAdapter,
   createGrafanaAdapter,
   createOutlineAdapter,
+  createPaymoAdapter,
   createPostgresAdapter,
 } from '../agents/software-engineer-adapters'
+import { PAYMO_TOOLS } from '../mcp/paymo'
 import { POSTGRES_TOOLS } from '../mcp/postgres'
 
 export type ConnectionFieldKind = 'text' | 'url' | 'select'
@@ -45,6 +47,8 @@ export type ConnectionKind = ConnectionKindPublic & {
   createAdapter(config: {
     fields: Record<string, string>
     apiKey: string
+    /** Colony account email, for connections that act as the person who asked. */
+    accountEmail: (accountId: string) => string | undefined
   }): WorkspaceAgentAdapter
 }
 
@@ -271,11 +275,31 @@ const postgresKind: ConnectionKind = {
   },
 }
 
+const paymoKind: ConnectionKind = {
+  id: 'paymo',
+  name: 'Paymo',
+  icon: '/icons/paymo.svg',
+  capabilityId: 'paymo.time',
+  tools: PAYMO_TOOLS,
+  secretLabel: 'API key',
+  fields: [],
+  parseAndValidate({ apiKey, hasExistingSecret }) {
+    return {
+      fields: {},
+      apiKey: requireSecret(apiKey, hasExistingSecret, 'Paymo API key'),
+    }
+  },
+  createAdapter({ apiKey, accountEmail }) {
+    return createPaymoAdapter({ apiKey, accountEmail })
+  },
+}
+
 const kinds: readonly ConnectionKind[] = [
   asanaKind,
   outlineKind,
   grafanaKind,
   postgresKind,
+  paymoKind,
 ]
 
 const byId = new Map(kinds.map((kind) => [kind.id, kind] as const))
