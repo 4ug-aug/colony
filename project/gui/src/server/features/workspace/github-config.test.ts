@@ -91,7 +91,13 @@ test('GitHub settings are admin-only over HTTP and surface save errors', async (
     unbanUser: async () => ({}),
     setUserRole: async () => ({}),
     resetUserPassword: async () => Response.json({}),
-    github: createWorkspaceGitHubConfig(sqlite, { connect }),
+    github: createWorkspaceGitHubConfig(sqlite, {
+      connect,
+      listRepositories: async () => [
+        { fullName: 'acme/widgets', defaultBranch: 'main' },
+      ],
+      listBranches: async ({ repository }) => [`${repository}:main`],
+    }),
   })
   const url = new URL('http://localhost/api/workspace/settings/github')
   const post = (body: unknown, cookie = 'admin') =>
@@ -116,6 +122,29 @@ test('GitHub settings are admin-only over HTTP and surface save errors', async (
   const saved = await post(input)
   expect(saved?.status).toBe(200)
   expect(await saved!.json()).toMatchObject({ configured: true })
+
+  const listing = (path: string, body: unknown, cookie = 'admin') => {
+    const listingUrl = new URL(`http://localhost/api/workspace/settings/github/${path}`)
+    return handler(
+      new Request(listingUrl, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+      listingUrl,
+    )
+  }
+  expect((await listing('repositories', input, 'user'))?.status).toBe(403)
+  // Blank key falls back to the stored one.
+  const repositories = await listing('repositories', { appId: '123' })
+  expect(await repositories!.json()).toEqual({
+    repositories: [{ fullName: 'acme/widgets', defaultBranch: 'main' }],
+  })
+  const branches = await listing('branches', { appId: '123', repository: 'acme/widgets' })
+  expect(await branches!.json()).toEqual({ branches: ['acme/widgets:main'] })
+  const unsaved = await listing('repositories', { appId: 'abc' })
+  expect(unsaved?.status).toBe(400)
+  expect(await unsaved!.json()).toEqual({ error: 'App ID must be a number' })
 
   const clearUrl = new URL('http://localhost/api/workspace/settings/github/clear')
   const cleared = await handler(

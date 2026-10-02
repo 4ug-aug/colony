@@ -26,8 +26,10 @@ read.
 
 ## Configure Colony
 
-In **Workspace settings → Integrations → GitHub**, enter the App ID, paste the
-`.pem` contents, and set the repository (`owner/name`) and base branch.
+In **Workspace settings → Integrations → GitHub**, enter the App ID and paste
+the `.pem` contents. Then pick the repository and base branch: both lists are
+searchable and load from GitHub with that key, showing every repository the App
+is installed on. Picking a repository preselects its default branch.
 
 Save checks the key, the installation, and the base branch. If the App is not
 installed on the repository, the error links to the install page. Then give

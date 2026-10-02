@@ -383,53 +383,108 @@ export function createGitHubAppInstallationClient(options: {
 const httpStatus = (error: unknown): number | undefined =>
   error instanceof RequestError ? error.status : undefined;
 
-/** Checks the App against the repository before it is saved as the workspace GitHub setting. */
-export async function connectGitHubApp(options: {
+type GitHubAppCredentials = {
   appId: string;
   privateKey: string;
-  repository: string;
-  base: string;
   /** Test seam for GitHub HTTP. */
   fetch?: typeof fetch;
-}): Promise<{ slug: string; installationId: number }> {
-  const { owner, repo } = repositoryParts(options.repository);
-  const request = options.fetch ? { request: { fetch: options.fetch } } : {};
-  const app = new Octokit({
+};
+
+const appClient = (options: GitHubAppCredentials, installationId?: number) =>
+  new Octokit({
     authStrategy: createAppAuth,
-    auth: { appId: options.appId, privateKey: options.privateKey },
-    ...request,
+    auth: {
+      appId: options.appId,
+      privateKey: options.privateKey,
+      ...(installationId === undefined ? {} : { installationId }),
+    },
+    ...(options.fetch ? { request: { fetch: options.fetch } } : {}),
   });
-  let slug: string;
+
+async function appSlug(app: Octokit, appId: string): Promise<string> {
   try {
-    slug = (await app.rest.apps.getAuthenticated()).data?.slug ?? options.appId;
+    return (await app.rest.apps.getAuthenticated()).data?.slug ?? appId;
   } catch (error) {
     if (httpStatus(error) === 401)
       throw new Error("GitHub rejected the App ID or private key");
     throw error;
   }
-  let installationId: number;
+}
+
+async function repoInstallation(
+  app: Octokit,
+  repository: string,
+  slug: string,
+): Promise<number> {
   try {
-    installationId = (await app.rest.apps.getRepoInstallation({ owner, repo })).data.id;
+    return (await app.rest.apps.getRepoInstallation(repositoryParts(repository))).data.id;
   } catch (error) {
     if (httpStatus(error) === 404)
       throw new Error(
-        `GitHub App isn't installed on ${options.repository}. Install it: ${gitHubAppInstallUrl(slug)}`,
+        `GitHub App isn't installed on ${repository}. Install it: ${gitHubAppInstallUrl(slug)}`,
       );
     throw error;
   }
-  const installation = new Octokit({
-    authStrategy: createAppAuth,
-    auth: { appId: options.appId, privateKey: options.privateKey, installationId },
-    ...request,
-  });
+}
+
+/** Checks the App against the repository before it is saved as the workspace GitHub setting. */
+export async function connectGitHubApp(
+  options: GitHubAppCredentials & { repository: string; base: string },
+): Promise<{ slug: string; installationId: number }> {
+  const app = appClient(options);
+  const slug = await appSlug(app, options.appId);
+  const installationId = await repoInstallation(app, options.repository, slug);
   try {
-    await installation.rest.repos.getBranch({ owner, repo, branch: options.base });
+    await appClient(options, installationId).rest.repos.getBranch({
+      ...repositoryParts(options.repository),
+      branch: options.base,
+    });
   } catch (error) {
     if (httpStatus(error) === 404)
       throw new Error(`Branch ${options.base} doesn't exist in ${options.repository}`);
     throw error;
   }
   return { slug, installationId };
+}
+
+export type GitHubAppRepository = { fullName: string; defaultBranch: string };
+
+/** Every repository the App can reach, across all of its installations. */
+export async function listGitHubAppRepositories(
+  options: GitHubAppCredentials,
+): Promise<GitHubAppRepository[]> {
+  const app = appClient(options);
+  await appSlug(app, options.appId);
+  const installations = await app.paginate(app.rest.apps.listInstallations, { per_page: 100 });
+  const repositories = (
+    await Promise.all(
+      installations.map((installation) => {
+        const client = appClient(options, installation.id);
+        return client.paginate(client.rest.apps.listReposAccessibleToInstallation, {
+          per_page: 100,
+        });
+      }),
+    )
+  ).flat();
+  return repositories
+    .map((repository) => ({
+      fullName: repository.full_name,
+      defaultBranch: repository.default_branch,
+    }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+export async function listGitHubAppBranches(
+  options: GitHubAppCredentials & { repository: string },
+): Promise<string[]> {
+  const app = appClient(options);
+  const slug = await appSlug(app, options.appId);
+  const client = appClient(options, await repoInstallation(app, options.repository, slug));
+  const branches = await client.paginate(client.rest.repos.listBranches, {
+    ...repositoryParts(options.repository),
+    per_page: 100,
+  });
+  return branches.map((branch) => branch.name);
 }
 
 export const gitHubAppInstallUrl = (slug: string): string =>

@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Octokit } from "octokit";
 import { STEP_TEXT_LIMIT } from "../runtime/step";
-import { connectGitHubApp, createGitHubMcpGateway } from "./github";
+import {
+  connectGitHubApp,
+  createGitHubMcpGateway,
+  listGitHubAppBranches,
+  listGitHubAppRepositories,
+} from "./github";
 
 async function git(directory: string, args: readonly string[]): Promise<string> {
   const process = Bun.spawn(["git", "-C", directory, ...args], { stdout: "pipe", stderr: "pipe" });
@@ -517,10 +522,15 @@ const privateKey = generateKeyPairSync("rsa", {
 
 function fakeGitHub(options: { installed: boolean }) {
   const calls: string[] = [];
-  const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+    // The paginator reads response.url, which a constructed Response leaves empty.
+    const json = (body: unknown, status = 200) =>
+      Object.defineProperty(
+        new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
+        "url",
+        { value: url.href },
+      );
     calls.push(`${init?.method ?? "GET"} ${url.pathname}`);
     if (url.pathname === "/app") return json({ slug: "colony-test" });
     if (url.pathname === "/repos/acme/widgets/installation")
@@ -528,6 +538,17 @@ function fakeGitHub(options: { installed: boolean }) {
     if (url.pathname === "/app/installations/42/access_tokens")
       return json({ token: "ghs_test", expires_at: new Date(Date.now() + 3_600_000).toISOString() }, 201);
     if (url.pathname === "/repos/acme/widgets/branches/main") return json({ name: "main" });
+    if (url.pathname === "/app/installations") return json([{ id: 42 }]);
+    if (url.pathname === "/installation/repositories")
+      return json({
+        total_count: 2,
+        repositories: [
+          { full_name: "acme/widgets", default_branch: "main" },
+          { full_name: "acme/api", default_branch: "trunk" },
+        ],
+      });
+    if (url.pathname === "/repos/acme/widgets/branches")
+      return json([{ name: "main" }, { name: "develop" }]);
     return json({ message: "Not Found" }, 404);
   }) as typeof globalThis.fetch;
   return { fetch, calls };
@@ -556,4 +577,24 @@ test("connectGitHubApp points to the install page when the App is not installed"
   ).rejects.toThrow(
     "GitHub App isn't installed on acme/widgets. Install it: https://github.com/apps/colony-test/installations/new",
   );
+});
+
+test("listGitHubAppRepositories lists every installation's repositories, sorted", async () => {
+  expect(
+    await listGitHubAppRepositories({ appId: "1", privateKey, fetch: fakeGitHub({ installed: true }).fetch }),
+  ).toEqual([
+    { fullName: "acme/api", defaultBranch: "trunk" },
+    { fullName: "acme/widgets", defaultBranch: "main" },
+  ]);
+});
+
+test("listGitHubAppBranches lists the repository's branches", async () => {
+  expect(
+    await listGitHubAppBranches({
+      appId: "1",
+      privateKey,
+      repository: "acme/widgets",
+      fetch: fakeGitHub({ installed: true }).fetch,
+    }),
+  ).toEqual(["main", "develop"]);
 });

@@ -1,12 +1,25 @@
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '#/components/ui/command'
 import { Input } from '#/components/ui/input'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '#/components/ui/popover'
 import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
 import { SettingsCard } from '#/features/workspace/settings-card'
 import { apiJson, apiJsonBody } from '#/lib/api-transport'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ExternalLink } from 'lucide-react'
+import { Check, ChevronsUpDown, ExternalLink } from 'lucide-react'
 import { useState } from 'react'
 
 export type GitHubConfig = {
@@ -82,6 +95,10 @@ function GitHubForm({
   const [privateKey, setPrivateKey] = useState('')
   const [repository, setRepository] = useState(config.repository ?? '')
   const [base, setBase] = useState(config.base ?? 'main')
+  // Bumped on every key edit so listings refetch with the new key without putting it in a query key.
+  const [keyRevision, setKeyRevision] = useState(0)
+  const canList = /^\d+$/.test(appId.trim()) && (config.configured || Boolean(privateKey.trim()))
+  const credentials = { appId, privateKey }
 
   const failed = (title: string) => (reason: unknown) =>
     toast.add({
@@ -125,35 +142,22 @@ function GitHubForm({
   return (
     <SettingsCard title="GitHub" description={description}>
       <div className="grid gap-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input
-            aria-label="GitHub App ID"
-            disabled={busy}
-            inputMode="numeric"
-            onChange={(event) => setAppId(event.target.value)}
-            placeholder="App ID"
-            value={appId}
-          />
-          <Input
-            aria-label="Repository"
-            disabled={busy}
-            onChange={(event) => setRepository(event.target.value)}
-            placeholder="owner/repository"
-            value={repository}
-          />
-          <Input
-            aria-label="Base branch"
-            disabled={busy}
-            onChange={(event) => setBase(event.target.value)}
-            placeholder="main"
-            value={base}
-          />
-        </div>
+        <Input
+          aria-label="GitHub App ID"
+          disabled={busy}
+          inputMode="numeric"
+          onChange={(event) => setAppId(event.target.value)}
+          placeholder="App ID"
+          value={appId}
+        />
         <Textarea
           aria-label="GitHub App private key"
           className="font-mono"
           disabled={busy}
-          onChange={(event) => setPrivateKey(event.target.value)}
+          onChange={(event) => {
+            setPrivateKey(event.target.value)
+            setKeyRevision((revision) => revision + 1)
+          }}
           placeholder={
             config.configured
               ? 'Leave blank to keep current private key'
@@ -162,6 +166,54 @@ function GitHubForm({
           rows={3}
           value={privateKey}
         />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <GitHubPicker
+            label="Repository"
+            placeholder="Select a repository"
+            value={repository}
+            disabled={busy || !canList}
+            queryKey={['repositories', appId, keyRevision]}
+            load={async () =>
+              (
+                await apiJsonBody<{
+                  repositories: { fullName: string; defaultBranch: string }[]
+                }>(
+                  '/api/workspace/settings/github/repositories',
+                  'POST',
+                  credentials,
+                  'Could not list repositories',
+                )
+              ).repositories.map((entry) => ({
+                value: entry.fullName,
+                detail: entry.defaultBranch,
+              }))
+            }
+            empty="No repositories. Install the App on one first."
+            onSelect={(option) => {
+              setRepository(option.value)
+              if (option.detail) setBase(option.detail)
+            }}
+          />
+          <GitHubPicker
+            label="Base branch"
+            placeholder="Select a branch"
+            value={base}
+            disabled={busy || !canList || !repository}
+            queryKey={['branches', appId, keyRevision, repository]}
+            load={async () =>
+              (
+                await apiJsonBody<{ branches: string[] }>(
+                  '/api/workspace/settings/github/branches',
+                  'POST',
+                  { ...credentials, repository },
+                  'Could not list branches',
+                )
+              ).branches.map((name) => ({ value: name }))
+            }
+            empty="No branches found."
+            onSelect={(option) => setBase(option.value)}
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button disabled={busy} onClick={() => save.mutate()}>
             {save.isPending ? <AgentThinking label="Saving" /> : 'Save GitHub'}
@@ -199,5 +251,98 @@ function GitHubForm({
         </div>
       </div>
     </SettingsCard>
+  )
+}
+
+type PickerOption = { value: string; detail?: string }
+
+/* Searchable list loaded from GitHub when opened. */
+function GitHubPicker({
+  label,
+  placeholder,
+  value,
+  disabled,
+  queryKey,
+  load,
+  empty,
+  onSelect,
+}: {
+  label: string
+  placeholder: string
+  value: string
+  disabled: boolean
+  queryKey: readonly unknown[]
+  load: () => Promise<PickerOption[]>
+  empty: string
+  onSelect: (option: PickerOption) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const options = useQuery({
+    queryKey: [...githubQueryKey, ...queryKey],
+    queryFn: load,
+    enabled: open,
+    retry: false,
+  })
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        disabled={disabled}
+        render={
+          <Button
+            aria-label={label}
+            className="w-full justify-between font-normal"
+            variant="outline"
+          />
+        }
+      >
+        <span className={value ? 'truncate' : 'truncate text-muted-foreground'}>
+          {value || placeholder}
+        </span>
+        <ChevronsUpDown className="text-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-(--anchor-width) min-w-64 p-0">
+        <Command>
+          <CommandInput placeholder={`Search ${label.toLowerCase()}…`} />
+          <CommandList>
+            {options.isPending ? (
+              <p className="p-3 text-sm text-muted-foreground" role="status">
+                <AgentThinking label={`Loading ${label.toLowerCase()}`} />
+              </p>
+            ) : options.error ? (
+              <p className="p-3 text-sm text-destructive" role="alert">
+                {options.error instanceof Error
+                  ? options.error.message
+                  : `Could not load ${label.toLowerCase()}`}
+              </p>
+            ) : (
+              <>
+                <CommandEmpty>{empty}</CommandEmpty>
+                <CommandGroup>
+                  {options.data.map((option) => (
+                    <CommandItem
+                      key={option.value}
+                      value={option.value}
+                      className="[&>svg:last-child]:hidden"
+                      onSelect={() => {
+                        onSelect(option)
+                        setOpen(false)
+                      }}
+                    >
+                      <span className="flex-1 truncate">{option.value}</span>
+                      <span className="flex size-4 items-center justify-center">
+                        {option.value === value && (
+                          <Check className="size-3.5 text-muted-foreground" />
+                        )}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }

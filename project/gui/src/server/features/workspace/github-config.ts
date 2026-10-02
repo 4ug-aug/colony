@@ -2,6 +2,8 @@ import {
   connectGitHubApp,
   createGitHubAppInstallationClient,
   gitHubAppInstallUrl,
+  listGitHubAppBranches,
+  listGitHubAppRepositories,
 } from '#project/mcp/github'
 import { createSecretBox } from '#/server/secret-box'
 import type { Sqlite } from '#/server/sqlite'
@@ -35,6 +37,12 @@ export type GitHubConfigInput = {
 
 export type ConnectGitHub = typeof connectGitHubApp
 
+type GitHubApi = {
+  connect: ConnectGitHub
+  listRepositories: typeof listGitHubAppRepositories
+  listBranches: typeof listGitHubAppBranches
+}
+
 export type CurrentGitHubConfig = {
   octokit: ReturnType<typeof createGitHubAppInstallationClient>
   repository: string
@@ -52,9 +60,11 @@ const text = (value: unknown): string =>
 
 export function createWorkspaceGitHubConfig(
   sqlite: Sqlite,
-  options: { connect?: ConnectGitHub } = {},
+  options: Partial<GitHubApi> = {},
 ) {
   const connect = options.connect ?? connectGitHubApp
+  const listRepositories = options.listRepositories ?? listGitHubAppRepositories
+  const listBranches = options.listBranches ?? listGitHubAppBranches
   let cached: { updatedAt: number; config: CurrentGitHubConfig } | undefined
 
   const read = (): StoredConfig | undefined =>
@@ -73,20 +83,36 @@ export function createWorkspaceGitHubConfig(
         }
       : { configured: false }
 
+  /** Typed key wins; a blank key falls back to the stored one so admins can browse before re-pasting. */
+  const credentials = (input: GitHubConfigInput) => {
+    const appId = text(input.appId)
+    if (!/^\d+$/.test(appId)) throw new Error('App ID must be a number')
+    const typed = text(input.privateKey)
+    const current = read()
+    if (!typed && !current) throw new Error('Private key is required')
+    return { appId, privateKey: typed || decrypt(current!) }
+  }
+
   return {
     public: (): PublicGitHubConfig => publicFor(read()),
 
-    async save(input: GitHubConfigInput): Promise<PublicGitHubConfig> {
-      const current = read()
-      const appId = text(input.appId)
+    repositories: (input: GitHubConfigInput) =>
+      listRepositories(credentials(input)),
+
+    branches(input: GitHubConfigInput) {
       const repository = text(input.repository)
-      const base = text(input.base) || 'main'
-      const newKey = text(input.privateKey)
-      if (!/^\d+$/.test(appId)) throw new Error('App ID must be a number')
       if (!/^[\w.-]+\/[\w.-]+$/.test(repository))
         throw new Error('Repository must be owner/name')
-      if (!newKey && !current) throw new Error('Private key is required')
-      const privateKey = newKey || decrypt(current!)
+      return listBranches({ ...credentials(input), repository })
+    },
+
+    async save(input: GitHubConfigInput): Promise<PublicGitHubConfig> {
+      const current = read()
+      const repository = text(input.repository)
+      const base = text(input.base) || 'main'
+      if (!/^[\w.-]+\/[\w.-]+$/.test(repository))
+        throw new Error('Repository must be owner/name')
+      const { appId, privateKey } = credentials(input)
       const { slug, installationId } = await connect({
         appId,
         privateKey,

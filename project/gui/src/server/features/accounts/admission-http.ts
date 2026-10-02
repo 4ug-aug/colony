@@ -92,7 +92,10 @@ export type AdmissionOptions = {
   }
   skills?: WorkspaceSkillStore
   connections?: WorkspaceConnectionStore
-  github?: Pick<WorkspaceGitHubConfig, 'public' | 'save' | 'clear'>
+  github?: Pick<
+    WorkspaceGitHubConfig,
+    'public' | 'save' | 'clear' | 'repositories' | 'branches'
+  >
   agentMentionHandles?: () => ReadonlySet<string>
   listAgents?: () => { id: string; name: string }[]
   knownAgent?: (id: string) => boolean
@@ -401,6 +404,33 @@ export function createAdmissionHttpHandler(
             400,
           )
         }
+      }
+    }
+
+    const githubListing = url.pathname.match(
+      /^\/api\/workspace\/settings\/github\/(repositories|branches)$/,
+    )
+    if (githubListing && options.github && request.method === 'POST') {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      const body = (await readBody(request)) ?? {}
+      try {
+        return json(
+          githubListing[1] === 'repositories'
+            ? { repositories: await options.github.repositories(body) }
+            : { branches: await options.github.branches(body) },
+        )
+      } catch (error) {
+        console.error(`GitHub ${githubListing[1]} listing failed:`, error)
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : `Unable to list GitHub ${githubListing[1]}`,
+          },
+          400,
+        )
       }
     }
 
