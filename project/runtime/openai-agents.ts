@@ -24,6 +24,7 @@ import { dirname, resolve } from "node:path";
 import OpenAI from "openai";
 
 import type { CapabilitySessionBinding } from "../mcp/session";
+import { type CompactionEvent, createCompactor, SUMMARY_INSTRUCTIONS } from "./compaction";
 import { openaiSkillsCapability } from "./openai-skills";
 import type { Step } from "./step";
 
@@ -32,7 +33,11 @@ export interface OpenAICompatibleModel {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Context window in tokens; history is compacted before it overflows. */
+  contextTokens?: number;
 }
+
+export const DEFAULT_CONTEXT_TOKENS = 128_000;
 
 export const OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
@@ -320,6 +325,35 @@ export function createModelProvider(
   };
 }
 
+function createSummarizer(model: OpenAICompatibleModel) {
+  const client = new OpenAI({ apiKey: model.apiKey, baseURL: normalizeModelBaseUrl(model.baseUrl) });
+  return async (transcript: string): Promise<string> => {
+    const response = await client.responses.create({
+      model: model.model,
+      instructions: SUMMARY_INSTRUCTIONS,
+      input: transcript,
+    });
+    if (!response.output_text.trim()) throw new Error("Context compaction returned an empty summary");
+    return response.output_text;
+  };
+}
+
+function compactionSteps(event: CompactionEvent): Step[] {
+  const at = Date.now();
+  const callId = `compact_${at}`;
+  const tokens = (value: number) => `${Math.round(value / 1000)}k`;
+  return [
+    { kind: "tool_call", tool: "compact_context", text: "{}", callId, at },
+    {
+      kind: "tool_result",
+      tool: "compact_context",
+      text: `${event.summarized ? "Summarized" : "Trimmed"} context from about ${tokens(event.beforeTokens)} to ${tokens(event.afterTokens)} tokens`,
+      callId,
+      at,
+    },
+  ];
+}
+
 export async function runAgent(
   request: AgentRuntimeRequest,
   dependencies: {
@@ -333,8 +367,27 @@ export async function runAgent(
     /** When set with an external session, skip opening/closing MCP. */
     mcpServers?: Awaited<ReturnType<typeof MCPServers.open>>;
     retainMcp?: boolean;
+    /** Replaces the model call that writes compaction summaries (tests). */
+    summarize?: (transcript: string) => Promise<string>;
   } = {},
 ): Promise<string> {
+  const compactorOptions = {
+    contextTokens: request.model.contextTokens ?? DEFAULT_CONTEXT_TOKENS,
+    summarize: dependencies.summarize ?? createSummarizer(request.model),
+    onCompact: (event: CompactionEvent) =>
+      compactionSteps(event).forEach((step) => dependencies.onStep?.(step)),
+  };
+  // Shrink stored follow-up history first so the session file stops growing too.
+  if (dependencies.session) {
+    const items = await dependencies.session.getItems();
+    const compacted = await createCompactor(compactorOptions)(items);
+    if (compacted !== items) {
+      await dependencies.session.clearSession();
+      await dependencies.session.addItems(compacted);
+    }
+  }
+  const compact = createCompactor(compactorOptions);
+
   const mcpServers =
     dependencies.mcpServers ??
     (request.capabilitySession
@@ -402,6 +455,10 @@ export async function runAgent(
       // Hallucinated/ungranted tool names (often from role text) should guide
       // the model, not kill the run.
       toolNotFoundBehavior: "return_error_to_model",
+      callModelInputFilter: async ({ modelData }) => ({
+        ...modelData,
+        input: await compact(modelData.input),
+      }),
     }).run(agent, request.task, {
       maxTurns: 50,
       stream: true,

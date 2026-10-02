@@ -84,3 +84,20 @@ test("the transport speaks the client protocol used by the in-container runtime"
     globalThis.fetch = originalFetch;
   }
 });
+
+test("array tool results are serialized as text, not passed through as content blocks", async () => {
+  const handle = createMcpGatewayHttpHandler({
+    callTool: async () => [{ id: 1, name: "Project" }],
+  } as never);
+  const called = await (await handle(new Request("http://gateway.test/mcp", {
+    method: "POST",
+    headers: { authorization: "Bearer t", "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: { name: "paymo.list_projects", arguments: {} },
+    }),
+  }))).json();
+  expect(called.result.content).toEqual([
+    { type: "text", text: JSON.stringify([{ id: 1, name: "Project" }]) },
+  ]);
+});

@@ -27,6 +27,7 @@ type LlmConfig = {
   provider?: LlmProvider
   baseUrl?: string
   model?: string
+  contextTokens?: number
 }
 
 const llmConfigQueryKey = ['workspace-settings', 'llm'] as const
@@ -94,6 +95,9 @@ function LlmProviderForm({
     config.baseUrl ?? defaultLlmBaseUrl(config.provider ?? 'openai'),
   )
   const [model, setModel] = useState(config.model ?? '')
+  const [contextTokens, setContextTokens] = useState(
+    config.contextTokens ? String(config.contextTokens) : '',
+  )
   const [apiKey, setApiKey] = useState('')
 
   const save = useMutation({
@@ -101,13 +105,14 @@ function LlmProviderForm({
       apiJsonBody<LlmConfig>(
         '/api/workspace/settings/llm',
         'POST',
-        { provider, baseUrl, model, apiKey },
+        { provider, baseUrl, model, contextTokens, apiKey },
         'Could not save provider',
       ),
     onSuccess: (result) => {
       setProvider(result.provider ?? 'openai')
       setBaseUrl(result.baseUrl ?? '')
       setModel(result.model ?? '')
+      setContextTokens(result.contextTokens ? String(result.contextTokens) : '')
       setApiKey('')
       onSaved(result)
       toast.add({ type: 'success', title: 'LLM provider saved' })
@@ -176,6 +181,14 @@ function LlmProviderForm({
           onChange={(event) => setModel(event.target.value)}
           placeholder="gpt-4.1-mini"
           value={model}
+        />
+        <Input
+          aria-label="LLM context window"
+          disabled={busy}
+          inputMode="numeric"
+          onChange={(event) => setContextTokens(event.target.value)}
+          placeholder="Context window in tokens (default 128000)"
+          value={contextTokens}
         />
         <Input
           aria-label="LLM API key"

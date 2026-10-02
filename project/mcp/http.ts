@@ -39,7 +39,6 @@ function callResult(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value) && "content" in value) {
     return value as Record<string, unknown>;
   }
-  if (Array.isArray(value)) return { content: value };
   return {
     content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
   };

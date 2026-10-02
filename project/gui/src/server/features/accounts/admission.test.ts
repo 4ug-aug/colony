@@ -530,6 +530,15 @@ test('admission endpoints close open signup and enforce the administrator bounda
       }),
     })
     expect(savedLlm.status).toBe(200)
+    const invalidLlm = await request('/api/workspace/settings/llm', {
+      method: 'POST',
+      headers: { cookie: 'admin', 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'openai', model: 'm', contextTokens: 'lots' }),
+    })
+    expect(invalidLlm.status).toBe(400)
+    expect(await invalidLlm.json()).toEqual({
+      error: 'Context window must be a whole number of tokens between 4,000 and 10,000,000',
+    })
     expect(await savedLlm.json()).toEqual({
       configured: true,
       provider: 'openai',

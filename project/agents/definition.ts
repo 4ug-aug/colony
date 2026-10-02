@@ -5,6 +5,8 @@ export interface ModelRuntimeConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Context window in tokens; the runtime compacts history before it overflows. */
+  contextTokens?: number;
 }
 
 /** Cursor agent-runtime credentials. Distinct from OpenAI-compatible ModelRuntimeConfig. */
