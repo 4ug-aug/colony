@@ -20,8 +20,8 @@ const httpUrl = z
   .url({ protocol: /^https?$/, error: 'Base URL must be an http(s) URL' })
   .transform((url) => url.replace(/\/$/, ''))
 
-/** What the settings form may send. Parsing trims, coerces and fills defaults. */
-const llmConfigInput = z
+/** What the settings form may send. Parse at the HTTP edge; parsing trims, coerces and fills defaults. */
+export const llmConfigInput = z
   .object({
     provider: z
       .enum(['openai', 'custom'], { error: 'Provider must be openai or custom' })
@@ -55,8 +55,8 @@ const llmConfigInput = z
     return { ...input, baseUrl }
   })
 
-export type LlmConfigInput = z.input<typeof llmConfigInput>
-export type LlmProvider = z.output<typeof llmConfigInput>['provider']
+export type LlmConfigInput = z.output<typeof llmConfigInput>
+export type LlmProvider = LlmConfigInput['provider']
 
 type StoredConfig = {
   provider: LlmProvider
@@ -101,12 +101,10 @@ export function createWorkspaceLlmConfig(sqlite: TransactionalSqlite) {
           }
         : { configured: false }
     },
-    /** Accepts the raw request body; throws an Error with a user-facing message. */
-    save(body: unknown): PublicLlmConfig {
-      const parsed = llmConfigInput.safeParse(body ?? {})
-      if (!parsed.success) throw new Error(parsed.error.issues[0]!.message)
-      const { provider, baseUrl, model, contextTokens, apiKey } = parsed.data
+    save(input: LlmConfigInput): PublicLlmConfig {
+      const { provider, baseUrl, model, contextTokens, apiKey } = input
       const current = read()
+      // The schema cannot see storage: only a first save must bring a key.
       if (!current && !apiKey) throw new Error('API key is required')
       const secret = apiKey ? encrypt(apiKey) : undefined
       sqlite
