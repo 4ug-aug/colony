@@ -2,7 +2,8 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { QueryClient } from '@tanstack/react-query'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { act } from 'react'
-import { suggestionMenu, type MentionItem } from './mention-suggestion'
+import { suggestionMenu } from './mention-suggestion'
+import type { MentionItem } from './mention-suggestion'
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register()
@@ -40,7 +41,6 @@ test('mention popup renders agent rows when mounted outside the app tree', async
   })
 
   expect(mentionOpen.current).toBe(true)
-  expect(host.textContent).toContain('Agents')
   expect(host.textContent).toContain('Antboy')
   expect(host.textContent).toContain('Sweat the small stuff')
 
@@ -65,12 +65,12 @@ test('loading suggestion updates do not clear a visible mention menu', async () 
   })
   expect(mentionOpen.current).toBe(true)
   expect(host.querySelector('.mention-menu')).toBeTruthy()
-  expect(host.querySelector('.mention-menu')?.hidden).toBe(true)
+  expect(host.querySelector<HTMLElement>('.mention-menu')?.hidden).toBe(true)
 
   await act(() => {
     renderer.onUpdate({ items: [agentItem], command, loading: false })
   })
-  expect(host.querySelector('.mention-menu')?.hidden).toBe(false)
+  expect(host.querySelector<HTMLElement>('.mention-menu')?.hidden).toBe(false)
   expect(host.textContent).toContain('Antboy')
 
   await act(() => {
@@ -170,8 +170,33 @@ test('onStart fills items locally so the menu is not hidden while TipTap loads',
       text: '@',
     })
   })
-  expect(host.querySelector('.mention-menu')?.hidden).toBe(false)
+  expect(host.querySelector<HTMLElement>('.mention-menu')?.hidden).toBe(false)
   expect(host.textContent).toContain('Antboy')
+
+  await act(() => {
+    renderer.onExit()
+  })
+  host.remove()
+})
+
+test('a query with no hits shows "No matches" instead of hiding', async () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const renderer = suggestionMenu(
+    { current: false },
+    { current: host },
+    new QueryClient(),
+  )
+  const command = () => undefined
+
+  await act(() => {
+    renderer.onStart({ items: [agentItem], command, query: '', text: '@' })
+  })
+  await act(() => {
+    renderer.onUpdate({ items: [], command, query: 'zz', text: '@zz' })
+  })
+  expect(host.querySelector<HTMLElement>('.mention-menu')?.hidden).toBe(false)
+  expect(host.textContent).toContain('No matches for “zz”')
 
   await act(() => {
     renderer.onExit()

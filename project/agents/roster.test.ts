@@ -748,19 +748,16 @@ test("GitHub access boots the microVM; others boot the container", async () => {
     containerProvider: provider("container"),
   });
 
-  const antboyId = executor.startRun({
-    task: "work",
-    agentDefinitionId: ANTBOY_ID,
-  });
-  const engineerId = executor.startRun({
-    task: "work",
-    agentDefinitionId: SOFTWARE_ENGINEER_ID,
-  });
-  for (const id of [antboyId, engineerId]) {
+  // Run one at a time so boot order is deterministic.
+  const runToEnd = async (agentDefinitionId: string) => {
+    const id = executor.startRun({ task: "work", agentDefinitionId });
     while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
       await Bun.sleep(0);
     }
-  }
+    return id;
+  };
+  const antboyId = await runToEnd(ANTBOY_ID);
+  await runToEnd(SOFTWARE_ENGINEER_ID);
 
   expect(booted).toEqual(["container", "microvm"]);
   expect(executor.getRun(antboyId)?.definition.githubAccess).toBe(false);

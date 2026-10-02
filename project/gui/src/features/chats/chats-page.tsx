@@ -7,7 +7,7 @@ import {
   agentNameFrom,
   useAgentDefinitions,
 } from '#/features/agents/use-agent-definitions'
-import { MessageComposer } from '#/features/rooms/message-composer'
+import { PromptBar } from '#/components/prompt-bar'
 import { asRunStep, RunTranscript } from '#/features/runs/run-transcript'
 import type { AgentDefinition } from '#/features/schedules/types'
 import { cn } from '#/lib/utils'
@@ -287,15 +287,11 @@ export function ChatsPage({
               </Button>
             </div>
           ) : null}
-          <MessageComposer
+          <PromptBar
             value={draft}
             onChange={setDraft}
             onSubmit={async (text) => submit(text)}
             disabled={working || !selectedAgent}
-            roomName="chat"
-            mentionableAccounts={[]}
-            hideMentions
-            hideAttachments
             placeholder={
               selectedAgent
                 ? `Message ${selectedAgent.name}`

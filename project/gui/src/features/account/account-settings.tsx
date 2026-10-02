@@ -4,7 +4,8 @@ import { getVersion } from '@tauri-apps/api/app'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Box, CircleCheckBig, Clock, Zap } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
-import { AccountFace, AgentAnt } from '#/components/avatar'
+import { AccountFace } from '#/components/avatar'
+import { ColonyMark } from '#/components/colony-mark'
 import { StaticDither } from '#/components/static-dither'
 import { Button } from '#/components/ui/button'
 import { AgentThinking } from '#/components/ui/agent-thinking'
@@ -213,7 +214,7 @@ export function AccountSettingsPage({
     {
       label: 'Invocations',
       value: analytics?.delegations ?? 0,
-      icon: AgentAnt,
+      icon: ColonyMark,
     },
     {
       label: 'Oneshots',
