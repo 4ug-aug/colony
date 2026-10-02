@@ -1,14 +1,62 @@
 import {
     createSecretBox,
-    validModel,
     type TransactionalSqlite,
 } from '#/server/secret-box'
 import {
     OPENAI_DEFAULT_BASE_URL,
     type OpenAICompatibleModel,
 } from '#project/runtime/openai-agents'
+import { z } from 'zod'
 
-export type LlmProvider = 'openai' | 'custom'
+const blankToUndefined = (value: unknown) =>
+  value === null || (typeof value === 'string' && !value.trim())
+    ? undefined
+    : value
+
+const contextTokensError =
+  'Context window must be a whole number of tokens between 4,000 and 10,000,000'
+
+const httpUrl = z
+  .url({ protocol: /^https?$/, error: 'Base URL must be an http(s) URL' })
+  .transform((url) => url.replace(/\/$/, ''))
+
+/** What the settings form may send. Parsing trims, coerces and fills defaults. */
+const llmConfigInput = z
+  .object({
+    provider: z
+      .enum(['openai', 'custom'], { error: 'Provider must be openai or custom' })
+      .default('openai'),
+    baseUrl: z.preprocess(blankToUndefined, httpUrl.optional()),
+    model: z
+      .string({ error: 'Model is required' })
+      .trim()
+      .min(1, 'Model is required')
+      .max(200, 'Model name is too long'),
+    // Blank means the runtime default.
+    contextTokens: z.preprocess(
+      blankToUndefined,
+      z.coerce
+        .number({ error: contextTokensError })
+        .int(contextTokensError)
+        .min(4_000, contextTokensError)
+        .max(10_000_000, contextTokensError)
+        .optional(),
+    ),
+    apiKey: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  })
+  .transform((input, context) => {
+    const baseUrl =
+      input.baseUrl ??
+      (input.provider === 'openai' ? OPENAI_DEFAULT_BASE_URL : undefined)
+    if (!baseUrl) {
+      context.addIssue({ code: 'custom', message: 'Base URL is required' })
+      return z.NEVER
+    }
+    return { ...input, baseUrl }
+  })
+
+export type LlmConfigInput = z.input<typeof llmConfigInput>
+export type LlmProvider = z.output<typeof llmConfigInput>['provider']
 
 type StoredConfig = {
   provider: LlmProvider
@@ -28,39 +76,7 @@ export type PublicLlmConfig = {
   contextTokens?: number
 }
 
-export type LlmConfigInput = {
-  provider: unknown
-  baseUrl: string
-  model: string
-  contextTokens?: unknown
-  apiKey?: string
-}
-
 const { encrypt, decrypt } = createSecretBox('sweat-llm-config')
-
-const validBaseUrl = (value: unknown): string | undefined => {
-  if (typeof value !== 'string' || !value.trim()) return undefined
-  try {
-    const url = new URL(value.trim())
-    return url.protocol === 'http:' || url.protocol === 'https:'
-      ? url.toString().replace(/\/$/, '')
-      : undefined
-  } catch {
-    return undefined
-  }
-}
-
-// Blank means the runtime default; otherwise a plausible window, 4k to 10M tokens.
-const validContextTokens = (value: unknown): number | null | undefined => {
-  if (value === undefined || value === null || value === '') return null
-  const tokens = Number(value)
-  return Number.isInteger(tokens) && tokens >= 4_000 && tokens <= 10_000_000
-    ? tokens
-    : undefined
-}
-
-const validProvider = (value: unknown): LlmProvider | undefined =>
-  value === 'openai' || value === 'custom' ? value : undefined
 
 export function createWorkspaceLlmConfig(sqlite: TransactionalSqlite) {
   const read = (): StoredConfig | undefined =>
@@ -85,22 +101,13 @@ export function createWorkspaceLlmConfig(sqlite: TransactionalSqlite) {
           }
         : { configured: false }
     },
-    save(input: LlmConfigInput): PublicLlmConfig {
-      const provider = validProvider(input.provider ?? 'openai')
-      const baseUrl = validBaseUrl(
-        input.baseUrl ||
-          (provider === 'openai' ? OPENAI_DEFAULT_BASE_URL : undefined),
-      )
-      const model = validModel(input.model)
-      const contextTokens = validContextTokens(input.contextTokens)
-      if (contextTokens === undefined)
-        throw new Error(
-          'Context window must be a whole number of tokens between 4,000 and 10,000,000',
-        )
+    /** Accepts the raw request body; throws an Error with a user-facing message. */
+    save(body: unknown): PublicLlmConfig {
+      const parsed = llmConfigInput.safeParse(body ?? {})
+      if (!parsed.success) throw new Error(parsed.error.issues[0]!.message)
+      const { provider, baseUrl, model, contextTokens, apiKey } = parsed.data
       const current = read()
-      const apiKey = input.apiKey?.trim()
-      if (!provider || !baseUrl || !model || (!current && !apiKey))
-        throw new Error('Provider, base URL, model, and API key are required')
+      if (!current && !apiKey) throw new Error('API key is required')
       const secret = apiKey ? encrypt(apiKey) : undefined
       sqlite
         .prepare(
@@ -120,7 +127,7 @@ export function createWorkspaceLlmConfig(sqlite: TransactionalSqlite) {
           provider,
           baseUrl,
           model,
-          contextTokens,
+          contextTokens ?? null,
           secret?.ciphertext ?? current!.api_key_ciphertext,
           secret?.iv ?? current!.api_key_iv,
           secret?.tag ?? current!.api_key_tag,

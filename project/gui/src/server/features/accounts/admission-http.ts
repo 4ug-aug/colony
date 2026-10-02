@@ -2,7 +2,6 @@ import type { AdmissionStore } from './admission'
 import type { RoomUser } from '#/server/features/rooms/room-store'
 import { AGENT_MENTION_HANDLES } from '#/server/features/rooms/attention'
 import type {
-  LlmConfigInput,
   PublicLlmConfig,
 } from '#/server/features/workspace/llm-config'
 import type {
@@ -75,7 +74,7 @@ export type AdmissionOptions = {
   ) => Promise<unknown>
   llm?: {
     public(): PublicLlmConfig
-    save(input: LlmConfigInput): PublicLlmConfig
+    save(body: unknown): PublicLlmConfig
   }
   cursorRuntime?: {
     public(): PublicCursorRuntimeConfig
@@ -336,18 +335,9 @@ export function createAdmissionHttpHandler(
       if (user instanceof Response) return user
       if (request.method === 'GET') return json(options.llm.public())
       if (request.method === 'POST') {
-        const body = await readBody(request)
         try {
           return json(
-            options.llm.save({
-              provider: body?.provider,
-              baseUrl: typeof body?.baseUrl === 'string' ? body.baseUrl : '',
-              model: typeof body?.model === 'string' ? body.model : '',
-              contextTokens: body?.contextTokens,
-              ...(typeof body?.apiKey === 'string'
-                ? { apiKey: body.apiKey }
-                : {}),
-            }),
+            options.llm.save(await readBody(request)),
           )
         } catch (error) {
           return json(

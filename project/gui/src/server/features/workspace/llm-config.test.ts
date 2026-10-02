@@ -76,7 +76,7 @@ test('OpenAI supplies its default base URL when the form leaves it blank', () =>
   }
 })
 
-test('stores an optional context window and rejects implausible ones', () => {
+test('validates input with readable errors, including the optional context window', () => {
   const previous = process.env.BETTER_AUTH_SECRET
   process.env.BETTER_AUTH_SECRET = 'test-secret'
   try {
@@ -88,6 +88,10 @@ test('stores an optional context window and rejects implausible ones', () => {
     expect(() => config.save({ ...base, contextTokens: 100 })).toThrow('Context window')
     expect(config.save({ ...base, contextTokens: '' })).not.toHaveProperty('contextTokens')
     expect(config.model()).not.toHaveProperty('contextTokens')
+    expect(() => config.save({ ...base, baseUrl: 'ftp://models' })).toThrow('Base URL must be an http(s) URL')
+    expect(() => config.save({ ...base, baseUrl: '' })).toThrow('Base URL is required')
+    expect(() => config.save({ ...base, model: '  ' })).toThrow('Model is required')
+    expect(() => config.save({ ...base, provider: 'anthropic' })).toThrow('Provider must be openai or custom')
   } finally {
     if (previous === undefined) delete process.env.BETTER_AUTH_SECRET
     else process.env.BETTER_AUTH_SECRET = previous
