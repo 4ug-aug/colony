@@ -18,6 +18,7 @@ import type {
   GrantToolsConfigInput,
   PublicGrantToolsConfig,
 } from '#/server/features/workspace/grant-tools-config'
+import type { WorkspaceGitHubConfig } from '#/server/features/workspace/github-config'
 import type { WorkspaceSkillStore } from '#/server/features/workspace/workspace-skills'
 import type {
   ConnectionSaveInput,
@@ -91,6 +92,7 @@ export type AdmissionOptions = {
   }
   skills?: WorkspaceSkillStore
   connections?: WorkspaceConnectionStore
+  github?: Pick<WorkspaceGitHubConfig, 'public' | 'save' | 'clear'>
   agentMentionHandles?: () => ReadonlySet<string>
   listAgents?: () => { id: string; name: string }[]
   knownAgent?: (id: string) => boolean
@@ -378,6 +380,38 @@ export function createAdmissionHttpHandler(
           return json({ error: 'Unable to save Cursor agent runtime' }, 400)
         }
       }
+    }
+
+    if (url.pathname === '/api/workspace/settings/github' && options.github) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      if (request.method === 'GET') return json(options.github.public())
+      if (request.method === 'POST') {
+        try {
+          return json(await options.github.save((await readBody(request)) ?? {}))
+        } catch (error) {
+          console.error('GitHub settings save failed:', error)
+          return json(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Unable to save GitHub settings',
+            },
+            400,
+          )
+        }
+      }
+    }
+
+    if (
+      url.pathname === '/api/workspace/settings/github/clear' &&
+      options.github &&
+      request.method === 'POST'
+    ) {
+      const user = await administrator(request)
+      if (user instanceof Response) return user
+      return json(options.github.clear())
     }
 
     if (

@@ -300,7 +300,7 @@ test('issue store rejects parent cycles and oversized descriptions', () => {
 
 test('issue branch binding resolves own and inherited effectiveBranch', () => {
   const sqlite = migratedDatabase()
-  const store = createSqliteIssueStore(sqlite, 'acme/widgets')
+  const store = createSqliteIssueStore(sqlite, () => 'acme/widgets')
 
   const parent = store.createIssue({
     id: 'parent',

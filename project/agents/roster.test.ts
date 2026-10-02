@@ -125,6 +125,74 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
   expect(preparedRepository).toBe("acme/widgets");
 });
 
+test("githubAdapter is resolved per run, so saving GitHub settings needs no restart", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  let checkedOut: string | undefined;
+  const adapter: WorkspaceAgentAdapter = {
+    repository: {
+      input: { type: "repository", provider: "github", repository: "acme/widgets", revision: "main" },
+      source: {
+        provider: "github",
+        async checkout(input) {
+          checkedOut = input.repository;
+          return { revision: "abc123" };
+        },
+      },
+    },
+    capability: {
+      id: "github.pull-requests",
+      resources: [{ provider: "github", repository: "acme/widgets" }],
+      createUpstream: () => ({
+        async listTools() {
+          return [{ name: "github.create_pull_request" }];
+        },
+        async callTool() {
+          return {};
+        },
+      }),
+    },
+  };
+  let configured: WorkspaceAgentAdapter | undefined;
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    githubAdapter: () => configured,
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-1",
+    }),
+  });
+
+  expect(() =>
+    executor.startRun({ task: "fix", agentDefinitionId: SOFTWARE_ENGINEER_ID }),
+  ).toThrow("GitHub isn't configured");
+
+  configured = adapter;
+  const id = executor.startRun({ task: "fix", agentDefinitionId: SOFTWARE_ENGINEER_ID });
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+    await Bun.sleep(0);
+  }
+  const run = executor.getRun(id)!;
+  expect(run.inputs).toEqual([adapter.repository!.input]);
+  expect(run.capabilityGrant?.resources).toEqual([
+    { provider: "github", repository: "acme/widgets" },
+  ]);
+  expect(checkedOut).toBe("acme/widgets");
+});
+
 test("Issue repositoryBase overrides repository checkout revision", async () => {
   const runner: CommandRunner = {
     async run(args, options): Promise<CommandResult> {

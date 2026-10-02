@@ -1,4 +1,5 @@
-import { App, Octokit } from "octokit";
+import { createAppAuth } from "@octokit/auth-app";
+import { Octokit, RequestError } from "octokit";
 import { boundStepText } from "../runtime/step";
 import { createMcpGateway, type McpGateway, type McpTool, type McpUpstream } from "./gateway";
 
@@ -370,20 +371,69 @@ async function getPullRequest(options: {
   };
 }
 
-export async function createGitHubAppInstallationClient(options: {
+/** Installation-authenticated client; @octokit/auth-app mints and renews the hour-long tokens. */
+export function createGitHubAppInstallationClient(options: {
   appId: string;
   privateKey: string;
   installationId: number;
-}): Promise<Octokit> {
-  return new App({ appId: options.appId, privateKey: options.privateKey })
-    .getInstallationOctokit(options.installationId);
+}): Octokit {
+  return new Octokit({ authStrategy: createAppAuth, auth: options });
 }
 
-export function createGitHubTokenClient(token: string): Octokit {
-  const auth = token.trim();
-  if (!auth) throw new Error("GitHub token is required");
-  return new Octokit({ auth });
+const httpStatus = (error: unknown): number | undefined =>
+  error instanceof RequestError ? error.status : undefined;
+
+/** Checks the App against the repository before it is saved as the workspace GitHub setting. */
+export async function connectGitHubApp(options: {
+  appId: string;
+  privateKey: string;
+  repository: string;
+  base: string;
+  /** Test seam for GitHub HTTP. */
+  fetch?: typeof fetch;
+}): Promise<{ slug: string; installationId: number }> {
+  const { owner, repo } = repositoryParts(options.repository);
+  const request = options.fetch ? { request: { fetch: options.fetch } } : {};
+  const app = new Octokit({
+    authStrategy: createAppAuth,
+    auth: { appId: options.appId, privateKey: options.privateKey },
+    ...request,
+  });
+  let slug: string;
+  try {
+    slug = (await app.rest.apps.getAuthenticated()).data?.slug ?? options.appId;
+  } catch (error) {
+    if (httpStatus(error) === 401)
+      throw new Error("GitHub rejected the App ID or private key");
+    throw error;
+  }
+  let installationId: number;
+  try {
+    installationId = (await app.rest.apps.getRepoInstallation({ owner, repo })).data.id;
+  } catch (error) {
+    if (httpStatus(error) === 404)
+      throw new Error(
+        `GitHub App isn't installed on ${options.repository}. Install it: ${gitHubAppInstallUrl(slug)}`,
+      );
+    throw error;
+  }
+  const installation = new Octokit({
+    authStrategy: createAppAuth,
+    auth: { appId: options.appId, privateKey: options.privateKey, installationId },
+    ...request,
+  });
+  try {
+    await installation.rest.repos.getBranch({ owner, repo, branch: options.base });
+  } catch (error) {
+    if (httpStatus(error) === 404)
+      throw new Error(`Branch ${options.base} doesn't exist in ${options.repository}`);
+    throw error;
+  }
+  return { slug, installationId };
 }
+
+export const gitHubAppInstallUrl = (slug: string): string =>
+  `https://github.com/apps/${encodeURIComponent(slug)}/installations/new`;
 
 export function createGitHubMcpUpstream(options: {
   octokit: Octokit;
@@ -392,7 +442,6 @@ export function createGitHubMcpUpstream(options: {
   branch: string;
   baseCommit: string;
   base: string;
-  verify?: () => Promise<void>;
 }): McpUpstream {
   const repository = repositoryParts(options.repository);
 
@@ -428,7 +477,6 @@ export function createGitHubMcpUpstream(options: {
       const input = parsePullRequestRequest(args);
       const workspace = await workspaceState(options);
       if (!workspace.commits.length) throw new Error("Workspace HEAD has no commits to publish");
-      await options.verify?.();
       const branch = await remoteBranch({ octokit: options.octokit, repository, branch: options.branch });
       if (branch) {
         if (branch.tree === workspace.tree) {
@@ -542,7 +590,6 @@ export function createGitHubMcpGateway(options: {
   branch: string;
   baseCommit: string;
   base: string;
-  verify?: () => Promise<void>;
   now?: () => Date;
   createToken?: () => string;
 }): McpGateway {

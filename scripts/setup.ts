@@ -20,7 +20,7 @@ export type SandboxProvider = "apple-container" | "docker" | "smolvm";
 /** Boots the persons that get no repository checkout; a microVM cannot. */
 export type ContainerProvider = Exclude<SandboxProvider, "smolvm">;
 
-type Integration = "github" | "linear" | "asana" | "outline";
+type Integration = "linear" | "asana" | "outline";
 
 type ReleaseAsset = {
   name: string;
@@ -431,68 +431,20 @@ async function configureServer(path: string): Promise<void> {
   }
 
   const initialIntegrations: Integration[] = [];
-  if (existing("SWEAT_GITHUB_REPOSITORY")) initialIntegrations.push("github");
   if (existing("LINEAR_MCP_API_KEY")) initialIntegrations.push("linear");
 
   const integrations = assertNotCancelled(
     await multiselect({
       message: "Optional integrations",
       options: [
-        { value: "github" as const, label: "GitHub", hint: "repo + token" },
         { value: "linear" as const, label: "Linear", hint: "MCP API key" },
       ],
       initialValues: initialIntegrations,
       required: false,
     }),
   );
-  const useGitHub = integrations.includes("github");
   const useLinear = integrations.includes("linear");
 
-  if (useGitHub) {
-    note(
-      "Create a fine-grained personal access token with Contents (read/write), Pull requests (read/write), and Checks (read). Guide: docs/github-token.md",
-      "GitHub token",
-    );
-    document = setEnvValue(
-      document,
-      "SWEAT_GITHUB_REPOSITORY",
-      (
-        await askText(
-          "GitHub repository (owner/name)",
-          existing("SWEAT_GITHUB_REPOSITORY"),
-          (value) =>
-            value.trim() ? undefined : "GitHub repository is required",
-        )
-      ).trim(),
-    );
-    document = setEnvValue(
-      document,
-      "SWEAT_GITHUB_BASE",
-      (
-        await askText(
-          "GitHub base branch",
-          existing("SWEAT_GITHUB_BASE") ?? "main",
-          (value) => (value.trim() ? undefined : "GitHub base branch is required"),
-        )
-      ).trim(),
-    );
-    const githubToken = await askSecret(
-      "GitHub personal access token",
-      existing("SWEAT_GITHUB_TOKEN"),
-    );
-    if (!githubToken)
-      throw new Error(
-        "A GitHub personal access token is required when GitHub is selected.",
-      );
-    document = setEnvValue(document, "SWEAT_GITHUB_TOKEN", githubToken);
-    const verify = (
-      await askText(
-        "Verification command (optional)",
-        existing("SWEAT_VERIFY_COMMAND"),
-      )
-    ).trim();
-    if (verify) document = setEnvValue(document, "SWEAT_VERIFY_COMMAND", verify);
-  }
   if (useLinear) {
     const token = await askSecret(
       "Linear API key",

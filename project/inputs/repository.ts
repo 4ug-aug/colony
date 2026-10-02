@@ -59,7 +59,10 @@ export type SkillSource = {
 };
 
 export type WorkspaceProvisionerOptions = {
-  sources: readonly RepositoryCheckoutSource[];
+  /** A function is resolved on each prepare, so live settings apply without a restart. */
+  sources:
+    | readonly RepositoryCheckoutSource[]
+    | (() => readonly RepositoryCheckoutSource[]);
   attachmentSource?: AttachmentSource;
   skillSource?: SkillSource;
   createDirectory?: () => Promise<string>;
@@ -222,9 +225,11 @@ async function defaultWorkspaceDirectory(): Promise<string> {
 export function createRepositoryWorkspaceProvisioner(
   options: WorkspaceProvisionerOptions,
 ): InputProvisioner<WorkspaceInput> {
-  const sources = new Map(
-    options.sources.map((source) => [source.provider, source]),
-  );
+  const sourceFor = (provider: string) => {
+    const sources =
+      typeof options.sources === "function" ? options.sources() : options.sources;
+    return sources.find((source) => source.provider === provider);
+  };
   const createDirectory = options.createDirectory ?? defaultWorkspaceDirectory;
   const removeDirectory =
     options.removeDirectory ??
@@ -260,7 +265,7 @@ export function createRepositoryWorkspaceProvisioner(
           ? options.skillSource.layoutForAgent(context.agentDefinitionId)
           : undefined;
       const repository = repositories[0];
-      const source = repository && sources.get(repository.provider);
+      const source = repository && sourceFor(repository.provider);
       if (repository && !source)
         throw new Error(
           `Unsupported repository provider: ${repository.provider}`,
