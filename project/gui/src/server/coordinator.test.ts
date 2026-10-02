@@ -3295,7 +3295,9 @@ test('an agent mention in a Thread reply starts one fresh run bound to the threa
     // root, never the reply itself — nesting is structurally impossible.
     expect(control.requests).toEqual([
       {
-        task: 'fix it in-thread',
+        task: expect.stringMatching(
+          /^Recent messages in this thread[\s\S]*Root question[\s\S]*Your task, from the latest message:\nfix it in-thread$/,
+        ),
         roomId: GENERAL_ROOM_ID,
         rootId: root.id,
         threadReadRootId: root.id,

@@ -30,6 +30,7 @@ import {
   type RoomMessageHub,
 } from './room-hub'
 import { json } from '#/server/http/respond'
+import { formatWorkspaceTranscript } from '#project/mcp/workspace'
 
 async function textFrom(request: Request): Promise<string | undefined> {
   try {
@@ -139,6 +140,9 @@ async function roomBodyFrom(request: Request): Promise<RoomBody | undefined> {
     return undefined
   }
 }
+
+/** How many earlier thread messages a reply mention hands the agent. */
+const THREAD_HISTORY_MESSAGES = 20
 
 export function createRoomsHttp(deps: {
   store: RoomStore
@@ -385,8 +389,18 @@ export function createRoomsHttp(deps: {
         return json({ error: 'Unable to save message' }, 500)
       }
       if (!task) return json({ message }, 201)
+      // A reply mention carries the thread so far; agents rarely read it themselves.
+      const thread = rootId
+        ? deps.messages
+            .listThreadMessages(roomId, rootId)
+            .filter(({ id }) => id !== message.id)
+            .slice(-THREAD_HISTORY_MESSAGES)
+        : []
+      const prompt = thread.length
+        ? `Recent messages in this thread, oldest first:\n\n${formatWorkspaceTranscript(thread, Date.now())}\n\nYour task, from the latest message:\n${task}`
+        : task
       try {
-        const run = deps.control.start(task, {
+        const run = deps.control.start(prompt, {
           roomId,
           // Write binding: a top-level mention roots writes at its own
           // trigger message; a reply mention writes into the existing
