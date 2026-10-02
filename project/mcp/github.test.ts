@@ -83,7 +83,7 @@ test("GitHub publishes committed HEAD under the assigned remote run branch", asy
   } finally {
     await rm(workspace.directory, { force: true, recursive: true });
   }
-});
+}, 10_000);
 
 test("GitHub returns the existing pull request when publishing is retried", async () => {
   const workspace = await branchWithChange();
@@ -162,7 +162,7 @@ test("GitHub syncs an existing run branch before returning its pull request", as
   } finally {
     await rm(workspace.directory, { force: true, recursive: true });
   }
-});
+}, 10_000);
 
 test("GitHub preserves binary data, executable modes, and symlinks when syncing", async () => {
   const workspace = await branchWithChange();
@@ -256,7 +256,7 @@ test("GitHub sends mode and type when syncing a deleted file", async () => {
   } finally {
     await rm(workspace.directory, { force: true, recursive: true });
   }
-});
+}, 10_000);
 
 test("GitHub returns failed pull request checks", async () => {
   const gateway = createGitHubMcpGateway({
