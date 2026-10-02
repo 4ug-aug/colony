@@ -337,10 +337,7 @@ Default duration **150–200ms**, easing **ease-out**. Overlays 100ms. Toasts
 Chevrons rotate (`-rotate-90` closed on list groups; `rotate-90` open on
 sidebar). Live timing uses `animate-pulse` on the icon, not the row.
 
-Colony marks stagger: each instance gets a hashed negative `animation-delay`
-and a slightly different body vs mandible duration so a row of ants does not
-loop in lockstep. Honor `prefers-reduced-motion` (the SVG already disables
-those animations).
+Colony marks are static. Don't animate them.
 
 Always include `motion-reduce:animate-none` / `motion-reduce:transition-none`.
 
@@ -446,15 +443,17 @@ Do not wrap each footer control in its own bordered badge.
 Hover/focus actions re-anchor to the message content (beside the bubble), never
 the far edge of the timeline, and must not cover text, timestamps, or links.
 
-The composer is the raised surface: 14px radius, `--border`, `shadow-sm`,
-toolbar strip. Focus-within changes the border to `--primary` plus at most a
-1px outer ring — no stacked glow. Toolbar controls keep their own focus rings.
+The composer is the shared `PromptBar` (`src/components/prompt-bar.tsx`), the
+raised surface: 14px radius, `--border`, `shadow-sm`, 6px padding. Focus-within
+changes the border to `--primary` plus at most a 1px outer ring — no stacked
+glow.
 
-Formatting and insert actions sit in two compact grouped containers (shared
-fill, 1px border, 8px radius, 28×28 tools). Send is a labeled 34px `--primary`
-button (`Send` / `Save`) with a 16px icon — not the shared circular Button,
-and never dimmed with opacity when disabled. Disabled Send uses `--muted` so
-it stays legible.
+It sits on one row — `+`, editor, Send — and expands to two rows (editor on
+top, controls below) once text wraps, spans several blocks, or files are
+attached. `+` opens a small insert menu (Add files, Mention); there is no
+formatting toolbar (markdown shortcuts still apply). Send is a 28px square
+`--primary` button with a 16px arrow, never dimmed with opacity; disabled Send
+uses `--muted` / `--muted-foreground` so it stays legible.
 
 ## Applying this to another product
 

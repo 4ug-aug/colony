@@ -355,20 +355,6 @@ pre code {
   border-radius: 0;
 }
 
-.mention-menu {
-  position: absolute;
-  bottom: calc(100% + 0.85rem);
-  left: 0;
-  right: 0;
-  z-index: 50;
-  padding: 0.35rem;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  background: var(--popover);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 14%);
-}
-
 @keyframes message-search-hit {
   0% {
     background-color: color-mix(
@@ -530,74 +516,6 @@ pre code {
     transform: none;
     opacity: 0.7;
   }
-}
-
-.mention-menu button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  height: 2.25rem;
-  padding: 0 0.5rem;
-  border: 0;
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--popover-foreground);
-  text-align: left;
-  font: inherit;
-}
-
-.mention-menu-group + .mention-menu-group {
-  margin-top: 0.35rem;
-}
-
-.mention-menu-heading {
-  padding: 0.35rem 0.5rem 0.2rem;
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.agent-ant {
-  display: block;
-  flex: none;
-  background-color: currentColor;
-  color: var(--foreground);
-  mask: url('/no-bg-ant-worker.png') center / contain no-repeat;
-  -webkit-mask: url('/no-bg-ant-worker.png') center / contain no-repeat;
-}
-
-.mention-menu-copy {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
-}
-
-.mention-menu-copy strong,
-.mention-menu-copy small {
-  overflow: hidden;
-  max-width: 100%;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mention-menu-copy strong {
-  font-size: 0.875rem;
-  font-weight: 500;
-  line-height: 1.15;
-}
-
-.mention-menu-copy small {
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-  line-height: 1.15;
-}
-
-.mention-menu button:hover,
-.mention-menu button.is-selected {
-  background: color-mix(in oklab, var(--muted) 40%, transparent);
 }
 
 button,

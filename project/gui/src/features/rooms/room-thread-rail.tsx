@@ -9,7 +9,14 @@ import { useDashboardStore } from '#/features/shell/dashboard-store'
 import { RoomSideRail } from '#/features/shell/room-side-rail'
 import { useMediaQuery } from '#/hooks/use-media-query'
 import { ArrowDown, X } from 'lucide-react'
-import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { MessageComposer } from './message-composer'
 import { RoomMessageRow } from './room-message-row'
 import { clearThreadDraft, setThreadDraft, threadDraft } from './thread-drafts'
@@ -29,86 +36,116 @@ import type {
 import { useRoomThread } from './use-room-thread'
 
 const noMentions: string[] = []
+const noAttachments: RoomMessage['attachments'] = []
+const noRuns: RoomRun[] = []
 
-const ThreadResult = memo(function ThreadResult({
-  result,
-  agentName,
-  coarsePointer,
-}: {
-  result: RunResultReply
-  agentName: string
-  coarsePointer: boolean
-}) {
-  return (
-    <RoomMessageRow
-      messageId={result.id}
-      author={{ id: result.agentId, name: agentName, kind: 'agent' }}
-      authorName={agentName}
-      createdAt={result.createdAt}
-      text={result.text}
-      attachments={[]}
-      mentionHandles={noMentions}
-      coarsePointer={coarsePointer}
-      isAgent
-    />
-  )
-})
+// Live results are re-derived from `runs` on every run update, so compare by
+// value rather than by object identity.
+const ThreadResult = memo(
+  function ThreadResult({
+    result,
+    agentName,
+    coarsePointer,
+  }: {
+    result: RunResultReply
+    agentName: string
+    coarsePointer: boolean
+  }) {
+    const author = useMemo(
+      () => ({ id: result.agentId, name: agentName, kind: 'agent' as const }),
+      [result.agentId, agentName],
+    )
+    return (
+      <RoomMessageRow
+        messageId={result.id}
+        author={author}
+        authorName={agentName}
+        createdAt={result.createdAt}
+        text={result.text}
+        attachments={noAttachments}
+        mentionHandles={noMentions}
+        coarsePointer={coarsePointer}
+        isAgent
+      />
+    )
+  },
+  (a, b) =>
+    a.agentName === b.agentName &&
+    a.coarsePointer === b.coarsePointer &&
+    a.result.id === b.result.id &&
+    a.result.agentId === b.result.agentId &&
+    a.result.text === b.result.text &&
+    a.result.createdAt === b.result.createdAt,
+)
 
-const ThreadMessage = memo(function ThreadMessage({
-  message,
-  mentionHandles,
-  currentUserId,
-  onEdit,
-  focused,
-  onFocusHandled,
-  runs = [],
-  openRun,
-  coarsePointer,
-}: {
-  message: RoomMessage
-  mentionHandles: string[]
-  currentUserId?: string
-  onEdit?: (message: RoomMessage) => void
-  focused?: boolean
-  onFocusHandled?: () => void
-  runs?: RoomRun[]
-  openRun?: (runId: string) => void
-  coarsePointer: boolean
-}) {
-  const canEdit =
-    Boolean(onEdit) &&
-    message.author.kind !== 'agent' &&
-    message.author.id === currentUserId
-  const metadata =
-    runs.length > 0 && openRun
-      ? runs.map((run) => (
-          <RunCapsule
-            key={run.id}
-            run={run}
-            openRun={openRun}
-            showModel={runs.length > 1}
-          />
-        ))
-      : undefined
-  return (
-    <RoomMessageRow
-      messageId={message.id}
-      author={message.author}
-      authorName={message.author.name}
-      createdAt={message.createdAt}
-      edited={message.editedAt != null}
-      text={message.text}
-      attachments={message.attachments}
-      mentionHandles={mentionHandles}
-      coarsePointer={coarsePointer}
-      isAgent={message.author.kind === 'agent'}
-      focused={focused}
-      onFocusHandled={onFocusHandled}
-      onEdit={canEdit ? () => onEdit?.(message) : undefined}
-      metadata={metadata}
-    />
-  )
-})
+// A message's run list is regrouped on every run update; same runs in the same
+// order means nothing visible changed.
+const sameRuns = (a: RoomRun[], b: RoomRun[]) =>
+  a.length === b.length && a.every((run, i) => run === b[i])
+
+const ThreadMessage = memo(
+  function ThreadMessage({
+    message,
+    mentionHandles,
+    currentUserId,
+    onEdit,
+    focused,
+    onFocusHandled,
+    runs = noRuns,
+    openRun,
+    coarsePointer,
+  }: {
+    message: RoomMessage
+    mentionHandles: string[]
+    currentUserId?: string
+    onEdit?: (message: RoomMessage) => void
+    focused?: boolean
+    onFocusHandled?: () => void
+    runs?: RoomRun[]
+    openRun?: (runId: string) => void
+    coarsePointer: boolean
+  }) {
+    const canEdit =
+      Boolean(onEdit) &&
+      message.author.kind !== 'agent' &&
+      message.author.id === currentUserId
+    const edit = useCallback(() => onEdit?.(message), [onEdit, message])
+    const metadata =
+      runs.length > 0 && openRun
+        ? runs.map((run) => (
+            <RunCapsule
+              key={run.id}
+              run={run}
+              openRun={openRun}
+              showModel={runs.length > 1}
+            />
+          ))
+        : undefined
+    return (
+      <RoomMessageRow
+        messageId={message.id}
+        author={message.author}
+        authorName={message.author.name}
+        createdAt={message.createdAt}
+        edited={message.editedAt != null}
+        text={message.text}
+        attachments={message.attachments}
+        mentionHandles={mentionHandles}
+        coarsePointer={coarsePointer}
+        isAgent={message.author.kind === 'agent'}
+        focused={focused}
+        onFocusHandled={onFocusHandled}
+        onEdit={canEdit ? edit : undefined}
+        metadata={metadata}
+      />
+    )
+  },
+  (a, b) => {
+    for (const key of Object.keys(a) as (keyof typeof a)[])
+      if (key !== 'runs' && a[key] !== b[key]) return false
+    return sameRuns(a.runs ?? noRuns, b.runs ?? noRuns)
+  },
+)
 
 export type RoomThreadRailProps = {
   roomId: string
@@ -168,6 +205,17 @@ function RoomThreadRailContent({
   const threadRuns = useMemo(
     () => groupRunsByTrigger(runsForThread(runs, root, replies)),
     [replies, root, runs],
+  )
+  // Dashboard passes fresh callbacks every render; keep row props stable.
+  const handlers = useRef({ openRun, onFocusReplyHandled })
+  handlers.current = { openRun, onFocusReplyHandled }
+  const stableOpenRun = useCallback(
+    (runId: string) => handlers.current.openRun?.(runId),
+    [],
+  )
+  const stableFocusHandled = useCallback(
+    () => handlers.current.onFocusReplyHandled?.(),
+    [],
   )
   const scrollRef = useRef<HTMLDivElement>(null)
   const timelineItems = useMemo(
@@ -285,8 +333,8 @@ function RoomThreadRailContent({
                   message={root}
                   mentionHandles={mentionHandles}
                   currentUserId={currentUserId}
-                  runs={threadRuns.get(root.id) ?? []}
-                  openRun={openRun}
+                  runs={threadRuns.get(root.id)}
+                  openRun={openRun ? stableOpenRun : undefined}
                   coarsePointer={coarsePointer}
                 />
               </div>
@@ -300,9 +348,11 @@ function RoomThreadRailContent({
                       currentUserId={currentUserId}
                       onEdit={setEditingReply}
                       focused={focusReplyId === item.reply.id}
-                      onFocusHandled={onFocusReplyHandled}
-                      runs={threadRuns.get(item.reply.id) ?? []}
-                      openRun={openRun}
+                      onFocusHandled={
+                        onFocusReplyHandled ? stableFocusHandled : undefined
+                      }
+                      runs={threadRuns.get(item.reply.id)}
+                      openRun={openRun ? stableOpenRun : undefined}
                       coarsePointer={coarsePointer}
                     />
                   ) : (

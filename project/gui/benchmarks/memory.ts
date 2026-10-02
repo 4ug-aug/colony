@@ -294,7 +294,6 @@ async function runScenario(scenario: Scenario): Promise<Report> {
     disabled: false,
     roomName: 'Benchmark',
     mentionableAccounts: empty,
-    hideMentions: true,
   })
   flushSync(() => {
     roomRoot.render(
