@@ -53,8 +53,15 @@ test('mention menu opens from the composer', async () => {
     )
   })
 
+  await act(() => {
+    host
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Add attachments and mentions"]',
+      )!
+      .click()
+  })
   const mentionButton = host.querySelector<HTMLButtonElement>(
-    '[aria-label="Mention a teammate or agent"]',
+    '[role="menuitem"]:last-child',
   )
   expect(mentionButton).toBeTruthy()
   await act(() => {

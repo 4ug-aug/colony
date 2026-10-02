@@ -8,12 +8,6 @@ import {
 } from '#/components/ui/hover-card'
 import { accountFaceStyle, accountInitials } from '#/lib/account-color'
 
-// The ant PNG is black with transparency; this CSS mask keeps its silhouette
-// while letting the surrounding text colour recolour it per avatar context.
-export function AgentAnt({ className = '' }: { className?: string }) {
-  return <span aria-hidden="true" className={`agent-ant ${className}`} />
-}
-
 export function AccountFace({
   name,
   image,
