@@ -1,6 +1,6 @@
 import { boundStepText, type Step } from "./step.ts";
 import { readFile, writeFile } from "node:fs/promises";
-import type { SettingSource } from "@cursor/sdk/bundled";
+import type { SettingSource, ToolName } from "@cursor/sdk/bundled";
 
 export interface CursorCapabilitySession {
   url: string;
@@ -72,7 +72,7 @@ export type CursorAgentFactory = (options: {
       headers: Record<string, string>;
     }
   >;
-  disallowedTools?: readonly string[];
+  disallowedTools?: ToolName[];
 }) => Promise<CursorSdkAgent>;
 
 export type CursorAgentResumeFactory = (
