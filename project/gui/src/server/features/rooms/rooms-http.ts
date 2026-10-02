@@ -141,8 +141,31 @@ async function roomBodyFrom(request: Request): Promise<RoomBody | undefined> {
   }
 }
 
-/** How many earlier thread messages a reply mention hands the agent. */
 const THREAD_HISTORY_MESSAGES = 20
+const THREAD_MESSAGE_CHARS = 4_000
+// ponytail: fixed ~10k-token budget; size it from the model's context window if 32k models feel cramped.
+const THREAD_HISTORY_CHARS = 40_000
+
+/**
+ * The newest thread messages a reply mention hands the agent, oldest first.
+ * Budgeted, because compaction keeps the task (and so this history) verbatim.
+ */
+export function threadHistory<Message extends { text: string }>(
+  messages: readonly Message[],
+): Message[] {
+  const kept: Message[] = []
+  let budget = THREAD_HISTORY_CHARS
+  for (const message of messages.slice(-THREAD_HISTORY_MESSAGES).reverse()) {
+    const text =
+      message.text.length > THREAD_MESSAGE_CHARS
+        ? `${message.text.slice(0, THREAD_MESSAGE_CHARS)}\n[message truncated: ${message.text.length} chars]`
+        : message.text
+    if (text.length > budget) break
+    budget -= text.length
+    kept.unshift({ ...message, text })
+  }
+  return kept
+}
 
 export function createRoomsHttp(deps: {
   store: RoomStore
@@ -391,10 +414,11 @@ export function createRoomsHttp(deps: {
       if (!task) return json({ message }, 201)
       // A reply mention carries the thread so far; agents rarely read it themselves.
       const thread = rootId
-        ? deps.messages
-            .listThreadMessages(roomId, rootId)
-            .filter(({ id }) => id !== message.id)
-            .slice(-THREAD_HISTORY_MESSAGES)
+        ? threadHistory(
+            deps.messages
+              .listThreadMessages(roomId, rootId)
+              .filter(({ id }) => id !== message.id),
+          )
         : []
       const prompt = thread.length
         ? `Recent messages in this thread, oldest first:\n\n${formatWorkspaceTranscript(thread, Date.now())}\n\nYour task, from the latest message:\n${task}`
