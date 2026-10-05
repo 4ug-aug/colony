@@ -148,7 +148,7 @@ if (import.meta.main) {
     },
   }
   // The coordinator fills this in; Consultations need the Chambers it owns.
-  const consultations: WorkspaceConsultationsPort = {
+  const consultations: Pick<WorkspaceConsultationsPort, 'ask'> = {
     ask: async () => {
       throw new Error('Consultations are not ready yet')
     },
@@ -447,6 +447,15 @@ if (import.meta.main) {
           port: {
             isChamber: (roomId) => store.getRoom(roomId)?.kind === 'chamber',
             ask: (consultation) => consultations.ask(consultation),
+            askableAgents: (accountId) =>
+              agentDefinitionStore
+                .listVisible(accountId)
+                .filter(({ archivedAt }) => archivedAt === undefined)
+                .map(({ id, name, description }) => ({
+                  id,
+                  name,
+                  description,
+                })),
           },
         }),
         createWebSearchAdapter(),

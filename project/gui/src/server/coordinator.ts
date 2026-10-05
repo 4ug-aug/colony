@@ -294,7 +294,7 @@ export function createCoordinator(options: {
   bulletinStore?: BulletinStore
   chatStore?: ChatStore
   /** Filled in here: Consultations need the Chambers this coordinator owns. */
-  consultations?: WorkspaceConsultationsPort
+  consultations?: Pick<WorkspaceConsultationsPort, 'ask'>
   issueNotify?: {
     onCreated: (issue: Issue) => void
     onChanged: (issue: Issue) => void

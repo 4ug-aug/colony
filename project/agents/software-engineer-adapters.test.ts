@@ -371,6 +371,9 @@ test("workspace.consultations applies to Chamber runs only, and asks as the runn
   const adapter = createWorkspaceConsultationsAdapter({
     port: {
       isChamber: (roomId) => roomId === "chamber-1",
+      askableAgents: () => [
+        { id: "software-engineer", name: "Software engineer", description: "Code." },
+      ],
       ask: async (consultation) => {
         asked.push(consultation);
         return "answer";

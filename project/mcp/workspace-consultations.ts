@@ -7,28 +7,45 @@ export type Consultation = {
   question: string;
 };
 
+export type AskableAgent = { id: string; name: string; description: string };
+
 export interface WorkspaceConsultationsPort {
   /** Resolves with the consulted agent's answer, or a note on why there is none. */
   ask(consultation: Consultation): Promise<string>;
+  /** Agents the account may consult: visible to it and not archived. */
+  askableAgents(accountId: string): AskableAgent[];
 }
 
 export function createWorkspaceConsultationsMcpUpstream(options: {
   port: WorkspaceConsultationsPort;
   askingAgentId: string;
   askingRunId: string;
+  accountId: string;
 }): McpUpstream {
+  const askable = () =>
+    options.port
+      .askableAgents(options.accountId)
+      .filter(({ id }) => id !== options.askingAgentId);
   return {
     async listTools() {
+      // Named here so finding a specialist needs no other tool.
+      const agents = askable();
       return [
         {
           name: "workspace.ask_agent",
-          description:
-            "Ask another agent a question and wait for its answer. The question and answer appear in the user's Chamber with that agent, which works with its own tools. Use it when another agent is the specialist; use workspace.list_agents to find one.",
+          description: [
+            "Ask another agent a question and wait for its answer. The question and answer appear in the user's Chamber with that agent, which works with its own tools. Use it when another agent is the specialist.",
+            "Agents you can ask:",
+            ...agents.map(
+              ({ id, name, description }) => `- ${id} (${name}): ${description}`,
+            ),
+          ].join("\n"),
           inputSchema: {
             type: "object",
             properties: {
               agentDefinitionId: {
                 type: "string",
+                enum: agents.map(({ id }) => id),
                 description: "Agent id (slug) to ask.",
               },
               question: {
@@ -53,6 +70,8 @@ export function createWorkspaceConsultationsMcpUpstream(options: {
         typeof args.question === "string" ? args.question.trim() : "";
       if (!agentDefinitionId) throw new Error("agentDefinitionId is required");
       if (!question) throw new Error("A non-empty question is required");
+      if (!askable().some(({ id }) => id === agentDefinitionId))
+        throw new Error(`Unknown agent: ${agentDefinitionId}`);
       const answer = await options.port.ask({
         askingAgentId: options.askingAgentId,
         askingRunId: options.askingRunId,

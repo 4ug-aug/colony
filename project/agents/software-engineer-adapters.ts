@@ -146,13 +146,17 @@ export function createWorkspaceConsultationsAdapter(options: {
       },
       createUpstream({ grantContext, runId }) {
         const askingAgentId = grantContext?.agentDefinitionId;
-        if (!askingAgentId || !runId) {
-          throw new Error("An agent and run are required to consult agents");
+        const accountId = grantContext?.responsibleAccountId;
+        if (!askingAgentId || !runId || !accountId) {
+          throw new Error(
+            "An agent, run, and Responsible Account are required to consult agents",
+          );
         }
         return createWorkspaceConsultationsMcpUpstream({
           port: options.port,
           askingAgentId,
           askingRunId: runId,
+          accountId,
         });
       },
     },
