@@ -40,14 +40,26 @@ test('tool_call shell with invalid JSON falls back to "is using shell"', () => {
   expect(stepLabel(step({ kind: 'tool_call', tool: 'shell', text: 'not json' }))).toBe('is using shell')
 })
 
-test('tool_call other tool uses part before first dot', () => {
-  expect(stepLabel(step({ kind: 'tool_call', tool: 'linear.issues.get', text: '{}' }))).toBe('is using linear')
+test('namespaced tools read as a verb and object', () => {
+  const label = (tool: string) => stepLabel(step({ kind: 'tool_call', tool, text: '{}' }))
+  expect(label('workspace.list_issues')).toBe('is listing issues')
+  expect(label('workspace_read_messages')).toBe('is reading messages')
+  expect(label('github.create_pull_request')).toBe('is creating pull request in GitHub')
+  expect(label('asana.get_task')).toBe('is getting task in Asana')
+  expect(label('postgres.query')).toBe('is querying in Postgres')
+  expect(label('web.search')).toBe('is searching the web')
+  expect(label('apply_patch')).toBe('is editing files')
 })
 
-test('tool_call tool with no dot uses full name', () => {
-  expect(stepLabel(step({ kind: 'tool_call', tool: 'browser', text: '{}' }))).toBe('is using browser')
+test('unknown tools fall back to "is using"', () => {
+  const label = (tool?: string) => stepLabel(step({ kind: 'tool_call', tool, text: '{}' }))
+  expect(label('browser')).toBe('is using browser')
+  expect(label('custom_tool')).toBe('is using custom_tool')
+  expect(label('acme.sync')).toBe('is syncing in acme')
 })
 
-test('tool_call with no tool field uses empty string humanized', () => {
-  expect(stepLabel(step({ kind: 'tool_call', tool: undefined, text: '{}' }))).toBe('is using ')
+test('exec_command shows its command', () => {
+  expect(
+    stepLabel(step({ kind: 'tool_call', tool: 'exec_command', text: JSON.stringify({ cmd: ['bun', 'test'] }) })),
+  ).toBe('is running `bun test`')
 })
