@@ -1,5 +1,7 @@
 export type AgentGrantContext = {
   roomId?: string;
+  /** The Room is a Chamber: one account's private conversation with this agent. */
+  chamber?: true;
   /** Invocation root for a Room-linked run: binds workspace.post_message to this thread root. */
   rootId?: string;
   /** Set only for an in-thread invocation: binds workspace.read_messages to this thread root's transcript instead of the flat Room. */

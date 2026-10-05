@@ -33,3 +33,27 @@ test("chat invocation allows follow-up turns and is not a Room", () => {
   expect(result).not.toContain("working from a Room");
   expect(result).not.toContain("Oneshot");
 });
+
+test("chamber invocation is a private conversation where other agents may consult", () => {
+  const result = instructionsForInvocation("Be helpful.", {
+    roomId: "chamber-1",
+    chamber: true,
+    agentDefinitionId: "dj-master",
+  });
+  expect(result).toContain("Be helpful.");
+  expect(result).toContain("Chamber");
+  expect(result).toContain("Consultation");
+  expect(result).not.toContain("working from a Room");
+});
+
+test("an agent is told its own name, so it knows which messages are its own", () => {
+  const result = instructionsForInvocation(
+    "Be helpful.",
+    { roomId: "room-1" },
+    "DJ Master",
+  );
+  expect(result).toStartWith(
+    "Your name is DJ Master. Messages you wrote appear under that name.",
+  );
+  expect(result).toContain("Be helpful.");
+});

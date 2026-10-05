@@ -602,6 +602,7 @@ test("antboy runs in a room while a GitHub adapter is configured", async () => {
   const run = executor.getRun(id)!;
   expect(run.state).toBe("succeeded");
   expect(run.definition.instructions).toContain("You are working from a Room.");
+  expect(run.definition.instructions).toStartWith("Your name is Antboy.");
   expect(run.capabilityGrant?.tools ?? []).not.toContain(
     "github.create_pull_request",
   );
@@ -1067,7 +1068,9 @@ test("run snapshots keep the resolved instructions after the definition changes"
     agentDefinitionId: ANTBOY_ID,
   });
   person.instructions = "Changed after start.";
-  expect(executor.getRun(id)?.definition.instructions).toBe("Stay original.");
+  const { instructions } = executor.getRun(id)!.definition;
+  expect(instructions).toContain("Stay original.");
+  expect(instructions).not.toContain("Changed after start.");
 });
 
 test("an always-granted capability survives tool narrowing", async () => {

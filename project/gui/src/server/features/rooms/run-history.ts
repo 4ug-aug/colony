@@ -27,17 +27,31 @@ export function threadHistory<Message extends { text: string }>(
   return kept
 }
 
-/** How a message reads to an agent: a delivery says which schedule it came from. */
+/**
+ * How a message reads to an agent: a delivery says which schedule it came
+ * from, or which agent asked in a Consultation (ADR 0032).
+ */
 export function transcriptMessage<
-  Message extends { text: string; delivery?: MessageDelivery },
->(message: Message): Message {
-  const { delivery } = message
-  return delivery?.kind === 'schedule'
-    ? {
-        ...message,
-        text: `Schedule "${delivery.name}" ${delivery.state}:\n${message.text}`,
-      }
-    : message
+  Message extends {
+    author: { id: string; name: string }
+    text: string
+    delivery?: MessageDelivery
+  },
+>(message: Message, agentName: (id: string) => string = () => 'another agent'): Message {
+  const { delivery, author } = message
+  if (delivery?.kind === 'schedule')
+    return {
+      ...message,
+      text: `Schedule "${delivery.name}" ${delivery.state}:\n${message.text}`,
+    }
+  if (delivery?.kind !== 'consultation') return message
+  return {
+    ...message,
+    text:
+      author.id === delivery.askingAgentId
+        ? `Consultation from ${author.name}, another agent, asking for this Chamber’s account:\n${message.text}`
+        : `Answer to ${agentName(delivery.askingAgentId)}’s Consultation:\n${message.text}`,
+  }
 }
 
 /** The task, prefixed with the conversation so far; agents rarely read it themselves. */
@@ -45,8 +59,11 @@ export function promptWithHistory(
   where: 'thread' | 'chamber',
   earlier: readonly RoomMessage[],
   task: string,
+  agentName?: (id: string) => string,
 ): string {
-  const history = threadHistory(earlier.map(transcriptMessage))
+  const history = threadHistory(
+    earlier.map((message) => transcriptMessage(message, agentName)),
+  )
   return history.length
     ? `Recent messages in this ${where}, oldest first:\n\n${formatWorkspaceTranscript(history, Date.now())}\n\nYour task, from the latest message:\n${task}`
     : task
