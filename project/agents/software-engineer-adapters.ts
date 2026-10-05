@@ -31,6 +31,10 @@ import {
   type WorkspaceAgentsPort,
 } from "../mcp/workspace-agents";
 import { createWebSearchMcpUpstream } from "../mcp/web-search";
+import {
+  createWorkspaceConsultationsMcpUpstream,
+  type WorkspaceConsultationsPort,
+} from "../mcp/workspace-consultations";
 import { rosterParticipant } from "./roster-meta";
 
 export function createWorkspaceSoftwareEngineerAdapter(options: {
@@ -118,6 +122,35 @@ export function createWorkspaceAgentsAdapter(options: {
           port: options.port,
           responsibleAccountId,
           creatingAgentId,
+        });
+      },
+    },
+  };
+}
+
+/** Consultations (ADR 0032): Chamber runs may ask another agent. */
+export function createWorkspaceConsultationsAdapter(options: {
+  port: WorkspaceConsultationsPort & { isChamber(roomId: string): boolean };
+}): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "workspace.consultations",
+      applies({ grantContext }) {
+        return Boolean(
+          grantContext?.roomId &&
+            grantContext.agentDefinitionId &&
+            options.port.isChamber(grantContext.roomId),
+        );
+      },
+      createUpstream({ grantContext, runId }) {
+        const askingAgentId = grantContext?.agentDefinitionId;
+        if (!askingAgentId || !runId) {
+          throw new Error("An agent and run are required to consult agents");
+        }
+        return createWorkspaceConsultationsMcpUpstream({
+          port: options.port,
+          askingAgentId,
+          askingRunId: runId,
         });
       },
     },

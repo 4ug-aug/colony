@@ -534,6 +534,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
             workspace,
             sandbox,
             grantContext: record.grantContext,
+            runId: record.id,
           })
         : undefined;
       if (cancellation.has(record.id)) return;
@@ -646,7 +647,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
       const sessionGrant = await selectSessionGrant(record);
       if (cancellation.has(record.id)) return;
       capabilitySession = sessionGrant
-        ? await dependencies.capabilities?.create(sessionGrant, { workspace, sandbox, grantContext: record.grantContext })
+        ? await dependencies.capabilities?.create(sessionGrant, { workspace, sandbox, grantContext: record.grantContext, runId: record.id })
         : undefined;
       if (cancellation.has(record.id)) return;
 

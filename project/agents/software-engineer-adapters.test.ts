@@ -6,6 +6,7 @@ import { Octokit } from "octokit";
 import {
   createGitHubSoftwareEngineerAdapter,
   createWebSearchAdapter,
+  createWorkspaceConsultationsAdapter,
   createWorkspaceIssuesAdapter,
   createWorkspaceSoftwareEngineerAdapter,
 } from "./software-engineer-adapters";
@@ -363,4 +364,42 @@ test("workspace.issues stamps createdBy from grantContext.agentDefinitionId", as
     createdBy: { kind: "account", id: "ada" },
   });
   expect(created).toEqual([{ kind: "agent", id: "antboy" }]);
+});
+
+test("workspace.consultations applies to Chamber runs only, and asks as the running agent", async () => {
+  const asked: unknown[] = [];
+  const adapter = createWorkspaceConsultationsAdapter({
+    port: {
+      isChamber: (roomId) => roomId === "chamber-1",
+      ask: async (consultation) => {
+        asked.push(consultation);
+        return "answer";
+      },
+    },
+  });
+  const context = (roomId: string) => ({
+    roomId,
+    agentDefinitionId: "antboy",
+    responsibleAccountId: "ada",
+  });
+  expect(adapter.capability?.applies?.({ grantContext: context("chamber-1") })).toBe(true);
+  expect(adapter.capability?.applies?.({ grantContext: context("general") })).toBe(false);
+  expect(adapter.capability?.applies?.({ grantContext: { scheduleId: "s", agentDefinitionId: "antboy" } })).toBe(false);
+
+  const upstream = adapter.capability!.createUpstream({
+    grantContext: context("chamber-1"),
+    runId: "run-1",
+  });
+  await upstream.callTool("workspace.ask_agent", {
+    agentDefinitionId: "software-engineer",
+    question: "Why is CI red?",
+  });
+  expect(asked).toEqual([
+    {
+      askingAgentId: "antboy",
+      askingRunId: "run-1",
+      agentDefinitionId: "software-engineer",
+      question: "Why is CI red?",
+    },
+  ]);
 });

@@ -119,6 +119,8 @@ export function createMcpGatewayHttpServer(options: {
   const server = Bun.serve({
     hostname: options.hostname ?? "127.0.0.1",
     port: options.port ?? 0,
+    // Tool calls may wait minutes (workspace.ask_agent); Bun's default closes idle requests after 10s.
+    idleTimeout: 0,
     fetch: createMcpGatewayHttpHandler(options.gateway),
   });
   const url = options.publicUrl ?? `http://${server.hostname}:${server.port}`;

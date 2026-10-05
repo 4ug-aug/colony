@@ -1,4 +1,5 @@
 import { isTerminalRunState, type TerminalRunState } from '#project/runs'
+import type { Consultation } from '#project/mcp/workspace-consultations'
 import type { RunControl } from '#/server/features/runs/run-control'
 import type { Schedule } from '#/server/features/schedules/schedule-store'
 import type { SettledScheduleRun } from '#/server/features/schedules/schedule-runner'
@@ -36,6 +37,26 @@ export function createChambers(deps: {
   /** A Chamber was just created for this account. */
   onOpened: (accountId: string, room: RoomSummary) => void
 }) {
+  /** The messages each live run answers, so settling can resolve Consultations. */
+  const answering = new Map<string, string[]>()
+  /** Consultations waiting for an answer, by the message that asked. */
+  const waiting = new Map<
+    string,
+    { askingRunId: string; roomId: string; resolve: (answer: string) => void }
+  >()
+  /** The agents whose Consultations a run is answering, up the chain. */
+  const waitingAgents = (runId: string): string[] => {
+    const askers = (answering.get(runId) ?? []).flatMap((id) => {
+      const consultation = waiting.get(id)
+      return consultation ? [consultation.askingRunId] : []
+    })
+    return askers.flatMap((asker) => [
+      ...(deps.store.getRun(asker) ? [deps.store.getRun(asker)!.agentId] : []),
+      ...waitingAgents(asker),
+    ])
+  }
+  const ownerOf = (room: RoomSummary): RoomUser =>
+    deps.store.listMembers(room.id).find(({ id }) => id === room.createdBy)!
   const conversationOf = (run: RoomRun) =>
     deps.store.getMessage(run.roomId, run.triggerMessageId)?.rootId
   const busy = (roomId: string, rootId: string | undefined) =>
@@ -109,6 +130,7 @@ export function createChambers(deps: {
             requestedBy,
           }
           deps.store.createRun(run)
+          answering.set(run.id, [...sent])
           return run
         },
       },
@@ -135,19 +157,52 @@ export function createChambers(deps: {
     start,
     /** Posts a Chamber run's answer, then sends whatever queued behind it. */
     settled(room: RoomSummary, run: RoomRun & SettledRun) {
+      // An asker that ends no longer needs the Consultations it waits on.
+      for (const [questionId, consultation] of waiting) {
+        if (consultation.askingRunId !== run.id) continue
+        waiting.delete(questionId)
+        const answeringRun = [...answering].find(([, ids]) =>
+          ids.includes(questionId),
+        )?.[0]
+        if (answeringRun) void deps.control.cancel(answeringRun)
+        else
+          deps.messages.cancelQueued(
+            consultation.roomId,
+            questionId,
+            run.agentId,
+          )
+      }
       const rootId = conversationOf(run)
-      reply(room, run.agentId, answer(run), rootId ? { rootId } : {})
+      const asked = (answering.get(run.id) ?? [run.triggerMessageId]).flatMap(
+        (id) => deps.store.getMessage(room.id, id) ?? [],
+      )
+      answering.delete(run.id)
+      const consultation = asked.find(
+        ({ delivery }) => delivery?.kind === 'consultation',
+      )?.delivery
+      reply(room, run.agentId, answer(run), {
+        ...(rootId ? { rootId } : {}),
+        ...(consultation ? { delivery: consultation } : {}),
+      })
+      for (const { id } of asked) {
+        waiting
+          .get(id)
+          ?.resolve(
+            run.state === 'cancelled'
+              ? `${deps.agent(run.agentId).name} was stopped by the user.`
+              : answer(run),
+          )
+        waiting.delete(id)
+      }
       const queued = deps.store.listQueuedMessages(room.id, rootId)
       if (!queued.length || busy(room.id, rootId)) return
       const sent = deps.messages.sendQueued(
         room.id,
         queued.map(({ id }) => id),
       )
-      const author = sent.at(-1)?.author
-      if (author?.kind !== 'user') return
-      const { kind: _, ...requestedBy } = author
+      // A Chamber's runs are its account's, whoever queued the message.
       try {
-        start(room, sent, requestedBy)
+        start(room, sent, ownerOf(room))
       } catch (error) {
         reply(
           room,
@@ -156,6 +211,44 @@ export function createChambers(deps: {
           rootId ? { rootId } : {},
         )
       }
+    },
+    /**
+     * A Consultation (ADR 0032): the question goes to the asking run's account's
+     * Chamber with the agent being asked; resolves with that run's answer.
+     */
+    async ask(consultation: Consultation): Promise<string> {
+      const asking = deps.store.getRun(consultation.askingRunId)
+      const home = asking && deps.store.getRoom(asking.roomId)
+      if (home?.kind !== 'chamber' || !home.createdBy)
+        throw new Error('Agents can only be consulted from a Chamber')
+      if (
+        waitingAgents(consultation.askingRunId).includes(
+          consultation.agentDefinitionId,
+        )
+      )
+        throw new Error(
+          `${deps.agent(consultation.agentDefinitionId).name} is waiting on ${deps.agent(consultation.askingAgentId).name}; answer it instead of asking it back.`,
+        )
+      const room = open(home.createdBy, consultation.agentDefinitionId)
+      const queued = busy(room.id, undefined)
+      const question = deps.messages.postMessage({
+        roomId: room.id,
+        author: { kind: 'agent', ...deps.agent(consultation.askingAgentId) },
+        text: consultation.question,
+        delivery: {
+          kind: 'consultation',
+          askingAgentId: consultation.askingAgentId,
+        },
+        ...(queued ? { queued: true } : {}),
+      })
+      return new Promise((resolve) => {
+        waiting.set(question.id, {
+          askingRunId: consultation.askingRunId,
+          roomId: room.id,
+          resolve,
+        })
+        if (!queued) start(room, [question], ownerOf(room))
+      })
     },
     /** A Schedule run's outcome, delivered to its creator's Chamber with the schedule's agent. */
     deliverScheduleRun(run: SettledScheduleRun, schedule: Schedule) {

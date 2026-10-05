@@ -3944,8 +3944,8 @@ test('Schedule runs deliver their outcome to the creator’s Chamber with the sc
         .map(({ author, text, delivery }) => [
           author.kind,
           text,
-          delivery?.name,
-          delivery?.state,
+          delivery?.kind === 'schedule' && delivery.name,
+          delivery?.kind === 'schedule' && delivery.state,
         ]),
     ).toEqual([
       ['agent', 'The repo is green.', 'Repo check', 'succeeded'],
@@ -3968,6 +3968,153 @@ test('Schedule runs deliver their outcome to the creator’s Chamber with the sc
     expect(control.requests.at(-1)!.task).toContain(
       'Schedule "Repo check" succeeded:\nThe repo is green.',
     )
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+/** A coordinator whose Consultations port a test can call, plus Antboy asking from its Chamber. */
+async function consulting() {
+  const store = roomStore()
+  const control = new FakeRunControl()
+  const consultations: NonNullable<CoordinatorOptions['consultations']> = {
+    ask: async () => {
+      throw new Error('not wired')
+    },
+  }
+  const made = await makeCoordinator({ store, control, consultations })
+  const chamberWith = async (agentDefinitionId: string) =>
+    (
+      (await (
+        await send(made.base, '/api/chambers', { agentDefinitionId })
+      ).json()) as { room: RoomSummary }
+    ).room
+  const antboy = await chamberWith('antboy')
+  const { run: asking } = (await (
+    await send(made.base, `/api/rooms/${antboy.id}/messages`, {
+      text: 'Can you check why CI is red?',
+    })
+  ).json()) as { run: RoomRun }
+  const ask = (question: string, agentDefinitionId = 'software-engineer') =>
+    consultations.ask({
+      askingAgentId: 'antboy',
+      askingRunId: asking.id,
+      agentDefinitionId,
+      question,
+    })
+  const chamberOf = (agentDefinitionId: string) =>
+    store
+      .listRoomsForUser('user-1')
+      .find((room) => room.agentDefinitionId === agentDefinitionId)!
+  return {
+    ...made,
+    store,
+    control,
+    consultations,
+    ask,
+    asking,
+    chamberWith,
+    chamberOf,
+  }
+}
+
+test('a Consultation asks the specialist in its Chamber and returns its answer', async () => {
+  const { coordinator, store, control, ask, chamberOf } = await consulting()
+  try {
+    const answer = ask('Why is CI red on main?')
+    await Bun.sleep(2) // messages order by createdAt; a real run takes longer
+    const chamber = chamberOf('software-engineer')
+    const [question] = store.listMessages(chamber.id)
+    expect(question!.author).toMatchObject({ kind: 'agent', id: 'antboy' })
+    expect(question!.text).toBe('Why is CI red on main?')
+    // The specialist runs as usual in its Chamber, for the same account.
+    expect(control.requests.at(-1)).toMatchObject({
+      roomId: chamber.id,
+      agentDefinitionId: 'software-engineer',
+      task: 'Why is CI red on main?',
+    })
+    const consulted = store.listRuns(chamber.id).at(-1)!
+    expect(consulted.requestedBy.id).toBe('user-1')
+
+    control.finish(consulted.id, 'succeeded', 'A flaky Docker test.')
+    expect(await answer).toBe('A flaky Docker test.')
+    expect(store.listMessages(chamber.id).at(-1)!.text).toBe(
+      'A flaky Docker test.',
+    )
+    // Visible but quiet: neither message raises Attention.
+    expect(store.listAttentionCounts('user-1').get(chamber.id)).toBeUndefined()
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('a Consultation queues behind a run already active in the specialist’s Chamber', async () => {
+  const { coordinator, base, store, control, ask, chamberWith } =
+    await consulting()
+  try {
+    const chamber = await chamberWith('software-engineer')
+    const { run: mine } = (await (
+      await send(base, `/api/rooms/${chamber.id}/messages`, {
+        text: 'Refactor the store',
+      })
+    ).json()) as { run: RoomRun }
+    await Bun.sleep(2)
+    const answer = ask('Is the store safe to refactor?')
+    expect(store.listMessages(chamber.id).at(-1)).toMatchObject({
+      text: 'Is the store safe to refactor?',
+      queued: true,
+    })
+
+    await Bun.sleep(2)
+    control.finish(mine.id, 'succeeded', 'Refactored.')
+    const consulted = store.listRuns(chamber.id).at(-1)!
+    expect(consulted.id).not.toBe(mine.id)
+    expect(consulted.requestedBy.id).toBe('user-1')
+    control.finish(consulted.id, 'succeeded', 'Yes, it is covered by tests.')
+    expect(await answer).toBe('Yes, it is covered by tests.')
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('stopping either side of a Consultation stops it', async () => {
+  const { coordinator, store, control, ask, asking, chamberOf } =
+    await consulting()
+  try {
+    // Cancelling the specialist tells the asker, which carries on.
+    const stopped = ask('Rewrite the parser?')
+    const first = store.listRuns(chamberOf('software-engineer').id).at(-1)!
+    await control.cancel(first.id)
+    expect(await stopped).toBe('Software engineer was stopped by the user.')
+
+    // Ending the asker cancels the Consultation it was waiting on.
+    await Bun.sleep(2) // runs order by createdAt
+    void ask('And the lexer?')
+    const second = store.listRuns(chamberOf('software-engineer').id).at(-1)!
+    expect(second.id).not.toBe(first.id)
+    await control.cancel(asking.id)
+    expect(control.getRun(second.id)?.state).toBe('cancelled')
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('an agent cannot consult an agent that is waiting on it', async () => {
+  const { coordinator, store, control, ask, consultations, chamberOf } =
+    await consulting()
+  try {
+    void ask('Why is CI red?')
+    const consulted = store.listRuns(chamberOf('software-engineer').id).at(-1)!
+    const requests = control.requests.length
+    await expect(
+      consultations.ask({
+        askingAgentId: 'software-engineer',
+        askingRunId: consulted.id,
+        agentDefinitionId: 'antboy',
+        question: 'What did the user ask you?',
+      }),
+    ).rejects.toThrow('Antboy is waiting on Software engineer')
+    expect(control.requests).toHaveLength(requests)
   } finally {
     await coordinator.stop()
   }

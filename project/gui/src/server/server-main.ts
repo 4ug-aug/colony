@@ -1,3 +1,4 @@
+import type { WorkspaceConsultationsPort } from '#project/mcp/workspace-consultations'
 import { transcriptMessage } from './features/rooms/run-history'
 import { summaryFromPerson } from '#project/agents/roster'
 import { capabilityPresentation } from '#project/agents/roster-people'
@@ -62,6 +63,7 @@ if (import.meta.main) {
       createLinearSoftwareEngineerAdapter,
       createWorkspaceIssuesAdapter,
       createWorkspaceAgentsAdapter,
+      createWorkspaceConsultationsAdapter,
       createWebSearchAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
@@ -143,6 +145,12 @@ if (import.meta.main) {
       const issue = issueStore.getIssue(issueId)
       if (!issue) throw new Error('Issue not found')
       return { issue }
+    },
+  }
+  // The coordinator fills this in; Consultations need the Chambers it owns.
+  const consultations: WorkspaceConsultationsPort = {
+    ask: async () => {
+      throw new Error('Consultations are not ready yet')
     },
   }
   const messages = createRoomMessageHub(store)
@@ -435,6 +443,12 @@ if (import.meta.main) {
             },
           },
         }),
+        createWorkspaceConsultationsAdapter({
+          port: {
+            isChamber: (roomId) => store.getRoom(roomId)?.kind === 'chamber',
+            ask: (consultation) => consultations.ask(consultation),
+          },
+        }),
         createWebSearchAdapter(),
         ...(linearAccessToken
           ? [
@@ -493,6 +507,7 @@ if (import.meta.main) {
     bulletinStore,
     chatStore,
     issueNotify,
+    consultations,
     agentDefinitionStore,
     agentDefinitions: (viewerAccountId) => {
       const attachments = skills.listAttachments()

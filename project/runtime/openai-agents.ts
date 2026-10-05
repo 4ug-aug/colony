@@ -37,6 +37,9 @@ export interface OpenAICompatibleModel {
   contextTokens?: number;
 }
 
+/** A run's own limit: workspace.ask_agent waits for another agent's whole run. */
+const TOOL_CALL_TIMEOUT_MS = 30 * 60_000;
+
 export const DEFAULT_CONTEXT_TOKENS = 128_000;
 
 export const OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -403,7 +406,7 @@ export async function runAgent(
             toolFilter: {
               allowedToolNames: [...request.capabilitySession.allowedTools],
             },
-            timeout: 5 * 60_000,
+            timeout: TOOL_CALL_TIMEOUT_MS,
             cacheToolsList: true,
           }),
         ], { strict: true })
@@ -586,7 +589,7 @@ export async function openOpenAIAgentSession(
           toolFilter: {
             allowedToolNames: [...request.capabilitySession.allowedTools],
           },
-          timeout: 5 * 60_000,
+          timeout: TOOL_CALL_TIMEOUT_MS,
           cacheToolsList: true,
         }),
       ], { strict: true })

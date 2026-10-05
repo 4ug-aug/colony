@@ -52,6 +52,8 @@ export interface AgentCapabilityContext {
   workspace?: PreparedWorkspace;
   sandbox?: Pick<Sandbox, "exec" | "hostGateway">;
   grantContext?: AgentGrantContext;
+  /** The run the upstream's tools act for. */
+  runId?: string;
 }
 
 /**
@@ -278,6 +280,7 @@ export function createWorkspaceAgentsExecutor(options: {
                 workspace: context.workspace,
                 sandbox: context.sandbox,
                 grantContext: context.grantContext,
+                runId: context.runId,
               }),
             ),
           });

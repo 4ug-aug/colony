@@ -32,7 +32,7 @@ export function transcriptMessage<
   Message extends { text: string; delivery?: MessageDelivery },
 >(message: Message): Message {
   const { delivery } = message
-  return delivery
+  return delivery?.kind === 'schedule'
     ? {
         ...message,
         text: `Schedule "${delivery.name}" ${delivery.state}:\n${message.text}`,

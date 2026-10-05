@@ -26,7 +26,7 @@ export function ScheduleDeliveryCard({
   text,
   mentions,
 }: {
-  delivery: MessageDelivery
+  delivery: Extract<MessageDelivery, { kind: 'schedule' }>
   text: string
   mentions: string[]
 }) {
