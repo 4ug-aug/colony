@@ -235,6 +235,7 @@ export function RoomView({
                   onOpenThread={openThread}
                   onCancelQueued={cancelQueued}
                   mentionHandles={mentionHandles}
+                  clampAgentMessages={room?.kind !== 'chamber'}
                   emptyState={
                     room?.agentDefinitionId ? (
                       <ChamberEmptyState agentId={room.agentDefinitionId} />
