@@ -19,6 +19,11 @@ export const WORKSPACE_AGENT_TOOLS = [
   "workspace.update_agent",
 ] as const;
 
+export const WORKSPACE_SCHEDULE_TOOLS = [
+  "workspace.list_schedules",
+  "workspace.create_schedule",
+] as const;
+
 export const GITHUB_PULL_REQUEST_TOOLS = [
   "github.create_pull_request",
   "github.wait_for_pull_request_checks",
@@ -41,6 +46,7 @@ export function requestedCapabilitiesFor(
     { id: "workspace.issues", tools: WORKSPACE_ISSUE_TOOLS },
     { id: "workspace.room", tools: WORKSPACE_ROOM_TOOLS },
     { id: "workspace.agents", tools: WORKSPACE_AGENT_TOOLS },
+    { id: "workspace.schedules", tools: WORKSPACE_SCHEDULE_TOOLS },
     { id: "web", tools: WEB_SEARCH_TOOLS },
     ...(githubAccess
       ? [{ id: "github.pull-requests", tools: GITHUB_PULL_REQUEST_TOOLS }]

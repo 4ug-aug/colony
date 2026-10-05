@@ -116,6 +116,13 @@ export const capabilityPresentation: Record<
       "workspace.update_agent": "Update agents",
     },
   },
+  "workspace.schedules": {
+    name: "Schedules",
+    tools: {
+      "workspace.list_schedules": "List schedules",
+      "workspace.create_schedule": "Create schedules",
+    },
+  },
   web: {
     name: "Web",
     tools: {

@@ -27,7 +27,10 @@ import { summaryFromPerson } from '#project/agents/roster-meta'
 import { createAgentDefinitionsHttp } from './features/agents/agent-definitions-http'
 import type { AgentDefinitionStore } from './features/agents/agent-definition-store'
 import { attachmentDirectory } from './features/rooms/attachments'
-import { type ScheduleStore } from './features/schedules/schedule-store'
+import {
+  type Schedule,
+  type ScheduleStore,
+} from './features/schedules/schedule-store'
 import {
   type Issue,
   type IssueOwner,
@@ -291,6 +294,8 @@ export function createCoordinator(options: {
   issueStore?: IssueStore
   bulletinStore?: BulletinStore
   chatStore?: ChatStore
+  /** Filled in here so Schedules created outside HTTP still reach clients. */
+  scheduleNotify?: { onCreated: (schedule: Schedule) => void }
   issueNotify?: {
     onCreated: (issue: Issue) => void
     onChanged: (issue: Issue) => void
@@ -348,6 +353,9 @@ export function createCoordinator(options: {
   }
   const broadcastWorkspace = (message: WorkspaceServerMessage): void =>
     publish('workspace', message)
+  if (options.scheduleNotify)
+    options.scheduleNotify.onCreated = (schedule) =>
+      broadcastWorkspace({ type: 'schedule.created', schedule })
   if (options.issueNotify) {
     options.issueNotify.onCreated = (issue) =>
       broadcastWorkspace({ type: 'issue.created', issue })

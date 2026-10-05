@@ -31,6 +31,10 @@ import {
   type WorkspaceAgentsPort,
 } from "../mcp/workspace-agents";
 import { createWebSearchMcpUpstream } from "../mcp/web-search";
+import {
+  createWorkspaceSchedulesMcpUpstream,
+  type WorkspaceSchedulesPort,
+} from "../mcp/workspace-schedules";
 import { rosterParticipant } from "./roster-meta";
 
 export function createWorkspaceSoftwareEngineerAdapter(options: {
@@ -118,6 +122,35 @@ export function createWorkspaceAgentsAdapter(options: {
           port: options.port,
           responsibleAccountId,
           creatingAgentId,
+        });
+      },
+    },
+  };
+}
+
+export function createWorkspaceSchedulesAdapter(options: {
+  port: WorkspaceSchedulesPort;
+}): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "workspace.schedules",
+      applies({ grantContext }) {
+        return Boolean(
+          grantContext?.responsibleAccountId && grantContext?.agentDefinitionId,
+        );
+      },
+      createUpstream({ grantContext }) {
+        const agentDefinitionId = grantContext?.agentDefinitionId;
+        const responsibleAccountId = grantContext?.responsibleAccountId;
+        if (!agentDefinitionId || !responsibleAccountId) {
+          throw new Error(
+            "A Responsible Account and agent are required to manage Schedules",
+          );
+        }
+        return createWorkspaceSchedulesMcpUpstream({
+          port: options.port,
+          responsibleAccountId,
+          agentDefinitionId,
         });
       },
     },
