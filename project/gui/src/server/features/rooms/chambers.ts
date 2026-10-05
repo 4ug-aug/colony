@@ -4,6 +4,7 @@ import type {
 } from '#/server/features/runs/run-control'
 import type { RoomMessageHub } from './room-hub'
 import type {
+  MessageDelivery,
   RoomMessage,
   RoomRun,
   RoomStore,
@@ -56,7 +57,17 @@ export function createChambers(deps: {
       rootId
         ? deps.messages.listThreadMessages(room.id, rootId)
         : deps.store.listMessages(room.id)
-    ).filter((message) => !sent.has(message.id) && !message.queued)
+    )
+      .filter((message) => !sent.has(message.id) && !message.queued)
+      // A delivery's text is the bare output; name where it came from.
+      .map((message) =>
+        message.delivery
+          ? {
+              ...message,
+              text: `Schedule "${message.delivery.name}" ${message.delivery.state}:\n${message.text}`,
+            }
+          : message,
+      )
     const task =
       triggers
         .map(({ text }) => text)
@@ -102,12 +113,18 @@ export function createChambers(deps: {
     )
   }
 
-  const reply = (room: RoomSummary, rootId: string | undefined, text: string) =>
+  const reply = (
+    room: RoomSummary,
+    rootId: string | undefined,
+    text: string,
+    delivery?: MessageDelivery,
+  ) =>
     deps.messages.postMessage({
       roomId: room.id,
       author: { kind: 'agent', ...deps.agent(room.agentDefinitionId!) },
       text,
       ...(rootId ? { rootId } : {}),
+      ...(delivery ? { delivery } : {}),
     })
 
   return {
@@ -115,9 +132,14 @@ export function createChambers(deps: {
     busy,
     start,
     /** Posts as the agent, top-level, in the account's Chamber with it (created if missing). */
-    deliver(accountId: string, agentId: string, text: string) {
+    deliver(
+      accountId: string,
+      agentId: string,
+      text: string,
+      delivery: MessageDelivery,
+    ) {
       const room = deps.store.chamberFor(accountId, deps.agent(agentId))
-      reply(room, undefined, text)
+      reply(room, undefined, text, delivery)
       return room
     },
     /** Posts a settled run's answer, then sends whatever queued behind it. */

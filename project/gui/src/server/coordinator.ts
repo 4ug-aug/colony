@@ -184,7 +184,11 @@ export function sandboxCpus(value: string | undefined): number {
   return positiveInteger('SWEAT_SANDBOX_CPUS', value, DEFAULT_SANDBOX_CPUS)
 }
 
-type HostAddress = { family: string | number; internal: boolean; address: string }
+type HostAddress = {
+  family: string | number
+  internal: boolean
+  address: string
+}
 
 /** Hypervisor, VPN, and peer-to-peer nics a guest cannot use as "the LAN". */
 const VIRTUAL_NIC =
@@ -212,8 +216,7 @@ export function hostLanAddress(
   return (
     nics(
       interfaces,
-      (name, address) =>
-        isIpv4(address) && /^(en|eth|wlan)\d+$/i.test(name),
+      (name, address) => isIpv4(address) && /^(en|eth|wlan)\d+$/i.test(name),
     ) ??
     nics(
       interfaces,
@@ -239,7 +242,10 @@ export function capabilityHost(
 }
 
 /** Rewrite a 0.0.0.0 listen URL to the host the guest can actually reach. */
-export function advertisedCapabilityUrl(listenUrl: string, host: string): string {
+export function advertisedCapabilityUrl(
+  listenUrl: string,
+  host: string,
+): string {
   const listen = new URL(listenUrl)
   const advertised = new URL(host.includes('://') ? host : `http://${host}`)
   listen.protocol = advertised.protocol
@@ -341,7 +347,9 @@ export function createCoordinator(options: {
       }
     })
   }
-  const agentDefinitions = (viewerAccountId: string): AgentDefinitionSummary[] =>
+  const agentDefinitions = (
+    viewerAccountId: string,
+  ): AgentDefinitionSummary[] =>
     options.agentDefinitions?.(viewerAccountId) ?? rosterDefinitionSummaries()
   const publish = (topic: string, message: ServerMessage): void => {
     server.publish(topic, JSON.stringify(message))
@@ -405,7 +413,19 @@ export function createCoordinator(options: {
         const chamber = chambers.deliver(
           accountId,
           schedule.agentDefinitionId,
-          `**${schedule.name}**\n\n${chamberAnswer(run)}${run.state === 'succeeded' ? '' : ' The run is under Schedules.'}`,
+          chamberAnswer(run),
+          {
+            kind: 'schedule',
+            scheduleId: schedule.id,
+            runId: run.id,
+            name: schedule.name,
+            state:
+              run.state === 'succeeded'
+                ? 'succeeded'
+                : run.state === 'cancelled'
+                  ? 'cancelled'
+                  : 'failed',
+          },
         )
         const room = roomsFor(accountId).find(({ id }) => id === chamber.id)
         if (room)
@@ -914,7 +934,8 @@ export function createCoordinator(options: {
       const handled =
         (agentDefinitionsHttp
           ? await agentDefinitionsHttp(request, url, user)
-          : url.pathname === '/api/agent-definitions' && request.method === 'GET'
+          : url.pathname === '/api/agent-definitions' &&
+              request.method === 'GET'
             ? json({ agents: agentDefinitions(user.id) })
             : undefined) ??
         (vmsHttp ? await vmsHttp(request, url, user) : undefined) ??

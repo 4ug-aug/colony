@@ -1,4 +1,5 @@
 import type {
+  MessageDelivery,
   RoomMessage,
   RoomStore,
   MessageAuthor,
@@ -45,6 +46,7 @@ export interface RoomMessageHub {
     rootId?: string
     /** Waits for the run active in its Chamber conversation. */
     queued?: boolean
+    delivery?: MessageDelivery
   }): RoomMessage
   /** Marks queued Chamber messages as sent. */
   sendQueued(roomId: string, ids: readonly string[]): RoomMessage[]
@@ -89,7 +91,15 @@ export function createRoomMessageHub(
       if (!thread) return []
       return [thread.root, ...thread.replies]
     },
-    postMessage({ roomId, author, text, attachments = [], rootId, queued }) {
+    postMessage({
+      roomId,
+      author,
+      text,
+      attachments = [],
+      rootId,
+      queued,
+      delivery,
+    }) {
       if (rootId != null && !store.canReplyTo(roomId, rootId))
         throw new PostMessageError('invalid_root')
       const message: RoomMessage = {
@@ -103,6 +113,7 @@ export function createRoomMessageHub(
         ),
         ...(rootId != null ? { rootId } : {}),
         ...(queued ? { queued: true as const } : {}),
+        ...(delivery ? { delivery } : {}),
       }
       store.createMessage(message, attachments)
       emit({ type: 'message.created', message })

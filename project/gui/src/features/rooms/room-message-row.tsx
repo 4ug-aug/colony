@@ -68,6 +68,7 @@ export const RoomMessageRow = memo(function RoomMessageRow({
   onEdit,
   metadata,
   dimmed = false,
+  body,
 }: {
   messageId: string
   author: Author
@@ -88,6 +89,8 @@ export const RoomMessageRow = memo(function RoomMessageRow({
   metadata?: ReactNode
   /** A queued Chamber message, not yet handed to the agent. */
   dimmed?: boolean
+  /** Replaces the Markdown body, e.g. a delivery card. */
+  body?: ReactNode
 }) {
   const [actionsOpen, setActionsOpen] = useState(false)
   const postedAt = clockTime(createdAt)
@@ -138,11 +141,12 @@ export const RoomMessageRow = memo(function RoomMessageRow({
         )}
         <div className="room-message-bubble">
           <div className="room-message-body">
-            {isAgent && clampAgentBody ? (
-              <AgentMessageBody text={text} mentions={mentionHandles} />
-            ) : (
-              <Markdown mentions={mentionHandles}>{text}</Markdown>
-            )}
+            {body ??
+              (isAgent && clampAgentBody ? (
+                <AgentMessageBody text={text} mentions={mentionHandles} />
+              ) : (
+                <Markdown mentions={mentionHandles}>{text}</Markdown>
+              ))}
             {grouped && edited && (
               <span className="room-message-edited">Edited</span>
             )}

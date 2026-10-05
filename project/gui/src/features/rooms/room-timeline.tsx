@@ -11,6 +11,7 @@ import { RoomMessageRow } from './room-message-row'
 import { buildFlatTimelineItems } from './thread-helpers'
 import type { FlatTimelineItem } from './thread-helpers'
 import { QueuedNote } from './queued-note'
+import { ScheduleDeliveryCard } from './schedule-delivery-card'
 import { ThreadSummaryChip } from './thread-summary-chip'
 import type { RoomMessage, RoomRun } from './types'
 
@@ -104,6 +105,15 @@ const TimelineEntry = memo(function TimelineEntry({
       onEdit={canEdit ? () => onEdit?.(item.message) : undefined}
       metadata={metadata}
       dimmed={queued}
+      body={
+        item.message.delivery ? (
+          <ScheduleDeliveryCard
+            delivery={item.message.delivery}
+            text={item.message.text}
+            mentions={mentionHandles}
+          />
+        ) : undefined
+      }
     />
   )
 })
