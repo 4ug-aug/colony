@@ -12,7 +12,7 @@ import type {
   RoomSummary,
   RoomUser,
 } from './room-store'
-import { promptWithHistory } from './run-history'
+import { promptWithHistory, transcriptMessage } from './run-history'
 
 type Agent = { id: string; name: string; image?: string }
 type SettledRun = { state: TerminalRunState; stdout: string; error?: string }
@@ -98,9 +98,11 @@ export function createChambers(deps: {
         ? deps.messages.listThreadMessages(room.id, rootId)
         : deps.store.listMessages(room.id)
     ).filter((message) => !sent.has(message.id) && !message.queued)
+    const agentName = (id: string) => deps.agent(id).name
+    // Labelled like history, so a Consultation's run knows which agent asks.
     const task =
       triggers
-        .map(({ text }) => text)
+        .map((message) => transcriptMessage(message, agentName).text)
         .filter(Boolean)
         .join('\n\n') || 'See the attached files.'
     const attachments = triggers.flatMap(({ attachments }) =>
@@ -121,9 +123,15 @@ export function createChambers(deps: {
       }),
     )
     return deps.control.start(
-      promptWithHistory(rootId ? 'thread' : 'chamber', earlier, task),
+      promptWithHistory(
+        rootId ? 'thread' : 'chamber',
+        earlier,
+        task,
+        agentName,
+      ),
       {
         roomId: room.id,
+        chamber: true,
         // Top-level runs write top-level; thread runs stay in their thread.
         ...(rootId ? { rootId, threadReadRootId: rootId } : {}),
         agentDefinitionId: room.agentDefinitionId!,

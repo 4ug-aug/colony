@@ -131,6 +131,7 @@ if (import.meta.main) {
   const bulletinStore = createSqliteBulletinStore(sqlite)
   const chatStore = createSqliteChatStore(sqlite)
   const agentDefinitionStore = createAgentDefinitionStore(sqlite)
+  const agentName = (id: string) => agentDefinitionStore.get(id)?.name ?? id
   const firstAdmin = sqlite
     .prepare(
       `SELECT id FROM user WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1`,
@@ -234,6 +235,7 @@ if (import.meta.main) {
         if (!record) return undefined
         return {
           id: record.id,
+          name: record.name,
           kind: record.kind,
           instructions: record.instructions,
           githubAccess: record.githubAccess,
@@ -249,13 +251,13 @@ if (import.meta.main) {
               messages
                 .listMessages(id)
                 .map(({ attachments: _, ...message }) =>
-                  transcriptMessage(message),
+                  transcriptMessage(message, agentName),
                 ),
             listThreadMessages: (id, rootId) =>
               messages
                 .listThreadMessages(id, rootId)
                 .map(({ attachments: _, ...message }) =>
-                  transcriptMessage(message),
+                  transcriptMessage(message, agentName),
                 ),
             postMessage: (input) => {
               messages.postMessage(input)

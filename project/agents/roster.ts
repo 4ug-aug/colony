@@ -96,6 +96,8 @@ export type WorkspaceAgentExecutor = Omit<
 
 export type WorkspacePersonRecord = {
   id: string;
+  /** Shown to the agent so it can tell its own messages from other agents'. */
+  name: string;
   kind: AgentRuntimeKind;
   instructions: string;
   githubAccess: boolean;
@@ -109,6 +111,7 @@ export function seededPerson(id: string): WorkspacePersonRecord | undefined {
   const seed = SEEDED_AGENT_DEFINITIONS[id];
   return {
     id: seed.id,
+    name: seed.name,
     kind: seed.kind,
     instructions: seed.instructions,
     githubAccess: seed.githubAccess,
@@ -313,6 +316,7 @@ export function createWorkspaceAgentsExecutor(options: {
           instructions: instructionsForInvocation(
             person.instructions,
             grantContext,
+            person.name,
           ),
           requestedCapabilities,
           githubAccess: person.githubAccess,

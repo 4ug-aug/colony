@@ -56,6 +56,7 @@ class FakeRunControl implements RunControl {
     threadReadRootId?: string
     agentDefinitionId?: string
     attachments?: readonly AttachmentInput[]
+    chamber?: true
   }> = []
   stops = 0
   listRuns() {
@@ -80,6 +81,7 @@ class FakeRunControl implements RunControl {
       threadReadRootId?: string
       agentDefinitionId?: string
       attachments?: readonly AttachmentInput[]
+      chamber?: true
       onCreate: (run: RunSummary) => Output
     },
   ): Output {
@@ -106,6 +108,7 @@ class FakeRunControl implements RunControl {
         ? { agentDefinitionId: context.agentDefinitionId }
         : {}),
       ...(context.attachments ? { attachments: context.attachments } : {}),
+      ...(context.chamber ? { chamber: context.chamber } : {}),
     })
     const created = context.onCreate(run)
     this.runs = [...this.runs, run]
@@ -4027,11 +4030,13 @@ test('a Consultation asks the specialist in its Chamber and returns its answer',
     const [question] = store.listMessages(chamber.id)
     expect(question!.author).toMatchObject({ kind: 'agent', id: 'antboy' })
     expect(question!.text).toBe('Why is CI red on main?')
-    // The specialist runs as usual in its Chamber, for the same account.
+    // The specialist runs as usual in its Chamber, for the same account, and
+    // knows Antboy is the one asking.
     expect(control.requests.at(-1)).toMatchObject({
       roomId: chamber.id,
       agentDefinitionId: 'software-engineer',
-      task: 'Why is CI red on main?',
+      chamber: true,
+      task: 'Consultation from Antboy, another agent, asking for this Chamber’s account:\nWhy is CI red on main?',
     })
     const consulted = store.listRuns(chamber.id).at(-1)!
     expect(consulted.requestedBy.id).toBe('user-1')

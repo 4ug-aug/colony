@@ -61,6 +61,8 @@ export type RunStartContext<Output> =
       rootId?: string
       /** Set only for a reply mention: scopes workspace.read_messages to this thread root instead of the flat Room. */
       threadReadRootId?: string
+      /** The Room is a Chamber, so the agent is told it is in one. */
+      chamber?: true
       agentDefinitionId?: string
       responsibleAccountId?: string
       attachments?: readonly AttachmentInput[]
@@ -185,6 +187,7 @@ function grantContextFrom<Output>(
       roomId: context.roomId,
       agentDefinitionId,
       ...responsible,
+      ...(context.chamber ? { chamber: context.chamber } : {}),
       ...(context.rootId ? { rootId: context.rootId } : {}),
       ...(context.threadReadRootId
         ? { threadReadRootId: context.threadReadRootId }
