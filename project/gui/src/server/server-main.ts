@@ -27,7 +27,11 @@ import {
 import { createRoomMessageHub } from './features/rooms/room-hub'
 import { createSqliteRoomStore } from './features/rooms/room-store'
 import { createRunControl } from './features/runs/run-control'
-import { createSqliteScheduleStore } from './features/schedules/schedule-store'
+import {
+  createSqliteScheduleStore,
+  type Schedule,
+} from './features/schedules/schedule-store'
+import { newScheduleInput } from './features/schedules/schedule-input'
 import { createAgentDefinitionStore } from './features/agents/agent-definition-store'
 import { createWorkspaceConnections } from './features/workspace/workspace-connections'
 import {
@@ -62,6 +66,7 @@ if (import.meta.main) {
       createLinearSoftwareEngineerAdapter,
       createWorkspaceIssuesAdapter,
       createWorkspaceAgentsAdapter,
+      createWorkspaceSchedulesAdapter,
       createWebSearchAdapter,
       createWorkspaceSoftwareEngineerAdapter,
     },
@@ -145,6 +150,8 @@ if (import.meta.main) {
       return { issue }
     },
   }
+  // The coordinator fills these in once it can broadcast.
+  const scheduleNotify = { onCreated: (_schedule: Schedule) => {} }
   const messages = createRoomMessageHub(store)
   const attachmentsDirectory = attachmentDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
@@ -435,6 +442,42 @@ if (import.meta.main) {
             },
           },
         }),
+        createWorkspaceSchedulesAdapter({
+          port: {
+            listSchedules: () =>
+              scheduleStore.listSchedules(true).map((schedule) => ({
+                id: schedule.id,
+                name: schedule.name,
+                agentDefinitionId: schedule.agentDefinitionId,
+                task: schedule.task,
+                cronExpression: schedule.cronExpression,
+                timezone: schedule.timezone,
+                state: schedule.state,
+                ...(schedule.nextRunAt === undefined
+                  ? {}
+                  : { nextRunAt: schedule.nextRunAt }),
+              })),
+            createSchedule(input, responsibleAccountId) {
+              const now = Date.now()
+              const schedule = scheduleStore.createSchedule({
+                id: crypto.randomUUID(),
+                ...newScheduleInput(input, now, (id) =>
+                  agentDefinitionStore
+                    .listVisible(responsibleAccountId)
+                    .some(
+                      (agent) =>
+                        agent.id === id && agent.archivedAt === undefined,
+                    ),
+                ),
+                state: 'active',
+                createdBy: responsibleAccountId,
+                createdAt: now,
+              })
+              scheduleNotify.onCreated(schedule)
+              return schedule
+            },
+          },
+        }),
         createWebSearchAdapter(),
         ...(linearAccessToken
           ? [
@@ -493,6 +536,7 @@ if (import.meta.main) {
     bulletinStore,
     chatStore,
     issueNotify,
+    scheduleNotify,
     agentDefinitionStore,
     agentDefinitions: (viewerAccountId) => {
       const attachments = skills.listAttachments()
