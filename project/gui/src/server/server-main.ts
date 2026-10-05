@@ -468,7 +468,7 @@ if (import.meta.main) {
         createWorkspaceSchedulesAdapter({
           port: {
             listSchedules: () =>
-              scheduleStore.listSchedules(true).map((schedule) => ({
+              scheduleStore.listSchedules().map((schedule) => ({
                 id: schedule.id,
                 name: schedule.name,
                 agentDefinitionId: schedule.agentDefinitionId,
