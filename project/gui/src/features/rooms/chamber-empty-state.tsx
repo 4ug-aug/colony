@@ -17,8 +17,7 @@ export function ChamberEmptyState({ agentId }: { agentId: string }) {
           <p className="text-sm text-muted-foreground">{agent.description}</p>
         )}
         <p className="text-xs text-muted-foreground">
-          A private chamber in the colony. Only you and {name} are in here, and
-          every message is a task.
+          A private chamber in the colony. Only you and {name} are in here.
         </p>
       </div>
     </div>
