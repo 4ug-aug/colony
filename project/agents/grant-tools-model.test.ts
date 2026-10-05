@@ -49,6 +49,20 @@ test("OpenAI grant picker calls the SDK path with no tools", async () => {
   expect(seen).not.toHaveProperty("tools");
 });
 
+test("the grant picker sees the request at the end of a long task", async () => {
+  let prompt = "";
+  const pick = createOpenAIGrantPicker(() => model, async ({ messages }) => {
+    prompt = messages[1]!.content;
+    return '{"names":[]}';
+  });
+  await pick({
+    task: `Recent messages in this chamber:\n${"old chatter ".repeat(1_000)}\n\nYour task, from the latest message:\nlist my issues`,
+    names: ["workspace.list_issues"],
+    listing: "workspace.list_issues",
+  });
+  expect(prompt).toContain("list my issues");
+});
+
 test("grant picker source uses json_object only and does not import zod", async () => {
   const source = await Bun.file(new URL("./grant-tools-model.ts", import.meta.url)).text();
   expect(source).not.toContain('from "zod"');

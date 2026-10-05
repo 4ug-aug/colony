@@ -384,13 +384,16 @@ test("an unknown tool call returns an error to the model instead of crashing", a
     apiKey: "test-key",
     baseURL: "https://models.example/v1",
   });
+  let missingToolOutput = "";
   class MissingToolModel extends OpenAIResponsesModel {
     turns = 0;
 
     override async *getStreamedResponse(
-      _request: ModelRequest,
+      request: ModelRequest,
     ): AsyncIterable<ResponseStreamEvent> {
       this.turns += 1;
+      if (this.turns === 2 && Array.isArray(request.input))
+        missingToolOutput = JSON.stringify(request.input.at(-1));
       const output =
         this.turns === 1
           ? [{
@@ -438,6 +441,9 @@ test("an unknown tool call returns an error to the model instead of crashing", a
   );
 
   expect(result).toBe("answered without the missing tool");
+  // The model is told not to retry the guess.
+  expect(missingToolOutput).toContain("Tool 'outline.list_documents' not found.");
+  expect(missingToolOutput).toContain("do not call outline.list_documents again");
   expect(steps.some((step) => step.kind === "tool_call" && step.tool === "outline.list_documents")).toBe(true);
   expect(steps.some((step) => step.kind === "tool_result" && step.tool === "outline.list_documents")).toBe(true);
 });
