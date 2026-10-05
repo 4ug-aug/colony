@@ -122,6 +122,13 @@ export const capabilityPresentation: Record<
       "workspace.ask_agent": "Ask another agent a question and get its answer",
     },
   },
+  "workspace.schedules": {
+    name: "Schedules",
+    tools: {
+      "workspace.list_schedules": "List schedules",
+      "workspace.create_schedule": "Create schedules",
+    },
+  },
   web: {
     name: "Web",
     tools: {

@@ -17,6 +17,7 @@ import {
   type RunSummary,
 } from '#/server/features/runs/run-control'
 import { json, readBody } from '#/server/http/respond'
+import { newScheduleInput } from './schedule-input'
 
 export function createSchedulesHttp(deps: {
   scheduleStore: ScheduleStore
@@ -32,35 +33,6 @@ export function createSchedulesHttp(deps: {
   const knownAgent = (id: unknown, viewerAccountId: string): id is string =>
     typeof id === 'string' &&
     deps.agentDefinitions(viewerAccountId).some((agent) => agent.id === id)
-  const scheduleInput = (
-    body: Record<string, unknown>,
-    now: number,
-    viewerAccountId: string,
-  ) => {
-    const name = typeof body.name === 'string' ? body.name.trim() : ''
-    const task = typeof body.task === 'string' ? body.task.trim() : ''
-    const agentDefinitionId = body.agentDefinitionId
-    const cronExpression =
-      typeof body.cronExpression === 'string'
-        ? body.cronExpression.trim()
-        : ''
-    const timezone =
-      typeof body.timezone === 'string' ? body.timezone.trim() : ''
-    if (!name || name.length > 50 || !task || task.length > 10_000)
-      throw new Error('Invalid schedule name or task')
-    if (!knownAgent(agentDefinitionId, viewerAccountId))
-      throw new Error('Unknown agent definition')
-    const preview = previewCron(cronExpression, timezone, now)
-    return {
-      name,
-      task,
-      agentDefinitionId,
-      cronExpression,
-      timezone,
-      nextRunAt: preview.nextRuns[0]!,
-    }
-  }
-
   return async (
     request: Request,
     url: URL,
@@ -76,7 +48,9 @@ export function createSchedulesHttp(deps: {
       const body = await readBody(request)
       if (!body) return json({ error: 'Invalid schedule' }, 400)
       try {
-        const input = scheduleInput(body, Date.now(), user.id)
+        const input = newScheduleInput(body, Date.now(), (id) =>
+          knownAgent(id, user.id),
+        )
         const schedule = deps.scheduleStore.createSchedule({
           id: crypto.randomUUID(),
           ...input,
