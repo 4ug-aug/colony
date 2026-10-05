@@ -154,11 +154,11 @@ export function createRoomsHttp(deps: {
     id: string,
   ) => { kind: 'cursor' | 'openai-agents'; archivedAt?: number } | undefined
   chambers: Chambers
-  /** The agent a viewer may open a Chamber with: visible to them and not archived. */
-  chamberAgent: (
+  /** True when the agent is visible to the viewer and not archived. */
+  mayOpenChamber: (
     viewerAccountId: string,
     agentDefinitionId: string,
-  ) => { id: string; name: string } | undefined
+  ) => boolean
   roomsFor: (userId: string) => WorkspaceRoom[]
   broadcastWorkspace: (message: WorkspaceServerMessage) => void
   broadcastWorkspaceToUsers: (
@@ -203,22 +203,14 @@ export function createRoomsHttp(deps: {
     }
     if (url.pathname === '/api/chambers' && request.method === 'POST') {
       const body = (await request.json().catch(() => undefined)) as
-        | { agentDefinitionId?: unknown }
-        | undefined
-      const agent =
-        typeof body?.agentDefinitionId === 'string'
-          ? deps.chamberAgent(user.id, body.agentDefinitionId)
-          : undefined
-      if (!agent) return json({ error: 'Unknown agent' }, 404)
-      const before = deps.store.listRoomsForUser(user.id).length
-      const chamber = deps.store.chamberFor(user.id, agent)
-      const room = deps.roomsFor(user.id).find(({ id }) => id === chamber.id)!
-      if (deps.store.listRoomsForUser(user.id).length > before)
-        deps.broadcastWorkspaceToUsers(new Set([user.id]), {
-          type: 'room.created',
-          room,
-        })
-      return json({ room })
+        { agentDefinitionId?: unknown } | undefined
+      const agentId = body?.agentDefinitionId
+      if (typeof agentId !== 'string' || !deps.mayOpenChamber(user.id, agentId))
+        return json({ error: 'Unknown agent' }, 404)
+      const { id } = deps.chambers.open(user.id, agentId)
+      return json({
+        room: deps.roomsFor(user.id).find((room) => room.id === id),
+      })
     }
     const queuedRoute = url.pathname.match(
       /^\/api\/rooms\/([^/]+)\/messages\/([^/]+)\/queued$/,

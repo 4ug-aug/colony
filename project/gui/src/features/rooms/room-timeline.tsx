@@ -10,7 +10,9 @@ import type { ReactNode } from 'react'
 import { RoomMessageRow } from './room-message-row'
 import { buildFlatTimelineItems } from './thread-helpers'
 import type { FlatTimelineItem } from './thread-helpers'
+import { AgentMessageBody } from './agent-message-body'
 import { QueuedNote } from './queued-note'
+import { ScheduleDeliveryCard } from './schedule-delivery-card'
 import { ThreadSummaryChip } from './thread-summary-chip'
 import type { RoomMessage, RoomRun } from './types'
 
@@ -27,6 +29,7 @@ const TimelineEntry = memo(function TimelineEntry({
   focusMessageId,
   onFocusHandled,
   unreadThreadRootIds,
+  clampAgentMessages,
 }: {
   item: FlatTimelineItem
   agents: ReturnType<typeof useAgentDefinitions>['data']
@@ -40,6 +43,7 @@ const TimelineEntry = memo(function TimelineEntry({
   focusMessageId?: string
   onFocusHandled?: () => void
   unreadThreadRootIds: readonly string[]
+  clampAgentMessages: boolean
 }) {
   const author = item.message.author
   const isAgent = author.kind === 'agent'
@@ -93,7 +97,6 @@ const TimelineEntry = memo(function TimelineEntry({
       coarsePointer={coarsePointer}
       isAgent={isAgent}
       grouped={item.grouped}
-      clampAgentBody={isAgent}
       focused={focusMessageId === item.message.id}
       onFocusHandled={onFocusHandled}
       onReply={
@@ -104,6 +107,20 @@ const TimelineEntry = memo(function TimelineEntry({
       onEdit={canEdit ? () => onEdit?.(item.message) : undefined}
       metadata={metadata}
       dimmed={queued}
+      body={
+        item.message.delivery ? (
+          <ScheduleDeliveryCard
+            delivery={item.message.delivery}
+            text={item.message.text}
+            mentions={mentionHandles}
+          />
+        ) : isAgent && clampAgentMessages ? (
+          <AgentMessageBody
+            text={item.message.text}
+            mentions={mentionHandles}
+          />
+        ) : undefined
+      }
     />
   )
 })
@@ -121,6 +138,7 @@ export function Timeline({
   onFocusHandled,
   unreadThreadRootIds = [],
   emptyState,
+  clampAgentMessages = true,
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
@@ -135,6 +153,8 @@ export function Timeline({
   unreadThreadRootIds?: readonly string[]
   /** Replaces the default empty state, e.g. a Chamber's introduction. */
   emptyState?: ReactNode
+  /** Collapse long agent messages behind Show more; off in a Chamber, where they are the point. */
+  clampAgentMessages?: boolean
 }) {
   const { data: agents = [] } = useAgentDefinitions()
   const coarsePointer = useMediaQuery('(pointer: coarse)')
@@ -205,6 +225,7 @@ export function Timeline({
           focusMessageId={focusMessageId}
           onFocusHandled={onFocusHandled ? stableFocusHandled : undefined}
           unreadThreadRootIds={unreadThreadRootIds}
+          clampAgentMessages={clampAgentMessages}
         />
       ))}
     </div>

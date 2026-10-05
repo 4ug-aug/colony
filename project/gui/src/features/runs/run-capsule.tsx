@@ -1,10 +1,22 @@
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { useAgentName } from '#/features/agents/use-agent-definitions'
+import { useLatestRunStep } from '#/features/rooms/room-live-steps'
 import type { RoomRun } from '#/features/rooms/types'
 import { llmProviderName } from '#/lib/llm-provider'
 import { cn } from '#/lib/utils'
 import { Check, ChevronRight, CircleX, X } from 'lucide-react'
-import { runActivityLabel } from './run-helpers'
+import { runActivityLabel, runStatus, terminal } from './run-helpers'
+
+/** What a working run is doing right now, like the Oneshot panel shows it. */
+function LiveRunStatus({ run, name }: { run: RoomRun; name: string }) {
+  const step = useLatestRunStep(run.roomId, run.id)
+  return (
+    <AgentThinking
+      label={`${name} ${runStatus(run, step)}`}
+      className="max-w-80 truncate text-xs font-normal"
+    />
+  )
+}
 
 export function RunCapsule({
   run,
@@ -19,7 +31,7 @@ export function RunCapsule({
 }) {
   const name = useAgentName(run.agentId)
   const label = runActivityLabel(run.state)
-  const working = label === 'Working…'
+  const working = !terminal(run.state)
   const distinguish = showModel
     ? `, ${llmProviderName(run.provider)} ${run.model}`
     : ''
@@ -32,7 +44,7 @@ export function RunCapsule({
       onClick={() => openRun(run.id)}
     >
       {working ? (
-        <AgentThinking label="Working…" className="text-xs font-normal" />
+        <LiveRunStatus run={run} name={name} />
       ) : run.state === 'failed' ? (
         <>
           <CircleX className="size-3.5 text-destructive" aria-hidden="true" />
@@ -54,7 +66,10 @@ export function RunCapsule({
           {llmProviderName(run.provider)} · {run.model}
         </span>
       )}
-      <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+      <ChevronRight
+        className="size-3.5 text-muted-foreground"
+        aria-hidden="true"
+      />
     </button>
   )
 }

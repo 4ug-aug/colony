@@ -235,6 +235,7 @@ export function RoomView({
                   onOpenThread={openThread}
                   onCancelQueued={cancelQueued}
                   mentionHandles={mentionHandles}
+                  clampAgentMessages={room?.kind !== 'chamber'}
                   emptyState={
                     room?.agentDefinitionId ? (
                       <ChamberEmptyState agentId={room.agentDefinitionId} />
@@ -248,7 +249,7 @@ export function RoomView({
             <Button
               type="button"
               size="sm"
-              className="absolute right-5 bottom-4 rounded-sm shadow-md"
+              className="absolute right-5 bottom-4 z-10 rounded-sm shadow-md"
               onClick={() =>
                 scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' })
               }

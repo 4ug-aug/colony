@@ -62,6 +62,15 @@ export type RoomMessage = {
   replySummary?: ThreadSummary
   /** A Chamber message waiting for the agent's current run. */
   queued?: true
+  /** Set when the platform delivered this agent message from elsewhere. */
+  delivery?: MessageDelivery
+}
+export type MessageDelivery = {
+  kind: 'schedule'
+  scheduleId: string
+  runId: string
+  name: string
+  state: 'succeeded' | 'failed' | 'cancelled'
 }
 /** A successful Room-linked run's final output, presented as a thread reply. */
 export type RunResultReply = {

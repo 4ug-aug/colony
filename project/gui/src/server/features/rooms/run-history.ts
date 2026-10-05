@@ -1,5 +1,5 @@
 import { formatWorkspaceTranscript } from '#project/mcp/workspace'
-import type { RoomMessage } from './room-store'
+import type { MessageDelivery, RoomMessage } from './room-store'
 
 const HISTORY_MESSAGES = 20
 const HISTORY_MESSAGE_CHARS = 4_000
@@ -27,13 +27,26 @@ export function threadHistory<Message extends { text: string }>(
   return kept
 }
 
+/** How a message reads to an agent: a delivery says which schedule it came from. */
+export function transcriptMessage<
+  Message extends { text: string; delivery?: MessageDelivery },
+>(message: Message): Message {
+  const { delivery } = message
+  return delivery
+    ? {
+        ...message,
+        text: `Schedule "${delivery.name}" ${delivery.state}:\n${message.text}`,
+      }
+    : message
+}
+
 /** The task, prefixed with the conversation so far; agents rarely read it themselves. */
 export function promptWithHistory(
   where: 'thread' | 'chamber',
   earlier: readonly RoomMessage[],
   task: string,
 ): string {
-  const history = threadHistory(earlier)
+  const history = threadHistory(earlier.map(transcriptMessage))
   return history.length
     ? `Recent messages in this ${where}, oldest first:\n\n${formatWorkspaceTranscript(history, Date.now())}\n\nYour task, from the latest message:\n${task}`
     : task
