@@ -42,6 +42,7 @@ import {
 } from './features/rooms/room-store'
 import type {RoomMessage, RoomRun, RoomSummary, RoomStore, RoomUser, StoredStep} from './features/rooms/room-store';
 import { createRoomMessageHub } from './features/rooms/room-hub'
+import { createSqliteScheduleStore } from './features/schedules/schedule-store'
 import { createRoomAttachmentSource } from './features/rooms/attachments'
 
 class FakeRunControl implements RunControl {
@@ -3899,6 +3900,47 @@ test('Chamber messages sent during a run queue, can be cancelled, and go togethe
     ])
     // Sent messages can no longer be cancelled.
     expect((await cancel(queued[1]!.message)).status).toBe(409)
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('Schedule runs deliver their outcome to the creator’s Chamber with the schedule’s agent', async () => {
+  const store = roomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({
+    store,
+    control,
+    scheduleStore: createSqliteScheduleStore(store.sqlite),
+  })
+  try {
+    const { schedule } = (await (
+      await send(base, '/api/schedules', {
+        name: 'Repo check',
+        task: 'Check the repo',
+        agentDefinitionId: 'software-engineer',
+        cronExpression: '0 9 * * *',
+        timezone: 'UTC',
+      })
+    ).json()) as { schedule: { id: string } }
+    const runNow = async () =>
+      (
+        (await (
+          await send(base, `/api/schedules/${schedule.id}/runs`, {})
+        ).json()) as { run: { id: string } }
+      ).run
+    control.finish((await runNow()).id, 'succeeded', 'The repo is green.')
+    control.finish((await runNow()).id, 'failed')
+
+    const chamber = store
+      .listRoomsForUser('user-1')
+      .find((room) => room.agentDefinitionId === 'software-engineer')!
+    expect(chamber.kind).toBe('chamber')
+    expect(store.listMessages(chamber.id).map(({ author, text }) => [author.kind, text])).toEqual([
+      ['agent', '**Repo check**\n\nThe repo is green.'],
+      ['agent', "**Repo check**\n\nI couldn't finish this. The run is under Schedules."],
+    ])
+    expect(store.listAttentionCounts('user-1', 'mention').get(chamber.id)).toBe(2)
   } finally {
     await coordinator.stop()
   }

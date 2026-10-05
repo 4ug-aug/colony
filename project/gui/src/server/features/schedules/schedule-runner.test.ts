@@ -151,3 +151,22 @@ test('runner starts due work, coalesces behind an active run, and supports manua
   })
   runner.stop()
 })
+
+test('runner reports each run once when it settles', () => {
+  const store = makeStore()
+  const fake = fakeControl()
+  const settled: string[] = []
+  const runner = createScheduleRunner({
+    store,
+    control: fake.control,
+    now: () => 20,
+    onRunSettled: (run, settledSchedule) =>
+      settled.push(`${settledSchedule.name}:${run.id}:${run.state}`),
+  })
+  runner.runNow(schedule.id, 'ada')
+  expect(settled).toEqual([])
+  fake.finish('run-1')
+  fake.finish('run-1')
+  expect(settled).toEqual(['Repo check:run-1:succeeded'])
+  runner.stop()
+})

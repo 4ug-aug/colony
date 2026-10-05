@@ -1,4 +1,7 @@
-import type { RunControl } from '#/server/features/runs/run-control'
+import type {
+  RunControl,
+  RunSummary,
+} from '#/server/features/runs/run-control'
 import type { RoomMessageHub } from './room-hub'
 import type {
   RoomMessage,
@@ -14,7 +17,9 @@ type Agent = { id: string; name: string; image?: string }
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled'])
 
 /** A run's outcome as the agent's reply in its Chamber conversation. */
-export function chamberAnswer(run: RoomRun): string {
+export function chamberAnswer(
+  run: Pick<RunSummary, 'state' | 'stdout' | 'error'>,
+): string {
   if (run.state === 'succeeded') return run.stdout.trim() || 'Done.'
   if (run.state === 'cancelled') return 'Run cancelled.'
   return `I couldn't finish this${run.error ? `: ${run.error}` : '.'}`
@@ -109,6 +114,12 @@ export function createChambers(deps: {
     /** True when a new message in this conversation must wait for a run. */
     busy,
     start,
+    /** Posts as the agent, top-level, in the account's Chamber with it (created if missing). */
+    deliver(accountId: string, agentId: string, text: string) {
+      const room = deps.store.chamberFor(accountId, deps.agent(agentId))
+      reply(room, undefined, text)
+      return room
+    },
     /** Posts a settled run's answer, then sends whatever queued behind it. */
     settled(run: RoomRun) {
       const room = deps.store.getRoom(run.roomId)

@@ -48,7 +48,7 @@ import { createIssuesHttp } from './features/issues/issues-http'
 import { createSchedulesHttp } from './features/schedules/schedules-http'
 import { createBulletinsHttp } from './features/bulletins/bulletins-http'
 import { createRoomsHttp } from './features/rooms/rooms-http'
-import { createChambers } from './features/rooms/chambers'
+import { chamberAnswer, createChambers } from './features/rooms/chambers'
 import { createMembersHttp } from './features/rooms/members-http'
 import { createActiveRunsHttp } from './features/runs/active-runs-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
@@ -399,6 +399,21 @@ export function createCoordinator(options: {
           runId: step.runId,
           step,
         }),
+      // Schedule outcomes land in the creator's Chamber with the schedule's agent.
+      onRunSettled: (run, schedule) => {
+        const accountId = schedule.createdBy.id
+        const chamber = chambers.deliver(
+          accountId,
+          schedule.agentDefinitionId,
+          `**${schedule.name}**\n\n${chamberAnswer(run)}${run.state === 'succeeded' ? '' : ' The run is under Schedules.'}`,
+        )
+        const room = roomsFor(accountId).find(({ id }) => id === chamber.id)
+        if (room)
+          broadcastWorkspaceToUsers(new Set([accountId]), {
+            type: 'room.created',
+            room,
+          })
+      },
     })
   }
   let issueRunner: IssueRunner | undefined

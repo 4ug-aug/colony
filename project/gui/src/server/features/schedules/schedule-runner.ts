@@ -31,20 +31,26 @@ export function createScheduleRunner(options: {
   onRunCreated?: (run: ScheduleRun) => void
   onRunChange?: (run: ScheduleRun) => void
   onStep?: (step: ScheduleRunStep) => void
+  /** Once per run, when it ends or fails to start. */
+  onRunSettled?: (run: ScheduleRun, schedule: Schedule) => void
 }): ScheduleRunner {
   const now = options.now ?? Date.now
+  const terminal = (state: ScheduleRun['state']) =>
+    state === 'succeeded' || state === 'failed' || state === 'cancelled'
+  const settled = (run: ScheduleRun) => {
+    const schedule = options.store.getSchedule(run.scheduleId)
+    if (schedule) options.onRunSettled?.(run, schedule)
+  }
   const project = (summary: RunSummary): void => {
     const existing = options.store.getRun(summary.id)
     if (!existing) return
     const changed = { ...existing, ...summary }
     options.store.updateRun(changed)
     options.onRunChange?.(changed)
-    if (
-      changed.state === 'succeeded' ||
-      changed.state === 'failed' ||
-      changed.state === 'cancelled'
-    )
+    if (terminal(changed.state)) {
+      if (!terminal(existing.state)) settled(changed)
       tick()
+    }
   }
   const unsubscribe = options.control.subscribe(project)
   const unsubscribeSteps = options.control.subscribeSteps((runId, step) => {
@@ -97,6 +103,7 @@ export function createScheduleRunner(options: {
         now: now(),
       })
       options.onRunChange?.(failed)
+      settled(failed)
       if (source === 'automatic') {
         const changed = options.store.getSchedule(schedule.id)
         if (changed) options.onScheduleChange?.(changed)
