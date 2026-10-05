@@ -1,3 +1,4 @@
+import { ChamberEmptyState } from '#/features/rooms/chamber-empty-state'
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { Button } from '#/components/ui/button'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
@@ -234,6 +235,11 @@ export function RoomView({
                   onOpenThread={openThread}
                   onCancelQueued={cancelQueued}
                   mentionHandles={mentionHandles}
+                  emptyState={
+                    room?.agentDefinitionId ? (
+                      <ChamberEmptyState agentId={room.agentDefinitionId} />
+                    ) : undefined
+                  }
                 />
               )}
             </div>

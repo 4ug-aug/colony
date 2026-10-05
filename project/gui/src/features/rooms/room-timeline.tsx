@@ -4,7 +4,9 @@ import {
 } from '#/features/agents/use-agent-definitions'
 import { RunCapsule } from '#/features/runs/run-capsule'
 import { useMediaQuery } from '#/hooks/use-media-query'
+import { ColonyMark } from '#/components/colony-mark'
 import { memo, useCallback, useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { RoomMessageRow } from './room-message-row'
 import { buildFlatTimelineItems } from './thread-helpers'
 import type { FlatTimelineItem } from './thread-helpers'
@@ -118,6 +120,7 @@ export function Timeline({
   focusMessageId,
   onFocusHandled,
   unreadThreadRootIds = [],
+  emptyState,
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
@@ -130,6 +133,8 @@ export function Timeline({
   focusMessageId?: string
   onFocusHandled?: () => void
   unreadThreadRootIds?: readonly string[]
+  /** Replaces the default empty state, e.g. a Chamber's introduction. */
+  emptyState?: ReactNode
 }) {
   const { data: agents = [] } = useAgentDefinitions()
   const coarsePointer = useMediaQuery('(pointer: coarse)')
@@ -174,9 +179,14 @@ export function Timeline({
 
   if (!items.length)
     return (
-      <p className="py-12 text-center text-sm text-muted-foreground">
-        No messages yet. Start the conversation.
-      </p>
+      emptyState ?? (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <ColonyMark className="size-8 text-muted-foreground/60" />
+          <p className="text-sm text-muted-foreground">
+            No messages yet. Start the conversation.
+          </p>
+        </div>
+      )
     )
   return (
     <div>
