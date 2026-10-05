@@ -1,3 +1,4 @@
+import { transcriptMessage } from './features/rooms/run-history'
 import { summaryFromPerson } from '#project/agents/roster'
 import { capabilityPresentation } from '#project/agents/roster-people'
 import { getConnectionKind } from '#project/connections/registry'
@@ -239,11 +240,15 @@ if (import.meta.main) {
             listMessages: (id) =>
               messages
                 .listMessages(id)
-                .map(({ attachments: _, ...message }) => message),
+                .map(({ attachments: _, ...message }) =>
+                  transcriptMessage(message),
+                ),
             listThreadMessages: (id, rootId) =>
               messages
                 .listThreadMessages(id, rootId)
-                .map(({ attachments: _, ...message }) => message),
+                .map(({ attachments: _, ...message }) =>
+                  transcriptMessage(message),
+                ),
             postMessage: (input) => {
               messages.postMessage(input)
             },

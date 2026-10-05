@@ -1,3 +1,4 @@
+import { isTerminalRunState, type TerminalRunState } from '#project/runs'
 import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
 import { runStep } from '#/server/features/runs/run-storage'
 import {
@@ -15,6 +16,8 @@ export class ScheduleActiveRunError extends Error {
   }
 }
 
+export type SettledScheduleRun = ScheduleRun & { state: TerminalRunState }
+
 export type ScheduleRunner = {
   runNow(scheduleId: string, accountId: string): ScheduleRun
   tick(): void
@@ -31,20 +34,24 @@ export function createScheduleRunner(options: {
   onRunCreated?: (run: ScheduleRun) => void
   onRunChange?: (run: ScheduleRun) => void
   onStep?: (step: ScheduleRunStep) => void
+  /** Once per run, when it ends or fails to start. */
+  onRunSettled?: (run: SettledScheduleRun, schedule: Schedule) => void
 }): ScheduleRunner {
   const now = options.now ?? Date.now
+  const settled = (run: SettledScheduleRun) => {
+    const schedule = options.store.getSchedule(run.scheduleId)
+    if (schedule) options.onRunSettled?.(run, schedule)
+  }
   const project = (summary: RunSummary): void => {
     const existing = options.store.getRun(summary.id)
     if (!existing) return
     const changed = { ...existing, ...summary }
     options.store.updateRun(changed)
     options.onRunChange?.(changed)
-    if (
-      changed.state === 'succeeded' ||
-      changed.state === 'failed' ||
-      changed.state === 'cancelled'
-    )
-      tick()
+    const { state } = changed
+    if (!isTerminalRunState(state)) return
+    if (!isTerminalRunState(existing.state)) settled({ ...changed, state })
+    tick()
   }
   const unsubscribe = options.control.subscribe(project)
   const unsubscribeSteps = options.control.subscribeSteps((runId, step) => {
@@ -97,6 +104,7 @@ export function createScheduleRunner(options: {
         now: now(),
       })
       options.onRunChange?.(failed)
+      settled({ ...failed, state: 'failed' })
       if (source === 'automatic') {
         const changed = options.store.getSchedule(schedule.id)
         if (changed) options.onScheduleChange?.(changed)

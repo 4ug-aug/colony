@@ -58,6 +58,7 @@ import { createOneshotsHttp } from './features/oneshots/oneshots-http'
 import { createOneshotSession } from './features/oneshots/oneshot-session'
 import { type ChatStore } from './features/chats/chat-store'
 import { createChatLinkedRuns } from './features/chats/chat-linked-runs'
+import { isTerminalRunState } from '#project/runs'
 import { createChatsHttp } from './features/chats/chats-http'
 import { createVmsHttp } from './features/vms/vms-http'
 import type { SmolvmMachineControl } from '#project/providers/smolvm-sandbox'
@@ -407,6 +408,8 @@ export function createCoordinator(options: {
           runId: step.runId,
           step,
         }),
+      onRunSettled: (run, schedule) =>
+        chambers.deliverScheduleRun(run, schedule),
     })
   }
   let issueRunner: IssueRunner | undefined
@@ -584,27 +587,30 @@ export function createCoordinator(options: {
       const record = options.agentDefinitionStore?.get(id)
       return record ? { id, name: record.name } : rosterParticipant(id)
     },
+    onOpened: (accountId, chamber) => {
+      const room = roomsFor(accountId).find(({ id }) => id === chamber.id)
+      if (room)
+        broadcastWorkspaceToUsers(new Set([accountId]), {
+          type: 'room.created',
+          room,
+        })
+    },
   })
-  const terminal = (state: RunSummary['state']) =>
-    state === 'succeeded' || state === 'failed' || state === 'cancelled'
   const project = (run: RunSummary): void => {
     const saved = options.store.getRun(run.id)
     if (!saved) return
     const changed = { ...saved, ...run }
     options.store.updateRun(changed)
     broadcastRoom(changed.roomId, { type: 'run.changed', run: changed })
+    const { state } = changed
+    const room = options.store.getRoom(changed.roomId)
     // A Chamber answers with an agent message, which carries its own Attention.
-    if (options.store.getRoom(changed.roomId)?.kind === 'chamber') {
-      if (!terminal(saved.state) && terminal(changed.state))
-        chambers.settled(changed)
+    if (room?.kind === 'chamber') {
+      if (isTerminalRunState(state) && !isTerminalRunState(saved.state))
+        chambers.settled(room, { ...changed, state })
       return
     }
-    if (
-      changed.state === 'succeeded' ||
-      changed.state === 'failed' ||
-      changed.state === 'cancelled'
-    )
-      notifyRunTerminal(changed)
+    if (isTerminalRunState(state)) notifyRunTerminal(changed)
     if (changed.state === 'succeeded') {
       notifySuccessfulRunThreadAttention(changed)
       const rootId = threadRootIdForRun(changed)
@@ -822,13 +828,11 @@ export function createCoordinator(options: {
       ? (id) => options.agentDefinitionStore!.get(id)
       : undefined,
     chambers,
-    chamberAgent: (viewerAccountId, agentDefinitionId) => {
-      const agent = agentDefinitions(viewerAccountId).find(
+    mayOpenChamber: (viewerAccountId, agentDefinitionId) =>
+      agentDefinitions(viewerAccountId).some(
         ({ id, archivedAt }) =>
           id === agentDefinitionId && archivedAt === undefined,
-      )
-      return agent ? { id: agent.id, name: agent.name } : undefined
-    },
+      ),
     roomsFor,
     broadcastWorkspace,
     broadcastWorkspaceToUsers,

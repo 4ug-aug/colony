@@ -1,6 +1,10 @@
+import { isTerminalRunState, type TerminalRunState } from '#project/runs'
 import type { RunControl } from '#/server/features/runs/run-control'
+import type { Schedule } from '#/server/features/schedules/schedule-store'
+import type { SettledScheduleRun } from '#/server/features/schedules/schedule-runner'
 import type { RoomMessageHub } from './room-hub'
 import type {
+  MessageDelivery,
   RoomMessage,
   RoomRun,
   RoomStore,
@@ -10,11 +14,10 @@ import type {
 import { promptWithHistory } from './run-history'
 
 type Agent = { id: string; name: string; image?: string }
-
-const TERMINAL = new Set(['succeeded', 'failed', 'cancelled'])
+type SettledRun = { state: TerminalRunState; stdout: string; error?: string }
 
 /** A run's outcome as the agent's reply in its Chamber conversation. */
-export function chamberAnswer(run: RoomRun): string {
+function answer(run: SettledRun): string {
   if (run.state === 'succeeded') return run.stdout.trim() || 'Done.'
   if (run.state === 'cancelled') return 'Run cancelled.'
   return `I couldn't finish this${run.error ? `: ${run.error}` : '.'}`
@@ -30,6 +33,8 @@ export function createChambers(deps: {
   messages: RoomMessageHub
   control: RunControl
   agent: (id: string) => Agent
+  /** A Chamber was just created for this account. */
+  onOpened: (accountId: string, room: RoomSummary) => void
 }) {
   const conversationOf = (run: RoomRun) =>
     deps.store.getMessage(run.roomId, run.triggerMessageId)?.rootId
@@ -37,7 +42,20 @@ export function createChambers(deps: {
     // ponytail: scans the Chamber's runs; index active runs if Chambers grow long.
     deps.store
       .listRuns(roomId)
-      .some((run) => !TERMINAL.has(run.state) && conversationOf(run) === rootId)
+      .some(
+        (run) =>
+          !isTerminalRunState(run.state) && conversationOf(run) === rootId,
+      )
+
+  /** The account's Chamber with this agent, created on first use. */
+  const open = (accountId: string, agentId: string): RoomSummary => {
+    const { room, created } = deps.store.chamberFor(
+      accountId,
+      deps.agent(agentId),
+    )
+    if (created) deps.onOpened(accountId, room)
+    return room
+  }
 
   const start = (
     room: RoomSummary,
@@ -97,29 +115,28 @@ export function createChambers(deps: {
     )
   }
 
-  const reply = (room: RoomSummary, rootId: string | undefined, text: string) =>
+  const reply = (
+    room: RoomSummary,
+    agentId: string,
+    text: string,
+    where: { rootId?: string; delivery?: MessageDelivery } = {},
+  ) =>
     deps.messages.postMessage({
       roomId: room.id,
-      author: { kind: 'agent', ...deps.agent(room.agentDefinitionId!) },
+      author: { kind: 'agent', ...deps.agent(agentId) },
       text,
-      ...(rootId ? { rootId } : {}),
+      ...where,
     })
 
   return {
     /** True when a new message in this conversation must wait for a run. */
     busy,
+    open,
     start,
-    /** Posts a settled run's answer, then sends whatever queued behind it. */
-    settled(run: RoomRun) {
-      const room = deps.store.getRoom(run.roomId)
-      if (room?.kind !== 'chamber') return
+    /** Posts a Chamber run's answer, then sends whatever queued behind it. */
+    settled(room: RoomSummary, run: RoomRun & SettledRun) {
       const rootId = conversationOf(run)
-      deps.messages.postMessage({
-        roomId: room.id,
-        author: { kind: 'agent', ...deps.agent(run.agentId) },
-        text: chamberAnswer(run),
-        ...(rootId ? { rootId } : {}),
-      })
+      reply(room, run.agentId, answer(run), rootId ? { rootId } : {})
       const queued = deps.store.listQueuedMessages(room.id, rootId)
       if (!queued.length || busy(room.id, rootId)) return
       const sent = deps.messages.sendQueued(
@@ -134,10 +151,24 @@ export function createChambers(deps: {
       } catch (error) {
         reply(
           room,
-          rootId,
+          room.agentDefinitionId!,
           `I couldn't start on this: ${error instanceof Error ? error.message : 'unknown error'}`,
+          rootId ? { rootId } : {},
         )
       }
+    },
+    /** A Schedule run's outcome, delivered to its creator's Chamber with the schedule's agent. */
+    deliverScheduleRun(run: SettledScheduleRun, schedule: Schedule) {
+      const room = open(schedule.createdBy.id, schedule.agentDefinitionId)
+      reply(room, schedule.agentDefinitionId, answer(run), {
+        delivery: {
+          kind: 'schedule',
+          scheduleId: schedule.id,
+          runId: run.id,
+          name: schedule.name,
+          state: run.state,
+        },
+      })
     },
   }
 }

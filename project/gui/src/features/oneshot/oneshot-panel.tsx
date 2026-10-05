@@ -17,9 +17,8 @@ import { Textarea } from '#/components/ui/textarea'
 import { toast } from '#/components/ui/toast'
 import { useAgentDefinitions } from '#/features/agents/use-agent-definitions'
 import { pairSteps } from '#/features/runs/run-activity'
-import { terminal } from '#/features/runs/run-helpers'
+import { runStatus, terminal } from '#/features/runs/run-helpers'
 import { ToolIcon } from '#/features/runs/run-tool-icon'
-import { stepLabel } from '#/features/runs/step-label'
 import { ToolCallDetailsList } from '#/features/runs/tool-call-details-list'
 import { useWindowKeydown } from '#/hooks/use-window-keydown'
 import { cn } from '#/lib/utils'
@@ -39,14 +38,6 @@ const DEFAULT_AGENT_ID = 'software-engineer'
 
 const isApplePlatform = (): boolean =>
   /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
-
-function workingLabel(run: OneshotRun, steps: OneshotRunStep[]): string {
-  const latest = steps.at(-1)
-  if (latest) return stepLabel(latest)
-  if (run.waitingOn)
-    return `is ${run.waitingOn.charAt(0).toLowerCase()}${run.waitingOn.slice(1)}`
-  return run.state === 'preparing' ? 'is preparing' : 'is working'
-}
 
 function OneshotStream({
   run,
@@ -369,7 +360,7 @@ export function OneshotPanel({
             {working && run ? (
               <AgentThinking
                 className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                label={`${agentName} ${workingLabel(run, steps)}`}
+                label={`${agentName} ${runStatus(run, steps.at(-1))}`}
               />
             ) : working ? (
               <AgentThinking

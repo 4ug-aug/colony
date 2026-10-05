@@ -40,6 +40,14 @@ export type RunState =
   | "failed"
   | "cancelled";
 
+export type TerminalRunState = Extract<
+  RunState,
+  "succeeded" | "failed" | "cancelled"
+>;
+
+export const isTerminalRunState = (state: RunState): state is TerminalRunState =>
+  state === "succeeded" || state === "failed" || state === "cancelled";
+
 export type RunPreview = {
   url: string;
   state: "live" | "dead";

@@ -316,6 +316,13 @@
       "when": 1813000000000,
       "tag": "0044_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1814000000000,
+      "tag": "0045_message_delivery",
+      "breakpoints": true
     }
   ]
 }
