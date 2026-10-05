@@ -34,6 +34,7 @@ export function RoomView({
   sendReply,
   edit,
   cancel,
+  cancelQueued,
   mentionableAccounts,
   loadOlder,
   loadingOlder,
@@ -59,6 +60,7 @@ export function RoomView({
   ) => Promise<RoomMessage | undefined>
   edit: (messageId: string, text: string) => Promise<RoomMessage | undefined>
   cancel: (runId: string) => unknown
+  cancelQueued: (message: RoomMessage) => unknown
   mentionableAccounts: MentionableAccount[]
   loadOlder: () => unknown
   loadingOlder: boolean
@@ -230,6 +232,7 @@ export function RoomView({
                     setDraft(message.text)
                   }}
                   onOpenThread={openThread}
+                  onCancelQueued={cancelQueued}
                   mentionHandles={mentionHandles}
                 />
               )}
@@ -258,6 +261,7 @@ export function RoomView({
             onSubmit={submit}
             disabled={loading || !room}
             roomName={room?.name ?? 'room'}
+            chamberAgentName={room?.kind === 'chamber' ? room.name : undefined}
             mentionableAccounts={mentionableAccounts}
             editing={Boolean(editingMessage)}
             onCancelEdit={cancelEdit}
@@ -299,6 +303,7 @@ export function RoomView({
           currentUserId={user.id}
           sendReply={sendReply}
           editMessage={edit}
+          cancelQueued={cancelQueued}
           focusReplyId={
             surface?.kind === 'thread' ? surface.focusReplyId : undefined
           }

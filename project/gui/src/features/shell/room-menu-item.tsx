@@ -71,26 +71,32 @@ export function RoomMenuItem({
           </ContextMenuGroup>
         </ContextMenuContent>
       </ContextMenu>
-      {notification && (
-        <>
-          <SidebarMenuBadge aria-hidden="true" className="h-auto min-w-0 p-0">
-            <span
-              className={cn(
-                'size-2 rounded-full',
-                notification === 'mention' ? 'bg-orange-500' : 'bg-green-500',
-              )}
-            />
-          </SidebarMenuBadge>
-          <span
-            aria-hidden="true"
-            className={cn(
-              'absolute top-0 right-0 z-10 hidden size-2.5 rounded-full ring-2 ring-sidebar',
-              'group-data-[collapsible=icon]:block',
-              notification === 'mention' ? 'bg-orange-500' : 'bg-green-500',
-            )}
-          />
-        </>
-      )}
+      <NotificationDot notification={notification} />
     </SidebarMenuItem>
+  )
+}
+
+/** The unread dot on a sidebar row, also shown on the collapsed icon rail. */
+export function NotificationDot({
+  notification,
+}: {
+  notification: RoomNotification | undefined
+}) {
+  if (!notification) return null
+  const color = notification === 'mention' ? 'bg-orange-500' : 'bg-green-500'
+  return (
+    <>
+      <SidebarMenuBadge aria-hidden="true" className="h-auto min-w-0 p-0">
+        <span className={cn('size-2 rounded-full', color)} />
+      </SidebarMenuBadge>
+      <span
+        aria-hidden="true"
+        className={cn(
+          'absolute top-0 right-0 z-10 hidden size-2.5 rounded-full ring-2 ring-sidebar',
+          'group-data-[collapsible=icon]:block',
+          color,
+        )}
+      />
+    </>
   )
 }

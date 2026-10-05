@@ -2,6 +2,7 @@ import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import type { IssueStatus } from '#/features/issues/types'
 import { MembersPanel } from '#/features/members/members-panel'
 import { OneshotPanel } from '#/features/oneshot/oneshot-panel'
+import { AgentMark } from '#/features/agents/agent-mark'
 import type { MessageComposerHandle } from '#/features/rooms/message-composer'
 import { MessageSearchCommand } from '#/features/rooms/message-search-command'
 import { navigationForSearchHit } from '#/features/rooms/message-search-navigation'
@@ -63,6 +64,8 @@ export function Dashboard({
     notificationByRoom,
     threadAttentionRootIds,
     clearThreadAttention,
+    openChamber,
+    cancelQueued,
   } = useRooms(user.id, ready && view === 'room')
   const selectedIssueId = view === 'issues' ? location.id : undefined
   const selectedMachineId = view === 'vms' ? location.id : undefined
@@ -189,9 +192,9 @@ export function Dashboard({
         onDelete={remove}
         createError={createError}
         notificationByRoom={notificationByRoom}
-        onMentionAgent={(agentId) => {
-          openView('room')
-          requestAnimationFrame(() => composer.current?.mention(agentId))
+        onOpenChamber={async (agentId) => {
+          const chamber = await openChamber(agentId)
+          if (chamber) navigate({ view: 'room', id: chamber.id })
         }}
         view={view}
         onOpenAccount={() => openView('account')}
@@ -237,6 +240,8 @@ export function Dashboard({
                     <CalendarClock className="size-4 text-muted-foreground" />
                   ) : view === 'vms' ? (
                     <Box className="size-4 text-muted-foreground" />
+                  ) : room?.agentDefinitionId ? (
+                    <AgentMark agentId={room.agentDefinitionId} />
                   ) : room?.visibility === 'private' ? (
                     <Lock className="size-4 text-muted-foreground" />
                   ) : (
@@ -251,13 +256,15 @@ export function Dashboard({
                         ? 'Machines'
                         : (room?.name ?? 'Rooms')}
                   </p>
-                  {view === 'room' && room?.visibility === 'private' && (
-                    <MembersPanel
-                      room={room}
-                      currentUserId={user.id}
-                      membersChangedAt={membersChangedAt}
-                    />
-                  )}
+                  {view === 'room' &&
+                    room?.visibility === 'private' &&
+                    room.kind !== 'chamber' && (
+                      <MembersPanel
+                        room={room}
+                        currentUserId={user.id}
+                        membersChangedAt={membersChangedAt}
+                      />
+                    )}
                   {view === 'room' && (
                     <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                       {connection === 'connected' ? (
@@ -286,6 +293,7 @@ export function Dashboard({
             sendReply={sendReply}
             edit={edit}
             cancel={cancel}
+            cancelQueued={cancelQueued}
             mentionableAccounts={mentionableAccounts}
             loadOlder={loadOlder}
             loadingOlder={loadingOlder}

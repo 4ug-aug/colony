@@ -553,9 +553,7 @@ export function useRooms(userId: string, viewingRoom: boolean) {
             if (event.message.rootId) {
               invalidateRoomThread(event.message.rootId)
             } else if (event.type === 'message.created') {
-              setMessages((current) =>
-                mergeMessages(current, [event.message]),
-              )
+              setMessages((current) => mergeMessages(current, [event.message]))
             } else {
               setMessages((current) =>
                 mergeLoadedMessage(current, event.message),
@@ -569,6 +567,16 @@ export function useRooms(userId: string, viewingRoom: boolean) {
                 createdAt: event.message.createdAt,
                 authorId: event.message.author.id,
               })
+          }
+          if (
+            event.type === 'message.deleted' &&
+            event.message.roomId === selectedRoomId
+          ) {
+            if (event.message.rootId) invalidateRoomThread(event.message.rootId)
+            else
+              setMessages((current) =>
+                current.filter(({ id }) => id !== event.message.id),
+              )
           }
           if (
             event.type === 'run.changed' &&
@@ -943,6 +951,25 @@ export function useRooms(userId: string, viewingRoom: boolean) {
     },
     loadOlder,
     loadingOlder,
+    /** The account's Chamber with this agent, created on first open. */
+    openChamber: async (agentDefinitionId: string) => {
+      const existing = roomsRef.current.find(
+        (room) => room.agentDefinitionId === agentDefinitionId,
+      )
+      if (existing) return existing
+      const result = await request<{ room: Room }>('/api/chambers', {
+        agentDefinitionId,
+      })
+      if (result)
+        setRooms((current) => orderedRooms(upsert(current, result.room)))
+      return result?.room
+    },
+    cancelQueued: (message: RoomMessage) =>
+      request(
+        `/api/rooms/${message.roomId}/messages/${message.id}/queued`,
+        undefined,
+        'DELETE',
+      ),
     cancel: (runId: string) =>
       selectedRoomId
         ? request(`/api/rooms/${selectedRoomId}/runs/${runId}/cancel`)
