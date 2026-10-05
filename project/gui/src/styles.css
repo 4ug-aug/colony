@@ -854,7 +854,7 @@ a {
   );
   color: var(--primary-foreground);
   font-size: calc(var(--btn-raised-height) * 0.37);
-  font-weight: 550;
+  font-weight: 500;
   line-height: 1;
   box-shadow: none;
 }
