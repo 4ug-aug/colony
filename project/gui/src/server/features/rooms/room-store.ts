@@ -28,6 +28,9 @@ export type RoomSummary = {
   name: string
   visibility: 'public' | 'private'
   createdBy?: string
+  /** Set only on a Chamber: a private Room with one account and one agent (ADR 0031). */
+  kind?: 'chamber'
+  agentDefinitionId?: string
 }
 export type ThreadParticipant = {
   id: string
@@ -51,6 +54,8 @@ export type RoomMessage = {
   rootId?: string
   /** Set only on top-level messages that have durable replies. */
   replySummary?: ThreadSummary
+  /** A Chamber message waiting for the run active in its conversation. */
+  queued?: true
 }
 /** A successful Room-linked run's final output, presented as a thread reply. */
 export type RunResultReply = {
@@ -164,6 +169,14 @@ export interface RoomStore {
     createdBy?: string
   }): boolean
   deleteRoom(roomId: string): boolean
+  /** The account's Chamber with this agent, created on first use. */
+  chamberFor(accountId: string, agent: { id: string; name: string }): RoomSummary
+  /** Queued messages in one Chamber conversation (top-level when rootId is undefined), oldest first. */
+  listQueuedMessages(roomId: string, rootId: string | undefined): RoomMessage[]
+  /** Clears the queued flag; returns the messages as sent. */
+  sendQueuedMessages(roomId: string, ids: readonly string[]): RoomMessage[]
+  /** Deletes a queued message its author cancelled; false if it was already sent. */
+  cancelQueuedMessage(roomId: string, id: string, authorId: string): boolean
   listAttachmentStorageKeys(roomId: string): string[]
   getAttachment(id: string): StoredRoomAttachment | undefined
   canAccessRoom(roomId: string, userId: string): boolean
@@ -251,6 +264,8 @@ type RoomRow = {
   name: string
   visibility: 'public' | 'private'
   created_by: string | null
+  kind: string
+  agent_definition_id: string | null
 }
 type UserRow = {
   id: string
@@ -275,6 +290,7 @@ type MessageRow = {
   created_at: number
   edited_at?: number | null
   root_id?: string | null
+  queued?: number
 }
 type AttachmentRow = {
   id: string
@@ -324,6 +340,9 @@ const roomFrom = (row: RoomRow): RoomSummary => ({
   name: row.name,
   visibility: row.visibility,
   ...(row.created_by != null ? { createdBy: row.created_by } : {}),
+  ...(row.kind === 'chamber'
+    ? { kind: 'chamber' as const, agentDefinitionId: row.agent_definition_id! }
+    : {}),
 })
 const userFrom = (row: UserRow): RoomUser => ({
   id: row.id,
@@ -369,6 +388,7 @@ const messageFrom = (
   createdAt: row.created_at,
   ...(row.edited_at != null ? { editedAt: row.edited_at } : {}),
   ...(row.root_id != null ? { rootId: row.root_id } : {}),
+  ...(row.queued ? { queued: true as const } : {}),
   attachments,
 })
 const stepFrom = (row: StepRow): StoredStep => ({
@@ -499,8 +519,11 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     }
     return rows.map((row) => messageFrom(row, byMessage.get(row.id) ?? []))
   }
-  const messageSelect = `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at${editedAtSelect}${rootIdSelect}${messageProfile}
+  const messageSelect = `SELECT m.id, m.room_id, m.author_id, m.author_name, m.author_image, m.author_kind, m.text, m.created_at, m.queued${editedAtSelect}${rootIdSelect}${messageProfile}
            FROM room_message m${messageProfileJoin}`
+  // A Chamber posts each run's answer as a message, so its runs are not also result replies.
+  const notChamberRun =
+    "room_run.room_id NOT IN (SELECT id FROM room WHERE kind = 'chamber')"
   const replySummaries = (rootIds: string[]): Map<string, ThreadSummary> => {
     const map = new Map<string, ThreadSummary>()
     if (!hasRootId || !rootIds.length) return map
@@ -528,7 +551,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
          FROM room_run
          LEFT JOIN room_message trig ON trig.id = room_run.trigger_message_id
          WHERE COALESCE(trig.root_id, room_run.trigger_message_id) IN (${placeholders})
-           AND room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL`,
+           AND room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL
+           AND ${notChamberRun}`,
       )
       .all(...rootIds) as {
       root_id: string
@@ -696,6 +720,8 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
     run.stdout,
     run.stderr,
   ]
+  const ROOM_COLUMNS =
+    'id, name, visibility, created_by, kind, agent_definition_id'
   const ROOM_ORDER =
     "ORDER BY CASE WHEN id = 'general' THEN 0 ELSE 1 END, name COLLATE NOCASE, id"
   const listRoomHistoryPage = (
@@ -853,14 +879,14 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       (
         sqlite
           .prepare(
-            `SELECT id, name, visibility, created_by FROM room ${ROOM_ORDER}`,
+            `SELECT ${ROOM_COLUMNS} FROM room WHERE kind = 'room' ${ROOM_ORDER}`,
           )
           .all() as RoomRow[]
       ).map(roomFrom),
     getRoom: (roomId) => {
       const row = sqlite
         .prepare(
-          'SELECT id, name, visibility, created_by FROM room WHERE id = ?',
+          `SELECT ${ROOM_COLUMNS} FROM room WHERE id = ?`,
         )
         .get(roomId) as RoomRow | undefined
       return row ? roomFrom(row) : undefined
@@ -883,6 +909,59 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       }
       return inserted
     },
+    chamberFor: (accountId, agent) => {
+      const select = () =>
+        sqlite
+          .prepare(
+            `SELECT ${ROOM_COLUMNS} FROM room
+             WHERE kind = 'chamber' AND chamber_account_id = ? AND agent_definition_id = ?`,
+          )
+          .get(accountId, agent.id) as RoomRow | undefined
+      const existing = select()
+      if (existing) return roomFrom(existing)
+      const id = crypto.randomUUID()
+      sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO room (id, name, visibility, created_by, kind, chamber_account_id, agent_definition_id)
+           VALUES (?, ?, 'private', ?, 'chamber', ?, ?)`,
+        )
+        .run(id, agent.name, accountId, accountId, agent.id)
+      sqlite
+        .prepare(
+          'INSERT OR IGNORE INTO room_member (room_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)',
+        )
+        .run(id, accountId, accountId, Date.now())
+      return roomFrom(select()!)
+    },
+    listQueuedMessages: (roomId, rootId) =>
+      hydrateMessages(
+        roomId,
+        sqlite
+          .prepare(
+            `${messageSelect}
+             WHERE m.room_id = ? AND m.queued = 1 AND m.root_id IS ?
+             ORDER BY m.created_at, m.id`,
+          )
+          .all(roomId, rootId ?? null) as MessageRow[],
+      ),
+    sendQueuedMessages: (roomId, ids) => {
+      if (!ids.length) return []
+      const placeholders = ids.map(() => '?').join(', ')
+      sqlite
+        .prepare(
+          `UPDATE room_message SET queued = 0 WHERE room_id = ? AND id IN (${placeholders})`,
+        )
+        .run(roomId, ...ids)
+      return ids.flatMap((id) => getMessage(roomId, id) ?? [])
+    },
+    cancelQueuedMessage: (roomId, id, authorId) =>
+      ((
+        sqlite
+          .prepare(
+            'DELETE FROM room_message WHERE room_id = ? AND id = ? AND author_id = ? AND queued = 1',
+          )
+          .run(roomId, id, authorId) as { changes?: number }
+      ).changes ?? 0) > 0,
     deleteRoom: (roomId) =>
       ((
         sqlite.prepare('DELETE FROM room WHERE id = ?').run(roomId) as {
@@ -935,7 +1014,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
       (
         sqlite
           .prepare(
-            `SELECT id, name, visibility, created_by FROM room
+            `SELECT ${ROOM_COLUMNS} FROM room
            WHERE visibility = 'public'
               OR id IN (SELECT room_id FROM room_member WHERE user_id = ?)
            ${ROOM_ORDER}`,
@@ -1028,6 +1107,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
            WHERE room_run.room_id = ?
              AND (room_run.trigger_message_id = ? OR trig.root_id = ?)
              AND room_run.state = 'succeeded' AND room_run.completed_at IS NOT NULL
+             AND ${notChamberRun}
            ORDER BY room_run.completed_at, room_run.id`,
         )
         .all(roomId, rootId, rootId) as {
@@ -1155,7 +1235,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
         if (hasRootId) {
           sqlite
             .prepare(
-              'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, author_kind, text, created_at, root_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              'INSERT INTO room_message (id, room_id, author_id, author_name, author_image, author_kind, text, created_at, root_id, queued) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             )
             .run(
               message.id,
@@ -1167,6 +1247,7 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
               message.text,
               message.createdAt,
               message.rootId ?? null,
+              message.queued ? 1 : 0,
             )
         } else {
           sqlite

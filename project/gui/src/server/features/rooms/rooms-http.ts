@@ -30,7 +30,8 @@ import {
   type RoomMessageHub,
 } from './room-hub'
 import { json } from '#/server/http/respond'
-import { formatWorkspaceTranscript } from '#project/mcp/workspace'
+import { promptWithHistory } from './run-history'
+import type { Chambers } from './chambers'
 
 async function textFrom(request: Request): Promise<string | undefined> {
   try {
@@ -141,32 +142,6 @@ async function roomBodyFrom(request: Request): Promise<RoomBody | undefined> {
   }
 }
 
-const THREAD_HISTORY_MESSAGES = 20
-const THREAD_MESSAGE_CHARS = 4_000
-// ponytail: fixed ~10k-token budget; size it from the model's context window if 32k models feel cramped.
-const THREAD_HISTORY_CHARS = 40_000
-
-/**
- * The newest thread messages a reply mention hands the agent, oldest first.
- * Budgeted, because compaction keeps the task (and so this history) verbatim.
- */
-export function threadHistory<Message extends { text: string }>(
-  messages: readonly Message[],
-): Message[] {
-  const kept: Message[] = []
-  let budget = THREAD_HISTORY_CHARS
-  for (const message of messages.slice(-THREAD_HISTORY_MESSAGES).reverse()) {
-    const text =
-      message.text.length > THREAD_MESSAGE_CHARS
-        ? `${message.text.slice(0, THREAD_MESSAGE_CHARS)}\n[message truncated: ${message.text.length} chars]`
-        : message.text
-    if (text.length > budget) break
-    budget -= text.length
-    kept.unshift({ ...message, text })
-  }
-  return kept
-}
-
 export function createRoomsHttp(deps: {
   store: RoomStore
   messages: RoomMessageHub
@@ -175,7 +150,15 @@ export function createRoomsHttp(deps: {
   historyPageSize: number
   agentReady?: (agentDefinitionId?: string) => boolean
   mentionPattern?: () => RegExp
-  lookupPerson?: (id: string) => { kind: 'cursor' | 'openai-agents' } | undefined
+  lookupPerson?: (
+    id: string,
+  ) => { kind: 'cursor' | 'openai-agents'; archivedAt?: number } | undefined
+  chambers: Chambers
+  /** The agent a viewer may open a Chamber with: visible to them and not archived. */
+  chamberAgent: (
+    viewerAccountId: string,
+    agentDefinitionId: string,
+  ) => { id: string; name: string } | undefined
   roomsFor: (userId: string) => WorkspaceRoom[]
   broadcastWorkspace: (message: WorkspaceServerMessage) => void
   broadcastWorkspaceToUsers: (
@@ -217,6 +200,36 @@ export function createRoomsHttp(deps: {
           limit,
         }),
       })
+    }
+    if (url.pathname === '/api/chambers' && request.method === 'POST') {
+      const body = (await request.json().catch(() => undefined)) as
+        | { agentDefinitionId?: unknown }
+        | undefined
+      const agent =
+        typeof body?.agentDefinitionId === 'string'
+          ? deps.chamberAgent(user.id, body.agentDefinitionId)
+          : undefined
+      if (!agent) return json({ error: 'Unknown agent' }, 404)
+      const before = deps.store.listRoomsForUser(user.id).length
+      const chamber = deps.store.chamberFor(user.id, agent)
+      const room = deps.roomsFor(user.id).find(({ id }) => id === chamber.id)!
+      if (deps.store.listRoomsForUser(user.id).length > before)
+        deps.broadcastWorkspaceToUsers(new Set([user.id]), {
+          type: 'room.created',
+          room,
+        })
+      return json({ room })
+    }
+    const queuedRoute = url.pathname.match(
+      /^\/api\/rooms\/([^/]+)\/messages\/([^/]+)\/queued$/,
+    )
+    if (queuedRoute && request.method === 'DELETE') {
+      const [, roomId, messageId] = queuedRoute
+      if (!deps.store.canAccessRoom(roomId!, user.id))
+        return json({ error: 'Room not found' }, 404)
+      return deps.messages.cancelQueued(roomId!, messageId!, user.id)
+        ? json({ ok: true })
+        : json({ error: 'Message already sent' }, 409)
     }
     if (url.pathname === '/api/rooms' && request.method === 'POST') {
       const body = await roomBodyFrom(request)
@@ -351,26 +364,33 @@ export function createRoomsHttp(deps: {
       const mention = (deps.mentionPattern ?? rosterMentionPattern)()
       const mentionMatch = text.match(mention)
       const agentDefinitionId = mentionMatch?.[2]
-      const isAgentMessage = Boolean(agentDefinitionId)
+      const room = deps.store.getRoom(roomId)
+      // In a Chamber every message is a task for its agent; naming another
+      // agent still starts that one, as in any Room.
+      const chamber =
+        room?.kind === 'chamber' &&
+        (!agentDefinitionId || agentDefinitionId === room.agentDefinitionId)
+          ? room
+          : undefined
+      const isAgentMessage = Boolean(agentDefinitionId) && !chamber
       const task = isAgentMessage
         ? text.replace(mention, (_, prefix: string) => prefix).trim()
         : undefined
       if (isAgentMessage && !task)
         return json({ error: 'Agent task is required' }, 400)
-      if (
-        task &&
-        agentDefinitionId &&
-        deps.agentReady &&
-        !deps.agentReady(agentDefinitionId)
-      ) {
+      const runAgentId = chamber
+        ? chamber.agentDefinitionId
+        : task && agentDefinitionId
+      if (runAgentId && deps.agentReady && !deps.agentReady(runAgentId)) {
         const person =
-          deps.lookupPerson?.(agentDefinitionId) ??
-          rosterPerson(agentDefinitionId)
+          deps.lookupPerson?.(runAgentId) ?? rosterPerson(runAgentId)
         return json(
           {
-            error: person
-              ? rosterNotConfiguredMessage(person.kind)
-              : 'Unknown agent',
+            error: !person
+              ? 'Unknown agent'
+              : 'archivedAt' in person && person.archivedAt !== undefined
+                ? 'This agent is archived'
+                : rosterNotConfiguredMessage(person.kind),
           },
           409,
         )
@@ -397,6 +417,9 @@ export function createRoomsHttp(deps: {
           text,
           attachments,
           ...(rootId ? { rootId } : {}),
+          ...(chamber && deps.chambers.busy(roomId, rootId)
+            ? { queued: true }
+            : {}),
         })
       } catch (error) {
         try {
@@ -411,17 +434,31 @@ export function createRoomsHttp(deps: {
           return json({ error: 'Invalid thread root' }, 400)
         return json({ error: 'Unable to save message' }, 500)
       }
+      if (chamber) {
+        if (message.queued) return json({ message }, 201)
+        try {
+          const run = deps.chambers.start(chamber, [message], user)
+          return json({ message, run }, 202)
+        } catch (error) {
+          return json(
+            {
+              error:
+                error instanceof Error ? error.message : 'Unable to start agent',
+              message,
+            },
+            502,
+          )
+        }
+      }
       if (!task) return json({ message }, 201)
-      // A reply mention carries the thread so far; agents rarely read it themselves.
-      const thread = rootId
-        ? threadHistory(
+      const prompt = rootId
+        ? promptWithHistory(
+            'thread',
             deps.messages
               .listThreadMessages(roomId, rootId)
               .filter(({ id }) => id !== message.id),
+            task,
           )
-        : []
-      const prompt = thread.length
-        ? `Recent messages in this thread, oldest first:\n\n${formatWorkspaceTranscript(thread, Date.now())}\n\nYour task, from the latest message:\n${task}`
         : task
       try {
         const run = deps.control.start(prompt, {

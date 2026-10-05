@@ -87,6 +87,8 @@ export function createMembersHttp(deps: {
       if (!room) return json({ error: 'Room not found' }, 404)
       if (room.visibility !== 'private')
         return json({ error: 'Room is not private' }, 400)
+      if (room.kind === 'chamber')
+        return json({ error: 'A Chamber has no other members' }, 400)
       const body = await readBody(request)
       const userId =
         body && typeof body.userId === 'string' && body.userId.trim()
@@ -121,6 +123,8 @@ export function createMembersHttp(deps: {
       if (!room) return json({ error: 'Room not found' }, 404)
       if (room.visibility !== 'private')
         return json({ error: 'Room is not private' }, 400)
+      if (room.kind === 'chamber')
+        return json({ error: 'A Chamber has no other members' }, 400)
       if (targetUserId !== user.id && !deps.store.isOwner(roomId, user.id))
         return json({ error: 'Only the room owner can remove members' }, 403)
       deps.store.removeMember(roomId, targetUserId)

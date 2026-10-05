@@ -8,6 +8,7 @@ import type {
 export type RoomEvent =
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'message.updated'; message: RoomMessage }
+  | { type: 'message.deleted'; message: RoomMessage }
 
 export type EditMessageFailure = 'not_found' | 'forbidden' | 'empty'
 
@@ -42,7 +43,13 @@ export interface RoomMessageHub {
     attachments?: NewRoomAttachment[]
     /** Links this message to a top-level root as a thread reply. */
     rootId?: string
+    /** Waits for the run active in its Chamber conversation. */
+    queued?: boolean
   }): RoomMessage
+  /** Marks queued Chamber messages as sent. */
+  sendQueued(roomId: string, ids: readonly string[]): RoomMessage[]
+  /** Deletes a queued Chamber message its author cancelled; false once sent. */
+  cancelQueued(roomId: string, messageId: string, authorId: string): boolean
   editMessage(input: {
     roomId: string
     messageId: string
@@ -61,6 +68,8 @@ export function createRoomMessageHub(
     | 'updateMessageText'
     | 'canReplyTo'
     | 'getThread'
+    | 'sendQueuedMessages'
+    | 'cancelQueuedMessage'
   >,
   options?: { createId?: () => string; now?: () => number },
 ): RoomMessageHub {
@@ -80,7 +89,7 @@ export function createRoomMessageHub(
       if (!thread) return []
       return [thread.root, ...thread.replies]
     },
-    postMessage({ roomId, author, text, attachments = [], rootId }) {
+    postMessage({ roomId, author, text, attachments = [], rootId, queued }) {
       if (rootId != null && !store.canReplyTo(roomId, rootId))
         throw new PostMessageError('invalid_root')
       const message: RoomMessage = {
@@ -93,6 +102,7 @@ export function createRoomMessageHub(
           ({ sha256, storageKey, createdAt, ...attachment }) => attachment,
         ),
         ...(rootId != null ? { rootId } : {}),
+        ...(queued ? { queued: true as const } : {}),
       }
       store.createMessage(message, attachments)
       emit({ type: 'message.created', message })
@@ -115,6 +125,18 @@ export function createRoomMessageHub(
       if (!updated) throw new EditMessageError('not_found')
       emit({ type: 'message.updated', message: updated })
       return updated
+    },
+    sendQueued(roomId, ids) {
+      const sent = store.sendQueuedMessages(roomId, ids)
+      for (const message of sent) emit({ type: 'message.updated', message })
+      return sent
+    },
+    cancelQueued(roomId, messageId, authorId) {
+      const message = store.getMessage(roomId, messageId)
+      if (!message || !store.cancelQueuedMessage(roomId, messageId, authorId))
+        return false
+      emit({ type: 'message.deleted', message })
+      return true
     },
     subscribe(listener) {
       listeners.add(listener)

@@ -19,7 +19,10 @@ import {
   type AdmissionOptions,
 } from './features/accounts/admission-http'
 import { mentionedAccounts } from './features/rooms/attention'
-import { rosterDefinitionSummaries } from '#project/agents/roster'
+import {
+  rosterDefinitionSummaries,
+  rosterParticipant,
+} from '#project/agents/roster'
 import { summaryFromPerson } from '#project/agents/roster-meta'
 import { createAgentDefinitionsHttp } from './features/agents/agent-definitions-http'
 import type { AgentDefinitionStore } from './features/agents/agent-definition-store'
@@ -45,6 +48,7 @@ import { createIssuesHttp } from './features/issues/issues-http'
 import { createSchedulesHttp } from './features/schedules/schedules-http'
 import { createBulletinsHttp } from './features/bulletins/bulletins-http'
 import { createRoomsHttp } from './features/rooms/rooms-http'
+import { createChambers } from './features/rooms/chambers'
 import { createMembersHttp } from './features/rooms/members-http'
 import { createActiveRunsHttp } from './features/runs/active-runs-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
@@ -564,12 +568,29 @@ export function createCoordinator(options: {
       )
     }
   }
+  const chambers = createChambers({
+    store: options.store,
+    messages: options.messages,
+    control: options.control,
+    agent: (id) => {
+      const record = options.agentDefinitionStore?.get(id)
+      return record ? { id, name: record.name } : rosterParticipant(id)
+    },
+  })
+  const terminal = (state: RunSummary['state']) =>
+    state === 'succeeded' || state === 'failed' || state === 'cancelled'
   const project = (run: RunSummary): void => {
     const saved = options.store.getRun(run.id)
     if (!saved) return
     const changed = { ...saved, ...run }
     options.store.updateRun(changed)
     broadcastRoom(changed.roomId, { type: 'run.changed', run: changed })
+    // A Chamber answers with an agent message, which carries its own Attention.
+    if (options.store.getRoom(changed.roomId)?.kind === 'chamber') {
+      if (!terminal(saved.state) && terminal(changed.state))
+        chambers.settled(changed)
+      return
+    }
     if (
       changed.state === 'succeeded' ||
       changed.state === 'failed' ||
@@ -590,9 +611,25 @@ export function createCoordinator(options: {
           event.message)
         : event.message
     broadcastRoom(event.message.roomId, { ...event, message })
-    if (event.type === 'message.created' && event.message.rootId)
+    if (event.type !== 'message.updated' && event.message.rootId)
       broadcastRootSummary(event.message.roomId, event.message.rootId)
     if (event.type !== 'message.created') return
+    const room = options.store.getRoom(event.message.roomId)
+    // Everything an agent says top-level in a Chamber is addressed to its account;
+    // thread replies raise Thread Attention below.
+    if (
+      room?.kind === 'chamber' &&
+      room.createdBy &&
+      event.message.author.kind === 'agent' &&
+      !event.message.rootId
+    )
+      createAttention(
+        room.id,
+        room.createdBy,
+        'mention',
+        event.message.id,
+        event.message.createdAt,
+      )
     for (const account of mentionedAccounts(
       event.message.text,
       options.store.listMentionableAccounts(event.message.roomId),
@@ -776,6 +813,14 @@ export function createCoordinator(options: {
     lookupPerson: options.agentDefinitionStore
       ? (id) => options.agentDefinitionStore!.get(id)
       : undefined,
+    chambers,
+    chamberAgent: (viewerAccountId, agentDefinitionId) => {
+      const agent = agentDefinitions(viewerAccountId).find(
+        ({ id, archivedAt }) =>
+          id === agentDefinitionId && archivedAt === undefined,
+      )
+      return agent ? { id: agent.id, name: agent.name } : undefined
+    },
     roomsFor,
     broadcastWorkspace,
     broadcastWorkspaceToUsers,

@@ -15,8 +15,21 @@ class FakeStore implements Pick<
   | 'updateMessageText'
   | 'canReplyTo'
   | 'getThread'
+  | 'sendQueuedMessages'
+  | 'cancelQueuedMessage'
 > {
   messages: RoomMessage[] = []
+  sendQueuedMessages(_roomId: string, ids: readonly string[]) {
+    this.messages = this.messages.map(({ queued: _, ...m }) =>
+      ids.includes(m.id) ? m : { ...m, ...(_ ? { queued: _ } : {}) },
+    )
+    return this.messages.filter((m) => ids.includes(m.id))
+  }
+  cancelQueuedMessage(_roomId: string, id: string) {
+    const before = this.messages.length
+    this.messages = this.messages.filter((m) => !(m.id === id && m.queued))
+    return this.messages.length < before
+  }
   listMessages(roomId: string) {
     return this.messages.filter((m) => m.roomId === roomId && m.rootId == null)
   }
