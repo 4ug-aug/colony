@@ -27,3 +27,11 @@ export function roomLiveStepsQueryOptions(roomId: string) {
 export function useRoomLiveSteps(roomId: string) {
   return useQuery(roomLiveStepsQueryOptions(roomId)).data
 }
+
+/** One run's latest live step; re-renders only when that run steps. */
+export function useLatestRunStep(roomId: string, runId: string) {
+  return useQuery({
+    ...roomLiveStepsQueryOptions(roomId),
+    select: (steps) => steps.latestStepByRun.get(runId),
+  }).data
+}
