@@ -4119,3 +4119,56 @@ test('an agent cannot consult an agent that is waiting on it', async () => {
     await coordinator.stop()
   }
 })
+
+test('a Consultation that cannot start tells the asker instead of leaving it waiting', async () => {
+  const { coordinator, base, control, ask, chamberWith } = await consulting()
+  try {
+    const chamber = await chamberWith('software-engineer')
+    const { run: mine } = (await (
+      await send(base, `/api/rooms/${chamber.id}/messages`, {
+        text: 'Refactor the store',
+      })
+    ).json()) as { run: RoomRun }
+    await Bun.sleep(2)
+    const answer = ask('Is the store safe to refactor?')
+    control.start = () => {
+      throw new Error('Unknown agent definition: software-engineer')
+    }
+    control.finish(mine.id, 'succeeded', 'Refactored.')
+    expect(await answer).toBe(
+      "Software engineer couldn't start: Unknown agent definition: software-engineer",
+    )
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('a Consultation answered together with the account’s own message still raises Attention', async () => {
+  const { coordinator, base, store, control, ask, chamberWith } =
+    await consulting()
+  try {
+    const chamber = await chamberWith('software-engineer')
+    const post = async (text: string) =>
+      (await (
+        await send(base, `/api/rooms/${chamber.id}/messages`, { text })
+      ).json()) as { run?: RoomRun }
+    const { run: mine } = await post('Refactor the store')
+    await Bun.sleep(2)
+    await post('Also rename it')
+    await Bun.sleep(2)
+    const answer = ask('Is the store safe to refactor?')
+    await Bun.sleep(2)
+    control.finish(mine!.id, 'succeeded', 'Refactored.')
+    const batch = store.listRuns(chamber.id).at(-1)!
+    expect(batch.id).not.toBe(mine!.id)
+    control.finish(batch.id, 'succeeded', 'Renamed, and yes.')
+    expect(await answer).toBe('Renamed, and yes.')
+    // The account asked too, so the reply is theirs to see, not a quiet one.
+    expect(store.listMessages(chamber.id).at(-1)).toMatchObject({
+      text: 'Renamed, and yes.',
+    })
+    expect(store.listMessages(chamber.id).at(-1)!.delivery).toBeUndefined()
+  } finally {
+    await coordinator.stop()
+  }
+})

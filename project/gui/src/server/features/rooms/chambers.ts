@@ -44,6 +44,13 @@ export function createChambers(deps: {
     string,
     { askingRunId: string; roomId: string; resolve: (answer: string) => void }
   >()
+  /** Answers whichever of these messages are waiting Consultations. */
+  const resolveWaiting = (messageIds: readonly string[], answer: string) => {
+    for (const id of messageIds) {
+      waiting.get(id)?.resolve(answer)
+      waiting.delete(id)
+    }
+  }
   /** The agents whose Consultations a run is answering, up the chain. */
   const waitingAgents = (runId: string): string[] => {
     const askers = (answering.get(runId) ?? []).flatMap((id) => {
@@ -177,23 +184,22 @@ export function createChambers(deps: {
         (id) => deps.store.getMessage(room.id, id) ?? [],
       )
       answering.delete(run.id)
-      const consultation = asked.find(
+      // Quiet only when no one but agents asked; the account's own message wants Attention.
+      const consultation = asked.every(
         ({ delivery }) => delivery?.kind === 'consultation',
-      )?.delivery
+      )
+        ? asked[0]?.delivery
+        : undefined
       reply(room, run.agentId, answer(run), {
         ...(rootId ? { rootId } : {}),
         ...(consultation ? { delivery: consultation } : {}),
       })
-      for (const { id } of asked) {
-        waiting
-          .get(id)
-          ?.resolve(
-            run.state === 'cancelled'
-              ? `${deps.agent(run.agentId).name} was stopped by the user.`
-              : answer(run),
-          )
-        waiting.delete(id)
-      }
+      resolveWaiting(
+        asked.map(({ id }) => id),
+        run.state === 'cancelled'
+          ? `${deps.agent(run.agentId).name} was stopped by the user.`
+          : answer(run),
+      )
       const queued = deps.store.listQueuedMessages(room.id, rootId)
       if (!queued.length || busy(room.id, rootId)) return
       const sent = deps.messages.sendQueued(
@@ -204,11 +210,16 @@ export function createChambers(deps: {
       try {
         start(room, sent, ownerOf(room))
       } catch (error) {
+        const reason = error instanceof Error ? error.message : 'unknown error'
         reply(
           room,
           room.agentDefinitionId!,
-          `I couldn't start on this: ${error instanceof Error ? error.message : 'unknown error'}`,
+          `I couldn't start on this: ${reason}`,
           rootId ? { rootId } : {},
+        )
+        resolveWaiting(
+          sent.map(({ id }) => id),
+          `${deps.agent(room.agentDefinitionId!).name} couldn't start: ${reason}`,
         )
       }
     },
@@ -247,7 +258,13 @@ export function createChambers(deps: {
           roomId: room.id,
           resolve,
         })
-        if (!queued) start(room, [question], ownerOf(room))
+        if (queued) return
+        try {
+          start(room, [question], ownerOf(room))
+        } catch (error) {
+          waiting.delete(question.id)
+          throw error
+        }
       })
     },
     /** A Schedule run's outcome, delivered to its creator's Chamber with the schedule's agent. */
