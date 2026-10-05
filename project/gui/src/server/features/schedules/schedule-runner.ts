@@ -1,3 +1,4 @@
+import { isTerminalRunState, type TerminalRunState } from '#project/runs'
 import type { RunControl, RunSummary } from '#/server/features/runs/run-control'
 import { runStep } from '#/server/features/runs/run-storage'
 import {
@@ -14,6 +15,8 @@ export class ScheduleActiveRunError extends Error {
     this.name = 'ScheduleActiveRunError'
   }
 }
+
+export type SettledScheduleRun = ScheduleRun & { state: TerminalRunState }
 
 export type ScheduleRunner = {
   runNow(scheduleId: string, accountId: string): ScheduleRun
@@ -32,12 +35,10 @@ export function createScheduleRunner(options: {
   onRunChange?: (run: ScheduleRun) => void
   onStep?: (step: ScheduleRunStep) => void
   /** Once per run, when it ends or fails to start. */
-  onRunSettled?: (run: ScheduleRun, schedule: Schedule) => void
+  onRunSettled?: (run: SettledScheduleRun, schedule: Schedule) => void
 }): ScheduleRunner {
   const now = options.now ?? Date.now
-  const terminal = (state: ScheduleRun['state']) =>
-    state === 'succeeded' || state === 'failed' || state === 'cancelled'
-  const settled = (run: ScheduleRun) => {
+  const settled = (run: SettledScheduleRun) => {
     const schedule = options.store.getSchedule(run.scheduleId)
     if (schedule) options.onRunSettled?.(run, schedule)
   }
@@ -47,10 +48,10 @@ export function createScheduleRunner(options: {
     const changed = { ...existing, ...summary }
     options.store.updateRun(changed)
     options.onRunChange?.(changed)
-    if (terminal(changed.state)) {
-      if (!terminal(existing.state)) settled(changed)
-      tick()
-    }
+    const { state } = changed
+    if (!isTerminalRunState(state)) return
+    if (!isTerminalRunState(existing.state)) settled({ ...changed, state })
+    tick()
   }
   const unsubscribe = options.control.subscribe(project)
   const unsubscribeSteps = options.control.subscribeSteps((runId, step) => {
@@ -103,7 +104,7 @@ export function createScheduleRunner(options: {
         now: now(),
       })
       options.onRunChange?.(failed)
-      settled(failed)
+      settled({ ...failed, state: 'failed' })
       if (source === 'automatic') {
         const changed = options.store.getSchedule(schedule.id)
         if (changed) options.onScheduleChange?.(changed)

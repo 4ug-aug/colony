@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 import { RoomMessageRow } from './room-message-row'
 import { buildFlatTimelineItems } from './thread-helpers'
 import type { FlatTimelineItem } from './thread-helpers'
+import { AgentMessageBody } from './agent-message-body'
 import { QueuedNote } from './queued-note'
 import { ScheduleDeliveryCard } from './schedule-delivery-card'
 import { ThreadSummaryChip } from './thread-summary-chip'
@@ -96,7 +97,6 @@ const TimelineEntry = memo(function TimelineEntry({
       coarsePointer={coarsePointer}
       isAgent={isAgent}
       grouped={item.grouped}
-      clampAgentBody={isAgent && clampAgentMessages}
       focused={focusMessageId === item.message.id}
       onFocusHandled={onFocusHandled}
       onReply={
@@ -111,6 +111,11 @@ const TimelineEntry = memo(function TimelineEntry({
         item.message.delivery ? (
           <ScheduleDeliveryCard
             delivery={item.message.delivery}
+            text={item.message.text}
+            mentions={mentionHandles}
+          />
+        ) : isAgent && clampAgentMessages ? (
+          <AgentMessageBody
             text={item.message.text}
             mentions={mentionHandles}
           />

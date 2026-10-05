@@ -15,27 +15,32 @@ import {
   hostLanAddress,
   parseContainerProvider,
   parseSandboxProvider,
-  verifyRealtimeTicket,
+  verifyRealtimeTicket
+  
 } from './coordinator'
-import type { SessionAuthenticator } from './coordinator'
-import { createRunControl } from './features/runs/run-control'
-import type { RunControl, RunSummary, Step } from './features/runs/run-control'
+import type {SessionAuthenticator} from './coordinator';
+import {
+  createRunControl
+  
+  
+  
+} from './features/runs/run-control'
+import type {RunControl, RunSummary, Step} from './features/runs/run-control';
 import type { AttachmentInput } from '#project/inputs/repository'
 import { createWorkspaceAgentsExecutor } from '#project/agents/roster'
 import { createAppleContainerClient } from '#project/sdk/src'
 import { createAppleContainerSandboxProvider } from '#project/providers/apple-container-sandbox'
 import {
   createSqliteRoomStore,
-  GENERAL_ROOM_ID,
+  GENERAL_ROOM_ID
+  
+  
+  
+  
+  
+  
 } from './features/rooms/room-store'
-import type {
-  RoomMessage,
-  RoomRun,
-  RoomSummary,
-  RoomStore,
-  RoomUser,
-  StoredStep,
-} from './features/rooms/room-store'
+import type {RoomMessage, RoomRun, RoomSummary, RoomStore, RoomUser, StoredStep} from './features/rooms/room-store';
 import { createRoomMessageHub } from './features/rooms/room-hub'
 import { createSqliteScheduleStore } from './features/schedules/schedule-store'
 import { createRoomAttachmentSource } from './features/rooms/attachments'
@@ -2839,9 +2844,7 @@ test('PATCH edits own message text without starting runs or creating attention',
       attentionAfterCreate,
     )
     expect(control.requests).toHaveLength(runCount)
-    expect(store.listMessages(GENERAL_ROOM_ID)[0].text).toBe(
-      'Edited note mentioning @bob again',
-    )
+    expect(store.listMessages(GENERAL_ROOM_ID)[0].text).toBe('Edited note mentioning @bob again')
   } finally {
     coordinator.stop()
   }
@@ -2958,9 +2961,7 @@ test('POST reply is linked to its root, excluded from flat history, and returned
       participants: [{ id: 'user-1', name: 'Ada' }],
       latestReplyAt: reply.createdAt,
     })
-    expect(
-      store.getMessage(GENERAL_ROOM_ID, root.id)?.replySummary,
-    ).toBeUndefined()
+    expect(store.getMessage(GENERAL_ROOM_ID, root.id)?.replySummary).toBeUndefined()
     socket.socket.close()
 
     const flat = await fetch(`${base}/api/rooms/general/messages`, {
@@ -3159,7 +3160,9 @@ test('a top-level mention run is bound to its trigger as the invocation root, an
     const completedAt = store.getRun(run.id)!.completedAt!
     expect(flatBody.messages[0]?.replySummary).toEqual({
       replyCount: 1,
-      participants: [{ id: 'software-engineer', name: 'software-engineer' }],
+      participants: [
+        { id: 'software-engineer', name: 'software-engineer' },
+      ],
       latestReplyAt: completedAt,
     })
 
@@ -3708,7 +3711,9 @@ test('the advertised host address prefers a physical nic over a hypervisor bridg
   expect(
     hostLanAddress({
       lo0: [{ family: 'IPv4', internal: true, address: '127.0.0.1' }],
-      bridge100: [{ family: 'IPv4', internal: false, address: '192.168.64.1' }],
+      bridge100: [
+        { family: 'IPv4', internal: false, address: '192.168.64.1' },
+      ],
       en0: [{ family: 'IPv4', internal: false, address: '192.168.1.47' }],
     }),
   ).toBe('192.168.1.47')
@@ -3724,7 +3729,10 @@ test('the advertised host address accepts numeric address families', () => {
 
 test('a listen URL is rewritten to the guest-reachable host without dropping the port', () => {
   expect(
-    advertisedCapabilityUrl('http://0.0.0.0:54167/mcp', 'http://192.168.1.47'),
+    advertisedCapabilityUrl(
+      'http://0.0.0.0:54167/mcp',
+      'http://192.168.1.47',
+    ),
   ).toBe('http://192.168.1.47:54167/mcp')
   expect(
     advertisedCapabilityUrl(
@@ -3788,9 +3796,7 @@ const send = (base: string, path: string, body: unknown, method = 'POST') =>
 const openChamber = async (base: string) =>
   (
     (await (
-      await send(base, '/api/chambers', {
-        agentDefinitionId: 'software-engineer',
-      })
+      await send(base, '/api/chambers', { agentDefinitionId: 'software-engineer' })
     ).json()) as { room: RoomSummary }
   ).room
 
@@ -3853,8 +3859,7 @@ test('Chamber messages sent during a run queue, can be cancelled, and go togethe
     const room = await openChamber(base)
     // Messages order by createdAt; keep each in its own millisecond.
     const say = async (text: string) =>
-      (await Bun.sleep(2),
-      await (
+      (await Bun.sleep(2), await (
         await send(base, `/api/rooms/${room.id}/messages`, { text })
       ).json()) as { message: RoomMessage; run?: RoomRun }
     const cancel = (message: RoomMessage) =>

@@ -1,4 +1,4 @@
-import type { RunState } from '#project/runs'
+import type { RunState, TerminalRunState } from '#project/runs'
 import type { RunSummary } from '#/server/features/runs/run-control'
 import {
   failStaleRuns,
@@ -65,7 +65,7 @@ export type MessageDelivery = {
   scheduleId: string
   runId: string
   name: string
-  state: 'succeeded' | 'failed' | 'cancelled'
+  state: TerminalRunState
 }
 /** A successful Room-linked run's final output, presented as a thread reply. */
 export type RunResultReply = {
@@ -180,7 +180,10 @@ export interface RoomStore {
   }): boolean
   deleteRoom(roomId: string): boolean
   /** The account's Chamber with this agent, created on first use. */
-  chamberFor(accountId: string, agent: { id: string; name: string }): RoomSummary
+  chamberFor(
+    accountId: string,
+    agent: { id: string; name: string },
+  ): { room: RoomSummary; created: boolean }
   /** Queued messages in one Chamber conversation (top-level when rootId is undefined), oldest first. */
   listQueuedMessages(roomId: string, rootId: string | undefined): RoomMessage[]
   /** Clears the queued flag; returns the messages as sent. */
@@ -932,20 +935,22 @@ export function createSqliteRoomStore(sqlite: Sqlite): RoomStore {
           )
           .get(accountId, agent.id) as RoomRow | undefined
       const existing = select()
-      if (existing) return roomFrom(existing)
+      if (existing) return { room: roomFrom(existing), created: false }
       const id = crypto.randomUUID()
-      sqlite
+      const { changes } = sqlite
         .prepare(
           `INSERT OR IGNORE INTO room (id, name, visibility, created_by, kind, chamber_account_id, agent_definition_id)
            VALUES (?, ?, 'private', ?, 'chamber', ?, ?)`,
         )
-        .run(id, agent.name, accountId, accountId, agent.id)
+        .run(id, agent.name, accountId, accountId, agent.id) as {
+        changes?: number
+      }
       sqlite
         .prepare(
           'INSERT OR IGNORE INTO room_member (room_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)',
         )
         .run(id, accountId, accountId, Date.now())
-      return roomFrom(select()!)
+      return { room: roomFrom(select()!), created: changes === 1 }
     },
     listQueuedMessages: (roomId, rootId) =>
       hydrateMessages(

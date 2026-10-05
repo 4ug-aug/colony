@@ -1,53 +1,11 @@
 import { Avatar } from '#/components/avatar'
 import { Markdown } from '#/components/markdown'
-import { Button } from '#/components/ui/button'
 import { MessageActionToolbar } from './message-action-toolbar'
 import { AttachmentView } from './attachment-view'
 import { clockTime } from './format'
 import type { Author, RoomAttachment } from './types'
 import { memo, useState } from 'react'
 import type { AnimationEvent, ReactNode } from 'react'
-
-const agentMessageClampChars = 520
-
-function AgentMessageBody({
-  text,
-  mentions,
-}: {
-  text: string
-  mentions: string[]
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const long = text.length > agentMessageClampChars
-  return (
-    <div>
-      <div className="relative">
-        <div
-          className={long && !expanded ? 'max-h-48 overflow-hidden' : undefined}
-        >
-          <Markdown mentions={mentions}>{text}</Markdown>
-        </div>
-        {long && !expanded && (
-          <div
-            className="room-message-clamp-fade pointer-events-none absolute inset-x-0 bottom-0 h-16"
-            aria-hidden
-          />
-        )}
-      </div>
-      {long && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          className="mt-1"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </Button>
-      )}
-    </div>
-  )
-}
 
 export const RoomMessageRow = memo(function RoomMessageRow({
   messageId,
@@ -61,7 +19,6 @@ export const RoomMessageRow = memo(function RoomMessageRow({
   coarsePointer = false,
   isAgent,
   grouped = false,
-  clampAgentBody = false,
   focused = false,
   onFocusHandled,
   onReply,
@@ -81,7 +38,6 @@ export const RoomMessageRow = memo(function RoomMessageRow({
   coarsePointer?: boolean
   isAgent: boolean
   grouped?: boolean
-  clampAgentBody?: boolean
   focused?: boolean
   onFocusHandled?: () => void
   onReply?: () => void
@@ -89,7 +45,7 @@ export const RoomMessageRow = memo(function RoomMessageRow({
   metadata?: ReactNode
   /** A queued Chamber message, not yet handed to the agent. */
   dimmed?: boolean
-  /** Replaces the Markdown body, e.g. a delivery card. */
+  /** Replaces the plain Markdown body, e.g. a delivery card or a clamped agent reply. */
   body?: ReactNode
 }) {
   const [actionsOpen, setActionsOpen] = useState(false)
@@ -141,12 +97,7 @@ export const RoomMessageRow = memo(function RoomMessageRow({
         )}
         <div className="room-message-bubble">
           <div className="room-message-body">
-            {body ??
-              (isAgent && clampAgentBody ? (
-                <AgentMessageBody text={text} mentions={mentionHandles} />
-              ) : (
-                <Markdown mentions={mentionHandles}>{text}</Markdown>
-              ))}
+            {body ?? <Markdown mentions={mentionHandles}>{text}</Markdown>}
             {grouped && edited && (
               <span className="room-message-edited">Edited</span>
             )}
