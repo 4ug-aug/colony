@@ -15,6 +15,8 @@ export type CapabilitySessionContext = {
   workspace?: PreparedWorkspace;
   sandbox?: Pick<Sandbox, "exec" | "hostGateway">;
   grantContext?: AgentGrantContext;
+  /** The run this session's tools act for. */
+  runId?: string;
 };
 
 export interface CapabilitySessionFactory {
@@ -43,9 +45,15 @@ export function createCapabilitySessionFactory(options: {
   }
   return {
     async create(grant, context = {}) {
-      const { workspace, sandbox, grantContext } = context;
+      const { workspace, sandbox, grantContext, runId } = context;
       const gateway =
-        options.createGateway?.({ grant, workspace, sandbox, grantContext }) ??
+        options.createGateway?.({
+          grant,
+          workspace,
+          sandbox,
+          grantContext,
+          runId,
+        }) ??
         options.gateway!;
       const session = gateway.createSession(grant);
       const endpoint = options.createEndpoint?.(gateway, context);

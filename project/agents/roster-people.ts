@@ -116,6 +116,12 @@ export const capabilityPresentation: Record<
       "workspace.update_agent": "Update agents",
     },
   },
+  "workspace.consultations": {
+    name: "Consultations",
+    tools: {
+      "workspace.ask_agent": "Ask another agent a question and get its answer",
+    },
+  },
   "workspace.schedules": {
     name: "Schedules",
     tools: {

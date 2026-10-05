@@ -1,3 +1,4 @@
+import type { WorkspaceConsultationsPort } from '#project/mcp/workspace-consultations'
 import { transcriptMessage } from './features/rooms/run-history'
 import { summaryFromPerson } from '#project/agents/roster'
 import { capabilityPresentation } from '#project/agents/roster-people'
@@ -66,6 +67,7 @@ if (import.meta.main) {
       createLinearSoftwareEngineerAdapter,
       createWorkspaceIssuesAdapter,
       createWorkspaceAgentsAdapter,
+      createWorkspaceConsultationsAdapter,
       createWorkspaceSchedulesAdapter,
       createWebSearchAdapter,
       createWorkspaceSoftwareEngineerAdapter,
@@ -148,6 +150,12 @@ if (import.meta.main) {
       const issue = issueStore.getIssue(issueId)
       if (!issue) throw new Error('Issue not found')
       return { issue }
+    },
+  }
+  // The coordinator fills this in; Consultations need the Chambers it owns.
+  const consultations: Pick<WorkspaceConsultationsPort, 'ask'> = {
+    ask: async () => {
+      throw new Error('Consultations are not ready yet')
     },
   }
   // The coordinator fills these in once it can broadcast.
@@ -442,10 +450,25 @@ if (import.meta.main) {
             },
           },
         }),
+        createWorkspaceConsultationsAdapter({
+          port: {
+            isChamber: (roomId) => store.getRoom(roomId)?.kind === 'chamber',
+            ask: (consultation) => consultations.ask(consultation),
+            askableAgents: (accountId) =>
+              agentDefinitionStore
+                .listVisible(accountId)
+                .filter(({ archivedAt }) => archivedAt === undefined)
+                .map(({ id, name, description }) => ({
+                  id,
+                  name,
+                  description,
+                })),
+          },
+        }),
         createWorkspaceSchedulesAdapter({
           port: {
             listSchedules: () =>
-              scheduleStore.listSchedules(true).map((schedule) => ({
+              scheduleStore.listSchedules().map((schedule) => ({
                 id: schedule.id,
                 name: schedule.name,
                 agentDefinitionId: schedule.agentDefinitionId,
@@ -536,6 +559,7 @@ if (import.meta.main) {
     bulletinStore,
     chatStore,
     issueNotify,
+    consultations,
     scheduleNotify,
     agentDefinitionStore,
     agentDefinitions: (viewerAccountId) => {

@@ -32,6 +32,10 @@ import {
 } from "../mcp/workspace-agents";
 import { createWebSearchMcpUpstream } from "../mcp/web-search";
 import {
+  createWorkspaceConsultationsMcpUpstream,
+  type WorkspaceConsultationsPort,
+} from "../mcp/workspace-consultations";
+import {
   createWorkspaceSchedulesMcpUpstream,
   type WorkspaceSchedulesPort,
 } from "../mcp/workspace-schedules";
@@ -122,6 +126,41 @@ export function createWorkspaceAgentsAdapter(options: {
           port: options.port,
           responsibleAccountId,
           creatingAgentId,
+        });
+      },
+    },
+  };
+}
+
+/** Consultations (ADR 0032): Chamber runs may ask another agent. */
+export function createWorkspaceConsultationsAdapter(options: {
+  port: WorkspaceConsultationsPort & { isChamber(roomId: string): boolean };
+}): WorkspaceAgentAdapter {
+  return {
+    capability: {
+      id: "workspace.consultations",
+      // The picker reads "ask the software engineer" as messaging; keep it in Chambers.
+      alwaysGranted: true,
+      applies({ grantContext }) {
+        return Boolean(
+          grantContext?.roomId &&
+            grantContext.agentDefinitionId &&
+            options.port.isChamber(grantContext.roomId),
+        );
+      },
+      createUpstream({ grantContext, runId }) {
+        const askingAgentId = grantContext?.agentDefinitionId;
+        const accountId = grantContext?.responsibleAccountId;
+        if (!askingAgentId || !runId || !accountId) {
+          throw new Error(
+            "An agent, run, and Responsible Account are required to consult agents",
+          );
+        }
+        return createWorkspaceConsultationsMcpUpstream({
+          port: options.port,
+          askingAgentId,
+          askingRunId: runId,
+          accountId,
         });
       },
     },

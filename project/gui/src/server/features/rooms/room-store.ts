@@ -60,13 +60,16 @@ export type RoomMessage = {
   delivery?: MessageDelivery
 }
 /** Where a delivered message came from, so it can render as that thing. */
-export type MessageDelivery = {
-  kind: 'schedule'
-  scheduleId: string
-  runId: string
-  name: string
-  state: TerminalRunState
-}
+export type MessageDelivery =
+  | {
+      kind: 'schedule'
+      scheduleId: string
+      runId: string
+      name: string
+      state: TerminalRunState
+    }
+  /** One side of a Consultation (ADR 0032): the question or its answer. */
+  | { kind: 'consultation'; askingAgentId: string }
 /** A successful Room-linked run's final output, presented as a thread reply. */
 export type RunResultReply = {
   id: string

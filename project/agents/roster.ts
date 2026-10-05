@@ -52,6 +52,8 @@ export interface AgentCapabilityContext {
   workspace?: PreparedWorkspace;
   sandbox?: Pick<Sandbox, "exec" | "hostGateway">;
   grantContext?: AgentGrantContext;
+  /** The run the upstream's tools act for. */
+  runId?: string;
 }
 
 /**
@@ -70,6 +72,8 @@ export interface WorkspaceAgentAdapter {
     /** Tool names when this capability is not role-requested (Connection links). */
     tools?: readonly string[];
     resources?: McpGrant["resources"];
+    /** Never narrowed away by the tool picker: small, and only the agent can judge when it is needed. */
+    alwaysGranted?: boolean;
     applies?(context: AgentEligibilityContext): boolean;
     createUpstream(context: AgentCapabilityContext): McpUpstream;
   };
@@ -278,6 +282,7 @@ export function createWorkspaceAgentsExecutor(options: {
                 workspace: context.workspace,
                 sandbox: context.sandbox,
                 grantContext: context.grantContext,
+                runId: context.runId,
               }),
             ),
           });
@@ -359,12 +364,20 @@ export function createWorkspaceAgentsExecutor(options: {
               const label = capabilityToolLabel(name);
               if (label) descriptions[name] = label;
             }
-            return selectTools({
+            const selection = await selectTools({
               task,
               eligibleTools: tools,
               bundles,
               descriptions,
             });
+            const kept = eligible
+              .filter((adapter) => adapter.alwaysGranted)
+              .flatMap((adapter) => bundles[adapter.id] ?? [])
+              .filter((name) => tools.includes(name));
+            return {
+              ...selection,
+              tools: [...new Set([...selection.tools, ...kept])],
+            };
           },
         }
       : {}),

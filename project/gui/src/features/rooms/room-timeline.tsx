@@ -108,7 +108,7 @@ const TimelineEntry = memo(function TimelineEntry({
       metadata={metadata}
       dimmed={queued}
       body={
-        item.message.delivery ? (
+        item.message.delivery?.kind === 'schedule' ? (
           <ScheduleDeliveryCard
             delivery={item.message.delivery}
             text={item.message.text}

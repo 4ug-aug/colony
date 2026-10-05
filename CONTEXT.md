@@ -198,6 +198,12 @@ cancellable; when that run ends, all queued messages start the next run
 together.
 _Avoid_: Follow-up, pending message
 
+**Consultation**: One agent asking another a question from a Chamber run, on
+behalf of the Chamber's account. The question and answer appear in the
+account's Chamber with the agent being asked; the asking agent waits for the
+answer and replies in its own Chamber.
+_Avoid_: Handoff, delegation, agent chat
+
 **Chat**: Being removed (ADR 0031); replaced by Chamber. An account-owned,
 private, multi-turn conversation with one agent definition.
 _Avoid_: Room, thread

@@ -59,6 +59,7 @@ import { createOneshotSession } from './features/oneshots/oneshot-session'
 import { type ChatStore } from './features/chats/chat-store'
 import { createChatLinkedRuns } from './features/chats/chat-linked-runs'
 import { isTerminalRunState } from '#project/runs'
+import type { WorkspaceConsultationsPort } from '#project/mcp/workspace-consultations'
 import { createChatsHttp } from './features/chats/chats-http'
 import { createVmsHttp } from './features/vms/vms-http'
 import type { SmolvmMachineControl } from '#project/providers/smolvm-sandbox'
@@ -295,6 +296,8 @@ export function createCoordinator(options: {
   issueStore?: IssueStore
   bulletinStore?: BulletinStore
   chatStore?: ChatStore
+  /** Filled in here: Consultations need the Chambers this coordinator owns. */
+  consultations?: Pick<WorkspaceConsultationsPort, 'ask'>
   /** Filled in here so Schedules created outside HTTP still reach clients. */
   scheduleNotify?: { onCreated: (schedule: Schedule) => void }
   issueNotify?: {
@@ -596,6 +599,8 @@ export function createCoordinator(options: {
         })
     },
   })
+  if (options.consultations)
+    options.consultations.ask = (consultation) => chambers.ask(consultation)
   const project = (run: RunSummary): void => {
     const saved = options.store.getRun(run.id)
     if (!saved) return
@@ -635,7 +640,8 @@ export function createCoordinator(options: {
       room?.kind === 'chamber' &&
       room.createdBy &&
       event.message.author.kind === 'agent' &&
-      !event.message.rootId
+      !event.message.rootId &&
+      event.message.delivery?.kind !== 'consultation'
     )
       createAttention(
         room.id,
