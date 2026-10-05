@@ -135,6 +135,8 @@ export function createWorkspaceConsultationsAdapter(options: {
   return {
     capability: {
       id: "workspace.consultations",
+      // The picker reads "ask the software engineer" as messaging; keep it in Chambers.
+      alwaysGranted: true,
       applies({ grantContext }) {
         return Boolean(
           grantContext?.roomId &&

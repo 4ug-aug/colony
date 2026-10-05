@@ -119,7 +119,7 @@ export const capabilityPresentation: Record<
   "workspace.consultations": {
     name: "Consultations",
     tools: {
-      "workspace.ask_agent": "Ask another agent",
+      "workspace.ask_agent": "Ask another agent a question and get its answer",
     },
   },
   web: {

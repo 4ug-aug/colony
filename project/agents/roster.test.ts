@@ -1069,3 +1069,60 @@ test("run snapshots keep the resolved instructions after the definition changes"
   person.instructions = "Changed after start.";
   expect(executor.getRun(id)?.definition.instructions).toBe("Stay original.");
 });
+
+test("an always-granted capability survives tool narrowing", async () => {
+  const runner: CommandRunner = {
+    async run(args, options): Promise<CommandResult> {
+      const stdout =
+        args[0] === "exec"
+          ? `${JSON.stringify({ kind: "message", text: "done", at: 1 })}\n`
+          : "";
+      if (stdout) options?.onOutput?.({ stream: "stdout", text: stdout });
+      return { args, exitCode: 0, stdout, stderr: "" };
+    },
+  };
+  const upstream = (names: string[]) => () => ({
+    listTools: async () => names.map((name) => ({ name })),
+    callTool: async () => ({}),
+  });
+  const executor = createWorkspaceAgentsExecutor({
+    cursor: cursorConfig,
+    model: modelConfig,
+    adapters: [
+      {
+        capability: {
+          id: "github.pull-requests",
+          createUpstream: upstream(["github.compare", "github.get_file"]),
+        },
+      },
+      {
+        capability: {
+          id: "workspace.consultations",
+          alwaysGranted: true,
+          createUpstream: upstream(["workspace.ask_agent"]),
+        },
+      },
+    ],
+    selectTools: async ({ eligibleTools }) => ({
+      tools: eligibleTools.filter((name) => name === "github.compare"),
+      reason: "narrowed",
+    }),
+    createCapabilityEndpoint: () => ({
+      url: "http://capabilities.example/mcp",
+      close: async () => {},
+    }),
+    sandboxProvider: createAppleContainerSandboxProvider({
+      container: createAppleContainerClient(runner),
+      createId: () => "run-always-granted",
+    }),
+  });
+
+  const id = executor.startRun({
+    task: "ask the software engineer",
+    agentDefinitionId: SOFTWARE_ENGINEER_ID,
+  });
+  while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
+    await Bun.sleep(0);
+  }
+  expect(executor.getRun(id)?.preparation).toContain("Tools narrowed to 2 of 6");
+});
