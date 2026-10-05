@@ -28,6 +28,7 @@ export type RoomServerMessage =
     }
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'message.updated'; message: RoomMessage }
+  | { type: 'message.deleted'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
   | { type: 'run.step'; runId: string; step: StoredStep }
   | { type: 'room.members.changed'; roomId: string }

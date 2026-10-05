@@ -18,11 +18,16 @@ export const MessageComposer = forwardRef<
     onSubmit: (value: string, files: File[]) => Promise<boolean>
     disabled: boolean
     roomName: string
+    /** Set in a Chamber: messages go to this agent without a mention. */
+    chamberAgentName?: string
     mentionableAccounts: MentionableAccount[]
     editing?: boolean
     onCancelEdit?: () => void
   }
->(function MessageComposer({ roomName, mentionableAccounts, ...props }, ref) {
+>(function MessageComposer(
+  { roomName, chamberAgentName, mentionableAccounts, ...props },
+  ref,
+) {
   const { data: agentDefinitions = [] } = useAgentDefinitions()
   const agents: MentionItem[] = agentDefinitions.map((agent) => ({
     id: agent.id,
@@ -61,7 +66,11 @@ export const MessageComposer = forwardRef<
     <PromptBar
       ref={bar}
       {...props}
-      placeholder={`Message #${roomName} or mention someone…`}
+      placeholder={
+        chamberAgentName
+          ? `Message ${chamberAgentName}…`
+          : `Message #${roomName} or mention someone…`
+      }
       mentionItems={mentionItems}
       attachments
     />

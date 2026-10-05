@@ -18,6 +18,7 @@ import {
   useState,
 } from 'react'
 import { MessageComposer } from './message-composer'
+import { QueuedNote } from './queued-note'
 import { RoomMessageRow } from './room-message-row'
 import { clearThreadDraft, setThreadDraft, threadDraft } from './thread-drafts'
 import { groupRunsByTrigger, runsForThread } from './thread-helpers'
@@ -89,6 +90,7 @@ const ThreadMessage = memo(
     mentionHandles,
     currentUserId,
     onEdit,
+    onCancelQueued,
     focused,
     onFocusHandled,
     runs = noRuns,
@@ -99,28 +101,33 @@ const ThreadMessage = memo(
     mentionHandles: string[]
     currentUserId?: string
     onEdit?: (message: RoomMessage) => void
+    onCancelQueued?: (message: RoomMessage) => void
     focused?: boolean
     onFocusHandled?: () => void
     runs?: RoomRun[]
     openRun?: (runId: string) => void
     coarsePointer: boolean
   }) {
-    const canEdit =
-      Boolean(onEdit) &&
-      message.author.kind !== 'agent' &&
-      message.author.id === currentUserId
+    const mine =
+      message.author.kind !== 'agent' && message.author.id === currentUserId
+    const canEdit = Boolean(onEdit) && mine && !message.queued
     const edit = useCallback(() => onEdit?.(message), [onEdit, message])
-    const metadata =
-      runs.length > 0 && openRun
-        ? runs.map((run) => (
-            <RunCapsule
-              key={run.id}
-              run={run}
-              openRun={openRun}
-              showModel={runs.length > 1}
-            />
-          ))
-        : undefined
+    const metadata = message.queued ? (
+      <QueuedNote
+        onCancel={
+          onCancelQueued && mine ? () => onCancelQueued(message) : undefined
+        }
+      />
+    ) : runs.length > 0 && openRun ? (
+      runs.map((run) => (
+        <RunCapsule
+          key={run.id}
+          run={run}
+          openRun={openRun}
+          showModel={runs.length > 1}
+        />
+      ))
+    ) : undefined
     return (
       <RoomMessageRow
         messageId={message.id}
@@ -137,6 +144,7 @@ const ThreadMessage = memo(
         onFocusHandled={onFocusHandled}
         onEdit={canEdit ? edit : undefined}
         metadata={metadata}
+        dimmed={Boolean(message.queued)}
       />
     )
   },
@@ -166,6 +174,7 @@ export type RoomThreadRailProps = {
     messageId: string,
     text: string,
   ) => Promise<RoomMessage | undefined>
+  cancelQueued?: (message: RoomMessage) => unknown
   /** A search hit's matching reply id to scroll to and highlight once loaded. */
   focusReplyId?: string
   onFocusReplyHandled?: () => void
@@ -182,6 +191,7 @@ function RoomThreadRailContent({
   currentUserId,
   sendReply,
   editMessage,
+  cancelQueued,
   focusReplyId,
   onFocusReplyHandled,
 }: RoomThreadRailProps) {
@@ -207,8 +217,12 @@ function RoomThreadRailContent({
     [replies, root, runs],
   )
   // Dashboard passes fresh callbacks every render; keep row props stable.
-  const handlers = useRef({ openRun, onFocusReplyHandled })
-  handlers.current = { openRun, onFocusReplyHandled }
+  const handlers = useRef({ openRun, onFocusReplyHandled, cancelQueued })
+  handlers.current = { openRun, onFocusReplyHandled, cancelQueued }
+  const stableCancelQueued = useCallback(
+    (message: RoomMessage) => void handlers.current.cancelQueued?.(message),
+    [],
+  )
   const stableOpenRun = useCallback(
     (runId: string) => handlers.current.openRun?.(runId),
     [],
@@ -347,6 +361,9 @@ function RoomThreadRailContent({
                       mentionHandles={mentionHandles}
                       currentUserId={currentUserId}
                       onEdit={setEditingReply}
+                      onCancelQueued={
+                        cancelQueued ? stableCancelQueued : undefined
+                      }
                       focused={focusReplyId === item.reply.id}
                       onFocusHandled={
                         onFocusReplyHandled ? stableFocusHandled : undefined

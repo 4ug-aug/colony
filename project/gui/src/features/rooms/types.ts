@@ -17,6 +17,9 @@ export type Room = {
   name: string
   visibility: 'public' | 'private'
   createdBy?: string
+  /** Set only on a Chamber: the account's private Room with one agent. */
+  kind?: 'chamber'
+  agentDefinitionId?: string
   attentionCount: number
   mentionCount: number
   latestOtherMessage?: RoomMessageMarker
@@ -57,6 +60,8 @@ export type RoomMessage = {
   rootId?: string
   /** Set only on top-level messages that have durable replies. */
   replySummary?: ThreadSummary
+  /** A Chamber message waiting for the agent's current run. */
+  queued?: true
 }
 /** A successful Room-linked run's final output, presented as a thread reply. */
 export type RunResultReply = {
@@ -120,6 +125,7 @@ export type RoomStreamMessage =
     }
   | { type: 'message.created'; message: RoomMessage }
   | { type: 'message.updated'; message: RoomMessage }
+  | { type: 'message.deleted'; message: RoomMessage }
   | { type: 'run.changed'; run: RoomRun }
   | { type: 'run.step'; runId: string; step: Step }
   | { type: 'room.members.changed'; roomId: string }

@@ -3784,3 +3784,122 @@ test('a container provider is only configured when the sandbox is a microVM', ()
     'SWEAT_CONTAINER_PROVIDER must be set to one of: apple-container, docker',
   )
 })
+
+const send = (base: string, path: string, body: unknown, method = 'POST') =>
+  fetch(`${base}${path}`, {
+    method,
+    headers: { origin: 'http://gui.test', 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+
+const openChamber = async (base: string) =>
+  (
+    (await (
+      await send(base, '/api/chambers', { agentDefinitionId: 'software-engineer' })
+    ).json()) as { room: RoomSummary }
+  ).room
+
+test('a Chamber answers every message as its agent and is private to its account', async () => {
+  const store = roomStore()
+  store.seedAccounts([{ id: 'user-2', name: 'Bob' }])
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const room = await openChamber(base)
+    expect(room).toMatchObject({
+      kind: 'chamber',
+      agentDefinitionId: 'software-engineer',
+    })
+    expect((await openChamber(base)).id).toBe(room.id)
+    expect(store.canAccessRoom(room.id, 'user-2')).toBe(false)
+    expect(store.listRoomsForUser('user-2').map(({ id }) => id)).not.toContain(
+      room.id,
+    )
+
+    const sent = await send(base, `/api/rooms/${room.id}/messages`, {
+      text: 'Summarise the repo',
+    })
+    expect(sent.status).toBe(202)
+    const { run } = (await sent.json()) as { run: RoomRun }
+    // No mention needed, and a top-level run writes top-level (no thread root).
+    expect(control.requests.at(-1)).toMatchObject({
+      task: 'Summarise the repo',
+      roomId: room.id,
+      agentDefinitionId: 'software-engineer',
+    })
+    expect(control.requests.at(-1)).not.toHaveProperty('rootId')
+
+    control.finish(run.id, 'succeeded', 'It is a Bun monorepo.')
+    const messages = store.listMessages(room.id)
+    expect(messages.at(-1)!.author.kind).toBe('agent')
+    expect(messages.at(-1)!.text).toBe('It is a Bun monorepo.')
+    expect(messages.at(-1)!.rootId).toBeUndefined()
+    // The answer is the reply, not also a thread result under the trigger.
+    expect(messages[0]!.replySummary).toBeUndefined()
+    expect(store.listAttentionCounts('user-1', 'mention').get(room.id)).toBe(1)
+
+    // The next run sees the conversation so far.
+    await send(base, `/api/rooms/${room.id}/messages`, {
+      text: 'Which test runner?',
+    })
+    expect(control.requests.at(-1)!.task).toContain('It is a Bun monorepo.')
+    expect(control.requests.at(-1)!.task).toEndWith('Which test runner?')
+  } finally {
+    await coordinator.stop()
+  }
+})
+
+test('Chamber messages sent during a run queue, can be cancelled, and go together as the next run', async () => {
+  const store = roomStore()
+  const control = new FakeRunControl()
+  const { coordinator, base } = await makeCoordinator({ store, control })
+  try {
+    const room = await openChamber(base)
+    // Messages order by createdAt; keep each in its own millisecond.
+    const say = async (text: string) =>
+      (await Bun.sleep(2), await (
+        await send(base, `/api/rooms/${room.id}/messages`, { text })
+      ).json()) as { message: RoomMessage; run?: RoomRun }
+    const cancel = (message: RoomMessage) =>
+      send(
+        base,
+        `/api/rooms/${room.id}/messages/${message.id}/queued`,
+        undefined,
+        'DELETE',
+      )
+    const { run } = await say('Fix the build')
+    const queued = [
+      await say('Also bump the version'),
+      await say('And the changelog'),
+      await say('Never mind this one'),
+    ]
+    expect(queued.map(({ message, run }) => [message.queued, run])).toEqual([
+      [true, undefined],
+      [true, undefined],
+      [true, undefined],
+    ])
+    expect((await cancel(queued[2]!.message)).status).toBe(200)
+    expect(control.requests).toHaveLength(1)
+
+    control.finish(run!.id, 'failed')
+    expect(control.requests).toHaveLength(2)
+    expect(control.requests[1]!.task).toEndWith(
+      'Also bump the version\n\nAnd the changelog',
+    )
+    expect(control.requests[1]!.task).not.toContain('Never mind')
+    expect(
+      store
+        .listMessages(room.id)
+        .map(({ text, queued }) => [text, queued ?? false]),
+    ).toEqual([
+      ['Fix the build', false],
+      ['Also bump the version', false],
+      ['And the changelog', false],
+      ["I couldn't finish this.", false],
+    ])
+    // Sent messages can no longer be cancelled.
+    expect((await cancel(queued[1]!.message)).status).toBe(409)
+  } finally {
+    await coordinator.stop()
+  }
+})

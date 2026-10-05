@@ -68,7 +68,8 @@ export function createOpenAIGrantPicker(
         { role: "system", content: SYSTEM },
         {
           role: "user",
-          content: `Task:\n${task.slice(0, 4000)}\n\nNames:\n${listing}`,
+          // Room and Chamber tasks lead with history and end with the request.
+          content: `Task:\n${task.slice(-4000)}\n\nNames:\n${listing}`,
         },
       ],
     });

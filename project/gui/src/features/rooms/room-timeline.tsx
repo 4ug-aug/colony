@@ -4,10 +4,13 @@ import {
 } from '#/features/agents/use-agent-definitions'
 import { RunCapsule } from '#/features/runs/run-capsule'
 import { useMediaQuery } from '#/hooks/use-media-query'
+import { ColonyMark } from '#/components/colony-mark'
 import { memo, useCallback, useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { RoomMessageRow } from './room-message-row'
 import { buildFlatTimelineItems } from './thread-helpers'
 import type { FlatTimelineItem } from './thread-helpers'
+import { QueuedNote } from './queued-note'
 import { ThreadSummaryChip } from './thread-summary-chip'
 import type { RoomMessage, RoomRun } from './types'
 
@@ -19,6 +22,7 @@ const TimelineEntry = memo(function TimelineEntry({
   currentUserId,
   onEdit,
   onOpenThread,
+  onCancelQueued,
   openRun,
   focusMessageId,
   onFocusHandled,
@@ -31,6 +35,7 @@ const TimelineEntry = memo(function TimelineEntry({
   currentUserId?: string
   onEdit?: (message: RoomMessage) => void
   onOpenThread?: (rootId: string) => void
+  onCancelQueued?: (message: RoomMessage) => void
   openRun: (runId: string) => void
   focusMessageId?: string
   onFocusHandled?: () => void
@@ -38,30 +43,41 @@ const TimelineEntry = memo(function TimelineEntry({
 }) {
   const author = item.message.author
   const isAgent = author.kind === 'agent'
+  const queued = Boolean(item.message.queued)
   const canEdit =
-    Boolean(onEdit) && author.kind !== 'agent' && author.id === currentUserId
-  const metadata =
-    item.runs.length > 0 || (item.message.replySummary && onOpenThread) ? (
-      <>
-        {item.runs.map((run) => (
-          <RunCapsule
-            key={run.id}
-            run={run}
-            openRun={openRun}
-            showModel={item.runs.length > 1}
-          />
-        ))}
-        {item.message.replySummary && onOpenThread && (
-          <ThreadSummaryChip
-            replyCount={item.message.replySummary.replyCount}
-            participants={item.message.replySummary.participants}
-            latestReplyAt={item.message.replySummary.latestReplyAt}
-            unread={unreadThreadRootIds.includes(item.message.id)}
-            onOpen={() => onOpenThread(item.message.id)}
-          />
-        )}
-      </>
-    ) : undefined
+    Boolean(onEdit) &&
+    !queued &&
+    author.kind !== 'agent' &&
+    author.id === currentUserId
+  const metadata = queued ? (
+    <QueuedNote
+      onCancel={
+        onCancelQueued && author.id === currentUserId
+          ? () => onCancelQueued(item.message)
+          : undefined
+      }
+    />
+  ) : item.runs.length > 0 || (item.message.replySummary && onOpenThread) ? (
+    <>
+      {item.runs.map((run) => (
+        <RunCapsule
+          key={run.id}
+          run={run}
+          openRun={openRun}
+          showModel={item.runs.length > 1}
+        />
+      ))}
+      {item.message.replySummary && onOpenThread && (
+        <ThreadSummaryChip
+          replyCount={item.message.replySummary.replyCount}
+          participants={item.message.replySummary.participants}
+          latestReplyAt={item.message.replySummary.latestReplyAt}
+          unread={unreadThreadRootIds.includes(item.message.id)}
+          onOpen={() => onOpenThread(item.message.id)}
+        />
+      )}
+    </>
+  ) : undefined
   return (
     <RoomMessageRow
       messageId={item.message.id}
@@ -80,9 +96,14 @@ const TimelineEntry = memo(function TimelineEntry({
       clampAgentBody={isAgent}
       focused={focusMessageId === item.message.id}
       onFocusHandled={onFocusHandled}
-      onReply={onOpenThread ? () => onOpenThread(item.message.id) : undefined}
+      onReply={
+        onOpenThread && !queued
+          ? () => onOpenThread(item.message.id)
+          : undefined
+      }
       onEdit={canEdit ? () => onEdit?.(item.message) : undefined}
       metadata={metadata}
+      dimmed={queued}
     />
   )
 })
@@ -95,9 +116,11 @@ export function Timeline({
   currentUserId,
   onEdit,
   onOpenThread,
+  onCancelQueued,
   focusMessageId,
   onFocusHandled,
   unreadThreadRootIds = [],
+  emptyState,
 }: {
   messages: RoomMessage[]
   runs: RoomRun[]
@@ -106,20 +129,39 @@ export function Timeline({
   currentUserId?: string
   onEdit?: (message: RoomMessage) => void
   onOpenThread?: (rootId: string) => void
+  onCancelQueued?: (message: RoomMessage) => void
   focusMessageId?: string
   onFocusHandled?: () => void
   unreadThreadRootIds?: readonly string[]
+  /** Replaces the default empty state, e.g. a Chamber's introduction. */
+  emptyState?: ReactNode
 }) {
   const { data: agents = [] } = useAgentDefinitions()
   const coarsePointer = useMediaQuery('(pointer: coarse)')
-  const handlers = useRef({ openRun, onEdit, onOpenThread, onFocusHandled })
-  handlers.current = { openRun, onEdit, onOpenThread, onFocusHandled }
+  const handlers = useRef({
+    openRun,
+    onEdit,
+    onOpenThread,
+    onCancelQueued,
+    onFocusHandled,
+  })
+  handlers.current = {
+    openRun,
+    onEdit,
+    onOpenThread,
+    onCancelQueued,
+    onFocusHandled,
+  }
   const stableOpenRun = useCallback(
     (runId: string) => handlers.current.openRun(runId),
     [],
   )
   const stableEdit = useCallback(
     (message: RoomMessage) => handlers.current.onEdit?.(message),
+    [],
+  )
+  const stableCancelQueued = useCallback(
+    (message: RoomMessage) => handlers.current.onCancelQueued?.(message),
     [],
   )
   const stableOpenThread = useCallback(
@@ -137,9 +179,14 @@ export function Timeline({
 
   if (!items.length)
     return (
-      <p className="py-12 text-center text-sm text-muted-foreground">
-        No messages yet. Start the conversation.
-      </p>
+      emptyState ?? (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <ColonyMark className="size-8 text-muted-foreground/60" />
+          <p className="text-sm text-muted-foreground">
+            No messages yet. Start the conversation.
+          </p>
+        </div>
+      )
     )
   return (
     <div>
@@ -153,6 +200,7 @@ export function Timeline({
           currentUserId={currentUserId}
           onEdit={onEdit ? stableEdit : undefined}
           onOpenThread={onOpenThread ? stableOpenThread : undefined}
+          onCancelQueued={onCancelQueued ? stableCancelQueued : undefined}
           openRun={stableOpenRun}
           focusMessageId={focusMessageId}
           onFocusHandled={onFocusHandled ? stableFocusHandled : undefined}

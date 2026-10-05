@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { threadHistory } from './rooms-http'
+import { threadHistory } from './run-history'
 
 const messages = (...sizes: number[]) =>
   sizes.map((size, index) => ({ id: `m${index}`, text: 'x'.repeat(size) }))

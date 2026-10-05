@@ -455,6 +455,12 @@ export async function runAgent(
       // Hallucinated/ungranted tool names (often from role text) should guide
       // the model, not kill the run.
       toolNotFoundBehavior: "return_error_to_model",
+      // The bare SDK message reads as transient, so models retry the guess
+      // until maxTurns.
+      toolErrorFormatter: ({ kind, toolName, defaultMessage }) =>
+        kind === "tool_not_found"
+          ? `${defaultMessage} It does not exist, so do not call ${toolName} again. Use only the tools in your tool list, or answer without one.`
+          : undefined,
       callModelInputFilter: async ({ modelData }) => ({
         ...modelData,
         input: await compact(modelData.input),

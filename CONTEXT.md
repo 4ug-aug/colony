@@ -185,10 +185,22 @@ _Avoid_: Room agent, flat run
 launcher whose Task and result are not retained as workspace history.
 _Avoid_: Quick run, one-shot prompt, temporary Room, Chat
 
-**Chat**: An account-owned, private, multi-turn conversation with one agent
-definition. Its transcript lasts; it is not shared as workspace history. Not a
-Room and not a Oneshot.
-_Avoid_: Room, DM, thread, personal Room
+**Chamber**: A private Room owned by one account with one agent definition,
+at most one per pair. Every message in it is a task for that agent, and it is
+where agents deliver work to that account: Schedule run outcomes, Issue run
+notes and `workspace.message_owner` posts. Invisible to every other account,
+admins included.
+_Avoid_: DM, Chat, personal Room, inbox
+
+**Queued message**: A Chamber message sent while a run is active in the same
+conversation (top-level stream or one thread). It is persisted and
+cancellable; when that run ends, all queued messages start the next run
+together.
+_Avoid_: Follow-up, pending message
+
+**Chat**: Being removed (ADR 0031); replaced by Chamber. An account-owned,
+private, multi-turn conversation with one agent definition.
+_Avoid_: Room, thread
 
 **Chat message**: One user or assistant turn in a Chat. An assistant turn may
 include that turn's tool steps from its Chat-linked run.

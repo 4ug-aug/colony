@@ -67,6 +67,7 @@ export const RoomMessageRow = memo(function RoomMessageRow({
   onReply,
   onEdit,
   metadata,
+  dimmed = false,
 }: {
   messageId: string
   author: Author
@@ -85,6 +86,8 @@ export const RoomMessageRow = memo(function RoomMessageRow({
   onReply?: () => void
   onEdit?: () => void
   metadata?: ReactNode
+  /** A queued Chamber message, not yet handed to the agent. */
+  dimmed?: boolean
 }) {
   const [actionsOpen, setActionsOpen] = useState(false)
   const postedAt = clockTime(createdAt)
@@ -92,7 +95,7 @@ export const RoomMessageRow = memo(function RoomMessageRow({
     <article
       className={`room-message ${grouped ? 'room-message--grouped' : ''}${
         focused ? ' message-search-hit' : ''
-      }`}
+      }${dimmed ? ' opacity-60' : ''}`}
       data-message-id={messageId}
       data-actions-open={actionsOpen ? '' : undefined}
       onAnimationEnd={
