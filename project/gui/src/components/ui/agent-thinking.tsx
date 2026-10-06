@@ -58,7 +58,7 @@ function dotScalar(variant: 'wave' | 'spin', col: number, row: number) {
   return (Math.atan2(row - center, col - center) / (2 * Math.PI) + 1) % 1
 }
 
-function DotsIndicator({ variant }: { variant: 'wave' | 'spin' }) {
+export function DotsIndicator({ variant }: { variant: 'wave' | 'spin' }) {
   return (
     <span
       aria-hidden

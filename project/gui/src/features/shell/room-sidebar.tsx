@@ -53,7 +53,14 @@ import { useState } from 'react'
 import { CollapsibleGroup } from './collapsible-group'
 import { CreateRoomPopover } from './create-room-popover'
 import type { DashboardView } from './dashboard-navigation'
-import { NotificationDot, RoomMenuItem } from './room-menu-item'
+import {
+  NotificationDot,
+  RoomMenuItem,
+  WorkingIndicator,
+} from './room-menu-item'
+import { AgentThinking } from '#/components/ui/agent-thinking'
+import { runStatus } from '#/features/runs/run-helpers'
+import { useActiveWorkspaceRuns } from '#/features/runs/use-active-workspace-runs'
 
 const capabilityIcons: Record<
   string,
@@ -109,6 +116,9 @@ export function RoomSidebar({
   user: Author
 }) {
   const { data: agents = [] } = useAgentDefinitions()
+  const { data: activity } = useActiveWorkspaceRuns()
+  const runsOf = (agentId: string) =>
+    activity?.runs.filter((run) => run.agentId === agentId) ?? []
   const [roomToDelete, setRoomToDelete] = useState<Room>()
 
   const roomsByVisibility = (visibility: 'public' | 'private') =>
@@ -192,11 +202,12 @@ export function RoomSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <CollapsibleGroup storageKey="agents" label="Agents">
+        <CollapsibleGroup storageKey="agents" label="Chambers">
           <SidebarMenu>
             {agents.map((agent) => {
               const chamber = chamberOf(agent.id)
               const notification = chamber && notificationByRoom[chamber.id]
+              const working = runsOf(agent.id)
               return (
                 <SidebarMenuItem key={agent.id}>
                   <HoverCard>
@@ -210,7 +221,7 @@ export function RoomSidebar({
                             !!chamber &&
                             chamber.id === selectedRoomId
                           }
-                          aria-label={`Open ${agent.name}'s chamber${notification === 'mention' ? ', has new messages' : ''}`}
+                          aria-label={`Open ${agent.name}'s chamber${working.length ? ', working' : ''}${notification === 'mention' ? ', has new messages' : ''}`}
                           onClick={() => onOpenChamber(agent.id)}
                           className="data-[active=true]:bg-primary/5"
                         />
@@ -229,6 +240,12 @@ export function RoomSidebar({
                         <p className="text-xs text-muted-foreground">
                           {agent.description}
                         </p>
+                        {working[0] && (
+                          <AgentThinking
+                            className="mt-1 text-xs font-normal"
+                            label={`${agent.name} ${runStatus(working[0], working[0].latestStep)}${working.length > 1 ? ` · +${working.length - 1} more` : ''}`}
+                          />
+                        )}
                       </div>
                       <div className="mt-3 flex flex-col gap-3">
                         {agent.capabilities.some(isSweatNativeCapability) && (
@@ -356,7 +373,11 @@ export function RoomSidebar({
                       </div>
                     </HoverCardContent>
                   </HoverCard>
-                  <NotificationDot notification={notification} />
+                  {working.length ? (
+                    <WorkingIndicator />
+                  ) : (
+                    <NotificationDot notification={notification} />
+                  )}
                 </SidebarMenuItem>
               )
             })}
