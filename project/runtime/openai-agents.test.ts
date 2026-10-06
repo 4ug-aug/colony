@@ -21,6 +21,7 @@ import {
   rewriteVllmMcpCalls,
   openaiSandboxCapabilities,
   runAgent,
+  markCutOffReply,
   sanitizeOutputStatuses,
   sanitizeUsageDetails,
   saveOpenAIAgentSession,
@@ -870,4 +871,22 @@ test("allowShell false does not offer exec_command to the model", async () => {
   );
 
   expect(offered).not.toContain("exec_command");
+});
+
+test("a reply cut off by the output token limit says so", () => {
+  const message = (text: string) => ({
+    type: "message",
+    role: "assistant",
+    status: "incomplete",
+    content: [{ type: "output_text", text }],
+  });
+  const cutOff = { output: [message("The fix is to")], providerData: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } };
+  markCutOffReply(cutOff);
+  expect(cutOff.output[0]!.content[0]!.text).toBe(
+    "The fix is to\n\n[Reply cut off: the model reached its output token limit.]",
+  );
+
+  const complete = { output: [message("Done.")], providerData: { status: "completed" } };
+  markCutOffReply(complete);
+  expect(complete.output[0]!.content[0]!.text).toBe("Done.");
 });

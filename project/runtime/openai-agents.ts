@@ -267,6 +267,17 @@ export function rewriteVllmMcpCalls(output: unknown[]): void {
   }
 }
 
+/** vLLM stops mid-sentence at max_tokens; mark it so the reply doesn't look finished. */
+export function markCutOffReply(response: { output: unknown[]; providerData?: Record<string, unknown> }): void {
+  const details = response.providerData?.incomplete_details as { reason?: unknown } | undefined;
+  if (response.providerData?.status !== "incomplete" || details?.reason !== "max_output_tokens") return;
+  const message = response.output.findLast(
+    (item) => (item as { type?: unknown }).type === "message",
+  ) as { content?: Array<{ type?: string; text?: string }> } | undefined;
+  const part = message?.content?.findLast((item) => item.type === "output_text");
+  if (part) part.text = `${part.text ?? ""}\n\n[Reply cut off: the model reached its output token limit.]`;
+}
+
 function sanitizeCompatibleInput(
   input: ModelRequest["input"],
 ): ModelRequest["input"] {
@@ -305,6 +316,7 @@ export class CompatibleResponsesModel extends OpenAIResponsesModel {
       if (event.type === "response_done") {
         sanitizeUsageDetails(event.response.usage);
         sanitizeCompatibleOutput(event.response.output);
+        markCutOffReply(event.response);
       }
       yield event;
     }
