@@ -97,6 +97,10 @@ export const capabilityPresentation: Record<
       "github.compare": "Compare refs",
       "github.get_file": "Read files at a ref",
       "github.get_pull_request": "Read pull requests",
+      "github.checkout_pull_request": "Check out an existing pull request",
+      "github.push_to_pull_request": "Push to an existing pull request",
+      "github.comment_on_pull_request": "Comment on pull requests",
+      "github.review_pull_request": "Review pull requests",
     },
   },
   "workspace.room": {

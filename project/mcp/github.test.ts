@@ -598,3 +598,184 @@ test("listGitHubAppBranches lists the repository's branches", async () => {
     }),
   ).toEqual(["main", "develop"]);
 });
+
+/** A tarball of one file, the way GitHub serves a commit's contents. */
+async function tarballOf(files: Record<string, string>): Promise<Uint8Array> {
+  const root = await mkdtemp(join(tmpdir(), "sweat-pr-tarball-"));
+  const inner = join(root, "acme-product-sha");
+  for (const [path, content] of Object.entries(files)) await Bun.write(join(inner, path), content);
+  const archive = join(root, "archive.tar.gz");
+  const tar = Bun.spawn(["tar", "-czf", archive, "-C", root, "acme-product-sha"]);
+  await tar.exited;
+  const bytes = new Uint8Array(await Bun.file(archive).arrayBuffer());
+  await rm(root, { force: true, recursive: true });
+  return bytes;
+}
+
+const gzip = (bytes: Uint8Array) =>
+  new Response(bytes, { headers: { "content-type": "application/x-gzip" } });
+
+function pullRequestGateway(options: {
+  workspace: string;
+  baseCommit: string;
+  route: (url: string, method: string, body?: string) => Response | Promise<Response>;
+}) {
+  const requests: Array<{ url: string; method: string; body?: string }> = [];
+  const gateway = createGitHubMcpGateway({
+    octokit: new Octokit({
+      auth: "secret",
+      request: {
+        fetch: async (url: string, init?: RequestInit) => {
+          const method = init?.method ?? "GET";
+          const body = typeof init?.body === "string" ? init.body : undefined;
+          requests.push({ url: url.replace("https://api.github.com/repos/acme/product/", ""), method, body });
+          return options.route(url, method, body);
+        },
+      },
+    }),
+    repository: "acme/product",
+    workspace: options.workspace,
+    branch: "sweat/run-1",
+    baseCommit: options.baseCommit,
+    base: "main",
+  });
+  const session = gateway.createSession({
+    tools: [
+      "github.checkout_pull_request",
+      "github.push_to_pull_request",
+      "github.comment_on_pull_request",
+      "github.review_pull_request",
+    ],
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  const call = (name: string, args: Record<string, unknown>) => gateway.callTool(session.token, name, args);
+  return { requests, call };
+}
+
+const openPullRequest = (head: { sha: string; repo?: string }) =>
+  Response.json({
+    number: 7,
+    state: "open",
+    html_url: "https://example.test/pull/7",
+    head: { ref: "feat/quarantine", sha: head.sha, repo: { full_name: head.repo ?? "acme/product" } },
+  });
+
+test("GitHub checks out a pull request's head and pushes new commits onto its branch", async () => {
+  const workspace = await branchWithChange();
+  const tarball = await tarballOf({ "README.md": "pull request version\n" });
+  const { requests, call } = pullRequestGateway({
+    ...workspace,
+    workspace: workspace.directory,
+    route: (url, method) => {
+      if (url.endsWith("/pulls/7")) return openPullRequest({ sha: "pr-head" });
+      if (url.includes("/tarball/pr-head")) return gzip(tarball);
+      if (url.endsWith("/git/commits/pr-head")) return Response.json({ tree: { sha: "pr-tree" } });
+      if (method === "POST" && url.endsWith("/git/blobs")) return Response.json({ sha: "blob" });
+      if (method === "POST" && url.endsWith("/git/trees")) return Response.json({ sha: "fixed-tree" });
+      if (method === "POST" && url.endsWith("/git/commits")) return Response.json({ sha: "fixed-head" });
+      if (method === "PATCH") return Response.json({});
+      throw new Error(`Unexpected GitHub request: ${method} ${url}`);
+    },
+  });
+
+  try {
+    await expect(call("github.checkout_pull_request", { number: 7 })).resolves.toEqual({
+      content: [{ type: "text", text: expect.stringContaining("Checked out pull request #7 (feat/quarantine") }],
+    });
+    expect(await Bun.file(join(workspace.directory, "README.md")).text()).toBe("pull request version\n");
+
+    await Bun.write(join(workspace.directory, "README.md"), "reviewed and fixed\n");
+    await git(workspace.directory, ["commit", "--quiet", "--all", "--message", "Fix review findings"]);
+    await expect(call("github.push_to_pull_request", { number: 7 })).resolves.toEqual({
+      content: [{ type: "text", text: "Pushed 1 commit to pull request #7 (feat/quarantine): https://example.test/pull/7" }],
+    });
+
+    const commit = requests.find(({ method, url }) => method === "POST" && url === "git/commits")!;
+    expect(JSON.parse(commit.body!)).toMatchObject({
+      message: "Fix review findings",
+      parents: ["pr-head"],
+      tree: "fixed-tree",
+    });
+    const update = requests.find(({ method }) => method === "PATCH")!;
+    expect(update.url).toBe("git/refs/heads%2Ffeat%2Fquarantine");
+    expect(JSON.parse(update.body!)).toEqual({ sha: "fixed-head", force: false });
+  } finally {
+    await rm(workspace.directory, { force: true, recursive: true });
+  }
+}, 10_000);
+
+test("GitHub refuses pull request pushes it cannot make safely", async () => {
+  const workspace = await branchWithChange();
+  const tarball = await tarballOf({ "README.md": "pull request version\n" });
+  let head = "pr-head";
+  let repo = "acme/product";
+  const { call } = pullRequestGateway({
+    ...workspace,
+    workspace: workspace.directory,
+    route: (url) => {
+      if (url.endsWith("/pulls/7")) return openPullRequest({ sha: head, repo });
+      if (url.includes("/tarball/")) return gzip(tarball);
+      throw new Error(`Unexpected GitHub request: ${url}`);
+    },
+  });
+
+  try {
+    await expect(call("github.push_to_pull_request", { number: 7 })).rejects.toThrow(
+      "Check out pull request #7 with github.checkout_pull_request first",
+    );
+    repo = "someone/fork";
+    await expect(call("github.checkout_pull_request", { number: 7 })).rejects.toThrow(
+      "Pull request #7 comes from someone/fork",
+    );
+    repo = "acme/product";
+    await call("github.checkout_pull_request", { number: 7 });
+    await Bun.write(join(workspace.directory, "README.md"), "fixed\n");
+    await git(workspace.directory, ["commit", "--quiet", "--all", "--message", "Fix"]);
+    head = "someone-else-pushed";
+    await expect(call("github.push_to_pull_request", { number: 7 })).rejects.toThrow(
+      "Pull request #7 moved since checkout",
+    );
+  } finally {
+    await rm(workspace.directory, { force: true, recursive: true });
+  }
+}, 10_000);
+
+test("GitHub comments on and reviews a pull request", async () => {
+  const { requests, call } = pullRequestGateway({
+    workspace: "/unused",
+    baseCommit: "base",
+    route: (url, method) => {
+      if (url.endsWith("/pulls/7")) return openPullRequest({ sha: "pr-head" });
+      if (method === "POST" && url.endsWith("/issues/7/comments"))
+        return Response.json({ html_url: "https://example.test/pull/7#comment" });
+      if (method === "POST" && url.endsWith("/pulls/7/reviews"))
+        return Response.json({ html_url: "https://example.test/pull/7#review" });
+      throw new Error(`Unexpected GitHub request: ${method} ${url}`);
+    },
+  });
+
+  await expect(call("github.comment_on_pull_request", { number: 7, body: "Looks close." })).resolves.toEqual({
+    content: [{ type: "text", text: "Commented on pull request #7: https://example.test/pull/7#comment" }],
+  });
+  await expect(
+    call("github.review_pull_request", {
+      number: 7,
+      event: "REQUEST_CHANGES",
+      body: "Two issues.",
+      comments: [{ path: "src/app.ts", line: 12, body: "Off by one." }],
+    }),
+  ).resolves.toEqual({
+    content: [{ type: "text", text: "Requested changes on pull request #7: https://example.test/pull/7#review" }],
+  });
+  await expect(call("github.review_pull_request", { number: 7, event: "MERGE", body: "x" })).rejects.toThrow(
+    "event must be COMMENT, APPROVE, or REQUEST_CHANGES",
+  );
+
+  expect(JSON.parse(requests.find(({ url }) => url === "issues/7/comments")!.body!)).toEqual({ body: "Looks close." });
+  expect(JSON.parse(requests.find(({ url }) => url === "pulls/7/reviews")!.body!)).toEqual({
+    commit_id: "pr-head",
+    event: "REQUEST_CHANGES",
+    body: "Two issues.",
+    comments: [{ path: "src/app.ts", line: 12, body: "Off by one." }],
+  });
+});

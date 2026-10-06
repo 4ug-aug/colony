@@ -118,6 +118,10 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
     "github.compare",
     "github.get_file",
     "github.get_pull_request",
+    "github.checkout_pull_request",
+    "github.push_to_pull_request",
+    "github.comment_on_pull_request",
+    "github.review_pull_request",
   ]);
   expect(run.capabilityGrant?.resources).toEqual([
     { provider: "github", repository: "acme/widgets" },
@@ -877,6 +881,10 @@ test("selectTools narrows session tools and keeps the stored grant", async () =>
     "github.compare",
     "github.get_file",
     "github.get_pull_request",
+    "github.checkout_pull_request",
+    "github.push_to_pull_request",
+    "github.comment_on_pull_request",
+    "github.review_pull_request",
   ];
   const adapter: WorkspaceAgentAdapter = {
     capability: {
@@ -916,7 +924,7 @@ test("selectTools narrows session tools and keeps the stored grant", async () =>
   const run = executor.getRun(id)!;
   expect(run.state).toBe("succeeded");
   expect(run.capabilityGrant?.tools).toEqual(githubTools);
-  expect(run.preparation).toContain("Tools narrowed to 1 of 5");
+  expect(run.preparation).toContain("Tools narrowed to 1 of 9");
 });
 
 test("GitHub access on the person record controls repository checkout", async () => {
@@ -1127,5 +1135,5 @@ test("an always-granted capability survives tool narrowing", async () => {
   while (["preparing", "running"].includes(executor.getRun(id)?.state ?? "")) {
     await Bun.sleep(0);
   }
-  expect(executor.getRun(id)?.preparation).toContain("Tools narrowed to 2 of 6");
+  expect(executor.getRun(id)?.preparation).toContain("Tools narrowed to 2 of 10");
 });

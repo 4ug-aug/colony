@@ -1,6 +1,10 @@
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit, RequestError } from "octokit";
 import { boundStepText } from "../runtime/step";
+import { extractGitHubCommit, replaceWorktree } from "../inputs/github";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createMcpGateway, type McpGateway, type McpTool, type McpUpstream } from "./gateway";
 
 const tools: readonly McpTool[] = [
@@ -64,7 +68,93 @@ const tools: readonly McpTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "github.checkout_pull_request",
+    description: "Replace the workspace with an open pull request's head so you can work on that pull request. Commit your changes, then call github.push_to_pull_request. Commit or discard workspace edits first.",
+    inputSchema: {
+      type: "object",
+      properties: { number: { type: "integer", minimum: 1 } },
+      required: ["number"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "github.push_to_pull_request",
+    description: "Push the commits made since github.checkout_pull_request onto that pull request's own branch. Refuses if the pull request moved in the meantime; check it out again then.",
+    inputSchema: {
+      type: "object",
+      properties: { number: { type: "integer", minimum: 1 } },
+      required: ["number"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "github.comment_on_pull_request",
+    description: "Post a comment on a pull request's conversation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        number: { type: "integer", minimum: 1 },
+        body: { type: "string" },
+      },
+      required: ["number", "body"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "github.review_pull_request",
+    description: "Submit a review on a pull request: COMMENT, APPROVE, or REQUEST_CHANGES, with an overall body and optional line comments on the head commit.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        number: { type: "integer", minimum: 1 },
+        event: { type: "string", enum: ["COMMENT", "APPROVE", "REQUEST_CHANGES"] },
+        body: { type: "string" },
+        comments: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string" },
+              line: { type: "integer", minimum: 1 },
+              body: { type: "string" },
+            },
+            required: ["path", "line", "body"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["number", "event", "body"],
+      additionalProperties: false,
+    },
+  },
 ];
+
+const reviewEvents = { COMMENT: "Commented", APPROVE: "Approved", REQUEST_CHANGES: "Requested changes" } as const;
+type ReviewEvent = keyof typeof reviewEvents;
+type ReviewComment = { path: string; line: number; body: string };
+/** A pull request checked out into the workspace: its local commit and the remote head it mirrors. */
+type CheckedOut = { local: string; remote: string; ref: string };
+
+const textResult = (text: string) => ({ content: [{ type: "text" as const, text }] });
+
+function pullRequestNumber(value: Record<string, unknown>): number {
+  if (!Number.isInteger(value.number) || (value.number as number) < 1)
+    throw new Error("GitHub pull request number is required");
+  return value.number as number;
+}
+
+function reviewInput(value: Record<string, unknown>): { event: ReviewEvent; body: string; comments: ReviewComment[] } {
+  if (typeof value.event !== "string" || !(value.event in reviewEvents))
+    throw new Error("GitHub review event must be COMMENT, APPROVE, or REQUEST_CHANGES");
+  const comments = (Array.isArray(value.comments) ? value.comments : []).map((comment) => {
+    const { path, line, body } = (comment ?? {}) as Record<string, unknown>;
+    if (typeof path !== "string" || !path || !Number.isInteger(line) || typeof body !== "string" || !body.trim())
+      throw new Error("GitHub review comments need path, line, and body");
+    return { path, line: line as number, body };
+  });
+  return { event: value.event as ReviewEvent, body: string(value.body, "GitHub review body is required"), comments };
+}
 
 type PullRequestRequest = { title: string; body?: string };
 type Change = { path: string; deleted: boolean };
@@ -499,10 +589,100 @@ export function createGitHubMcpUpstream(options: {
   base: string;
 }): McpUpstream {
   const repository = repositoryParts(options.repository);
+  const checkedOut = new Map<number, CheckedOut>();
+  const openPullRequest = async (number: number) => {
+    const pullRequest = (await options.octokit.rest.pulls.get({ ...repository, pull_number: number })).data;
+    if (pullRequest.state !== "open") throw new Error(`Pull request #${number} is ${pullRequest.state}`);
+    // Branches in forks cannot be written with this installation.
+    if (pullRequest.head.repo?.full_name !== options.repository)
+      throw new Error(`Pull request #${number} comes from ${pullRequest.head.repo?.full_name ?? "a deleted fork"}; it can be reviewed but not pushed to`);
+    return pullRequest;
+  };
+  const requireCleanWorkspace = async () => {
+    if ((await git(options.workspace, ["status", "--porcelain"])).trim())
+      throw new Error("Commit or discard workspace changes first");
+  };
 
   return {
     listTools: async () => tools,
     async callTool(name, args) {
+      if (name === "github.checkout_pull_request") {
+        const number = pullRequestNumber(args);
+        const pullRequest = await openPullRequest(number);
+        await requireCleanWorkspace();
+        const files = await mkdtemp(join(tmpdir(), "sweat-pull-request-"));
+        try {
+          await extractGitHubCommit({ octokit: options.octokit, repository, sha: pullRequest.head.sha, directory: files });
+          await git(options.workspace, ["checkout", "-q", "-B", `pull/${number}`]);
+          await replaceWorktree(options.workspace, files);
+        } finally {
+          await rm(files, { recursive: true, force: true });
+        }
+        await git(options.workspace, ["add", "--all"]);
+        await git(options.workspace, ["commit", "--quiet", "--allow-empty", "--message", `Pull request #${number} at ${pullRequest.head.sha.slice(0, 7)}`]);
+        checkedOut.set(number, {
+          local: (await git(options.workspace, ["rev-parse", "HEAD"])).trim(),
+          remote: pullRequest.head.sha,
+          ref: pullRequest.head.ref,
+        });
+        return textResult(`Checked out pull request #${number} (${pullRequest.head.ref} at ${pullRequest.head.sha.slice(0, 7)}). Commit your changes, then call github.push_to_pull_request.`);
+      }
+      if (name === "github.push_to_pull_request") {
+        const number = pullRequestNumber(args);
+        const checkout = checkedOut.get(number);
+        if (!checkout) throw new Error(`Check out pull request #${number} with github.checkout_pull_request first`);
+        await requireCleanWorkspace();
+        const commits = (await git(options.workspace, ["rev-list", "--reverse", `${checkout.local}..HEAD`])).trim().split("\n").filter(Boolean);
+        if (!commits.length) throw new Error("No new commits to push");
+        const pullRequest = await openPullRequest(number);
+        if (pullRequest.head.sha !== checkout.remote)
+          throw new Error(`Pull request #${number} moved since checkout (now ${pullRequest.head.sha.slice(0, 7)}); check it out again and redo your changes`);
+        let remoteCommit = checkout.remote;
+        let remoteTree = (await options.octokit.rest.git.getCommit({ ...repository, commit_sha: remoteCommit })).data.tree.sha;
+        for (const localCommit of commits) {
+          const localParent = (await git(options.workspace, ["rev-parse", `${localCommit}^`])).trim();
+          const changed = changes(await git(options.workspace, ["diff", "--name-status", "-z", localParent, localCommit]));
+          const tree = await options.octokit.rest.git.createTree({
+            ...repository,
+            base_tree: remoteTree,
+            tree: await materializeTree({ octokit: options.octokit, repository, workspace: options.workspace, commit: localCommit, changed }),
+          });
+          const next = await options.octokit.rest.git.createCommit({
+            ...repository,
+            message: (await git(options.workspace, ["log", "-1", "--format=%B", localCommit])).trim(),
+            tree: tree.data.sha,
+            parents: [remoteCommit],
+          });
+          remoteCommit = next.data.sha;
+          remoteTree = tree.data.sha;
+        }
+        await options.octokit.rest.git.updateRef({ ...repository, ref: `heads/${checkout.ref}`, sha: remoteCommit, force: false });
+        checkedOut.set(number, { ...checkout, local: (await git(options.workspace, ["rev-parse", "HEAD"])).trim(), remote: remoteCommit });
+        return textResult(`Pushed ${commits.length} commit${commits.length === 1 ? "" : "s"} to pull request #${number} (${checkout.ref}): ${pullRequest.html_url}`);
+      }
+      if (name === "github.comment_on_pull_request") {
+        const number = pullRequestNumber(args);
+        const comment = await options.octokit.rest.issues.createComment({
+          ...repository,
+          issue_number: number,
+          body: string(args.body, "GitHub comment body is required"),
+        });
+        return textResult(`Commented on pull request #${number}: ${comment.data.html_url}`);
+      }
+      if (name === "github.review_pull_request") {
+        const number = pullRequestNumber(args);
+        const input = reviewInput(args);
+        const head = (await options.octokit.rest.pulls.get({ ...repository, pull_number: number })).data.head.sha;
+        const review = await options.octokit.rest.pulls.createReview({
+          ...repository,
+          pull_number: number,
+          commit_id: head,
+          event: input.event,
+          body: input.body,
+          ...(input.comments.length ? { comments: input.comments } : {}),
+        });
+        return textResult(`${reviewEvents[input.event]} on pull request #${number}: ${review.data.html_url}`);
+      }
       if (name === "github.compare") {
         return compareRefs({ octokit: options.octokit, repository, args });
       }
