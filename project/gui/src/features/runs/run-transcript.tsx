@@ -1,7 +1,7 @@
 import { Markdown } from '#/components/markdown'
 import { AgentThinking } from '#/components/ui/agent-thinking'
 import { AgentMark } from '#/features/agents/agent-mark'
-import { groupActivity, pairSteps } from './run-activity'
+import { groupActivity, pairSteps, reasoningText } from './run-activity'
 import { stepLabel, type Step } from './step-label'
 import { ToolCallDetailsList } from './tool-call-details-list'
 
@@ -57,10 +57,10 @@ export function RunTranscript({
           .map((group, index) =>
             group.kind === 'reasoning' ? (
               <p
-                key={group.item.step.id}
+                key={`reasoning-${index}`}
                 className="whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none"
               >
-                {group.item.step.text}
+                {reasoningText(group.items)}
               </p>
             ) : (
               <ToolCallDetailsList key={`tools-${index}`} items={group.items} />

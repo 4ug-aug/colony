@@ -98,9 +98,21 @@ describe('run activity', () => {
         ]),
       ),
     ).toEqual([
-      { kind: 'reasoning', item: { step: liveReasoning } },
+      { kind: 'reasoning', items: [{ step: liveReasoning }] },
       { kind: 'tools', items: [{ step: firstTool }, { step: secondTool }] },
-      { kind: 'reasoning', item: { step: secondReasoning } },
+      { kind: 'reasoning', items: [{ step: secondReasoning }] },
+    ])
+  })
+
+  test('keeps each reasoning segment, replacing only snapshots of the same segment', () => {
+    const segment = (id: string, idx: number, callId: string, text: string) =>
+      step({ id, idx, kind: 'message', callId, text })
+    const first = segment('s1', 0, 'narration-0', 'First paragraph')
+    const firstLater = segment('s2', 1, 'narration-0', 'First paragraph, finished.')
+    const second = segment('s3', 2, 'narration-1', 'Second paragraph')
+
+    expect(groupActivity(pairSteps([first, firstLater, second]))).toEqual([
+      { kind: 'reasoning', items: [{ step: firstLater }, { step: second }] },
     ])
   })
 })
