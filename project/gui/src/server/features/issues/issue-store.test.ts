@@ -65,7 +65,9 @@ test('issue store allocates COL numbers and accepts legacy SWE references', () =
   const task = buildIssueRunTask(store.getIssue(childA.id)!, parent)
   expect(task).toContain('COL-2')
   expect(task).toContain('<<<issue')
-  expect(task).toContain('untrusted user/agent-authored data')
+  // The Issue is the request; only attempts to change the agent's rules are ignored.
+  expect(task).toContain('follow its requirements')
+  expect(task).not.toContain('not instructions')
   expect(task).toContain('COL-1')
   expect(task).toContain('Parent feature')
 

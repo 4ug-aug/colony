@@ -167,3 +167,14 @@ test("web.fetch refuses private URLs before contacting the network", async () =>
     upstream.callTool("web.fetch", { url: "http://127.0.0.1/" }),
   ).rejects.toThrow(/not a public/i);
 });
+
+test("searchDuckDuckGoLite reports a bot challenge instead of returning no results", async () => {
+  const challenge = `<html><body><form id="challenge-form" action="/anomaly.js"><div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div><p>Please complete the following challenge</p></form></body></html>`;
+  await expect(
+    searchDuckDuckGoLite("loading-dev npm", async (url) => ({ url, status: 200, contentType: "text/html", body: challenge })),
+  ).rejects.toThrow("Web search is blocked by DuckDuckGo's bot check");
+  // A genuine empty result page is still just empty.
+  await expect(
+    searchDuckDuckGoLite("zzqx", async (url) => ({ url, status: 200, contentType: "text/html", body: "<html><body>No results.</body></html>" })),
+  ).resolves.toEqual([]);
+});

@@ -148,7 +148,13 @@ export async function searchDuckDuckGoLite(
   const response = await fetchPage(
     `${DDG_LITE}?q=${encodeURIComponent(query)}`,
   );
-  return searchResultsFromDuckDuckGoLite(response.body);
+  const hits = searchResultsFromDuckDuckGoLite(response.body);
+  // A bot check parses as zero hits; saying "no results" sends agents chasing ghosts.
+  if (!hits.length && /anomaly|challenge-form/i.test(response.body))
+    throw new Error(
+      "Web search is blocked by DuckDuckGo's bot check right now. Use web.fetch on a known URL instead, e.g. https://registry.npmjs.org/<package> for an npm package.",
+    );
+  return hits;
 }
 
 function requireQuery(value: unknown): string {
