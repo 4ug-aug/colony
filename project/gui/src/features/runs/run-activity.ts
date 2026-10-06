@@ -2,7 +2,7 @@ import type { Step } from './step-label'
 
 export type ActivityItem = { step: Step; result?: Step }
 export type ActivityGroup =
-  | { kind: 'reasoning'; item: ActivityItem }
+  | { kind: 'reasoning'; items: ActivityItem[] }
   | { kind: 'tools'; items: ActivityItem[] }
 
 export function formatStepText(text: string) {
@@ -43,14 +43,26 @@ export function pairSteps(steps: Step[]) {
     )
 }
 
+/** One reasoning stretch, its segments in order. */
+export function reasoningText(items: readonly ActivityItem[]): string {
+  return items.map(({ step }) => step.text).join('\n\n')
+}
+
 export function groupActivity(items: ActivityItem[]): ActivityGroup[] {
   const groups: ActivityGroup[] = []
 
   for (const item of items) {
     if (item.step.kind === 'message') {
       const previous = groups.at(-1)
-      if (previous?.kind === 'reasoning') previous.item = item
-      else groups.push({ kind: 'reasoning', item })
+      if (previous?.kind !== 'reasoning') {
+        groups.push({ kind: 'reasoning', items: [item] })
+        continue
+      }
+      // Snapshots of one segment share a callId (legacy runs have none): keep
+      // the latest. A new segment continues the reasoning below.
+      const last = previous.items.at(-1)!
+      if (last.step.callId === item.step.callId) previous.items[previous.items.length - 1] = item
+      else previous.items.push(item)
       continue
     }
 

@@ -9,7 +9,12 @@ import { accountFaceStyle, accountInitials } from '#/lib/account-color'
 import { apiFetch } from '#/lib/api-transport'
 import { Ban, CheckCircle2, CircleX, RotateCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { groupActivity, mergeSteps, pairSteps } from './run-activity'
+import {
+  groupActivity,
+  mergeSteps,
+  pairSteps,
+  reasoningText,
+} from './run-activity'
 import { RunActivitySplitHeader } from './run-activity-dither'
 import { terminal } from './run-helpers'
 import type { Step } from './step-label'
@@ -185,11 +190,11 @@ export function RunActivityContent({
           <div className="space-y-3">
             {groups.map((group, index) =>
               group.kind === 'reasoning' ? (
-                <article key={group.item.step.id} className="text-sm">
+                <article key={`reasoning-${index}`} className="text-sm">
                   <div className="mb-1 flex items-center justify-between text-xs font-medium text-muted-foreground">
                     <span>Reasoning</span>
                     <time>
-                      {new Date(group.item.step.createdAt).toLocaleTimeString(
+                      {new Date(group.items[0]!.step.createdAt).toLocaleTimeString(
                         [],
                         {
                           hour: 'numeric',
@@ -199,7 +204,7 @@ export function RunActivityContent({
                     </time>
                   </div>
                   <p className="whitespace-pre-wrap break-words leading-6">
-                    {group.item.step.text}
+                    {reasoningText(group.items)}
                   </p>
                 </article>
               ) : (

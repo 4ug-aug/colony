@@ -134,6 +134,7 @@ test("runCursorAgent coalesces streamed assistant deltas into one message step",
     {
       kind: "message",
       text: "no checkout, no open PR, and nothing to build or fix right now.",
+      callId: "narration-0",
       at: expect.any(Number),
     },
   ]);
@@ -177,6 +178,7 @@ test("runCursorAgent publishes thinking as a message step", async () => {
     {
       kind: "message",
       text: "Considering the frontier… then wrap up.",
+      callId: "narration-0",
       at: expect.any(Number),
     },
   ]);
@@ -515,4 +517,43 @@ test("persisted Cursor turns resume the same SDK agent", async () => {
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("runCursorAgent splits long reasoning into segments so none is truncated", async () => {
+  const paragraphs = Array.from(
+    { length: 12 },
+    (_, index) => `Paragraph ${index}: ${"considering the peer dependency ".repeat(30).trim()}.`,
+  );
+  const full = paragraphs.join("\n\n");
+  const steps: Array<{ kind: string; text: string; callId?: string }> = [];
+  const createAgent: CursorAgentFactory = async () => ({
+    async send() {
+      return {
+        async *stream() {
+          for (let index = 0; index < full.length; index += 97) {
+            yield {
+              type: "thinking",
+              text: full.slice(index, index + 97),
+            } satisfies CursorSdkMessage;
+          }
+        },
+        async wait() {
+          return { status: "finished", result: "" };
+        },
+      };
+    },
+    async [Symbol.asyncDispose]() {},
+  });
+
+  await runCursorAgent(
+    { task: "t", instructions: "i", agentId: "software-engineer", apiKey: "k", model: "composer-2.5" },
+    { createAgent, onStep: (step) => steps.push(step) },
+  );
+
+  // The latest snapshot of each segment, in order, is the whole reasoning.
+  const segments = new Map<string, string>();
+  for (const step of steps) if (step.kind === "message") segments.set(step.callId!, step.text);
+  expect(segments.size).toBeGreaterThan(1);
+  expect([...segments.values()].join("\n\n")).toBe(full);
+  for (const text of segments.values()) expect(text.length).toBeLessThan(4_000);
 });

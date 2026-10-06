@@ -135,6 +135,13 @@ export function mapCursorEventToSteps(event: CursorSdkMessage): Step[] {
 /** How often live thinking/assistant snapshots may publish as message steps. */
 export const LIVE_MESSAGE_THROTTLE_MS = 400;
 
+/**
+ * Reasoning past this length starts a new step at a paragraph break. Snapshots
+ * of one segment share a callId so viewers replace them; one snapshot of a whole
+ * long stretch would hit STEP_TEXT_LIMIT and freeze on its first 20k chars.
+ */
+export const NARRATION_SEGMENT_CHARS = 2_000;
+
 function combineLiveNarration(thinking: string, assistant: string): string {
   const t = thinking.trim();
   const a = assistant.trim();
@@ -210,24 +217,43 @@ export async function openCursorAgentSession(
     ? await resumeAgent(request.resumeAgentId, options)
     : await createAgent(options);
 
+  let segment = 0;
   const runTurn = async (task: string): Promise<string> => {
     const prompt = `${request.instructions}\n\nTask:\n${task}`;
     let lastMessageText: string | undefined;
     let thinkingText = "";
     let assistantBuf = "";
     let lastPublished = "";
+    /** Chars of the current stretch already published as earlier segments. */
+    let sealed = 0;
     let throttleTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const emit = (text: string): void => {
+      dependencies.onStep?.({
+        kind: "message",
+        text: boundStepText(text),
+        callId: `narration-${segment}`,
+        at: Date.now(),
+      });
+    };
 
     const publishLive = (): void => {
       const text = combineLiveNarration(thinkingText, assistantBuf);
       if (!text || text === lastPublished) return;
       lastPublished = text;
       lastMessageText = text;
-      dependencies.onStep?.({
-        kind: "message",
-        text: boundStepText(text),
-        at: Date.now(),
-      });
+      if (text.length < sealed) sealed = 0;
+      let rest = text.slice(sealed);
+      while (rest.length > NARRATION_SEGMENT_CHARS) {
+        const before = rest.lastIndexOf("\n\n", NARRATION_SEGMENT_CHARS);
+        const cut = before > 0 ? before : rest.indexOf("\n\n", NARRATION_SEGMENT_CHARS);
+        if (cut <= 0) break;
+        emit(rest.slice(0, cut));
+        segment += 1;
+        sealed += cut + 2;
+        rest = rest.slice(cut + 2);
+      }
+      if (rest) emit(rest);
     };
 
     const scheduleLive = (): void => {
@@ -244,9 +270,11 @@ export async function openCursorAgentSession(
         throttleTimer = undefined;
       }
       publishLive();
+      if (lastPublished) segment += 1;
       thinkingText = "";
       assistantBuf = "";
       lastPublished = "";
+      sealed = 0;
     };
 
     const run = await agent.send(prompt);
