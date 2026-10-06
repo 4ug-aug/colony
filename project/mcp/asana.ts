@@ -29,7 +29,7 @@ const tools: readonly McpTool[] = [
   {
     name: "asana.list_tasks",
     description:
-      "List tasks in the configured Asana project. Use nextPage.offset for the next bounded page.",
+      "List tasks in the configured Asana project: open ones unless includeCompleted. Each line shows section, assignee, due date, tags, and the task id; pass the offset the result names for more.",
     inputSchema: {
       type: "object",
       properties: {
@@ -91,6 +91,78 @@ const tools: readonly McpTool[] = [
 
 type AsanaResponse = { data: unknown; next_page?: unknown };
 type TaskInput = { taskGid: string };
+type AsanaTask = {
+  gid: string;
+  name: string;
+  completed?: boolean;
+  notes?: string;
+  assignee?: { name?: string } | null;
+  due_on?: string | null;
+  tags?: { name?: string }[];
+  memberships?: { project?: { gid?: string }; section?: { name?: string } }[];
+  created_at?: string;
+  modified_at?: string;
+  permalink_url?: string;
+};
+type AsanaStory = {
+  text?: string;
+  resource_subtype?: string;
+  created_by?: { name?: string } | null;
+  created_at?: string;
+};
+
+const LIST_FIELDS =
+  "gid,name,completed,assignee.name,due_on,tags.name,memberships.project.gid,memberships.section.name";
+const TASK_FIELDS = `gid,name,notes,completed,assignee.name,due_on,tags.name,memberships.project.gid,memberships.section.name,created_at,modified_at,permalink_url`;
+
+// Models read results as text: Asana's raw JSON is mostly ids, URLs, and cursors.
+const text = (value: string) => ({
+  content: [{ type: "text" as const, text: value }],
+});
+const day = (iso?: string) => iso?.slice(0, 10);
+
+function sectionIn(task: AsanaTask, projectGid: string): string | undefined {
+  return task.memberships?.find(({ project }) => project?.gid === projectGid)
+    ?.section?.name;
+}
+
+function taskLine(task: AsanaTask, projectGid: string): string {
+  const tags = (task.tags ?? []).flatMap(({ name }) =>
+    name ? [`#${name}`] : [],
+  );
+  return [
+    `- ${task.completed ? "[done] " : ""}${task.name}`,
+    sectionIn(task, projectGid),
+    task.assignee?.name ?? "unassigned",
+    task.due_on && `due ${task.due_on}`,
+    ...tags,
+    `id ${task.gid}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function taskDetails(task: AsanaTask, projectGid: string): string {
+  const facts = [
+    sectionIn(task, projectGid) && `Section: ${sectionIn(task, projectGid)}`,
+    `Assignee: ${task.assignee?.name ?? "unassigned"}`,
+    task.due_on && `Due: ${task.due_on}`,
+    task.tags?.length &&
+      `Tags: ${task.tags.flatMap(({ name }) => name ?? []).join(", ")}`,
+  ].filter(Boolean);
+  const dates = [
+    task.created_at && `Created ${day(task.created_at)}`,
+    task.modified_at && `Modified ${day(task.modified_at)}`,
+  ].filter(Boolean);
+  return [
+    `${task.name} (${task.completed ? "done" : "open"})`,
+    `Id: ${task.gid}`,
+    facts.join(" · "),
+    ...(dates.length ? [dates.join(" · ")] : []),
+    ...(task.permalink_url ? [`Link: ${task.permalink_url}`] : []),
+    ...(task.notes?.trim() ? ["", task.notes.trim()] : []),
+  ].join("\n");
+}
 
 function requireOnly(
   args: Record<string, unknown>,
@@ -221,6 +293,7 @@ export function createAsanaMcpUpstream(options: {
   apiToken: string;
   projectGid: string;
   fetch?: typeof fetch;
+  now?: () => Date;
 }): McpUpstream {
   const request = async (
     path: string,
@@ -286,38 +359,66 @@ export function createAsanaMcpUpstream(options: {
       }
       if (name === "asana.create_task") {
         const input = createTaskInput(args);
-        return request("/tasks?opt_fields=gid,name,permalink_url", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            data: {
-              name: input.name,
-              ...(input.description === undefined
-                ? {}
-                : { notes: input.description }),
-              projects: [options.projectGid],
-            },
-          }),
-        });
+        const created = await request(
+          "/tasks?opt_fields=gid,name,permalink_url",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              data: {
+                name: input.name,
+                ...(input.description === undefined
+                  ? {}
+                  : { notes: input.description }),
+                projects: [options.projectGid],
+              },
+            }),
+          },
+        );
+        const task = created.data as AsanaTask;
+        return text(
+          `Created "${task.name}" (id ${task.gid})${task.permalink_url ? `: ${task.permalink_url}` : "."}`,
+        );
       }
       if (name === "asana.list_tasks") {
         const input = listTasksInput(args);
         const query = new URLSearchParams({
           limit: String(input.limit),
-          opt_fields: "gid,name,completed,permalink_url",
+          opt_fields: LIST_FIELDS,
+          // Asana returns every task without completed_since; "now" keeps only open ones.
+          completed_since: input.includeCompleted
+            ? "1970-01-01T00:00:00.000Z"
+            : (options.now?.() ?? new Date()).toISOString(),
         });
-        if (input.includeCompleted)
-          query.set("completed_since", "1970-01-01T00:00:00.000Z");
         if (input.offset) query.set("offset", input.offset);
-        return request(
+        const response = await request(
           `/projects/${encodeURIComponent(options.projectGid)}/tasks?${query}`,
+        );
+        const tasks = (
+          Array.isArray(response.data) ? response.data : []
+        ) as AsanaTask[];
+        const kind = input.includeCompleted ? "tasks" : "open tasks";
+        if (!tasks.length) return text(`No ${kind} in the project.`);
+        const next = (response.next_page as { offset?: string } | null)?.offset;
+        return text(
+          [
+            `${tasks.length} ${kind} in the project. Pass a task's id to asana.get_task for details.`,
+            "",
+            ...tasks.map((task) => taskLine(task, options.projectGid)),
+            ...(next
+              ? ["", `More tasks: call asana.list_tasks with offset "${next}".`]
+              : []),
+          ].join("\n"),
         );
       }
       if (name === "asana.get_task") {
         const input = taskInput(args);
         await ensureTaskInProject(input.taskGid);
-        return request(
-          `${taskPath(input.taskGid)}?opt_fields=gid,name,notes,completed,permalink_url`,
+        const response = await request(
+          `${taskPath(input.taskGid)}?opt_fields=${TASK_FIELDS}`,
+        );
+        return text(
+          taskDetails(response.data as AsanaTask, options.projectGid),
         );
       }
       if (name === "asana.get_task_comments") {
@@ -326,34 +427,41 @@ export function createAsanaMcpUpstream(options: {
         const response = await request(
           `${taskPath(input.taskGid)}/stories?opt_fields=gid,text,created_by.name,resource_subtype,created_at`,
         );
-        const stories = Array.isArray(response.data) ? response.data : [];
-        return {
-          data: stories.filter(
-            (story) =>
-              story &&
-              typeof story === "object" &&
-              (story as { resource_subtype?: unknown }).resource_subtype ===
-                "comment_added",
-          ),
-        };
+        const comments = (
+          (Array.isArray(response.data) ? response.data : []) as AsanaStory[]
+        ).filter((story) => story?.resource_subtype === "comment_added");
+        return text(
+          comments.length
+            ? comments
+                .map(
+                  (comment) =>
+                    `- ${comment.created_by?.name ?? "Someone"} (${day(comment.created_at)}): ${comment.text ?? ""}`,
+                )
+                .join("\n")
+            : "No comments on this task.",
+        );
       }
       if (name === "asana.set_task_completion") {
         const input = completionInput(args);
         await ensureTaskInProject(input.taskGid);
-        return request(taskPath(input.taskGid), {
+        await request(taskPath(input.taskGid), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data: { completed: input.completed } }),
         });
+        return text(
+          `Marked task ${input.taskGid} ${input.completed ? "complete" : "incomplete"}.`,
+        );
       }
       if (name === "asana.add_task_comment") {
         const input = commentInput(args);
         await ensureTaskInProject(input.taskGid);
-        return request(`${taskPath(input.taskGid)}/stories`, {
+        await request(`${taskPath(input.taskGid)}/stories`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data: { text: input.text } }),
         });
+        return text(`Commented on task ${input.taskGid}.`);
       }
       throw new Error(`Unknown Asana tool: ${name}`);
     },
