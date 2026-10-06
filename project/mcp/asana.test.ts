@@ -5,6 +5,28 @@ import { createAsanaSoftwareEngineerAdapter } from "../agents/software-engineer-
 
 const token = "asana-secret-token";
 const projectGid = "project-1";
+const listFields =
+  "gid%2Cname%2Ccompleted%2Cassignee.name%2Cdue_on%2Ctags.name%2Cmemberships.project.gid%2Cmemberships.section.name";
+const taskFields =
+  "gid,name,notes,completed,assignee.name,due_on,tags.name,memberships.project.gid,memberships.section.name,created_at,modified_at,permalink_url";
+const text = (value: string) => ({ content: [{ type: "text", text: value }] });
+
+test("Asana lists only open tasks unless asked for completed ones", async () => {
+  const urls: string[] = [];
+  const upstream = createAsanaMcpUpstream({
+    apiToken: token,
+    projectGid,
+    now: () => new Date("2026-10-06T08:00:00.000Z"),
+    fetch: async (url) => {
+      urls.push(String(url));
+      return Response.json({ data: [] });
+    },
+  });
+  await expect(upstream.callTool("asana.list_tasks", {})).resolves.toEqual(
+    text("No open tasks in the project."),
+  );
+  expect(urls[0]).toContain("completed_since=2026-10-06T08%3A00%3A00.000Z");
+});
 
 test("Asana uses the configured project and bounded task pagination", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
@@ -13,14 +35,28 @@ test("Asana uses the configured project and bounded task pagination", async () =
     projectGid,
     fetch: async (url, init) => {
       requests.push({ url: String(url), init });
-      if (String(url).includes("memberships.project.gid")) {
+      if (String(url).endsWith("?opt_fields=memberships.project.gid")) {
         return Response.json({
           data: { memberships: [{ project: { gid: projectGid } }] },
         });
       }
       return Response.json({
-        data: { gid: "task-1" },
-        next_page: { offset: "next-page" },
+        data: [
+          {
+            gid: "task-1",
+            name: "Ship it",
+            completed: false,
+            assignee: { name: "Ada" },
+            due_on: "2026-10-08",
+            tags: [{ name: "release" }],
+            memberships: [
+              { project: { gid: "other" }, section: { name: "Elsewhere" } },
+              { project: { gid: projectGid }, section: { name: "Review" } },
+            ],
+          },
+          { gid: "task-2", name: "Old chore", completed: true, assignee: null },
+        ],
+        next_page: { offset: "next-page", path: "/noise", uri: "https://noise" },
       });
     },
   });
@@ -32,20 +68,32 @@ test("Asana uses the configured project and bounded task pagination", async () =
       limit: 20,
       offset: "previous-page",
     }),
-  ).resolves.toEqual({
-    data: { gid: "task-1" },
-    next_page: { offset: "next-page" },
-  });
+  ).resolves.toEqual(
+    text(
+      [
+        "2 tasks in the project. Pass a task's id to asana.get_task for details.",
+        "",
+        "- Ship it · Review · Ada · due 2026-10-08 · #release · id task-1",
+        "- [done] Old chore · unassigned · id task-2",
+        "",
+        'More tasks: call asana.list_tasks with offset "next-page".',
+      ].join("\n"),
+    ),
+  );
   await upstream.callTool("asana.get_task", { taskGid: "task-1" });
   await upstream.callTool("asana.get_task_comments", { taskGid: "task-1" });
-  await upstream.callTool("asana.set_task_completion", {
-    taskGid: "task-1",
-    completed: true,
-  });
-  await upstream.callTool("asana.add_task_comment", {
-    taskGid: "task-1",
-    text: "Done",
-  });
+  await expect(
+    upstream.callTool("asana.set_task_completion", {
+      taskGid: "task-1",
+      completed: true,
+    }),
+  ).resolves.toEqual(text("Marked task task-1 complete."));
+  await expect(
+    upstream.callTool("asana.add_task_comment", {
+      taskGid: "task-1",
+      text: "Done",
+    }),
+  ).resolves.toEqual(text("Commented on task task-1."));
 
   expect(requests.map(({ url, init }) => [init?.method ?? "GET", url])).toEqual(
     [
@@ -55,7 +103,7 @@ test("Asana uses the configured project and bounded task pagination", async () =
       ],
       [
         "GET",
-        "https://app.asana.com/api/1.0/projects/project-1/tasks?limit=20&opt_fields=gid%2Cname%2Ccompleted%2Cpermalink_url&completed_since=1970-01-01T00%3A00%3A00.000Z&offset=previous-page",
+        `https://app.asana.com/api/1.0/projects/project-1/tasks?limit=20&opt_fields=${listFields}&completed_since=1970-01-01T00%3A00%3A00.000Z&offset=previous-page`,
       ],
       [
         "GET",
@@ -63,7 +111,7 @@ test("Asana uses the configured project and bounded task pagination", async () =
       ],
       [
         "GET",
-        "https://app.asana.com/api/1.0/tasks/task-1?opt_fields=gid,name,notes,completed,permalink_url",
+        `https://app.asana.com/api/1.0/tasks/task-1?opt_fields=${taskFields}`,
       ],
       [
         "GET",
@@ -133,14 +181,16 @@ test("Asana creates tasks only in the configured project", async () => {
     projectGid,
     fetch: async (url, init) => {
       requests.push({ url: String(url), init });
-      return Response.json({ data: { gid: "task-1" } });
+      return Response.json({ data: { gid: "task-1", name: "Ship it" } });
     },
   });
 
-  await upstream.callTool("asana.create_task", {
-    name: "Ship it",
-    description: "Ready to release",
-  });
+  await expect(
+    upstream.callTool("asana.create_task", {
+      name: "Ship it",
+      description: "Ready to release",
+    }),
+  ).resolves.toEqual(text('Created "Ship it" (id task-1).'));
 
   expect(requests.map(({ url, init }) => [init?.method, url])).toEqual([
     [
@@ -162,7 +212,7 @@ test("Asana get_task returns notes and get_task_comments keeps only comments", a
     apiToken: token,
     projectGid,
     fetch: async (url) => {
-      if (String(url).includes("memberships.project.gid")) {
+      if (String(url).endsWith("?opt_fields=memberships.project.gid")) {
         return Response.json({
           data: { memberships: [{ project: { gid: projectGid } }] },
         });
@@ -193,6 +243,14 @@ test("Asana get_task returns notes and get_task_comments keeps only comments", a
           name: "Ship it",
           notes: "Ready to release",
           completed: false,
+          assignee: { name: "Ada" },
+          due_on: "2026-10-08",
+          tags: [],
+          memberships: [
+            { project: { gid: projectGid }, section: { name: "Review" } },
+          ],
+          created_at: "2026-10-01T09:00:00.000Z",
+          modified_at: "2026-10-05T14:30:00.000Z",
           permalink_url: "https://app.asana.com/0/1/task-1",
         },
       });
@@ -201,28 +259,22 @@ test("Asana get_task returns notes and get_task_comments keeps only comments", a
 
   await expect(
     upstream.callTool("asana.get_task", { taskGid: "task-1" }),
-  ).resolves.toEqual({
-    data: {
-      gid: "task-1",
-      name: "Ship it",
-      notes: "Ready to release",
-      completed: false,
-      permalink_url: "https://app.asana.com/0/1/task-1",
-    },
-  });
+  ).resolves.toEqual(
+    text(
+      [
+        "Ship it (open)",
+        "Id: task-1",
+        "Section: Review · Assignee: Ada · Due: 2026-10-08",
+        "Created 2026-10-01 · Modified 2026-10-05",
+        "Link: https://app.asana.com/0/1/task-1",
+        "",
+        "Ready to release",
+      ].join("\n"),
+    ),
+  );
   await expect(
     upstream.callTool("asana.get_task_comments", { taskGid: "task-1" }),
-  ).resolves.toEqual({
-    data: [
-      {
-        gid: "story-1",
-        text: "Looks good",
-        resource_subtype: "comment_added",
-        created_by: { name: "Ada" },
-        created_at: "2026-01-01T00:00:00.000Z",
-      },
-    ],
-  });
+  ).resolves.toEqual(text("- Ada (2026-01-01): Looks good"));
 });
 
 test("Asana exposes only its seven granted tools and keeps token errors safe", async () => {
