@@ -12,6 +12,7 @@ import {
 } from '#/components/ui/sidebar'
 import type { RoomNotification } from '#/features/rooms/room-notifications'
 import type { Room } from '#/features/rooms/types'
+import { DotsIndicator } from '#/components/ui/agent-thinking'
 import { cn } from '#/lib/utils'
 import { Hash, Lock, Trash2 } from 'lucide-react'
 
@@ -73,6 +74,15 @@ export function RoomMenuItem({
       </ContextMenu>
       <NotificationDot notification={notification} />
     </SidebarMenuItem>
+  )
+}
+
+/** Shown on a sidebar row while its agent has a run going; the Colony mark itself stays still. */
+export function WorkingIndicator() {
+  return (
+    <SidebarMenuBadge aria-hidden="true" className="h-auto min-w-0 p-0">
+      <DotsIndicator variant="spin" />
+    </SidebarMenuBadge>
   )
 }
 
