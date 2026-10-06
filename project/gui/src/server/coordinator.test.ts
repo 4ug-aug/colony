@@ -3854,6 +3854,24 @@ test('a Chamber answers every message as its agent and is private to its account
   }
 })
 
+test('every account gets its own Chamber with an agent, even when a Room shares its name', () => {
+  const store = roomStore()
+  store.seedAccounts([{ id: 'user-2', name: 'Bob' }])
+  const agent = { id: 'antboy', name: 'Antboy' }
+  expect(
+    store.createRoom({ id: 'r1', name: 'antboy', visibility: 'public', createdBy: 'user-1' }),
+  ).toBe(true)
+  const mine = store.chamberFor('user-1', agent)
+  const theirs = store.chamberFor('user-2', agent)
+  expect(mine.created && theirs.created).toBe(true)
+  expect(theirs.room.id).not.toBe(mine.room.id)
+  expect(store.canAccessRoom(theirs.room.id, 'user-2')).toBe(true)
+  // Room names stay unique among Rooms.
+  expect(
+    store.createRoom({ id: 'r2', name: 'ANTBOY', visibility: 'public', createdBy: 'user-1' }),
+  ).toBe(false)
+})
+
 test('Chamber messages sent during a run queue, can be cancelled, and go together as the next run', async () => {
   const store = roomStore()
   const control = new FakeRunControl()
