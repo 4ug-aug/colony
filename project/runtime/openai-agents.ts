@@ -8,6 +8,7 @@ import {
   type ModelRequest,
   type ModelResponse,
   OpenAIResponsesModel,
+    RunContext,
     type ResponseStreamEvent,
     Runner,
     type Session,
@@ -266,6 +267,17 @@ export function rewriteVllmMcpCalls(output: unknown[]): void {
   }
 }
 
+/** vLLM stops mid-sentence at max_tokens; mark it so the reply doesn't look finished. */
+export function markCutOffReply(response: { output: unknown[]; providerData?: Record<string, unknown> }): void {
+  const details = response.providerData?.incomplete_details as { reason?: unknown } | undefined;
+  if (response.providerData?.status !== "incomplete" || details?.reason !== "max_output_tokens") return;
+  const message = response.output.findLast(
+    (item) => (item as { type?: unknown }).type === "message",
+  ) as { content?: Array<{ type?: string; text?: string }> } | undefined;
+  const part = message?.content?.findLast((item) => item.type === "output_text");
+  if (part) part.text = `${part.text ?? ""}\n\n[Reply cut off: the model reached its output token limit.]`;
+}
+
 function sanitizeCompatibleInput(
   input: ModelRequest["input"],
 ): ModelRequest["input"] {
@@ -304,6 +316,7 @@ export class CompatibleResponsesModel extends OpenAIResponsesModel {
       if (event.type === "response_done") {
         sanitizeUsageDetails(event.response.usage);
         sanitizeCompatibleOutput(event.response.output);
+        markCutOffReply(event.response);
       }
       yield event;
     }
@@ -464,10 +477,16 @@ export async function runAgent(
         kind === "tool_not_found"
           ? `${defaultMessage} It does not exist, so do not call ${toolName} again. Use only the tools in your tool list, or answer without one.`
           : undefined,
-      callModelInputFilter: async ({ modelData }) => ({
-        ...modelData,
-        input: await compact(modelData.input),
-      }),
+      callModelInputFilter: async ({ modelData, agent, context }) => {
+        // Instructions and tool schemas share the window; on a small model they are a large share of it.
+        const tools = (await agent.getAllTools(new RunContext(context))).map((tool) => ({
+          name: tool.name,
+          description: "description" in tool ? tool.description : "",
+          parameters: "parameters" in tool ? tool.parameters : {},
+        }));
+        const reserved = Math.ceil(JSON.stringify([modelData.instructions ?? "", tools]).length / 4);
+        return { ...modelData, input: await compact(modelData.input, reserved) };
+      },
     }).run(agent, request.task, {
       maxTurns: 50,
       stream: true,

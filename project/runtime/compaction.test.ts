@@ -68,3 +68,19 @@ test("summarizes the head, keeps the task and an unbroken tail, and reuses the s
   expect(summaries).toHaveLength(2);
   expect(summaries[1]).toContain("summary 1");
 });
+
+test("counts instructions and tool definitions against the window", async () => {
+  summaries.length = 0;
+  const items = history(10, 1_500); // ~4k tokens: fits 8k on its own
+  const compact = createCompactor({ contextTokens: 8_000, summarize });
+  expect(await compact(items)).toBe(items);
+  // 4k tokens of instructions and tools leave no room for it.
+  expect(estimateTokens(await compact(items, 4_000))).toBeLessThan(2_000);
+});
+
+test("trims recent tool results when the tail alone overflows", async () => {
+  summaries.length = 0;
+  const items = history(3, 30_000); // three results of about a full 8k window each
+  const compacted = await createCompactor({ contextTokens: 8_000, summarize })(items);
+  expect(estimateTokens(compacted)).toBeLessThan(6_000);
+});

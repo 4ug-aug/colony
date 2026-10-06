@@ -557,3 +557,29 @@ test("runCursorAgent splits long reasoning into segments so none is truncated", 
   expect([...segments.values()].join("\n\n")).toBe(full);
   for (const text of segments.values()) expect(text.length).toBeLessThan(4_000);
 });
+
+test("runCursorAgent ends with the whole answer when it was split into segments", async () => {
+  const full = Array.from({ length: 12 }, (_, index) => `Paragraph ${index}: ${"the fix lands in the gateway ".repeat(30).trim()}.`).join("\n\n");
+  const steps: Step[] = [];
+  const createAgent: CursorAgentFactory = async () => ({
+    async send() {
+      return {
+        async *stream() {
+          yield { type: "assistant", message: { content: [{ type: "text", text: full }] } } as CursorSdkMessage;
+        },
+        async wait() {
+          return { status: "finished", result: full };
+        },
+      };
+    },
+    async [Symbol.asyncDispose]() {},
+  });
+
+  await runCursorAgent(
+    { task: "t", instructions: "i", agentId: "software-engineer", apiKey: "k", model: "composer-2.5" },
+    { createAgent, onStep: (step) => steps.push(step) },
+  );
+
+  // The Chamber reply is the last message step.
+  expect(steps.findLast((step) => step.kind === "message")?.text).toBe(full);
+});

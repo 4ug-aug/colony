@@ -82,13 +82,14 @@ export function createCompactor(options: {
   summarize: (transcript: string) => Promise<string>;
   onCompact?: (event: CompactionEvent) => void;
 }) {
-  const limit = options.contextTokens * COMPACT_AT;
   // Any single result is capped at about a quarter of the window (chars/4 = tokens).
   const maxResultChars = options.contextTokens;
   let trimReported = false;
   let done: { cut: number; marker: string; replacement: AgentInputItem[] } | undefined;
 
-  return async (items: AgentInputItem[]): Promise<AgentInputItem[]> => {
+  /** `reservedTokens`: instructions and tool definitions sent alongside the items. */
+  return async (items: AgentInputItem[], reservedTokens = 0): Promise<AgentInputItem[]> => {
+    const limit = options.contextTokens * COMPACT_AT - reservedTokens;
     const beforeTokens = estimateTokens(items);
     if (beforeTokens <= limit && !done) return items;
 
@@ -121,6 +122,9 @@ export function createCompactor(options: {
         summarized = true;
       }
     }
+
+    // Last resort: the recent tail alone overflows, so trim its results too.
+    if (estimateTokens(working) > limit) working = working.map((item) => trimResult(item, OLD_RESULT_CHARS));
 
     const afterTokens = estimateTokens(working);
     if (summarized || (!trimReported && afterTokens < beforeTokens)) {

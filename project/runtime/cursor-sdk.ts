@@ -229,6 +229,7 @@ export async function openCursorAgentSession(
     let throttleTimer: ReturnType<typeof setTimeout> | undefined;
 
     const emit = (text: string): void => {
+      lastMessageText = text;
       dependencies.onStep?.({
         kind: "message",
         text: boundStepText(text),
@@ -241,7 +242,6 @@ export async function openCursorAgentSession(
       const text = combineLiveNarration(thinkingText, assistantBuf);
       if (!text || text === lastPublished) return;
       lastPublished = text;
-      lastMessageText = text;
       if (text.length < sealed) sealed = 0;
       let rest = text.slice(sealed);
       while (rest.length > NARRATION_SEGMENT_CHARS) {
