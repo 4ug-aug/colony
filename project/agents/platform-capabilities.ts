@@ -32,6 +32,10 @@ export const GITHUB_PULL_REQUEST_TOOLS = [
   "github.compare",
   "github.get_file",
   "github.get_pull_request",
+  "github.checkout_pull_request",
+  "github.push_to_pull_request",
+  "github.comment_on_pull_request",
+  "github.review_pull_request",
 ] as const;
 
 export const WEB_SEARCH_TOOLS = ["web.search", "web.fetch"] as const;

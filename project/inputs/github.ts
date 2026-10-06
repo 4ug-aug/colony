@@ -47,7 +47,8 @@ async function git(directory: string, args: readonly string[]): Promise<string> 
   return stdout;
 }
 
-async function replaceWorktree(directory: string, source: string): Promise<void> {
+/** Replaces everything but `.git` in `directory` with the contents of `source`. */
+export async function replaceWorktree(directory: string, source: string): Promise<void> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.name === ".git") continue;
     await rm(join(directory, entry.name), { recursive: true, force: true });
@@ -59,19 +60,41 @@ async function replaceWorktree(directory: string, source: string): Promise<void>
   }
 }
 
+const untar = async (archive: string, directory: string): Promise<void> => {
+  const process = Bun.spawn(["tar", "-xzf", archive, "-C", directory, "--strip-components=1"], {
+    env: { PATH: Bun.env.PATH },
+    stderr: "pipe",
+  });
+  if (await process.exited) throw new Error(await new Response(process.stderr).text());
+};
+
+/** Downloads one commit's files into `directory`, without git history. */
+export async function extractGitHubCommit(options: {
+  octokit: Octokit;
+  repository: { owner: string; repo: string };
+  sha: string;
+  directory: string;
+  extract?: (archive: string, directory: string) => Promise<void>;
+}): Promise<void> {
+  const archive = join(options.directory, "repository.tar.gz");
+  const response = await options.octokit.rest.repos.downloadTarballArchive({
+    ...options.repository,
+    ref: options.sha,
+  });
+  await Bun.write(archive, archiveBody(response.data));
+  try {
+    await (options.extract ?? untar)(archive, options.directory);
+  } finally {
+    await rm(archive, { force: true });
+  }
+}
+
 export function createGitHubRepositoryCheckoutSource(options: {
   octokit: Octokit;
   /** Workspace default base; used to mint a missing `sweat/issue/*` ref. */
   fallbackRevision?: string;
   extract?: (archive: string, directory: string) => Promise<void>;
 }): RepositoryCheckoutSource {
-  const extract = options.extract ?? (async (archive, directory) => {
-    const process = Bun.spawn(["tar", "-xzf", archive, "-C", directory, "--strip-components=1"], {
-      env: { PATH: Bun.env.PATH },
-      stderr: "pipe",
-    });
-    if (await process.exited) throw new Error(await new Response(process.stderr).text());
-  });
 
   return {
     provider: "github",
@@ -111,19 +134,14 @@ export function createGitHubRepositoryCheckoutSource(options: {
           return sha;
         }
       };
-      const extractRef = async (sha: string, into: string): Promise<void> => {
-        const archive = join(into, "repository.tar.gz");
-        const response = await options.octokit.rest.repos.downloadTarballArchive({
-          ...repository,
-          ref: sha,
+      const extractRef = (sha: string, into: string) =>
+        extractGitHubCommit({
+          octokit: options.octokit,
+          repository,
+          sha,
+          directory: into,
+          extract: options.extract,
         });
-        await Bun.write(archive, archiveBody(response.data));
-        try {
-          await extract(archive, into);
-        } finally {
-          await rm(archive, { force: true });
-        }
-      };
 
       const sha = await commitSha(input.revision, true);
       await extractRef(sha, directory);
