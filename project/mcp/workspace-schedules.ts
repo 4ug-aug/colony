@@ -18,6 +18,12 @@ export interface WorkspaceSchedulesPort {
     input: Record<string, unknown>,
     responsibleAccountId: string,
   ): WorkspaceSchedule;
+  /** Changes only the fields given; validates them like createSchedule. */
+  updateSchedule(
+    id: string,
+    input: Record<string, unknown>,
+    responsibleAccountId: string,
+  ): WorkspaceSchedule;
 }
 
 const textResult = (value: unknown) => ({
@@ -64,6 +70,24 @@ export function createWorkspaceSchedulesMcpUpstream(options: {
             required: ["name", "task", "cronExpression", "timezone"],
           },
         },
+        {
+          name: "workspace.update_schedule",
+          description:
+            "Change a Schedule by id. Only the fields you pass change. Set `state` to `paused` to stop it, `active` to resume it, or `archived` to retire it. An archived Schedule can only come back paused.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "Schedule id from workspace.list_schedules." },
+              name: { type: "string", description: "Short name, at most 50 characters." },
+              task: { type: "string", description: "What the agent should do on every run." },
+              cronExpression: { type: "string", description: "Five-field cron." },
+              timezone: { type: "string", description: "IANA timezone the cron is read in." },
+              agentDefinitionId: { type: "string", description: "Agent id (slug) to run." },
+              state: { type: "string", enum: ["active", "paused", "archived"] },
+            },
+            required: ["id"],
+          },
+        },
       ];
     },
     async callTool(name, args) {
@@ -80,6 +104,13 @@ export function createWorkspaceSchedulesMcpUpstream(options: {
             options.responsibleAccountId,
           ),
         );
+      if (name === "workspace.update_schedule") {
+        const { id, ...input } = args;
+        if (typeof id !== "string" || !id) throw new Error("id is required");
+        return textResult(
+          options.port.updateSchedule(id, input, options.responsibleAccountId),
+        );
+      }
       throw new Error(`Unknown tool: ${name}`);
     },
   };

@@ -24,6 +24,7 @@ export const WORKSPACE_CONSULTATION_TOOLS = ["workspace.ask_agent"] as const;
 export const WORKSPACE_SCHEDULE_TOOLS = [
   "workspace.list_schedules",
   "workspace.create_schedule",
+  "workspace.update_schedule",
 ] as const;
 
 export const GITHUB_PULL_REQUEST_TOOLS = [

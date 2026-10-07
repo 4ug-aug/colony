@@ -131,6 +131,7 @@ export const capabilityPresentation: Record<
     tools: {
       "workspace.list_schedules": "List schedules",
       "workspace.create_schedule": "Create schedules",
+      "workspace.update_schedule": "Change, pause, and archive schedules",
     },
   },
   web: {
