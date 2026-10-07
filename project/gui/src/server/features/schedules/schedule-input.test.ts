@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { newScheduleInput } from './schedule-input'
+import { newScheduleInput, scheduleUpdateInput } from './schedule-input'
 
 const known = (id: string) => id === 'antboy'
 const body = {
@@ -28,5 +28,29 @@ test('a new schedule rejects what an agent could get wrong', () => {
   expect(error({ name: '' })).toBe('Invalid schedule name or task')
   expect(error({ agentDefinitionId: 'ghost' })).toBe('Unknown agent definition')
   expect(error({ cronExpression: 'every morning' })).toBeString()
+  expect(error({ timezone: 'Mars/Olympus' })).toBeString()
+})
+
+const current = { cronExpression: '0 9 * * 1-5', timezone: 'Europe/Copenhagen' }
+
+test('a schedule update keeps only the fields given, trimmed', () => {
+  expect(
+    scheduleUpdateInput({ task: ' Summarise today ', state: 'paused' }, current, Date.now(), known),
+  ).toEqual({ task: 'Summarise today', state: 'paused' })
+})
+
+test('a schedule update rejects what an agent could get wrong', () => {
+  const error = (patch: Record<string, unknown>) => {
+    try {
+      scheduleUpdateInput(patch, current, Date.now(), known)
+    } catch (reason) {
+      return (reason as Error).message
+    }
+  }
+  expect(error({ name: ' ' })).toBe('Invalid schedule name')
+  expect(error({ task: 7 })).toBe('Invalid schedule task')
+  expect(error({ agentDefinitionId: 'ghost' })).toBe('Unknown agent definition')
+  expect(error({ state: 'deleted' })).toBe('Invalid schedule state')
+  // A new timezone is checked against the cron the schedule already has.
   expect(error({ timezone: 'Mars/Olympus' })).toBeString()
 })

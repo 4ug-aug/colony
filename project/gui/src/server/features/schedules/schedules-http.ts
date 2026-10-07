@@ -1,13 +1,9 @@
-import { previewCron } from '#/features/schedules/cron'
 import type {
   AgentDefinitionSummary,
   WorkspaceServerMessage,
 } from '#/server/protocol'
 import type { RoomUser } from '#/server/features/rooms/room-store'
-import {
-  type Schedule,
-  type ScheduleStore,
-} from './schedule-store'
+import type { ScheduleStore } from './schedule-store'
 import {
   ScheduleActiveRunError,
   type ScheduleRunner,
@@ -17,7 +13,7 @@ import {
   type RunSummary,
 } from '#/server/features/runs/run-control'
 import { json, readBody } from '#/server/http/respond'
-import { newScheduleInput } from './schedule-input'
+import { newScheduleInput, scheduleUpdateInput } from './schedule-input'
 
 export function createSchedulesHttp(deps: {
   scheduleStore: ScheduleStore
@@ -77,69 +73,9 @@ export function createSchedulesHttp(deps: {
       const body = await readBody(request)
       if (!body) return json({ error: 'Invalid schedule' }, 400)
       try {
-        const input = {
-          ...(body.name === undefined
-            ? {}
-            : {
-                name: typeof body.name === 'string' ? body.name.trim() : '',
-              }),
-          ...(body.task === undefined
-            ? {}
-            : {
-                task: typeof body.task === 'string' ? body.task.trim() : '',
-              }),
-          ...(body.agentDefinitionId === undefined
-            ? {}
-            : { agentDefinitionId: body.agentDefinitionId as string }),
-          ...(body.cronExpression === undefined
-            ? {}
-            : {
-                cronExpression:
-                  typeof body.cronExpression === 'string'
-                    ? body.cronExpression.trim()
-                    : '',
-              }),
-          ...(body.timezone === undefined
-            ? {}
-            : {
-                timezone:
-                  typeof body.timezone === 'string'
-                    ? body.timezone.trim()
-                    : '',
-              }),
-          ...(body.state === undefined
-            ? {}
-            : { state: body.state as Schedule['state'] }),
-        }
-        if (
-          input.name !== undefined &&
-          (!input.name || input.name.length > 50)
+        const input = scheduleUpdateInput(body, schedule, Date.now(), (id) =>
+          knownAgent(id, user.id),
         )
-          throw new Error('Invalid schedule name')
-        if (
-          input.task !== undefined &&
-          (!input.task || input.task.length > 10_000)
-        )
-          throw new Error('Invalid schedule task')
-        if (
-          body.agentDefinitionId !== undefined &&
-          !knownAgent(body.agentDefinitionId, user.id)
-        )
-          throw new Error('Unknown agent definition')
-        if (
-          input.cronExpression !== undefined ||
-          input.timezone !== undefined
-        )
-          previewCron(
-            input.cronExpression ?? schedule.cronExpression,
-            input.timezone ?? schedule.timezone,
-            Date.now(),
-          )
-        if (
-          input.state !== undefined &&
-          !['active', 'paused', 'archived'].includes(input.state)
-        )
-          throw new Error('Invalid schedule state')
         const updated = deps.scheduleStore.updateSchedule(
           schedule.id,
           input,

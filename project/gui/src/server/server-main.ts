@@ -32,7 +32,10 @@ import {
   createSqliteScheduleStore,
   type Schedule,
 } from './features/schedules/schedule-store'
-import { newScheduleInput } from './features/schedules/schedule-input'
+import {
+  newScheduleInput,
+  scheduleUpdateInput,
+} from './features/schedules/schedule-input'
 import { createAgentDefinitionStore } from './features/agents/agent-definition-store'
 import { createWorkspaceConnections } from './features/workspace/workspace-connections'
 import {
@@ -160,7 +163,10 @@ if (import.meta.main) {
     },
   }
   // The coordinator fills these in once it can broadcast.
-  const scheduleNotify = { onCreated: (_schedule: Schedule) => {} }
+  const scheduleNotify = {
+    onCreated: (_schedule: Schedule) => {},
+    onChanged: (_schedule: Schedule) => {},
+  }
   const messages = createRoomMessageHub(store)
   const attachmentsDirectory = attachmentDirectory(
     process.env.SWEAT_DATABASE_PATH ?? './sweat.sqlite',
@@ -499,6 +505,25 @@ if (import.meta.main) {
                 createdAt: now,
               })
               scheduleNotify.onCreated(schedule)
+              return schedule
+            },
+            updateSchedule(id, input, responsibleAccountId) {
+              const current = scheduleStore.getSchedule(id)
+              if (!current) throw new Error('Schedule not found')
+              const now = Date.now()
+              const schedule = scheduleStore.updateSchedule(
+                id,
+                scheduleUpdateInput(input, current, now, (agentId) =>
+                  agentDefinitionStore
+                    .listVisible(responsibleAccountId)
+                    .some(
+                      (agent) =>
+                        agent.id === agentId && agent.archivedAt === undefined,
+                    ),
+                ),
+                now,
+              )
+              scheduleNotify.onChanged(schedule)
               return schedule
             },
           },

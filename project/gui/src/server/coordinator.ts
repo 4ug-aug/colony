@@ -299,7 +299,10 @@ export function createCoordinator(options: {
   /** Filled in here: Consultations need the Chambers this coordinator owns. */
   consultations?: Pick<WorkspaceConsultationsPort, 'ask'>
   /** Filled in here so Schedules created outside HTTP still reach clients. */
-  scheduleNotify?: { onCreated: (schedule: Schedule) => void }
+  scheduleNotify?: {
+    onCreated: (schedule: Schedule) => void
+    onChanged: (schedule: Schedule) => void
+  }
   issueNotify?: {
     onCreated: (issue: Issue) => void
     onChanged: (issue: Issue) => void
@@ -357,9 +360,12 @@ export function createCoordinator(options: {
   }
   const broadcastWorkspace = (message: WorkspaceServerMessage): void =>
     publish('workspace', message)
-  if (options.scheduleNotify)
+  if (options.scheduleNotify) {
     options.scheduleNotify.onCreated = (schedule) =>
       broadcastWorkspace({ type: 'schedule.created', schedule })
+    options.scheduleNotify.onChanged = (schedule) =>
+      broadcastWorkspace({ type: 'schedule.changed', schedule })
+  }
   if (options.issueNotify) {
     options.issueNotify.onCreated = (issue) =>
       broadcastWorkspace({ type: 'issue.created', issue })

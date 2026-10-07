@@ -23,6 +23,7 @@ test("create_schedule runs as the calling agent for the Responsible Account unle
         created.push([input, responsibleAccountId]);
         return schedule;
       },
+      updateSchedule: () => schedule,
     },
     responsibleAccountId: "ada",
     agentDefinitionId: "antboy",
@@ -46,7 +47,38 @@ test("create_schedule runs as the calling agent for the Responsible Account unle
   ]);
   expect(
     (await upstream.listTools()).map(({ name }) => name),
-  ).toEqual(["workspace.list_schedules", "workspace.create_schedule"]);
+  ).toEqual([
+    "workspace.list_schedules",
+    "workspace.create_schedule",
+    "workspace.update_schedule",
+  ]);
   const listed = await upstream.callTool("workspace.list_schedules", {});
   expect(JSON.stringify(listed)).toContain("Standup digest");
+});
+
+test("update_schedule passes only the named schedule and fields on for the Responsible Account", async () => {
+  const updated: [string, Record<string, unknown>, string][] = [];
+  const upstream = createWorkspaceSchedulesMcpUpstream({
+    port: {
+      listSchedules: () => [schedule],
+      createSchedule: () => schedule,
+      updateSchedule: (id, input, responsibleAccountId) => {
+        updated.push([id, input, responsibleAccountId]);
+        return { ...schedule, state: "paused" };
+      },
+    },
+    responsibleAccountId: "ada",
+    agentDefinitionId: "antboy",
+  });
+
+  const result = await upstream.callTool("workspace.update_schedule", {
+    id: "schedule-1",
+    state: "paused",
+  });
+
+  expect(updated).toEqual([["schedule-1", { state: "paused" }, "ada"]]);
+  expect(JSON.stringify(result)).toContain("paused");
+  await expect(upstream.callTool("workspace.update_schedule", { state: "paused" })).rejects.toThrow(
+    "id is required",
+  );
 });
