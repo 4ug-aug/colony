@@ -341,6 +341,64 @@ export function createModelProvider(
   };
 }
 
+const isContextOverflow = (error: unknown): boolean =>
+  error instanceof Error && /maximum context length|context length exceeded/i.test(error.message);
+
+/**
+ * The compactor estimates tokens; the server counts them. When the server says a
+ * request is too long, shrink the input as far as it goes and try once more.
+ */
+export function retryOnContextOverflow(
+  model: Model,
+  shrink: (input: AgentInputItem[]) => Promise<AgentInputItem[]>,
+): Model {
+  const smaller = async (request: ModelRequest, error: unknown): Promise<ModelRequest> => {
+    if (!isContextOverflow(error) || typeof request.input === "string") throw error;
+    return { ...request, input: await shrink(request.input) };
+  };
+  const stillTooLong = (error: unknown): unknown =>
+    isContextOverflow(error)
+      ? new Error(
+          `${(error as Error).message} Compacting the conversation did not make it fit, so the instructions and tools alone are likely too large for this model: grant this agent fewer tools or raise the context window.`,
+        )
+      : error;
+  return {
+    ...(model.getRetryAdvice ? { getRetryAdvice: (args) => model.getRetryAdvice!(args) } : {}),
+    async getResponse(request) {
+      let retry: ModelRequest;
+      try {
+        return await model.getResponse(request);
+      } catch (error) {
+        retry = await smaller(request, error);
+      }
+      try {
+        return await model.getResponse(retry);
+      } catch (error) {
+        throw stillTooLong(error);
+      }
+    },
+    async *getStreamedResponse(request) {
+      let started = false;
+      let retry: ModelRequest;
+      try {
+        for await (const event of model.getStreamedResponse(request)) {
+          started = true;
+          yield event;
+        }
+        return;
+      } catch (error) {
+        if (started) throw error;
+        retry = await smaller(request, error);
+      }
+      try {
+        yield* model.getStreamedResponse(retry);
+      } catch (error) {
+        throw stillTooLong(error);
+      }
+    },
+  };
+}
+
 function createSummarizer(model: OpenAICompatibleModel) {
   const client = new OpenAI({ apiKey: model.apiKey, baseURL: normalizeModelBaseUrl(model.baseUrl) });
   return async (transcript: string): Promise<string> => {
@@ -464,9 +522,14 @@ export async function runAgent(
 
   try {
     const result = await new Runner({
-      modelProvider:
-        dependencies.modelProvider ??
-        createModelProvider(request.model),
+      modelProvider: {
+        getModel: async (name) =>
+          retryOnContextOverflow(
+            await (dependencies.modelProvider ?? createModelProvider(request.model)).getModel(name),
+            // Reserving the whole window forces every step: summarize, then trim every result.
+            (input) => compact(input, compactorOptions.contextTokens),
+          ),
+      },
       tracingDisabled: true,
       // Hallucinated/ungranted tool names (often from role text) should guide
       // the model, not kill the run.
