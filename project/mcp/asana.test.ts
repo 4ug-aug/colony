@@ -390,21 +390,20 @@ test("Asana configuration must be complete and creates the scoped adapter only w
   ]);
 });
 
-test("Asana lists the workspace's people so a task can be assigned to a colleague", async () => {
+test("Asana lists only the configured project's members, not the whole workspace", async () => {
   const urls: string[] = [];
   const upstream = createAsanaMcpUpstream({
     apiToken: token,
     projectGid,
     fetch: async (url) => {
       urls.push(String(url));
-      if (String(url).includes("/projects/"))
-        return Response.json({ data: { workspace: { gid: "ws-1" } } });
       return Response.json({
-        data: [
-          { gid: "user-1", name: "Mads W. Hansen", email: "mwh@example.test" },
-          { gid: "user-2", name: "Ada Lovelace", email: "ada@example.test" },
-        ],
-        next_page: { offset: "page-2" },
+        data: {
+          members: [
+            { gid: "user-1", name: "Mads W. Hansen", email: "mwh@example.test" },
+            { gid: "user-2", name: "Ada Lovelace" },
+          ],
+        },
       });
     },
   });
@@ -412,24 +411,22 @@ test("Asana lists the workspace's people so a task can be assigned to a colleagu
   await expect(upstream.callTool("asana.list_users", {})).resolves.toEqual(
     text(
       [
-        "2 people in the Asana workspace. Pass an id or email to asana.assign_task.",
+        "2 members of the Asana project. Pass an id or email to asana.assign_task.",
         "",
         "- Mads W. Hansen · mwh@example.test · id user-1",
-        "- Ada Lovelace · ada@example.test · id user-2",
-        "",
-        'More people: call asana.list_users with offset "page-2".',
+        "- Ada Lovelace · id user-2",
       ].join("\n"),
     ),
   );
-  await upstream.callTool("asana.list_users", { offset: "page-2" });
   expect(urls).toEqual([
-    `https://app.asana.com/api/1.0/projects/${projectGid}?opt_fields=workspace.gid`,
-    "https://app.asana.com/api/1.0/workspaces/ws-1/users?limit=100&opt_fields=name%2Cemail",
-    "https://app.asana.com/api/1.0/workspaces/ws-1/users?limit=100&opt_fields=name%2Cemail&offset=page-2",
+    `https://app.asana.com/api/1.0/projects/${projectGid}?opt_fields=members.name%2Cmembers.email`,
   ]);
+  await expect(upstream.callTool("asana.list_users", { offset: "x" })).rejects.toThrow(
+    "Invalid Asana tool arguments",
+  );
 });
 
-test("Asana assigns a task in the project to a person, or unassigns it", async () => {
+test("Asana assigns a task only to a project member, or unassigns it", async () => {
   const writes: unknown[] = [];
   const upstream = createAsanaMcpUpstream({
     apiToken: token,
@@ -438,6 +435,10 @@ test("Asana assigns a task in the project to a person, or unassigns it", async (
       if (String(url).endsWith("?opt_fields=memberships.project.gid"))
         return Response.json({
           data: { memberships: [{ project: { gid: String(url).includes("other") ? "x" : projectGid } }] },
+        });
+      if (String(url).includes("members.email"))
+        return Response.json({
+          data: { members: [{ gid: "user-1", name: "Mads W. Hansen", email: "MWH@example.test" }] },
         });
       const body = JSON.parse(String(init?.body));
       writes.push([String(url), init?.method, body]);
@@ -454,17 +455,16 @@ test("Asana assigns a task in the project to a person, or unassigns it", async (
     upstream.callTool("asana.assign_task", { taskGid: "task-1", assignee: null }),
   ).resolves.toEqual(text("Unassigned task task-1."));
   await expect(
+    upstream.callTool("asana.assign_task", { taskGid: "task-1", assignee: "stranger@example.test" }),
+  ).rejects.toThrow("stranger@example.test is not a member of the Asana project; use asana.list_users");
+  await expect(
     upstream.callTool("asana.assign_task", { taskGid: "other", assignee: "user-1" }),
   ).rejects.toThrow("Asana task is outside the configured project");
   await expect(upstream.callTool("asana.assign_task", { taskGid: "task-1" })).rejects.toThrow(
     "Asana assignee must be a user id, an email, or null",
   );
   expect(writes).toEqual([
-    [
-      "https://app.asana.com/api/1.0/tasks/task-1?opt_fields=assignee.name",
-      "PUT",
-      { data: { assignee: "mwh@example.test" } },
-    ],
+    ["https://app.asana.com/api/1.0/tasks/task-1?opt_fields=assignee.name", "PUT", { data: { assignee: "user-1" } }],
     ["https://app.asana.com/api/1.0/tasks/task-1?opt_fields=assignee.name", "PUT", { data: { assignee: null } }],
   ]);
 });
