@@ -18,6 +18,7 @@ export const capabilityPresentation: Record<
       "workspace.create_issue": "Create issues",
       "workspace.update_issue": "Update issues",
       "workspace.assign_issue": "Assign issues",
+      "workspace.list_people": "List people",
     },
   },
   "linear.issues": {

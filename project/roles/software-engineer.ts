@@ -17,6 +17,7 @@ ${WEB_TOOL_INSTRUCTIONS}`,
         "workspace.create_issue",
         "workspace.update_issue",
         "workspace.assign_issue",
+        "workspace.list_people",
       ],
     },
     {

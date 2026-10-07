@@ -12,6 +12,7 @@ test("the software engineer requests scoped issue and pull request tools", () =>
       "workspace.create_issue",
       "workspace.update_issue",
       "workspace.assign_issue",
+      "workspace.list_people",
     ],
   });
   expect(

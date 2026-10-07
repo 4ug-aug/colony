@@ -369,6 +369,8 @@ if (import.meta.main) {
               kind: 'account' as const,
               id: user.id,
               name: user.displayName || user.name,
+              ...(user.username ? { username: user.username } : {}),
+              ...(user.email ? { email: user.email } : {}),
             })),
           ],
         }),
