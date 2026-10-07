@@ -814,6 +814,70 @@ test("runAgent compacts an oversized session before calling the model", async ()
   expect(steps.find((step) => step.tool === "compact_context" && step.kind === "tool_result")?.text).toContain("Summarized context");
 });
 
+const contextOverflow = () =>
+  Response.json(
+    {
+      error: {
+        message:
+          "This model's maximum context length is 32768 tokens. However, your prompt contains at least 32769 input tokens.",
+        type: "BadRequestError",
+        param: "input_tokens",
+        code: 400,
+      },
+    },
+    { status: 400 },
+  );
+
+const overflowRun = async (replies: Array<() => Response>) => {
+  const inputs: string[] = [];
+  const client = new OpenAI({
+    apiKey: "test-key",
+    baseURL: "https://models.example/v1",
+    maxRetries: 0,
+    fetch: async (_url, init) => {
+      inputs.push(JSON.stringify(JSON.parse(String(init?.body ?? "{}")).input));
+      return replies[inputs.length - 1]!();
+    },
+  });
+  // Fits the chars/4 estimate, but the server counts more tokens than that.
+  const session = new MemorySession({
+    initialItems: [
+      { role: "user", content: "List the people." },
+      { type: "function_call", callId: "c1", name: "asana_list_users", arguments: "{}" },
+      { type: "function_call_result", callId: "c1", name: "asana_list_users", status: "completed", output: "1209876543210987 ".repeat(1_000) },
+    ] as AgentInputItem[],
+  });
+  const run = runAgent(
+    {
+      task: "Assign it to MWH.",
+      instructions: "Be brief.",
+      agentId: "antboy",
+      model: { baseUrl: "https://models.example/v1", apiKey: "test-key", model: "test-model", contextTokens: 32_000 },
+    },
+    {
+      modelProvider: { getModel: () => new CompatibleResponsesModel(client, "test-model") },
+      session,
+      summarize: async () => "Looked up the Asana people.",
+    },
+  );
+  return { inputs, run };
+};
+
+test("runAgent compacts harder and retries when the model says the context is too long", async () => {
+  const { inputs, run } = await overflowRun([contextOverflow, () => responsesStream("resp-1", "done")]);
+
+  expect(await run).toBe("done");
+  expect(inputs).toHaveLength(2);
+  expect(inputs[1]!.length).toBeLessThan(inputs[0]!.length / 4);
+  expect(inputs[1]).toContain("Assign it to MWH.");
+});
+
+test("runAgent says what to change when even a compacted request does not fit", async () => {
+  const { run } = await overflowRun([contextOverflow, contextOverflow]);
+
+  await expect(run).rejects.toThrow("grant this agent fewer tools");
+});
+
 test("openaiSandboxCapabilities keeps filesystem when shell is denied", () => {
   const withShell = openaiSandboxCapabilities(true).map((capability) => capability.type);
   const withoutShell = openaiSandboxCapabilities(false).map(
