@@ -4,6 +4,7 @@ export const WORKSPACE_ISSUE_TOOLS = [
   "workspace.create_issue",
   "workspace.update_issue",
   "workspace.assign_issue",
+  "workspace.list_people",
 ] as const;
 
 export const WORKSPACE_ROOM_TOOLS = [

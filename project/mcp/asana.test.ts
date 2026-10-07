@@ -296,6 +296,8 @@ test("Asana exposes only its seven granted tools and keeps token errors safe", a
       "asana.get_task",
       "asana.get_task_comments",
       "asana.set_task_completion",
+      "asana.list_users",
+      "asana.assign_task",
       "asana.add_task_comment",
     ],
     expiresAt: new Date(Date.now() + 60_000),
@@ -312,6 +314,8 @@ test("Asana exposes only its seven granted tools and keeps token errors safe", a
           "asana.get_task",
           "asana.get_task_comments",
           "asana.set_task_completion",
+          "asana.list_users",
+          "asana.assign_task",
           "asana.add_task_comment",
         ]
       : [],
@@ -380,6 +384,87 @@ test("Asana configuration must be complete and creates the scoped adapter only w
     "asana.get_task",
     "asana.get_task_comments",
     "asana.set_task_completion",
+    "asana.list_users",
+    "asana.assign_task",
     "asana.add_task_comment",
+  ]);
+});
+
+test("Asana lists the workspace's people so a task can be assigned to a colleague", async () => {
+  const urls: string[] = [];
+  const upstream = createAsanaMcpUpstream({
+    apiToken: token,
+    projectGid,
+    fetch: async (url) => {
+      urls.push(String(url));
+      if (String(url).includes("/projects/"))
+        return Response.json({ data: { workspace: { gid: "ws-1" } } });
+      return Response.json({
+        data: [
+          { gid: "user-1", name: "Mads W. Hansen", email: "mwh@example.test" },
+          { gid: "user-2", name: "Ada Lovelace", email: "ada@example.test" },
+        ],
+        next_page: { offset: "page-2" },
+      });
+    },
+  });
+
+  await expect(upstream.callTool("asana.list_users", {})).resolves.toEqual(
+    text(
+      [
+        "2 people in the Asana workspace. Pass an id or email to asana.assign_task.",
+        "",
+        "- Mads W. Hansen · mwh@example.test · id user-1",
+        "- Ada Lovelace · ada@example.test · id user-2",
+        "",
+        'More people: call asana.list_users with offset "page-2".',
+      ].join("\n"),
+    ),
+  );
+  await upstream.callTool("asana.list_users", { offset: "page-2" });
+  expect(urls).toEqual([
+    `https://app.asana.com/api/1.0/projects/${projectGid}?opt_fields=workspace.gid`,
+    "https://app.asana.com/api/1.0/workspaces/ws-1/users?limit=100&opt_fields=name%2Cemail",
+    "https://app.asana.com/api/1.0/workspaces/ws-1/users?limit=100&opt_fields=name%2Cemail&offset=page-2",
+  ]);
+});
+
+test("Asana assigns a task in the project to a person, or unassigns it", async () => {
+  const writes: unknown[] = [];
+  const upstream = createAsanaMcpUpstream({
+    apiToken: token,
+    projectGid,
+    fetch: async (url, init) => {
+      if (String(url).endsWith("?opt_fields=memberships.project.gid"))
+        return Response.json({
+          data: { memberships: [{ project: { gid: String(url).includes("other") ? "x" : projectGid } }] },
+        });
+      const body = JSON.parse(String(init?.body));
+      writes.push([String(url), init?.method, body]);
+      return Response.json({
+        data: { gid: "task-1", assignee: body.data.assignee ? { name: "Mads W. Hansen" } : null },
+      });
+    },
+  });
+
+  await expect(
+    upstream.callTool("asana.assign_task", { taskGid: "task-1", assignee: "mwh@example.test" }),
+  ).resolves.toEqual(text("Assigned task task-1 to Mads W. Hansen."));
+  await expect(
+    upstream.callTool("asana.assign_task", { taskGid: "task-1", assignee: null }),
+  ).resolves.toEqual(text("Unassigned task task-1."));
+  await expect(
+    upstream.callTool("asana.assign_task", { taskGid: "other", assignee: "user-1" }),
+  ).rejects.toThrow("Asana task is outside the configured project");
+  await expect(upstream.callTool("asana.assign_task", { taskGid: "task-1" })).rejects.toThrow(
+    "Asana assignee must be a user id, an email, or null",
+  );
+  expect(writes).toEqual([
+    [
+      "https://app.asana.com/api/1.0/tasks/task-1?opt_fields=assignee.name",
+      "PUT",
+      { data: { assignee: "mwh@example.test" } },
+    ],
+    ["https://app.asana.com/api/1.0/tasks/task-1?opt_fields=assignee.name", "PUT", { data: { assignee: null } }],
   ]);
 });

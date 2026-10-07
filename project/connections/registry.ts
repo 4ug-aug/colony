@@ -89,6 +89,8 @@ const asanaTools = [
   'asana.get_task',
   'asana.get_task_comments',
   'asana.set_task_completion',
+  'asana.list_users',
+  'asana.assign_task',
   'asana.add_task_comment',
 ] as const
 

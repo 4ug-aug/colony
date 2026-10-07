@@ -18,7 +18,11 @@ export type WorkspaceIssueActor =
 
 export type WorkspaceIssueOwner = WorkspaceIssueActor;
 
-export type AssignableOwner = WorkspaceIssueOwner & { name: string };
+export type AssignableOwner = WorkspaceIssueOwner & {
+  name: string;
+  username?: string;
+  email?: string;
+};
 
 export type WorkspaceIssueCreate = {
   title: string;
@@ -330,10 +334,42 @@ export function createWorkspaceIssuesMcpUpstream(options: {
             required: ["ref", "owner"],
           },
         },
+        {
+          name: "workspace.list_people",
+          description:
+            "List the people (accounts) in the Colony workspace with name, username, email, and account id. Use it to find a colleague by name, initials, or email; use workspace.list_agents for agents.",
+          inputSchema: { type: "object", properties: {} },
+        },
       ];
     },
 
     async callTool(name, args) {
+      if (name === "workspace.list_people") {
+        const people = assignableOwners().filter(
+          (owner) => owner.kind === "account",
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `${people.length} people in the Colony workspace. Assign an Issue to one with owner { "kind": "account", "id": "<id>" }.`,
+                "",
+                ...people.map((person) =>
+                  [
+                    `- ${person.name}`,
+                    person.username && `@${person.username}`,
+                    person.email,
+                    `id ${person.id}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                ),
+              ].join("\n"),
+            },
+          ],
+        };
+      }
       if (name === "workspace.list_issues") {
         const status = asStatus(args.status);
         if (args.status !== undefined && status === undefined)

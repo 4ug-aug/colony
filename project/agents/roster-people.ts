@@ -18,6 +18,7 @@ export const capabilityPresentation: Record<
       "workspace.create_issue": "Create issues",
       "workspace.update_issue": "Update issues",
       "workspace.assign_issue": "Assign issues",
+      "workspace.list_people": "List people",
     },
   },
   "linear.issues": {
@@ -38,6 +39,8 @@ export const capabilityPresentation: Record<
       "asana.get_task": "Get task details",
       "asana.get_task_comments": "Read comments",
       "asana.set_task_completion": "Update completion",
+      "asana.list_users": "List people",
+      "asana.assign_task": "Assign tasks",
       "asana.add_task_comment": "Add comments",
     },
   },

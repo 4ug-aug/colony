@@ -79,7 +79,7 @@ function makePort(seed: WorkspaceIssue[] = []): WorkspaceIssuesPort & {
   };
 }
 
-test("listTools returns the five Issue tools", async () => {
+test("listTools returns the Issue tools", async () => {
   const upstream = createWorkspaceIssuesMcpUpstream({ port: makePort() });
   const tools = await upstream.listTools();
   expect(tools.map((tool) => tool.name)).toEqual([
@@ -88,7 +88,33 @@ test("listTools returns the five Issue tools", async () => {
     "workspace.create_issue",
     "workspace.update_issue",
     "workspace.assign_issue",
+    "workspace.list_people",
   ]);
+});
+
+test("list_people shows the workspace's people so an agent can find a colleague", async () => {
+  const upstream = createWorkspaceIssuesMcpUpstream({
+    port: makePort(),
+    listAssignableOwners: () => [
+      { kind: "agent", id: "antboy", name: "Antboy" },
+      { kind: "account", id: "user-1", name: "Mads W. Hansen", username: "mwh", email: "mwh@example.test" },
+      { kind: "account", id: "user-2", name: "Ada" },
+    ],
+  });
+
+  expect(await upstream.callTool("workspace.list_people", {})).toEqual({
+    content: [
+      {
+        type: "text",
+        text: [
+          "2 people in the Colony workspace. Assign an Issue to one with owner { \"kind\": \"account\", \"id\": \"<id>\" }.",
+          "",
+          "- Mads W. Hansen · @mwh · mwh@example.test · id user-1",
+          "- Ada · id user-2",
+        ].join("\n"),
+      },
+    ],
+  });
 });
 
 test("create, assign, and get Issues through MCP tools", async () => {
