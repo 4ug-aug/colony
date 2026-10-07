@@ -519,7 +519,7 @@ test("count cap emits maxSteps real steps then one truncation-marker and no more
     sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
     runtime: { run: async (_sandbox, request) => {
       for (let i = 0; i < 6; i++) {
-        request.onStep?.({ kind: "message", text: `step ${i}`, at: i });
+        request.onStep?.({ kind: "tool_call", tool: "shell", callId: `call-${i}`, text: `step ${i}`, at: i });
       }
       return { exitCode: 0, stdout: "", stderr: "" };
     } },
@@ -538,6 +538,55 @@ test("count cap emits maxSteps real steps then one truncation-marker and no more
   expect(received[2].text).toBe("step 2");
   expect(received[3].kind).toBe("message");
   expect(received[3].text).toBe("[steps truncated: reached maxSteps limit]");
+});
+
+const stepRecorder = (steps: Step[][], maxSteps: number, warm = false) => {
+  const received: Step[] = [];
+  let turn = 0;
+  const emit = (request: { onStep?: (step: Step) => void }) => {
+    for (const step of steps[turn++] ?? []) request.onStep?.(step);
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+  const executor = createRunExecutor({
+    definitions: createInMemoryAgentDefinitionResolver([definition]),
+    sandboxes: { create: async () => ({ id: "sandbox", exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }), dispose: async () => {} }) },
+    runtime: {
+      run: async (_sandbox, request) => emit(request),
+      openWarmSession: async (_sandbox, request) => ({
+        runTurn: async () => emit(request),
+        dispose: async () => {},
+      }),
+    },
+    createId: () => "run-steps",
+  });
+  executor.subscribeSteps((_runId, step) => received.push(step));
+  const id = executor.startRun({ agentDefinitionId: "test-agent", task: "go", maxSteps, ...(warm ? { warm: true, idleTtlMs: 60_000 } : {}) });
+  return { executor, id, received };
+};
+const tool = (i: number): Step => ({ kind: "tool_call", tool: "shell", callId: `call-${i}`, text: `tool ${i}`, at: i });
+const marker = "[steps truncated: reached maxSteps limit]";
+
+test("live snapshots of one message do not use up the step limit", async () => {
+  const snapshots = Array.from({ length: 10 }, (_, i): Step => ({ kind: "message", callId: "narration-0", text: `thinking ${i}`, at: i }));
+  const { executor, id, received } = stepRecorder([[...snapshots, tool(1), tool(2)]], 3);
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(received.map(({ text }) => text)).not.toContain(marker);
+  expect(received.at(-1)?.text).toBe("tool 2");
+});
+
+test("the agent's answer still arrives after the step limit is reached", async () => {
+  const answer: Step = { kind: "message", text: "Done.", at: 9 };
+  const { executor, id, received } = stepRecorder([[tool(1), tool(2), tool(3), tool(4), answer]], 2);
+  await waitFor(() => executor.getRun(id)?.state === "succeeded");
+  expect(received.map(({ text }) => text)).toEqual(["tool 1", "tool 2", marker, "Done."]);
+});
+
+test("each warm turn gets its own step limit", async () => {
+  const { executor, id, received } = stepRecorder([[tool(1), tool(2)], [tool(3), tool(4)]], 2, true);
+  await waitFor(() => executor.getRun(id)?.state === "running" && received.length === 2);
+  await executor.followUp(id, "again");
+  expect(received.map(({ text }) => text)).toEqual(["tool 1", "tool 2", "tool 3", "tool 4"]);
+  await executor.cancelRun(id);
 });
 
 test("per-step text truncation caps at MIN(maxOutputBytes, MAX_STEP_TEXT_BYTES)", async () => {

@@ -236,6 +236,42 @@ export function retainOutput(value: string, maxBytes: number): string {
 
 const MAX_STEP_TEXT_BYTES = 16 * 1024;
 
+const STEPS_TRUNCATED = "[steps truncated: reached maxSteps limit]";
+
+/**
+ * Bounds how many steps one turn records. Live snapshots of one message share a
+ * callId and replace each other, so they count once. Past the limit, messages
+ * still pass: the last one is the agent's answer.
+ */
+function stepLimiter(
+  limits: { maxSteps: number; maxOutputBytes: number },
+  publish: (step: Step) => void,
+) {
+  let count = 0;
+  let truncated = false;
+  let liveCallId: string | undefined;
+  const cap = Math.min(limits.maxOutputBytes, MAX_STEP_TEXT_BYTES);
+  return {
+    onStep(step: Step): void {
+      const replacesLive = step.kind === "message" && step.callId !== undefined && step.callId === liveCallId;
+      liveCallId = step.kind === "message" ? step.callId : undefined;
+      if (!replacesLive) count++;
+      if (count > limits.maxSteps && step.kind !== "message") {
+        if (!truncated) publish({ kind: "message", text: STEPS_TRUNCATED, at: step.at });
+        truncated = true;
+        return;
+      }
+      publish({ ...step, text: tail(step.text, cap) });
+    },
+    /** A new warm turn starts with a fresh budget. */
+    reset(): void {
+      count = 0;
+      truncated = false;
+      liveCallId = undefined;
+    },
+  };
+}
+
 export function createRunExecutor<Input extends RunInput = never>(dependencies: {
   definitions: AgentDefinitionResolver;
   /** One provider, or GitHub access vs container when the operator chose smolvm. */
@@ -277,6 +313,8 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     idleTtlMs: number;
     idleTimer?: ReturnType<typeof setTimeout>;
     turnGate: Promise<void>;
+    /** Starts each follow-up turn with a fresh step budget. */
+    resetSteps: () => void;
   };
   const warm = new Map<string, WarmEntry>();
   let stopping: Promise<void> | undefined;
@@ -458,38 +496,25 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
   const bindTurnHandlers = (
     record: RunRecord<Input>,
     request: Omit<RuntimeRequest, "task">,
-  ): Omit<RuntimeRequest, "task"> => {
-    let stepCount = 0;
-    let stepsTruncated = false;
+  ): { request: Omit<RuntimeRequest, "task">; resetSteps: () => void } => {
+    const steps = stepLimiter(record.effectiveLimits, (step) =>
+      publishStep(record.id, step),
+    );
     return {
-      ...request,
-      onOutput: (chunk) => {
-        const current = store.get(record.id);
-        if (!current || terminal(current.state)) return;
-        store.update(record.id, {
-          [chunk.stream]: retainOutput(
-            current[chunk.stream] + chunk.text,
-            record.effectiveLimits.maxOutputBytes,
-          ),
-        });
-      },
-      onStep: (step) => {
-        if (stepsTruncated) return;
-        if (stepCount >= record.effectiveLimits.maxSteps) {
-          stepsTruncated = true;
-          publishStep(record.id, {
-            kind: "message",
-            text: "[steps truncated: reached maxSteps limit]",
-            at: now(),
+      resetSteps: steps.reset,
+      request: {
+        ...request,
+        onOutput: (chunk) => {
+          const current = store.get(record.id);
+          if (!current || terminal(current.state)) return;
+          store.update(record.id, {
+            [chunk.stream]: retainOutput(
+              current[chunk.stream] + chunk.text,
+              record.effectiveLimits.maxOutputBytes,
+            ),
           });
-          return;
-        }
-        const cap = Math.min(
-          record.effectiveLimits.maxOutputBytes,
-          MAX_STEP_TEXT_BYTES,
-        );
-        stepCount++;
-        publishStep(record.id, { ...step, text: tail(step.text, cap) });
+        },
+        onStep: steps.onStep,
       },
     };
   };
@@ -546,7 +571,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
         turnActive: true,
         waitingOn: undefined,
       });
-      const baseRequest = bindTurnHandlers(record, {
+      const { request: baseRequest, resetSteps } = bindTurnHandlers(record, {
         definition: withEnvironment(snapshot(record.definition), workspace),
         ...(workspace ? { workspace: "/work" } : {}),
         ...(capabilitySession ? { capabilitySession } : {}),
@@ -578,6 +603,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
           capabilitySession,
           idleTtlMs,
           turnGate: Promise.resolve(),
+          resetSteps,
         };
         warm.set(record.id, entry);
         armIdle(record.id, entry);
@@ -713,8 +739,9 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
           startedAt: now(),
           waitingOn: undefined,
         });
-        let stepCount = 0;
-        let stepsTruncated = false;
+        const steps = stepLimiter(record.effectiveLimits, (step) =>
+          publishStep(record.id, step),
+        );
         const runtime = dependencies.runtime.run(sandbox, {
           definition: withEnvironment(snapshot(record.definition), workspace),
           task,
@@ -730,19 +757,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
               ),
             });
           },
-          onStep: (step) => {
-            if (stepsTruncated) return;
-            if (stepCount >= record.effectiveLimits.maxSteps) {
-              stepsTruncated = true;
-              const marker: Step = { kind: "message", text: "[steps truncated: reached maxSteps limit]", at: now() };
-              publishStep(record.id, marker);
-              return;
-            }
-            const cap = Math.min(record.effectiveLimits.maxOutputBytes, MAX_STEP_TEXT_BYTES);
-            const bounded: Step = { ...step, text: tail(step.text, cap) };
-            stepCount++;
-            publishStep(record.id, bounded);
-          },
+          onStep: steps.onStep,
         });
         const timeout = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
@@ -836,6 +851,7 @@ export function createRunExecutor<Input extends RunInput = never>(dependencies: 
     store.update(id, { turnActive: true });
     const turn = (async () => {
       try {
+        entry.resetSteps();
         const result = await entry.session.runTurn(task);
         const current = store.get(id);
         if (!current || terminal(current.state)) return;
