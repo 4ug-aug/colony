@@ -75,6 +75,30 @@ const tools: readonly McpTool[] = [
     },
   },
   {
+    name: "asana.list_users",
+    description:
+      "List people in the Asana workspace with their name, email, and id. Use it to find a colleague (by name, initials, or email) before asana.assign_task; Colony agents are not Asana users.",
+    inputSchema: {
+      type: "object",
+      properties: { offset: { type: "string", minLength: 1 } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "asana.assign_task",
+    description:
+      "Assign a task in the configured Asana project to a person, by the id or email from asana.list_users. Pass null to unassign.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskGid: { type: "string", minLength: 1 },
+        assignee: { type: ["string", "null"] },
+      },
+      required: ["taskGid", "assignee"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "asana.add_task_comment",
     description: "Add a comment to a task in the configured Asana project.",
     inputSchema: {
@@ -104,6 +128,7 @@ type AsanaTask = {
   modified_at?: string;
   permalink_url?: string;
 };
+type AsanaUser = { gid: string; name?: string; email?: string };
 type AsanaStory = {
   text?: string;
   resource_subtype?: string;
@@ -244,6 +269,18 @@ function completionInput(
   };
 }
 
+function assignInput(
+  args: Record<string, unknown>,
+): TaskInput & { assignee: string | null } {
+  requireOnly(args, ["taskGid", "assignee"]);
+  if (args.assignee !== null && (typeof args.assignee !== "string" || !args.assignee.trim()))
+    throw new Error("Asana assignee must be a user id, an email, or null");
+  return {
+    taskGid: nonEmptyString(args.taskGid, "Asana taskGid is required"),
+    assignee: args.assignee === null ? null : args.assignee.trim(),
+  };
+}
+
 function commentInput(
   args: Record<string, unknown>,
 ): TaskInput & { text: string } {
@@ -346,6 +383,16 @@ export function createAsanaMcpUpstream(options: {
         throw error;
     }
     throw new Error(outOfScope);
+  };
+  let workspaceGid: string | undefined;
+  const workspace = async (): Promise<string> => {
+    if (workspaceGid) return workspaceGid;
+    const response = await request(
+      `/projects/${encodeURIComponent(options.projectGid)}?opt_fields=workspace.gid`,
+    );
+    const gid = (response.data as { workspace?: { gid?: string } })?.workspace?.gid;
+    if (!gid) throw new Error("Asana project has no workspace");
+    return (workspaceGid = gid);
   };
 
   return {
@@ -451,6 +498,43 @@ export function createAsanaMcpUpstream(options: {
         });
         return text(
           `Marked task ${input.taskGid} ${input.completed ? "complete" : "incomplete"}.`,
+        );
+      }
+      if (name === "asana.list_users") {
+        requireOnly(args, ["offset"]);
+        const query = new URLSearchParams({ limit: "100", opt_fields: "name,email" });
+        if (args.offset !== undefined)
+          query.set("offset", nonEmptyString(args.offset, "Asana offset must be a non-empty string"));
+        const response = await request(
+          `/workspaces/${encodeURIComponent(await workspace())}/users?${query}`,
+        );
+        const users = (Array.isArray(response.data) ? response.data : []) as AsanaUser[];
+        if (!users.length) return text("No people in the Asana workspace.");
+        const next = (response.next_page as { offset?: string } | null)?.offset;
+        return text(
+          [
+            `${users.length} people in the Asana workspace. Pass an id or email to asana.assign_task.`,
+            "",
+            ...users.map((user) =>
+              [`- ${user.name ?? "Unnamed"}`, user.email, `id ${user.gid}`].filter(Boolean).join(" · "),
+            ),
+            ...(next ? ["", `More people: call asana.list_users with offset "${next}".`] : []),
+          ].join("\n"),
+        );
+      }
+      if (name === "asana.assign_task") {
+        const input = assignInput(args);
+        await ensureTaskInProject(input.taskGid);
+        const response = await request(`${taskPath(input.taskGid)}?opt_fields=assignee.name`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: { assignee: input.assignee } }),
+        });
+        const assignee = (response.data as AsanaTask).assignee?.name;
+        return text(
+          input.assignee === null
+            ? `Unassigned task ${input.taskGid}.`
+            : `Assigned task ${input.taskGid} to ${assignee ?? input.assignee}.`,
         );
       }
       if (name === "asana.add_task_comment") {

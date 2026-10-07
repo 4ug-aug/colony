@@ -38,6 +38,8 @@ export const capabilityPresentation: Record<
       "asana.get_task": "Get task details",
       "asana.get_task_comments": "Read comments",
       "asana.set_task_completion": "Update completion",
+      "asana.list_users": "List people",
+      "asana.assign_task": "Assign tasks",
       "asana.add_task_comment": "Add comments",
     },
   },
