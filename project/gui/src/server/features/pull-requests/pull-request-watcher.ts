@@ -7,7 +7,7 @@ import type {
 
 const MAX_PAGES = 3
 const CI_GRACE_MS = 10 * 60_000
-const WRITE_ACCESS = ['OWNER', 'MEMBER', 'COLLABORATOR']
+const WRITE_ACCESS = ['admin', 'maintain', 'write']
 const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED']
 const FAILED = ['failure', 'timed_out', 'cancelled', 'action_required']
 
@@ -23,14 +23,12 @@ type Deps = {
 }
 
 const time = (iso: string) => Date.parse(iso)
-const trusted = (item: {
-  user: { type: string } | null
-  author_association: string
-}) => item.user?.type !== 'Bot' && WRITE_ACCESS.includes(item.author_association)
+type Trusted = (item: { user: { login: string; type: string } | null }) => Promise<boolean>
 
 export function createPullRequestWatcher(deps: Deps) {
   const now = deps.now ?? Date.now
   let running = false
+  let warnedChecks = false
 
   async function listRecent(octokit: Octokit, owner: string, repo: string, oldest: number) {
     const found = new Map<number, PullRequest>()
@@ -57,6 +55,7 @@ export function createPullRequestWatcher(deps: Deps) {
     repo: string,
     watch: WatchedPullRequest,
     pr: PullRequest,
+    trusted: Trusted,
   ) {
     if (pr.state === 'closed') {
       deps.store.remove(watch.repository, watch.number)
@@ -111,7 +110,7 @@ export function createPullRequestWatcher(deps: Deps) {
           !review.submitted_at ||
           time(review.submitted_at) <= cursor ||
           !REVIEW_STATES.includes(review.state) ||
-          !trusted(review)
+          !(await trusted(review))
         )
           continue
         feedback.reviews.push({
@@ -125,7 +124,7 @@ export function createPullRequestWatcher(deps: Deps) {
         reviewIds.add(review.id)
       }
       for (const comment of comments.data) {
-        if (time(comment.created_at) <= cursor || !trusted(comment)) continue
+        if (time(comment.created_at) <= cursor || !(await trusted(comment))) continue
         feedback.comments.push({
           author: comment.user?.login ?? 'unknown',
           body: comment.body ?? '',
@@ -138,17 +137,24 @@ export function createPullRequestWatcher(deps: Deps) {
 
     let settled = false
     if (pr.head.sha !== watch.checkedSha) {
-      const { data } = await octokit.rest.checks.listForRef({
-        owner,
-        repo,
-        ref: pr.head.sha,
-        per_page: 100,
-      })
-      const runs = data.check_runs
-      settled = runs.every((run) => run.status === 'completed')
-      if (settled && runs.length === 0)
+      let runs: Awaited<ReturnType<Octokit['rest']['checks']['listForRef']>>['data']['check_runs'] | undefined
+      try {
+        runs = (
+          await octokit.rest.checks.listForRef({ owner, repo, ref: pr.head.sha, per_page: 100 })
+        ).data.check_runs
+      } catch (error) {
+        const status = (error as { status?: number }).status
+        if (status !== 403 && status !== 404) throw error
+        // Checks unavailable: deliver reviews and comments, retry checks next tick.
+        if (!warnedChecks) {
+          warnedChecks = true
+          console.error('Pull request watcher cannot read checks: the GitHub App needs the Checks: read permission')
+        }
+      }
+      settled = !!runs && runs.every((run) => run.status === 'completed')
+      if (runs && settled && runs.length === 0)
         settled = now() - time(pr.updated_at) > CI_GRACE_MS
-      if (settled)
+      if (runs && settled)
         for (const run of runs)
           if (run.conclusion && FAILED.includes(run.conclusion))
             feedback.failedChecks.push({
@@ -202,12 +208,35 @@ export function createPullRequestWatcher(deps: Deps) {
         const [owner, repo] = github.repository.split('/')
         const oldest = Math.min(...watches.map((w) => time(w.cursor)))
         const recent = await listRecent(github.octokit, owner, repo, oldest)
+        // One permission lookup per login per tick; the App cannot see private org membership, so author_association is unreliable.
+        const lookups = new Map<string, Promise<boolean>>()
+        const trusted: Trusted = async (item) => {
+          const login = item.user?.login
+          if (!login || item.user?.type === 'Bot') return false
+          let lookup = lookups.get(login)
+          if (!lookup) {
+            lookup = github.octokit.rest.repos
+              .getCollaboratorPermissionLevel({ owner, repo, username: login })
+              .then(({ data }) =>
+                [data.permission, (data as { role_name?: string }).role_name].some(
+                  (level) => !!level && WRITE_ACCESS.includes(level),
+                ),
+              )
+              .catch((error) => {
+                if ((error as { status?: number }).status !== 404)
+                  console.error(`Pull request watcher could not check permission of ${login}`, error)
+                return false
+              })
+            lookups.set(login, lookup)
+          }
+          return lookup
+        }
         for (const watch of watches) {
           const pr = recent.get(watch.number)
           // ponytail: only the 300 most recently updated pull requests are seen; a busier repository needs pulls.get per watch.
           if (!pr) continue
           try {
-            await checkWatch(github.octokit, owner, repo, watch, pr)
+            await checkWatch(github.octokit, owner, repo, watch, pr, trusted)
           } catch (error) {
             console.error(`Pull request watcher failed for ${watch.repository}#${watch.number}`, error)
           }

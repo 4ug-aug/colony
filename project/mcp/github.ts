@@ -456,8 +456,17 @@ async function getPullRequestFeedback(options: {
     rest.issues.listComments({ ...repo, issue_number: number, per_page: 100 }),
   ]);
   const sha = pullRequest.data.head.sha;
-  const runs = (await rest.checks.listForRef({ ...repo, ref: sha, per_page: 100 })).data.check_runs
-    .filter((run) => failedConclusions.includes(run.conclusion ?? ""));
+  // 403/404 means the App lacks Checks: read; reviews and comments are still worth returning.
+  const denied = (error: unknown) => [403, 404].includes((error as { status?: number }).status ?? 0);
+  let checksUnavailable = false;
+  const runs = (await rest.checks.listForRef({ ...repo, ref: sha, per_page: 100 }).then(
+    (response) => response.data.check_runs,
+    (error) => {
+      if (!denied(error)) throw error;
+      checksUnavailable = true;
+      return [];
+    },
+  )).filter((run) => failedConclusions.includes(run.conclusion ?? ""));
   const author = (user: { login: string; type: string } | null) =>
     user ? `${user.login}${user.type === "Bot" && !user.login.endsWith("[bot]") ? " [bot]" : ""}` : "unknown";
 
@@ -481,7 +490,8 @@ async function getPullRequestFeedback(options: {
   if (runs.length) {
     lines.push("", `Failed checks on ${sha.slice(0, 7)}:`);
     for (const run of runs) {
-      const annotations = (await rest.checks.listAnnotations({ ...repo, check_run_id: run.id, per_page: 10 })).data;
+      const annotations = await rest.checks.listAnnotations({ ...repo, check_run_id: run.id, per_page: 10 })
+        .then((response) => response.data, () => []);
       lines.push(`- ${run.name} (${run.conclusion}): ${run.output.title ?? ""}`);
       if (run.output.summary) lines.push(clip(run.output.summary, 1500));
       for (const annotation of annotations.slice(0, 10))
@@ -489,6 +499,7 @@ async function getPullRequestFeedback(options: {
       if (run.details_url) lines.push(run.details_url);
     }
   }
+  if (checksUnavailable) lines.push("", "Checks unavailable: the GitHub App needs the Checks: read permission.");
   if (lines.length === 1)
     lines.push("", `No reviews, comments, or failed checks${typeof sinceText === "string" ? ` since ${sinceText}` : ""}.`);
   const text = lines.join("\n");

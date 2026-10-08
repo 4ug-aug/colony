@@ -24,6 +24,8 @@ function setup(options: { deliver?: 'delivered' | 'deferred' } = {}) {
     comments: [] as unknown[],
     runs: [{ name: 'ci', status: 'completed', conclusion: 'success', output: {} }] as unknown[],
     reactionStatus: 200,
+    checksStatus: 200,
+    permissions: { grace: 'write' } as Record<string, string>,
   }
   const reactions: { path: string; body: unknown }[] = []
   const calls: string[] = []
@@ -41,10 +43,25 @@ function setup(options: { deliver?: 'delivered' | 'deferred' } = {}) {
       new Response(JSON.stringify(body), {
         headers: { 'content-type': 'application/json' },
       })
+    const collaborator = path.match(/\/collaborators\/([^/]+)\/permission$/)
+    if (collaborator) {
+      const permission = github.permissions[collaborator[1]]
+      return permission
+        ? json({ permission, user: { login: collaborator[1] } })
+        : new Response(JSON.stringify({ message: 'Not Found' }), {
+            status: 404,
+            headers: { 'content-type': 'application/json' },
+          })
+    }
     if (path.endsWith('/pulls')) return json([github.pr])
     if (path.endsWith('/reviews')) return json(github.reviews)
     if (path.endsWith('/pulls/7/comments')) return json(github.reviewComments)
     if (path.endsWith('/issues/7/comments')) return json(github.comments)
+    if (path.includes('/check-runs') && github.checksStatus !== 200)
+      return new Response(JSON.stringify({ message: 'Resource not accessible by integration' }), {
+        status: github.checksStatus,
+        headers: { 'content-type': 'application/json' },
+      })
     if (path.includes('/check-runs'))
       return json({ total_count: github.runs.length, check_runs: github.runs })
     throw new Error(`unexpected ${path}`)
@@ -230,8 +247,53 @@ test('undelivered bot and outside comments get no reaction', async () => {
   const t = setup()
   t.github.comments = [
     prComment(21, { user: { login: 'ci', type: 'Bot' } }),
-    prComment(22, { author_association: 'NONE' }),
+    prComment(22, { user: { login: 'eve', type: 'User' }, author_association: 'NONE' }),
   ]
   await t.watcher.tick()
   expect(t.reactions).toEqual([])
+})
+
+test('without Checks permission reviews are still delivered and checks retried once granted', async () => {
+  const t = setup()
+  const logged = console.error
+  const errors: unknown[][] = []
+  console.error = (...args: unknown[]) => void errors.push(args)
+  try {
+    t.github.checksStatus = 403
+    t.github.reviews = [review()]
+    t.github.reviewComments = [inlineComment(11, 100)]
+    await t.watcher.tick()
+    expect(t.delivered).toHaveLength(1)
+    expect(t.delivered[0].failedChecks).toEqual([])
+    expect(t.reactions).toEqual([
+      { path: '/repos/acme/widgets/pulls/comments/11/reactions', body: eyes },
+    ])
+    expect(t.store.list()[0].checkedSha).toBeUndefined()
+    await t.watcher.tick()
+    expect(errors).toHaveLength(1)
+    expect(String(errors[0][0])).toContain('Checks: read')
+
+    t.github.checksStatus = 200
+    t.github.runs = [{ name: 'ci', status: 'completed', conclusion: 'failure', output: {} }]
+    await t.watcher.tick()
+    expect(t.delivered).toHaveLength(2)
+    expect(t.delivered[1].failedChecks).toHaveLength(1)
+  } finally {
+    console.error = logged
+  }
+})
+
+test('trust follows repository permission, not author association, and is cached per tick', async () => {
+  const t = setup()
+  t.github.permissions = { grace: 'write', ro: 'read' }
+  t.github.reviews = [review({ author_association: 'CONTRIBUTOR' })]
+  t.github.comments = [
+    prComment(21, { author_association: 'CONTRIBUTOR' }),
+    prComment(22, { author_association: 'MEMBER', user: { login: 'ro', type: 'User' } }),
+  ]
+  await t.watcher.tick()
+  expect(t.delivered).toHaveLength(1)
+  expect(t.delivered[0].reviews).toHaveLength(1)
+  expect(t.delivered[0].comments.map((c) => c.author)).toEqual(['grace'])
+  expect(t.calls.filter((c) => c.endsWith('/grace/permission'))).toHaveLength(1)
 })
