@@ -374,9 +374,33 @@ export function createWorkspaceIssuesMcpUpstream(options: {
         const status = asStatus(args.status);
         if (args.status !== undefined && status === undefined)
           throw new Error("Invalid status");
-        return textResult(
-          options.port.listIssues(status ? { status } : undefined),
-        );
+        const issues = options.port.listIssues(status ? { status } : undefined);
+        // One line each: full descriptions and deliverables filled small models' context.
+        const line = (issue: WorkspaceIssue) =>
+          [
+            `- COL-${issue.number} ${issue.title}`,
+            issue.status,
+            issue.priority !== "none" && issue.priority,
+            issue.owner ? `${issue.owner.kind} ${issue.owner.id}` : "unassigned",
+            issue.parentId && `parent ${issue.parentId}`,
+            ...issue.tags.map((tag) => `#${tag}`),
+            issue.hasActiveRun && "running",
+            issue.deliverable.trim() && "has deliverable",
+          ]
+            .filter(Boolean)
+            .join(" · ");
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `${issues.length} Issues. Pass a ref to workspace.get_issue for the description, deliverable, and children.`,
+                "",
+                ...issues.map(line),
+              ].join("\n"),
+            },
+          ],
+        };
       }
       if (name === "workspace.get_issue") {
         const ref = asString(args.ref)?.trim();

@@ -141,7 +141,7 @@ test("create, assign, and get Issues through MCP tools", async () => {
   expect(port.issues).toHaveLength(1);
 });
 
-test("get_issue includes live related work and list_issues includes active run and deliverable", async () => {
+test("get_issue includes live related work and list_issues shows one short line per Issue", async () => {
   const upstream = createWorkspaceIssuesMcpUpstream({
     port: makePort([
       {
@@ -198,17 +198,14 @@ test("get_issue includes live related work and list_issues includes active run a
   const listed = (await upstream.callTool("workspace.list_issues", {})) as {
     content: { text: string }[];
   };
-  const rows = JSON.parse(listed.content[0]!.text) as WorkspaceIssue[];
-  expect(rows[0]).toMatchObject({
-    number: 1,
-    deliverable: "",
-    hasActiveRun: true,
-  });
-  expect(rows[1]).toMatchObject({
-    number: 2,
-    deliverable: "",
-    hasActiveRun: true,
-  });
+  expect(listed.content[0]!.text).toBe(
+    [
+      "2 Issues. Pass a ref to workspace.get_issue for the description, deliverable, and children.",
+      "",
+      "- COL-1 Add auth · in_progress · unassigned · running",
+      "- COL-2 Login UI · in_progress · agent antboy · parent parent · running",
+    ].join("\n"),
+  );
 
   const got = (await upstream.callTool("workspace.get_issue", {
     ref: "COL-1",
@@ -312,4 +309,34 @@ test("assign_issue rejects unknown agent ids with suggestions", async () => {
   ).rejects.toThrow(
     /Unknown agent "software_engineer"[\s\S]*Did you mean: \{ "kind": "agent", "id": "software-engineer" \}/,
   );
+});
+
+test("list_issues stays short however long the Issues are", async () => {
+  const long = "x".repeat(5_000);
+  const upstream = createWorkspaceIssuesMcpUpstream({
+    port: makePort([
+      {
+        id: "id-7",
+        number: 7,
+        title: "Ship the report",
+        description: long,
+        deliverable: long,
+        status: "done",
+        priority: "high",
+        tags: ["ops"],
+        timeSpent: [1_759_912_345_678, 1_759_912_345_679],
+        owner: { kind: "account", id: "user-1" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]),
+  });
+
+  const listed = (await upstream.callTool("workspace.list_issues", {})) as {
+    content: { text: string }[];
+  };
+  expect(listed.content[0]!.text).toContain(
+    "- COL-7 Ship the report · done · high · account user-1 · #ops · has deliverable",
+  );
+  expect(listed.content[0]!.text.length).toBeLessThan(300);
 });
