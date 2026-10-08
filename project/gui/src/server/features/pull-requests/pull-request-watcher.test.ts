@@ -23,11 +23,20 @@ function setup(options: { deliver?: 'delivered' | 'deferred' } = {}) {
     reviewComments: [] as unknown[],
     comments: [] as unknown[],
     runs: [{ name: 'ci', status: 'completed', conclusion: 'success', output: {} }] as unknown[],
+    reactionStatus: 200,
   }
+  const reactions: { path: string; body: unknown }[] = []
   const calls: string[] = []
-  const fetch = (async (input: RequestInfo | URL) => {
+  const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input)).pathname
     calls.push(path)
+    if (path.endsWith('/reactions')) {
+      reactions.push({ path, body: JSON.parse(String(init?.body)) })
+      return new Response(JSON.stringify({ id: 1 }), {
+        status: github.reactionStatus,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), {
         headers: { 'content-type': 'application/json' },
@@ -67,6 +76,7 @@ function setup(options: { deliver?: 'delivered' | 'deferred' } = {}) {
   return {
     github,
     calls,
+    reactions,
     store,
     delivered,
     watcher,
@@ -170,4 +180,58 @@ test('nothing is requested while GitHub is not configured', async () => {
   t.disable()
   await t.watcher.tick()
   expect(t.calls).toEqual([])
+})
+
+const eyes = { content: 'eyes' }
+const inlineComment = (id: number, reviewId: number) => ({ id, pull_request_review_id: reviewId })
+const prComment = (id: number, extra: object = {}) => ({
+  id,
+  body: 'hi',
+  created_at: iso(1),
+  user: { login: 'grace', type: 'User' },
+  author_association: 'MEMBER',
+  ...extra,
+})
+
+test('delivered feedback gets an eyes reaction on its comments', async () => {
+  const t = setup()
+  t.github.reviews = [review()]
+  t.github.reviewComments = [inlineComment(11, 100), inlineComment(12, 100), inlineComment(13, 999)]
+  t.github.comments = [prComment(21)]
+  await t.watcher.tick()
+  expect(t.reactions.sort((a, b) => a.path.localeCompare(b.path))).toEqual([
+    { path: '/repos/acme/widgets/issues/comments/21/reactions', body: eyes },
+    { path: '/repos/acme/widgets/pulls/comments/11/reactions', body: eyes },
+    { path: '/repos/acme/widgets/pulls/comments/12/reactions', body: eyes },
+  ])
+})
+
+test('a deferred delivery reacts only once it is delivered', async () => {
+  const t = setup({ deliver: 'deferred' })
+  t.github.comments = [prComment(21)]
+  await t.watcher.tick()
+  expect(t.reactions).toEqual([])
+  t.setOutcome('delivered')
+  await t.watcher.tick()
+  expect(t.reactions).toHaveLength(1)
+})
+
+test('a failing reaction does not hold back the cursor', async () => {
+  const t = setup()
+  t.github.reactionStatus = 403
+  t.github.comments = [prComment(21)]
+  await t.watcher.tick()
+  expect(t.delivered).toHaveLength(1)
+  await t.watcher.tick()
+  expect(t.delivered).toHaveLength(1)
+})
+
+test('undelivered bot and outside comments get no reaction', async () => {
+  const t = setup()
+  t.github.comments = [
+    prComment(21, { user: { login: 'ci', type: 'Bot' } }),
+    prComment(22, { author_association: 'NONE' }),
+  ]
+  await t.watcher.tick()
+  expect(t.reactions).toEqual([])
 })

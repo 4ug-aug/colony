@@ -75,6 +75,9 @@ export function createPullRequestWatcher(deps: Deps) {
       failedChecks: [],
     }
     const stamps: string[] = []
+    const reviewIds = new Set<number>()
+    const commentIds: number[] = []
+    let inlineIds: { id: number; reviewId: number }[] = []
 
     if (fetchedItems) {
       const base = { owner, repo }
@@ -93,6 +96,9 @@ export function createPullRequestWatcher(deps: Deps) {
           per_page: 100,
         }),
       ])
+      inlineIds = inline.data.flatMap((c) =>
+        c.pull_request_review_id ? [{ id: c.id, reviewId: c.pull_request_review_id }] : [],
+      )
       const inlineCounts = new Map<number, number>()
       for (const comment of inline.data)
         if (comment.pull_request_review_id)
@@ -116,6 +122,7 @@ export function createPullRequestWatcher(deps: Deps) {
           submittedAt: review.submitted_at,
         })
         stamps.push(review.submitted_at)
+        reviewIds.add(review.id)
       }
       for (const comment of comments.data) {
         if (time(comment.created_at) <= cursor || !trusted(comment)) continue
@@ -125,6 +132,7 @@ export function createPullRequestWatcher(deps: Deps) {
           createdAt: comment.created_at,
         })
         stamps.push(comment.created_at)
+        commentIds.push(comment.id)
       }
     }
 
@@ -165,6 +173,21 @@ export function createPullRequestWatcher(deps: Deps) {
         { cursor: nextCursor, checkedSha: sha },
         now(),
       )
+    if (!hasFeedback) return
+    const base = { owner, repo, content: 'eyes' } as const
+    const results = await Promise.allSettled([
+      ...commentIds.map((id) =>
+        octokit.rest.reactions.createForIssueComment({ ...base, comment_id: id }),
+      ),
+      ...inlineIds
+        .filter((c) => reviewIds.has(c.reviewId))
+        .map((c) =>
+          octokit.rest.reactions.createForPullRequestReviewComment({ ...base, comment_id: c.id }),
+        ),
+    ])
+    for (const result of results)
+      if (result.status === 'rejected')
+        console.error(`Pull request reaction failed for ${watch.repository}#${watch.number}`, result.reason)
   }
 
   return {
