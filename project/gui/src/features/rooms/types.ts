@@ -74,6 +74,13 @@ export type MessageDelivery =
       state: 'succeeded' | 'failed' | 'cancelled'
     }
   | { kind: 'consultation'; askingAgentId: string }
+  /** New feedback on a Watched pull request (ADR 0033). */
+  | {
+      kind: 'pull_request_feedback'
+      number: number
+      url: string
+      reviewers: string[]
+    }
 /** A successful Room-linked run's final output, presented as a thread reply. */
 export type RunResultReply = {
   id: string

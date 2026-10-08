@@ -1,6 +1,13 @@
 import { isTerminalRunState, type TerminalRunState } from '#project/runs'
 import type { Consultation } from '#project/mcp/workspace-consultations'
 import type { RunControl } from '#/server/features/runs/run-control'
+import {
+  feedbackTask,
+  isApprovalOnly,
+  type DeliveryOutcome,
+  type PullRequestFeedback,
+} from '#/server/features/pull-requests/feedback'
+import type { WatchedPullRequest } from '#/server/features/pull-requests/watched-pull-request-store'
 import type { Schedule } from '#/server/features/schedules/schedule-store'
 import type { SettledScheduleRun } from '#/server/features/schedules/schedule-runner'
 import type { RoomMessageHub } from './room-hub'
@@ -287,6 +294,45 @@ export function createChambers(deps: {
           state: run.state,
         },
       })
+    },
+    /** Pull request feedback for the Responsible Account's Chamber with the watching agent (ADR 0033). */
+    deliverPullRequestFeedback(
+      watch: WatchedPullRequest,
+      feedback: PullRequestFeedback,
+    ): DeliveryOutcome {
+      const room = open(watch.responsibleAccountId, watch.agentDefinitionId)
+      const reviewers = [
+        ...new Set([
+          ...feedback.reviews.map(({ author }) => author),
+          ...feedback.comments.map(({ author }) => author),
+        ]),
+      ]
+      const delivery: MessageDelivery = {
+        kind: 'pull_request_feedback',
+        number: feedback.number,
+        url: feedback.url,
+        reviewers,
+      }
+      if (isApprovalOnly(feedback)) {
+        reply(
+          room,
+          watch.agentDefinitionId,
+          `Pull request #${feedback.number} was approved by ${reviewers.map((name) => `@${name}`).join(', ')}.`,
+          { delivery },
+        )
+        return 'delivered'
+      }
+      const owner = ownerOf(room)
+      const queued = busy(room.id, undefined)
+      const message = deps.messages.postMessage({
+        roomId: room.id,
+        author: { kind: 'user', ...owner },
+        text: feedbackTask(feedback),
+        delivery,
+        ...(queued ? { queued: true } : {}),
+      })
+      if (!queued) start(room, [message], owner)
+      return 'delivered'
     },
   }
 }
