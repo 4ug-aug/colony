@@ -108,12 +108,20 @@ export function createCompactor(options: {
       const cut = tailStart(trimmed);
       if (cut > fromCut) {
         const head = [...(reused?.replacement ?? []), ...trimmed.slice(fromCut, cut)];
-        const summary = await options.summarize(transcript(head, options.contextTokens * 2));
+        // One window of characters: dense text (ids, JSON) can run near two characters a token.
+        const summary = await options
+          .summarize(transcript(head, options.contextTokens))
+          .catch((error: unknown) => {
+            console.error("Context summary failed; dropping earlier context instead:", error);
+            return undefined;
+          });
         const task = trimmed.slice(0, cut).findLast(isUser);
         const replacement = [
           {
             role: "user",
-            content: `Earlier context was compacted. Summary of the conversation and work so far:\n\n${summary}`,
+            content: summary
+              ? `Earlier context was compacted. Summary of the conversation and work so far:\n\n${summary}`
+              : "Earlier context was dropped to fit the model's context window. Redo any lookups you still need.",
           } as AgentInputItem,
           ...(task ? [task] : []),
         ];

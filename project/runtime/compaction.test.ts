@@ -84,3 +84,26 @@ test("trims recent tool results when the tail alone overflows", async () => {
   const compacted = await createCompactor({ contextTokens: 8_000, summarize })(items);
   expect(estimateTokens(compacted)).toBeLessThan(6_000);
 });
+
+test("sends the summarizer at most one window of characters", async () => {
+  summaries.length = 0;
+  await createCompactor({ contextTokens: 8_000, summarize })(history(40, 1_500));
+
+  expect(summaries[0]!.length).toBeLessThanOrEqual(8_000 + 100);
+});
+
+test("drops the earlier context instead of failing when the summary call fails", async () => {
+  const events: { summarized: boolean }[] = [];
+  const compacted = await createCompactor({
+    contextTokens: 8_000,
+    summarize: async () => {
+      throw new Error("400: This model's maximum context length is 8000 tokens.");
+    },
+    onCompact: (event) => events.push(event),
+  })(history(40, 1_500));
+
+  expect((compacted[0] as { content: string }).content).toContain("Earlier context was dropped");
+  expect(compacted[1]).toEqual(user("Fix the build."));
+  expect(estimateTokens(compacted)).toBeLessThan(6_000);
+  expect(events).toMatchObject([{ summarized: true }]);
+});
