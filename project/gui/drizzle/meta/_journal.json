@@ -330,6 +330,13 @@
       "when": 1815000000000,
       "tag": "0046_chamber_names",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1816000000000,
+      "tag": "0047_watched_pull_request",
+      "breakpoints": true
     }
   ]
 }
