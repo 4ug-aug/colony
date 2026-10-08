@@ -66,7 +66,6 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
           async listTools() {
             return [
               { name: "github.create_pull_request" },
-              { name: "github.wait_for_pull_request_checks" },
               { name: "github.compare" },
               { name: "github.get_file" },
               { name: "github.get_pull_request" },
@@ -114,7 +113,6 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
   expect(run.inputs).toEqual([adapter.repository!.input]);
   expect(run.capabilityGrant?.tools).toEqual([
     "github.create_pull_request",
-    "github.wait_for_pull_request_checks",
     "github.compare",
     "github.get_file",
     "github.get_pull_request",
@@ -122,6 +120,7 @@ test("software-engineer resolves to cursor kind with repository inputs and githu
     "github.push_to_pull_request",
     "github.comment_on_pull_request",
     "github.review_pull_request",
+    "github.get_pull_request_feedback",
   ]);
   expect(run.capabilityGrant?.resources).toEqual([
     { provider: "github", repository: "acme/widgets" },
@@ -877,7 +876,6 @@ test("selectTools narrows session tools and keeps the stored grant", async () =>
   };
   const githubTools = [
     "github.create_pull_request",
-    "github.wait_for_pull_request_checks",
     "github.compare",
     "github.get_file",
     "github.get_pull_request",
@@ -885,6 +883,7 @@ test("selectTools narrows session tools and keeps the stored grant", async () =>
     "github.push_to_pull_request",
     "github.comment_on_pull_request",
     "github.review_pull_request",
+    "github.get_pull_request_feedback",
   ];
   const adapter: WorkspaceAgentAdapter = {
     capability: {

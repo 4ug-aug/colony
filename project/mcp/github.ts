@@ -22,16 +22,6 @@ const tools: readonly McpTool[] = [
     },
   },
   {
-    name: "github.wait_for_pull_request_checks",
-    description: "Wait up to four minutes for checks on a pull request, then return their status and failure details.",
-    inputSchema: {
-      type: "object",
-      properties: { number: { type: "integer", minimum: 1 } },
-      required: ["number"],
-      additionalProperties: false,
-    },
-  },
-  {
     name: "github.compare",
     description: "List files changed between two refs in the granted repository. Default is path and status only. Set includeDiff to true for a truncated unified diff. Compare first; use github.get_file only for named paths. Do not git fetch.",
     inputSchema: {
@@ -64,6 +54,19 @@ const tools: readonly McpTool[] = [
     inputSchema: {
       type: "object",
       properties: { number: { type: "integer", minimum: 1 } },
+      required: ["number"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "github.get_pull_request_feedback",
+    description: "Read feedback on a pull request: submitted reviews with their inline comments, conversation comments, and failed checks on the head commit with annotations. Pass since (ISO timestamp) to see only reviews and comments created after it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        number: { type: "integer", minimum: 1 },
+        since: { type: "string" },
+      },
       required: ["number"],
       additionalProperties: false,
     },
@@ -160,14 +163,10 @@ type PullRequestRequest = { title: string; body?: string };
 type Change = { path: string; deleted: boolean };
 type RemoteBranch = { sha: string; tree: string };
 type WorkspaceState = { commits: readonly string[]; head: string; tree: string };
-type PullRequestChecksRequest = { number: number };
 type CompareRequest = { base: string; head: string; includeDiff: boolean };
 type GetFileRequest = { path: string; ref: string };
 
 const directoryEntryLimit = 100;
-
-const checkWaitMs = 4 * 60_000;
-const checkPollMs = 15_000;
 
 function string(value: unknown, message: string): string {
   if (typeof value !== "string" || !value) throw new Error(message);
@@ -179,13 +178,6 @@ function parsePullRequestRequest(value: Record<string, unknown>): PullRequestReq
     title: string(value.title, "GitHub pull request title is required"),
     ...(value.body === undefined ? {} : { body: string(value.body, "GitHub pull request body must be a string") }),
   };
-}
-
-function parsePullRequestChecksRequest(value: Record<string, unknown>): PullRequestChecksRequest {
-  if (!Number.isInteger(value.number) || (value.number as number) < 1) {
-    throw new Error("GitHub pull request number must be a positive integer");
-  }
-  return { number: value.number as number };
 }
 
 function parseCompareRequest(value: Record<string, unknown>): CompareRequest {
@@ -336,29 +328,6 @@ async function remoteBranch(options: {
   }
 }
 
-function checkResult(checks: readonly {
-  name: string;
-  status: string;
-  conclusion: string | null;
-  details_url: string | null;
-}[]): { state: "passed" | "failed" | "pending"; checks: readonly unknown[] } {
-  const result = checks.map((check) => ({
-    name: check.name,
-    status: check.status,
-    conclusion: check.conclusion,
-    ...(check.details_url ? { detailsUrl: check.details_url } : {}),
-  }));
-  if (!checks.length || checks.some((check) => check.status !== "completed")) {
-    return { state: "pending", checks: result };
-  }
-  return {
-    state: checks.some((check) => !["success", "neutral", "skipped"].includes(check.conclusion ?? ""))
-      ? "failed"
-      : "passed",
-    checks: result,
-  };
-}
-
 async function existingPullRequest(options: {
   octokit: Octokit;
   repository: { owner: string; repo: string };
@@ -438,7 +407,7 @@ async function getPullRequest(options: {
   repository: { owner: string; repo: string };
   args: Record<string, unknown>;
 }): Promise<unknown> {
-  const input = parsePullRequestChecksRequest(options.args);
+  const input = { number: pullRequestNumber(options.args) };
   const [pullRequest, files] = await Promise.all([
     options.octokit.rest.pulls.get({ ...options.repository, pull_number: input.number }),
     options.octokit.rest.pulls.listFiles({
@@ -459,6 +428,71 @@ async function getPullRequest(options: {
       status: shortStatus(file.status),
     })),
   };
+}
+
+const feedbackLimit = 20_000;
+const failedConclusions = ["failure", "timed_out", "cancelled", "action_required"];
+
+const clip = (text: string, limit: number) => (text.length > limit ? `${text.slice(0, limit)}...` : text);
+
+async function getPullRequestFeedback(options: {
+  octokit: Octokit;
+  repository: { owner: string; repo: string };
+  args: Record<string, unknown>;
+}): Promise<ReturnType<typeof textResult>> {
+  const number = pullRequestNumber(options.args);
+  const sinceText = options.args.since;
+  if (sinceText !== undefined && (typeof sinceText !== "string" || Number.isNaN(Date.parse(sinceText))))
+    throw new Error("GitHub feedback since must be an ISO timestamp");
+  const since = typeof sinceText === "string" ? Date.parse(sinceText) : undefined;
+  const after = (time: string | null | undefined) => since === undefined || Date.parse(time ?? "") > since;
+  const { rest } = options.octokit;
+  const repo = options.repository;
+  // ponytail: one page (100) per list; paginate if a pull request outgrows it.
+  const [pullRequest, reviews, reviewComments, comments] = await Promise.all([
+    rest.pulls.get({ ...repo, pull_number: number }),
+    rest.pulls.listReviews({ ...repo, pull_number: number, per_page: 100 }),
+    rest.pulls.listReviewComments({ ...repo, pull_number: number, per_page: 100 }),
+    rest.issues.listComments({ ...repo, issue_number: number, per_page: 100 }),
+  ]);
+  const sha = pullRequest.data.head.sha;
+  const runs = (await rest.checks.listForRef({ ...repo, ref: sha, per_page: 100 })).data.check_runs
+    .filter((run) => failedConclusions.includes(run.conclusion ?? ""));
+  const author = (user: { login: string; type: string } | null) =>
+    user ? `${user.login}${user.type === "Bot" && !user.login.endsWith("[bot]") ? " [bot]" : ""}` : "unknown";
+
+  const lines = [`Pull request #${number}: ${pullRequest.data.title}`];
+  const newComments = reviewComments.data.filter((comment) => after(comment.created_at));
+  for (const review of reviews.data) {
+    if (review.state === "PENDING" || !after(review.submitted_at)) continue;
+    lines.push("", `Review by ${author(review.user)} (${review.state}, ${review.submitted_at}):`);
+    if (review.body) lines.push(clip(review.body, 4000));
+    for (const comment of newComments.filter((item) => item.pull_request_review_id === review.id)) {
+      lines.push(`- ${comment.path}:${comment.line ?? comment.original_line ?? "?"} ${clip(comment.body, 2000)}`);
+      lines.push(...comment.diff_hunk.split("\n").slice(-6).map((line) => `    ${line}`));
+    }
+  }
+  const newIssueComments = comments.data.filter((comment) => after(comment.created_at));
+  if (newIssueComments.length) {
+    lines.push("", "Comments:");
+    for (const comment of newIssueComments)
+      lines.push(`- ${author(comment.user)} (${comment.created_at}): ${clip(comment.body ?? "", 4000)}`);
+  }
+  if (runs.length) {
+    lines.push("", `Failed checks on ${sha.slice(0, 7)}:`);
+    for (const run of runs) {
+      const annotations = (await rest.checks.listAnnotations({ ...repo, check_run_id: run.id, per_page: 10 })).data;
+      lines.push(`- ${run.name} (${run.conclusion}): ${run.output.title ?? ""}`);
+      if (run.output.summary) lines.push(clip(run.output.summary, 1500));
+      for (const annotation of annotations.slice(0, 10))
+        lines.push(`  ${annotation.path}:${annotation.start_line} ${annotation.message ?? ""}`);
+      if (run.details_url) lines.push(run.details_url);
+    }
+  }
+  if (lines.length === 1)
+    lines.push("", `No reviews, comments, or failed checks${typeof sinceText === "string" ? ` since ${sinceText}` : ""}.`);
+  const text = lines.join("\n");
+  return textResult(text.length > feedbackLimit ? `${text.slice(0, feedbackLimit)}\n[feedback trimmed]` : text);
 }
 
 /** Installation-authenticated client; @octokit/auth-app mints and renews the hour-long tokens. */
@@ -692,21 +726,8 @@ export function createGitHubMcpUpstream(options: {
       if (name === "github.get_pull_request") {
         return getPullRequest({ octokit: options.octokit, repository, args });
       }
-      if (name === "github.wait_for_pull_request_checks") {
-        const input = parsePullRequestChecksRequest(args);
-        const deadline = Date.now() + checkWaitMs;
-        let latest: ReturnType<typeof checkResult> = { state: "pending", checks: [] };
-        do {
-          const pullRequest = await options.octokit.rest.pulls.get({ ...repository, pull_number: input.number });
-          const checks = await options.octokit.rest.checks.listForRef({
-            ...repository,
-            ref: pullRequest.data.head.sha,
-          });
-          latest = checkResult(checks.data.check_runs);
-          if (latest.state !== "pending") return latest;
-          await Bun.sleep(Math.min(checkPollMs, Math.max(0, deadline - Date.now())));
-        } while (Date.now() < deadline);
-        return latest;
+      if (name === "github.get_pull_request_feedback") {
+        return getPullRequestFeedback({ octokit: options.octokit, repository, args });
       }
       if (name !== "github.create_pull_request") throw new Error(`Unknown GitHub tool: ${name}`);
       const input = parsePullRequestRequest(args);

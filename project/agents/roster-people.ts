@@ -96,7 +96,6 @@ export const capabilityPresentation: Record<
     name: "GitHub pull requests",
     tools: {
       "github.create_pull_request": "Create pull requests",
-      "github.wait_for_pull_request_checks": "Wait for pull request checks",
       "github.compare": "Compare refs",
       "github.get_file": "Read files at a ref",
       "github.get_pull_request": "Read pull requests",
@@ -104,6 +103,7 @@ export const capabilityPresentation: Record<
       "github.push_to_pull_request": "Push to an existing pull request",
       "github.comment_on_pull_request": "Comment on pull requests",
       "github.review_pull_request": "Review pull requests",
+      "github.get_pull_request_feedback": "Read review feedback",
     },
   },
   "workspace.room": {
