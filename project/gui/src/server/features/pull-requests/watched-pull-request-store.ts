@@ -108,3 +108,5 @@ export function createWatchedPullRequestStore(sqlite: Sqlite) {
     },
   }
 }
+
+export type WatchedPullRequestStore = ReturnType<typeof createWatchedPullRequestStore>
