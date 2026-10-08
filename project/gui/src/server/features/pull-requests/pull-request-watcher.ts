@@ -1,4 +1,10 @@
 import type { Octokit } from 'octokit'
+import {
+  httpStatus,
+  readActivity,
+  readChecks,
+  type FailedCheck,
+} from '#project/mcp/github-feedback'
 import type { DeliverFeedback, PullRequestFeedback } from './feedback'
 import type {
   WatchedPullRequest,
@@ -8,8 +14,7 @@ import type {
 const MAX_PAGES = 3
 const CI_GRACE_MS = 10 * 60_000
 const WRITE_ACCESS = ['admin', 'maintain', 'write']
-const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED']
-const FAILED = ['failure', 'timed_out', 'cancelled', 'action_required']
+const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'] as const
 
 type PullRequest = Awaited<
   ReturnType<Octokit['rest']['pulls']['list']>
@@ -23,7 +28,58 @@ type Deps = {
 }
 
 const time = (iso: string) => Date.parse(iso)
-type Trusted = (item: { user: { login: string; type: string } | null }) => Promise<boolean>
+type TrustCheck = (
+  authors: ({ login: string; type: string } | null)[],
+) => Promise<Set<string>>
+
+// One permission lookup per login per check; the App cannot see private org membership, so author_association is unreliable.
+function createTrustCheck(octokit: Octokit, owner: string, repo: string): TrustCheck {
+  const lookups = new Map<string, Promise<boolean>>()
+  const lookup = (username: string) => {
+    let found = lookups.get(username)
+    if (!found) {
+      found = octokit.rest.repos
+        .getCollaboratorPermissionLevel({ owner, repo, username })
+        .then(({ data }) =>
+          [data.permission, data.role_name].some((level) => WRITE_ACCESS.includes(level)),
+        )
+        .catch((error) => {
+          if (httpStatus(error) !== 404)
+            console.error(`Pull request watcher could not check permission of ${username}`, error)
+          return false
+        })
+      lookups.set(username, found)
+    }
+    return found
+  }
+  return async (authors) => {
+    const logins = [
+      ...new Set(authors.flatMap((a) => (a && a.type !== 'Bot' ? [a.login] : []))),
+    ]
+    const results = await Promise.all(logins.map(async (login) => [login, await lookup(login)] as const))
+    return new Set(results.flatMap(([login, ok]) => (ok ? [login] : [])))
+  }
+}
+
+/** Eyes on delivered feedback, so reviewers see it was picked up; failures never undo a delivery. */
+async function react(
+  octokit: Octokit,
+  repo: { owner: string; repo: string },
+  label: string,
+  ids: { comments: number[]; inlineComments: number[] },
+) {
+  const results = await Promise.allSettled([
+    ...ids.comments.map((id) =>
+      octokit.rest.reactions.createForIssueComment({ ...repo, comment_id: id, content: 'eyes' }),
+    ),
+    ...ids.inlineComments.map((id) =>
+      octokit.rest.reactions.createForPullRequestReviewComment({ ...repo, comment_id: id, content: 'eyes' }),
+    ),
+  ])
+  for (const result of results)
+    if (result.status === 'rejected')
+      console.error(`Pull request reaction failed for ${label}`, result.reason)
+}
 
 export function createPullRequestWatcher(deps: Deps) {
   const now = deps.now ?? Date.now
@@ -55,145 +111,91 @@ export function createPullRequestWatcher(deps: Deps) {
     repo: string,
     watch: WatchedPullRequest,
     pr: PullRequest,
-    trusted: Trusted,
+    trust: TrustCheck,
   ) {
     if (pr.state === 'closed') {
       deps.store.remove(watch.repository, watch.number)
       return
     }
-    const cursor = time(watch.cursor)
-    const fetchedItems = time(pr.updated_at) > cursor
+    const fetchedItems = time(pr.updated_at) > time(watch.cursor)
+    const activity = fetchedItems
+      ? await readActivity(octokit, { owner, repo }, watch.number, watch.cursor)
+      : { reviews: [], comments: [] }
+    const candidates = {
+      reviews: activity.reviews.flatMap((review) => {
+        const state = REVIEW_STATES.find((s) => s === review.state)
+        return state ? [{ ...review, state }] : []
+      }),
+      comments: activity.comments,
+    }
+    const trusted = await trust([
+      ...candidates.reviews.map((review) => review.author),
+      ...candidates.comments.map((comment) => comment.author),
+    ])
+    const isTrusted = (author: { login: string } | null) => !!author && trusted.has(author.login)
+    const reviews = candidates.reviews.filter((review) => isTrusted(review.author))
+    const comments = candidates.comments.filter((comment) => isTrusted(comment.author))
+
+    const { settled, failed } =
+      pr.head.sha === watch.checkedSha
+        ? { settled: false, failed: [] }
+        : await settledChecks(octokit, owner, repo, pr)
+
     const feedback: PullRequestFeedback = {
       repository: watch.repository,
       number: watch.number,
       title: pr.title,
       url: pr.html_url,
       headSha: pr.head.sha,
-      reviews: [],
-      comments: [],
-      failedChecks: [],
+      reviews: reviews.map((review) => ({
+        author: review.author?.login ?? 'unknown',
+        state: review.state,
+        body: review.body,
+        inlineComments: review.inlineComments.length,
+        submittedAt: review.submittedAt,
+      })),
+      comments: comments.map((comment) => ({
+        author: comment.author?.login ?? 'unknown',
+        body: comment.body,
+        createdAt: comment.createdAt,
+      })),
+      failedChecks: failed.map(({ name, conclusion, title }) => ({ name, conclusion, title })),
     }
-    const stamps: string[] = []
-    const reviewIds = new Set<number>()
-    const commentIds: number[] = []
-    let inlineIds: { id: number; reviewId: number }[] = []
-
-    if (fetchedItems) {
-      const base = { owner, repo }
-      const [reviews, inline, comments] = await Promise.all([
-        octokit.rest.pulls.listReviews({ ...base, pull_number: watch.number, per_page: 100 }),
-        octokit.rest.pulls.listReviewComments({
-          ...base,
-          pull_number: watch.number,
-          since: watch.cursor,
-          per_page: 100,
-        }),
-        octokit.rest.issues.listComments({
-          ...base,
-          issue_number: watch.number,
-          since: watch.cursor,
-          per_page: 100,
-        }),
-      ])
-      inlineIds = inline.data.flatMap((c) =>
-        c.pull_request_review_id ? [{ id: c.id, reviewId: c.pull_request_review_id }] : [],
-      )
-      const inlineCounts = new Map<number, number>()
-      for (const comment of inline.data)
-        if (comment.pull_request_review_id)
-          inlineCounts.set(
-            comment.pull_request_review_id,
-            (inlineCounts.get(comment.pull_request_review_id) ?? 0) + 1,
-          )
-      for (const review of reviews.data) {
-        if (
-          !review.submitted_at ||
-          time(review.submitted_at) <= cursor ||
-          !REVIEW_STATES.includes(review.state) ||
-          !(await trusted(review))
-        )
-          continue
-        feedback.reviews.push({
-          author: review.user?.login ?? 'unknown',
-          state: review.state as PullRequestFeedback['reviews'][number]['state'],
-          body: review.body ?? '',
-          inlineComments: inlineCounts.get(review.id) ?? 0,
-          submittedAt: review.submitted_at,
-        })
-        stamps.push(review.submitted_at)
-        reviewIds.add(review.id)
-      }
-      for (const comment of comments.data) {
-        if (time(comment.created_at) <= cursor || !(await trusted(comment))) continue
-        feedback.comments.push({
-          author: comment.user?.login ?? 'unknown',
-          body: comment.body ?? '',
-          createdAt: comment.created_at,
-        })
-        stamps.push(comment.created_at)
-        commentIds.push(comment.id)
-      }
-    }
-
-    let settled = false
-    if (pr.head.sha !== watch.checkedSha) {
-      let runs: Awaited<ReturnType<Octokit['rest']['checks']['listForRef']>>['data']['check_runs'] | undefined
-      try {
-        runs = (
-          await octokit.rest.checks.listForRef({ owner, repo, ref: pr.head.sha, per_page: 100 })
-        ).data.check_runs
-      } catch (error) {
-        const status = (error as { status?: number }).status
-        if (status !== 403 && status !== 404) throw error
-        // Checks unavailable: deliver reviews and comments, retry checks next tick.
-        if (!warnedChecks) {
-          warnedChecks = true
-          console.error('Pull request watcher cannot read checks: the GitHub App needs the Checks: read permission')
-        }
-      }
-      settled = !!runs && runs.every((run) => run.status === 'completed')
-      if (runs && settled && runs.length === 0)
-        settled = now() - time(pr.updated_at) > CI_GRACE_MS
-      if (runs && settled)
-        for (const run of runs)
-          if (run.conclusion && FAILED.includes(run.conclusion))
-            feedback.failedChecks.push({
-              name: run.name,
-              conclusion: run.conclusion,
-              title: run.output.title ?? undefined,
-            })
-    }
-
-    const sha = settled ? pr.head.sha : undefined
     const hasFeedback =
       feedback.reviews.length || feedback.comments.length || feedback.failedChecks.length
     if (hasFeedback && deps.deliver(watch, feedback) !== 'delivered') return
+
     // Everything fetched is now handled: skipped as untrusted, or delivered.
-    const nextCursor = fetchedItems
-      ? [pr.updated_at, ...stamps].sort((a, b) => time(b) - time(a))[0]
+    const cursor = fetchedItems
+      ? [pr.updated_at, ...reviews.map((r) => r.submittedAt), ...comments.map((c) => c.createdAt)].sort(
+          (a, b) => time(b) - time(a),
+        )[0]
       : undefined
-    if (nextCursor || sha)
-      deps.store.advance(
-        watch.repository,
-        watch.number,
-        { cursor: nextCursor, checkedSha: sha },
-        now(),
-      )
-    if (!hasFeedback) return
-    const base = { owner, repo, content: 'eyes' } as const
-    const results = await Promise.allSettled([
-      ...commentIds.map((id) =>
-        octokit.rest.reactions.createForIssueComment({ ...base, comment_id: id }),
-      ),
-      ...inlineIds
-        .filter((c) => reviewIds.has(c.reviewId))
-        .map((c) =>
-          octokit.rest.reactions.createForPullRequestReviewComment({ ...base, comment_id: c.id }),
-        ),
-    ])
-    for (const result of results)
-      if (result.status === 'rejected')
-        console.error(`Pull request reaction failed for ${watch.repository}#${watch.number}`, result.reason)
+    const checkedSha = settled ? pr.head.sha : undefined
+    if (cursor || checkedSha)
+      deps.store.advance(watch.repository, watch.number, { cursor, checkedSha }, now())
+    if (hasFeedback)
+      await react(octokit, { owner, repo }, `${watch.repository}#${watch.number}`, {
+        comments: comments.map(({ id }) => id),
+        inlineComments: reviews.flatMap((review) => review.inlineComments.map(({ id }) => id)),
+      })
+  }
+
+  /** A head commit is settled once every check run completed; with none, after a grace period for CI to start. */
+  async function settledChecks(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    pr: PullRequest,
+  ): Promise<{ settled: boolean; failed: FailedCheck[] }> {
+    const checks = await readChecks(octokit, { owner, repo }, pr.head.sha)
+    if (checks.kind === 'unavailable' && !warnedChecks) {
+      warnedChecks = true
+      console.error('Pull request watcher cannot read checks: the GitHub App needs the Checks: read permission')
+    }
+    if (checks.kind !== 'settled') return { settled: false, failed: [] }
+    const settled = checks.runs > 0 || now() - time(pr.updated_at) > CI_GRACE_MS
+    return { settled, failed: settled ? checks.failed : [] }
   }
 
   return {
@@ -208,35 +210,13 @@ export function createPullRequestWatcher(deps: Deps) {
         const [owner, repo] = github.repository.split('/')
         const oldest = Math.min(...watches.map((w) => time(w.cursor)))
         const recent = await listRecent(github.octokit, owner, repo, oldest)
-        // One permission lookup per login per tick; the App cannot see private org membership, so author_association is unreliable.
-        const lookups = new Map<string, Promise<boolean>>()
-        const trusted: Trusted = async (item) => {
-          const login = item.user?.login
-          if (!login || item.user?.type === 'Bot') return false
-          let lookup = lookups.get(login)
-          if (!lookup) {
-            lookup = github.octokit.rest.repos
-              .getCollaboratorPermissionLevel({ owner, repo, username: login })
-              .then(({ data }) =>
-                [data.permission, (data as { role_name?: string }).role_name].some(
-                  (level) => !!level && WRITE_ACCESS.includes(level),
-                ),
-              )
-              .catch((error) => {
-                if ((error as { status?: number }).status !== 404)
-                  console.error(`Pull request watcher could not check permission of ${login}`, error)
-                return false
-              })
-            lookups.set(login, lookup)
-          }
-          return lookup
-        }
+        const trust = createTrustCheck(github.octokit, owner, repo)
         for (const watch of watches) {
           const pr = recent.get(watch.number)
           // ponytail: only the 300 most recently updated pull requests are seen; a busier repository needs pulls.get per watch.
           if (!pr) continue
           try {
-            await checkWatch(github.octokit, owner, repo, watch, pr, trusted)
+            await checkWatch(github.octokit, owner, repo, watch, pr, trust)
           } catch (error) {
             console.error(`Pull request watcher failed for ${watch.repository}#${watch.number}`, error)
           }
