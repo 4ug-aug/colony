@@ -1,0 +1,30 @@
+#!/bin/sh
+# Operator-specific tools for the Colony agent images.
+#
+# This runs once, as root, while `make agent` builds the agent images (Debian
+# bookworm base; both the OpenAI-agents image and the Cursor image). Whatever it
+# installs is baked into every sandbox. To use it, copy this file to `setup.sh`
+# (gitignored) in this directory, uncomment what you need, and run `make agent`.
+set -eu
+
+# Node.js 22 + npm from NodeSource (Debian bookworm's own nodejs is Node 18).
+# apt-get update
+# apt-get install -y --no-install-recommends curl ca-certificates
+# curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+# apt-get install -y --no-install-recommends nodejs
+# rm -rf /var/lib/apt/lists/*
+
+# uv + ruff, installed to /usr/local/bin so they are on PATH in every shell.
+# The OpenAI-agents image (oven/bun) may not ship curl, so install it first.
+# apt-get update
+# apt-get install -y --no-install-recommends curl ca-certificates
+# rm -rf /var/lib/apt/lists/*
+# curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+# UV_TOOL_BIN_DIR=/usr/local/bin uv tool install ruff
+
+# Pin a different bun version (replace 1.x.y).
+# apt-get update
+# apt-get install -y --no-install-recommends curl ca-certificates unzip
+# rm -rf /var/lib/apt/lists/*
+# curl -fsSL https://bun.sh/install | bash -s bun-v1.x.y
+# cp "$HOME/.bun/bin/bun" /usr/local/bin/bun

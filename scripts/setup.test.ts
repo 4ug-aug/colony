@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   defaultSandboxProvider,
+  installAgentSetupExample,
   readEnvValue,
   requireGuestReachableMcpHost,
   selectUniversalDmg,
@@ -45,4 +49,14 @@ test("selects the universal DMG from release assets", () => {
       { name: "Sweat_universal.dmg", browser_download_url: "universal" },
     ]),
   ).toEqual({ name: "Sweat_universal.dmg", browser_download_url: "universal" });
+});
+
+test("copies the agent setup example once and never overwrites setup.sh", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-setup-"));
+  await writeFile(join(dir, "setup.sh.example"), "example");
+  expect(await installAgentSetupExample(dir)).toBe(true);
+  expect(await readFile(join(dir, "setup.sh"), "utf8")).toBe("example");
+  await writeFile(join(dir, "setup.sh"), "mine");
+  expect(await installAgentSetupExample(dir)).toBe(false);
+  expect(await readFile(join(dir, "setup.sh"), "utf8")).toBe("mine");
 });

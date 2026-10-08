@@ -38,4 +38,8 @@ COPY roles /app/roles
 COPY runtime /app/runtime
 COPY skills /app/skills
 
+# Operator-specific tools (project/agent-setup/setup.sh, see setup.sh.example).
+COPY agent-setup /tmp/agent-setup
+RUN if [ -f /tmp/agent-setup/setup.sh ]; then sh -eu /tmp/agent-setup/setup.sh; fi && rm -rf /tmp/agent-setup
+
 WORKDIR /work
