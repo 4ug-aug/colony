@@ -594,6 +594,15 @@ if (import.meta.main) {
   )
   const coordinator = createCoordinator({
     control,
+    pullRequests: {
+      store: watchedPullRequests,
+      github: () => {
+        const config = githubConfig.current()
+        return config
+          ? { octokit: config.octokit, repository: config.repository }
+          : undefined
+      },
+    },
     ...(smolvmProvider ? { vmControl: smolvmProvider } : {}),
     store,
     messages,
