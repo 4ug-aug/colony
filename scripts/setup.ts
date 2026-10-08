@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { access, constants, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, constants, copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   cancel,
+  confirm,
   intro,
   isCancel,
   log,
@@ -354,6 +355,34 @@ async function saveEnv(
   console.log(`Wrote ${path}`);
 }
 
+const agentSetupDir = join(root, "project/agent-setup");
+
+/** Copies the example to setup.sh unless the operator already has one. */
+export async function installAgentSetupExample(dir = agentSetupDir): Promise<boolean> {
+  const target = join(dir, "setup.sh");
+  if (await readOptional(target) !== undefined) return false;
+  await copyFile(join(dir, "setup.sh.example"), target);
+  return true;
+}
+
+async function offerAgentTools(): Promise<void> {
+  const wanted = assertNotCancelled(
+    await confirm({
+      message:
+        "Agents start with bun, Python 3 and git. Add more tools for them (Node, ruff, ...)?",
+      initialValue: false,
+    }),
+  );
+  if (!wanted) {
+    log.info("To add agent tools later, see project/agent-setup/setup.sh.example.");
+    return;
+  }
+  await installAgentSetupExample();
+  log.info(
+    `${join(agentSetupDir, "setup.sh")}\nUncomment what you need, then run \`make agent\`.`,
+  );
+}
+
 async function configureServer(path: string): Promise<void> {
   const current = await readOptional(path);
   let document =
@@ -480,6 +509,7 @@ async function configureServer(path: string): Promise<void> {
   }
 
   await saveEnv(path, current, document);
+  await offerAgentTools();
 
   log.step("Installing project dependencies...");
   await run("bun", ["install", "--cwd", "project", "--frozen-lockfile"]);

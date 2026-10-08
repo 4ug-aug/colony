@@ -79,6 +79,15 @@ one: a host whose `SWEAT_AGENT_IMAGE` names a GHCR tag keeps running the copy it
 already has until you `docker pull` it yourself. The coordinator exports the
 local image as-is, so a stale one is invisible apart from the code the agents
 run being older than the server's.
+
+### Agent tools
+
+Agent sandboxes ship with bun, Python 3 and git; the Cursor image also has Docker
+and make. To bake in more (Node, ruff, a pinned bun, ...), copy
+`project/agent-setup/setup.sh.example` to `project/agent-setup/setup.sh`,
+uncomment what you need, and run `make agent`. `make service-upgrade` runs
+`make agent` too, so the script is reapplied on every rebuild.
+
 `make dev` / `make agent` always build local `sweat-agent:latest` and
 `sweat-agent-cursor:latest` images for your machine's architecture. Published
 GHCR images are for production/server hosts and are linux/amd64 today; after

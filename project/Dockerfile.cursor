@@ -75,6 +75,10 @@ COPY --from=bundle /native /app/node_modules
 # agent runs as root. Without this git refuses the repo as "dubious ownership".
 RUN git config --system --add safe.directory /work
 
+# Operator-specific tools (project/agent-setup/setup.sh, see setup.sh.example).
+COPY agent-setup /tmp/agent-setup
+RUN if [ -f /tmp/agent-setup/setup.sh ]; then sh -eu /tmp/agent-setup/setup.sh; fi && rm -rf /tmp/agent-setup
+
 # smolvm boots the image's own command, and the Node base that used to supply
 # one is gone.
 CMD ["bun"]
