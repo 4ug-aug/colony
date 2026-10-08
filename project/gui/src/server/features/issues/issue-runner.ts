@@ -27,7 +27,7 @@ export class IssueActiveRunError extends Error {
 export type IssueRunner = {
   startRun(
     issueId: string,
-    options?: { agentDefinitionId?: string },
+    options?: { agentDefinitionId?: string; feedback?: string },
   ): { issue: Issue; run: IssueRun }
   /** Assign owner; auto-start when assigning an agent and the Issue is idle. */
   assignOwner(
@@ -131,7 +131,7 @@ export function createIssueRunner(options: {
 
   const startRun = (
     issueId: string,
-    startOptions: { agentDefinitionId?: string } = {},
+    startOptions: { agentDefinitionId?: string; feedback?: string } = {},
   ): { issue: Issue; run: IssueRun } => {
     const issue = options.store.getIssue(issueId)
     if (!issue) throw new Error('Issue not found')
@@ -170,7 +170,10 @@ export function createIssueRunner(options: {
               : [],
           )
       : []
-    const task = buildIssueRunTask(issue, parent, children)
+    const base = buildIssueRunTask(issue, parent, children)
+    const task = startOptions.feedback
+      ? `${base}\n\nPull request feedback:\n${startOptions.feedback}`
+      : base
     return options.control.start(task, {
       issueId: issue.id,
       agentDefinitionId,

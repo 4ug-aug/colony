@@ -52,6 +52,10 @@ import { createSchedulesHttp } from './features/schedules/schedules-http'
 import { createBulletinsHttp } from './features/bulletins/bulletins-http'
 import { createRoomsHttp } from './features/rooms/rooms-http'
 import { createChambers } from './features/rooms/chambers'
+import type { Octokit } from 'octokit'
+import { createFeedbackDelivery } from './features/pull-requests/feedback-delivery'
+import { createPullRequestWatcher } from './features/pull-requests/pull-request-watcher'
+import type { WatchedPullRequestStore } from './features/pull-requests/watched-pull-request-store'
 import { createMembersHttp } from './features/rooms/members-http'
 import { createActiveRunsHttp } from './features/runs/active-runs-http'
 import { createOneshotsHttp } from './features/oneshots/oneshots-http'
@@ -294,6 +298,11 @@ export function createCoordinator(options: {
   agentReady?: (agentDefinitionId?: string) => boolean
   scheduleStore?: ScheduleStore
   issueStore?: IssueStore
+  /** Watched pull requests and the GitHub client to poll them with (ADR 0033). */
+  pullRequests?: {
+    store: WatchedPullRequestStore
+    github: () => { octokit: Octokit; repository: string } | undefined
+  }
   bulletinStore?: BulletinStore
   chatStore?: ChatStore
   /** Filled in here: Consultations need the Chambers this coordinator owns. */
@@ -718,6 +727,24 @@ export function createCoordinator(options: {
   const scheduleInterval = scheduleRunner
     ? setInterval(() => scheduleRunner!.tick(), 15_000)
     : undefined
+  const issueStore = options.issueStore
+  const pullRequestWatcher = options.pullRequests
+    ? createPullRequestWatcher({
+        store: options.pullRequests.store,
+        github: options.pullRequests.github,
+        deliver: createFeedbackDelivery({
+          issueExists: (issueId) => Boolean(issueStore?.getIssue(issueId)),
+          startIssueRun: (issueId, start) => {
+            if (!issueRunner) throw new Error('Issues are unavailable')
+            issueRunner.startRun(issueId, start)
+          },
+          chamber: chambers,
+        }),
+      })
+    : undefined
+  const pullRequestInterval = pullRequestWatcher
+    ? setInterval(() => void pullRequestWatcher.tick(), 120_000)
+    : undefined
   const schedulesHttp = options.scheduleStore
     ? createSchedulesHttp({
         scheduleStore: options.scheduleStore,
@@ -970,6 +997,7 @@ export function createCoordinator(options: {
         unsubscribeMessages()
         unsubscribeSteps()
         if (scheduleInterval) clearInterval(scheduleInterval)
+        if (pullRequestInterval) clearInterval(pullRequestInterval)
         scheduleRunner?.stop()
         issueRunner?.stop()
         oneshotSession.stop()

@@ -264,18 +264,44 @@ test("GitHub sends mode and type when syncing a deleted file", async () => {
   }
 }, 10_000);
 
-test("GitHub returns failed pull request checks", async () => {
-  const gateway = createGitHubMcpGateway({
+function feedbackGateway(overrides: { commentCount?: number } = {}) {
+  const user = (login: string, type = "User") => ({ login, type });
+  const routes: Record<string, unknown> = {
+    "pulls/12/reviews": [
+      { id: 1, user: user("alice"), state: "CHANGES_REQUESTED", body: "Please fix.", submitted_at: "2026-07-02T10:00:00Z" },
+      { id: 2, user: user("bob"), state: "COMMENTED", body: "Old note.", submitted_at: "2026-06-01T10:00:00Z" },
+      { id: 3, user: user("carol"), state: "PENDING", body: "draft", submitted_at: null },
+    ],
+    "pulls/12/comments": [
+      { pull_request_review_id: 1, user: user("alice"), path: "src/a.ts", line: 7, body: "Rename this.", created_at: "2026-07-02T10:00:00Z", diff_hunk: "@@ -1,3 +1,3 @@\n a\n b\n+c" },
+      { pull_request_review_id: 1, user: user("alice"), path: "src/b.ts", line: 3, body: "Handle null.", created_at: "2026-07-02T10:00:00Z", diff_hunk: "+x" },
+      { pull_request_review_id: 2, user: user("bob"), path: "src/old.ts", line: 1, body: "Ancient comment.", created_at: "2026-06-01T10:00:00Z", diff_hunk: "+y" },
+    ],
+    "issues/12/comments": [
+      { user: user("dave"), body: "Looks promising.", created_at: "2026-07-03T10:00:00Z" },
+      { user: user("ci-bot[bot]", "Bot"), body: "Coverage dropped.", created_at: "2026-07-03T11:00:00Z" },
+      { user: user("erin"), body: "Stale remark.", created_at: "2026-05-01T10:00:00Z" },
+      ...Array.from({ length: overrides.commentCount ?? 0 }, () => (
+        { user: user("frank"), body: "y".repeat(4000), created_at: "2026-07-04T10:00:00Z" }
+      )),
+    ],
+    "commits/abcdef1234567/check-runs": { check_runs: [
+      { id: 90, name: "lint", status: "completed", conclusion: "success", output: { title: "ok", summary: "fine" }, details_url: "https://ci.test/lint" },
+      { id: 91, name: "unit", status: "completed", conclusion: "failure", output: { title: "2 tests failed", summary: "see annotations" }, details_url: "https://ci.test/unit" },
+    ] },
+    "check-runs/91/annotations": [
+      { path: "src/a.test.ts", start_line: 12, message: "expected 1 got 2" },
+      { path: "src/b.test.ts", start_line: 30, message: "boom" },
+    ],
+  };
+  return createGitHubMcpGateway({
     octokit: new Octokit({
       auth: "secret",
       request: {
         fetch: async (url: string) => {
-          if (url.includes("pulls/12")) return Response.json({ head: { sha: "run-commit" } });
-          if (url.includes("commits/run-commit/check-runs")) {
-            return Response.json({ check_runs: [{
-              name: "test", status: "completed", conclusion: "failure", details_url: "https://example.test/check/1",
-            }] });
-          }
+          if (url.endsWith("pulls/12")) return Response.json({ number: 12, title: "Add widget", head: { sha: "abcdef1234567" } });
+          const key = Object.keys(routes).find((route) => new URL(url).pathname.endsWith(route));
+          if (key) return Response.json(routes[key]);
           throw new Error(`Unexpected GitHub request: ${url}`);
         },
       },
@@ -286,17 +312,53 @@ test("GitHub returns failed pull request checks", async () => {
     baseCommit: "base",
     base: "main",
   });
-  const session = gateway.createSession({
-    tools: ["github.wait_for_pull_request_checks"], expiresAt: new Date(Date.now() + 60_000),
-  });
+}
 
-  await expect(gateway.callTool(session.token, "github.wait_for_pull_request_checks", { number: 12 }))
-    .resolves.toEqual({
-      state: "failed",
-      checks: [{
-        name: "test", status: "completed", conclusion: "failure", detailsUrl: "https://example.test/check/1",
-      }],
-    });
+const feedbackSession = (gateway: ReturnType<typeof feedbackGateway>) =>
+  gateway.createSession({ tools: ["github.get_pull_request_feedback"], expiresAt: new Date(Date.now() + 60_000) });
+
+const feedbackText = (result: unknown) => (result as { content: { text: string }[] }).content[0]!.text;
+
+test("GitHub reads pull request feedback as compact text", async () => {
+  const gateway = feedbackGateway();
+  const text = feedbackText(await gateway.callTool(feedbackSession(gateway).token, "github.get_pull_request_feedback", { number: 12 }));
+
+  expect(text).toContain("Pull request #12: Add widget");
+  expect(text.match(/Review by alice/g)).toHaveLength(1);
+  expect(text).toContain("Review by alice (CHANGES_REQUESTED, 2026-07-02T10:00:00Z):\nPlease fix.");
+  expect(text).toContain("- src/a.ts:7 Rename this.");
+  expect(text).toContain("- src/b.ts:3 Handle null.");
+  expect(text.indexOf("Review by bob")).toBeLessThan(text.indexOf("Comments:"));
+  expect(text).not.toContain("carol");
+  expect(text).toContain("- dave (2026-07-03T10:00:00Z): Looks promising.");
+  expect(text).toContain("- ci-bot[bot] (2026-07-03T11:00:00Z): Coverage dropped.");
+  expect(text).toContain("Failed checks on abcdef1:");
+  expect(text).toContain("- unit (failure): 2 tests failed");
+  expect(text).toContain("  src/a.test.ts:12 expected 1 got 2");
+  expect(text).toContain("  src/b.test.ts:30 boom");
+  expect(text).toContain("https://ci.test/unit");
+  expect(text).not.toContain("lint");
+});
+
+test("GitHub pull request feedback drops items before since", async () => {
+  const gateway = feedbackGateway();
+  const text = feedbackText(await gateway.callTool(
+    feedbackSession(gateway).token, "github.get_pull_request_feedback", { number: 12, since: "2026-06-15T00:00:00Z" },
+  ));
+
+  expect(text).toContain("Review by alice");
+  expect(text).not.toContain("Review by bob");
+  expect(text).not.toContain("Ancient comment");
+  expect(text).not.toContain("Stale remark");
+  expect(text).toContain("Looks promising.");
+});
+
+test("GitHub pull request feedback is bounded", async () => {
+  const gateway = feedbackGateway({ commentCount: 20 });
+  const text = feedbackText(await gateway.callTool(feedbackSession(gateway).token, "github.get_pull_request_feedback", { number: 12 }));
+
+  expect(text.length).toBeLessThan(21_000);
+  expect(text).toContain("[feedback trimmed]");
 });
 
 test("GitHub refuses to publish uncommitted workspace edits", async () => {

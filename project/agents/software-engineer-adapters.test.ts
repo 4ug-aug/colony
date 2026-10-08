@@ -245,8 +245,10 @@ test("GitHub PR publish binds the run branch onto the Issue", async () => {
     }),
     repository: "acme/widgets",
     base: "main",
-    bindIssueBranch: (issueId, branch) => {
-      bindings.push({ issueId, branch });
+    onPullRequest: ({ branch, grantContext }) => {
+      if (grantContext?.issueId) {
+        bindings.push({ issueId: grantContext.issueId, branch });
+      }
     },
   });
 
@@ -290,8 +292,10 @@ test("GitHub PR publish skips Issue branch bind without issueId", async () => {
     }),
     repository: "acme/widgets",
     base: "main",
-    bindIssueBranch: (issueId, branch) => {
-      bindings.push({ issueId, branch });
+    onPullRequest: ({ branch, grantContext }) => {
+      if (grantContext?.issueId) {
+        bindings.push({ issueId: grantContext.issueId, branch });
+      }
     },
   });
 
@@ -406,3 +410,64 @@ test("workspace.consultations applies to Chamber runs only, and asks as the runn
     },
   ]);
 });
+
+test("GitHub adapter fires onPullRequest only after a successful pull request tool", async () => {
+  const events: unknown[] = [];
+  const adapter = createGitHubSoftwareEngineerAdapter({
+    octokit: new Octokit({
+      auth: "secret",
+      request: {
+        fetch: githubFetchMock({
+          missingBranch: "sweat/run-1",
+          baseBranch: "main",
+        }),
+      },
+    }),
+    repository: "acme/widgets",
+    base: "main",
+    onPullRequest: (event) => {
+      events.push(event);
+      throw new Error("hook failure is swallowed");
+    },
+  });
+
+  const workspace = await preparedGitWorkspace("sweat-hook-");
+  try {
+    const grantContext = { agentDefinitionId: "software-engineer" };
+    const upstream = adapter.capability!.createUpstream({
+      workspace: {
+        path: workspace.path,
+        git: {
+          repository: "acme/widgets",
+          baseRevision: "main",
+          baseCommit: workspace.baseCommit,
+          branch: "sweat/run-1",
+        },
+        dispose: async () => {},
+      },
+      sandbox: {
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+      },
+      grantContext,
+    });
+
+    // Failing and unrelated calls fire nothing.
+    await upstream
+      .callTool("github.push_to_pull_request", { number: 4 })
+      .catch(() => {});
+    await upstream.callTool("github.nope", {}).catch(() => {});
+    expect(events).toEqual([]);
+
+    await upstream.callTool("github.create_pull_request", { title: "Ship" });
+    expect(events).toEqual([
+      {
+        tool: "github.create_pull_request",
+        number: 9,
+        branch: "sweat/run-1",
+        grantContext,
+      },
+    ]);
+  } finally {
+    await workspace.dispose();
+  }
+}, 15_000);

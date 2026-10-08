@@ -12,6 +12,7 @@ import { buildFlatTimelineItems } from './thread-helpers'
 import type { FlatTimelineItem } from './thread-helpers'
 import { AgentMessageBody } from './agent-message-body'
 import { QueuedNote } from './queued-note'
+import { PullRequestFeedbackBody } from './pull-request-feedback-label'
 import { ScheduleDeliveryCard } from './schedule-delivery-card'
 import { ThreadSummaryChip } from './thread-summary-chip'
 import type { RoomMessage, RoomRun } from './types'
@@ -110,6 +111,12 @@ const TimelineEntry = memo(function TimelineEntry({
       body={
         item.message.delivery?.kind === 'schedule' ? (
           <ScheduleDeliveryCard
+            delivery={item.message.delivery}
+            text={item.message.text}
+            mentions={mentionHandles}
+          />
+        ) : item.message.delivery?.kind === 'pull_request_feedback' ? (
+          <PullRequestFeedbackBody
             delivery={item.message.delivery}
             text={item.message.text}
             mentions={mentionHandles}

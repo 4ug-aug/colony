@@ -30,7 +30,6 @@ export const WORKSPACE_SCHEDULE_TOOLS = [
 
 export const GITHUB_PULL_REQUEST_TOOLS = [
   "github.create_pull_request",
-  "github.wait_for_pull_request_checks",
   "github.compare",
   "github.get_file",
   "github.get_pull_request",
@@ -38,6 +37,7 @@ export const GITHUB_PULL_REQUEST_TOOLS = [
   "github.push_to_pull_request",
   "github.comment_on_pull_request",
   "github.review_pull_request",
+  "github.get_pull_request_feedback",
 ] as const;
 
 export const WEB_SEARCH_TOOLS = ["web.search", "web.fetch"] as const;

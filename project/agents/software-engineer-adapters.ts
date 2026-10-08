@@ -40,6 +40,7 @@ import {
   type WorkspaceSchedulesPort,
 } from "../mcp/workspace-schedules";
 import { rosterParticipant } from "./roster-meta";
+import type { AgentGrantContext } from "./grant-context";
 
 export function createWorkspaceSoftwareEngineerAdapter(options: {
   port: WorkspaceRoomPort;
@@ -283,12 +284,19 @@ export function createPaymoAdapter(options: {
   };
 }
 
+export type GitHubPullRequestEvent = {
+  tool: "github.create_pull_request" | "github.push_to_pull_request";
+  number: number;
+  branch: string;
+  grantContext: AgentGrantContext | undefined;
+};
+
 export function createGitHubSoftwareEngineerAdapter(options: {
   octokit: Octokit;
   repository: string;
   base: string;
-  /** After a successful Issue-linked publish, bind the PR head branch on the Issue. */
-  bindIssueBranch?: (issueId: string, branch: string) => void;
+  /** After a successful pull request publish or push. Errors are logged and swallowed. */
+  onPullRequest?: (event: GitHubPullRequestEvent) => void;
 }): WorkspaceAgentAdapter {
   return {
     repository: {
@@ -314,7 +322,6 @@ export function createGitHubSoftwareEngineerAdapter(options: {
         }
         const base = grantContext?.repositoryBase ?? options.base;
         const branch = workspace.git.branch;
-        const issueId = grantContext?.issueId;
         const upstream = createGitHubMcpUpstream({
           octokit: options.octokit,
           repository: options.repository,
@@ -323,21 +330,26 @@ export function createGitHubSoftwareEngineerAdapter(options: {
           baseCommit: workspace.git.baseCommit,
           base,
         });
-        if (!options.bindIssueBranch || !issueId) return upstream;
+        const onPullRequest = options.onPullRequest;
+        if (!onPullRequest) return upstream;
         return {
           listTools: () => upstream.listTools(),
           async callTool(name, args) {
             const result = await upstream.callTool(name, args);
-            if (name === "github.create_pull_request") {
-              try {
-                options.bindIssueBranch!(issueId, branch);
-              } catch (error) {
-                console.error(
-                  "Failed to bind Issue branch after pull request",
-                  issueId,
-                  branch,
-                  error,
-                );
+            if (
+              name === "github.create_pull_request" ||
+              name === "github.push_to_pull_request"
+            ) {
+              const number =
+                name === "github.push_to_pull_request"
+                  ? args.number
+                  : (result as { number?: unknown } | null)?.number;
+              if (typeof number === "number") {
+                try {
+                  onPullRequest({ tool: name, number, branch, grantContext });
+                } catch (error) {
+                  console.error("Failed after pull request", name, number, error);
+                }
               }
             }
             return result;

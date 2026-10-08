@@ -13,11 +13,11 @@ read.
 3. Under **Repository permissions**, grant:
 
    | Permission    | Access         | Why                                   |
-   | ------------- | -------------- | ------------------------------------- |
-   | Contents      | Read and write | Checkout, commits, branches, tarball  |
-   | Pull requests | Read and write | Open and update the run pull request  |
-   | Checks        | Read-only      | `github.wait_for_pull_request_checks` |
-   | Metadata      | Read-only      | Included automatically                |
+   | ------------- | -------------- | ------------------------------------ |
+   | Contents      | Read and write | Checkout, commits, branches, tarball |
+   | Pull requests | Read and write | Open and update the run pull request |
+   | Checks        | Read-only      | `github.get_pull_request_feedback`   |
+   | Metadata      | Read-only      | Included automatically               |
 
 4. Choose **Only on this account** and create the App. Note the **App ID**.
 5. Under **Private keys**, generate a key. GitHub downloads a `.pem` file.

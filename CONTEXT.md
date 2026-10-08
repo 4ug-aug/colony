@@ -332,6 +332,22 @@ integrate run prepares from the parent's Issue branch merged with each direct
 child's published head, not from inherited effective branches.
 _Avoid_: Run branch, sweat/<runId>, PR branch (as synonyms for this binding)
 
+**Watched pull request**: A pull request an agent run opened
+(`github.create_pull_request`) or pushed to (`github.push_to_pull_request`),
+which the Colony server polls for feedback until it is merged or closed. The
+record holds the agent, the run's Responsible Account, the run's Issue if any,
+and a feedback cursor. A later push by another run takes the record over and
+keeps the cursor.
+_Avoid_: Tracked PR, subscribed pull request
+
+**Pull request feedback**: A submitted review, or a pull-request comment, from
+an author with write access who is not a bot (inline comments count as part of
+their review), or failed CI on the head commit once its checks complete.
+Approvals are not feedback. It goes back to where the work came from: an
+Issue-linked run starts with it added to its task; otherwise a message from the
+Responsible Account goes into its Chamber with the agent.
+_Avoid_: PR review (as a synonym), webhook event
+
 **Issue tools**: First-party agent tools for reading and writing Colony Issues.
 They are granted as a workspace capability (`workspace.issues`) over the same
 MCP session path as other capabilities (for example `workspace.room`), not as

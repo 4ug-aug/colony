@@ -29,14 +29,14 @@ test("the software engineer requests scoped issue and pull request tools", () =>
     id: "github.pull-requests",
     tools: [
       "github.create_pull_request",
-      "github.wait_for_pull_request_checks",
       "github.compare",
       "github.get_file",
       "github.get_pull_request",
+      "github.get_pull_request_feedback",
     ],
   });
   expect(softwareEngineerRole.instructions).toContain(
-    "Make at most two repair attempts",
+    "github.get_pull_request_feedback",
   );
   expect(softwareEngineerRole.instructions).toContain(
     "github.compare first",

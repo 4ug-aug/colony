@@ -37,6 +37,7 @@ import {
   scheduleUpdateInput,
 } from './features/schedules/schedule-input'
 import { createAgentDefinitionStore } from './features/agents/agent-definition-store'
+import { createWatchedPullRequestStore } from './features/pull-requests/watched-pull-request-store'
 import { createWorkspaceConnections } from './features/workspace/workspace-connections'
 import {
   createWorkspaceSkillStore,
@@ -110,6 +111,7 @@ if (import.meta.main) {
   const grantTools = createWorkspaceGrantToolsConfig(sqlite)
   const connections = createWorkspaceConnections(sqlite)
   const githubConfig = createWorkspaceGitHubConfig(sqlite)
+  const watchedPullRequests = createWatchedPullRequestStore(sqlite)
   const legacyGitHubEnv = Object.keys(process.env).filter(
     (key) => key.startsWith('SWEAT_GITHUB_') || key === 'SWEAT_VERIFY_COMMAND',
   )
@@ -544,15 +546,32 @@ if (import.meta.main) {
         if (!config) return undefined
         return createGitHubSoftwareEngineerAdapter({
           ...config,
-          bindIssueBranch: (issueId, branch) => {
-            const issue = issueStore.getIssue(issueId)
-            if (!issue || issue.branch) return
-            const updated = issueStore.updateIssue(
-              issueId,
-              { branch },
-              Date.now(),
-            )
-            issueNotify.onChanged(updated)
+          onPullRequest: ({ tool, number, branch, grantContext }) => {
+            const issueId = grantContext?.issueId
+            if (tool === 'github.create_pull_request' && issueId) {
+              const issue = issueStore.getIssue(issueId)
+              if (issue && !issue.branch) {
+                const updated = issueStore.updateIssue(
+                  issueId,
+                  { branch },
+                  Date.now(),
+                )
+                issueNotify.onChanged(updated)
+              }
+            }
+            if (
+              grantContext?.agentDefinitionId &&
+              grantContext.responsibleAccountId
+            ) {
+              watchedPullRequests.record({
+                repository: config.repository,
+                number,
+                agentDefinitionId: grantContext.agentDefinitionId,
+                responsibleAccountId: grantContext.responsibleAccountId,
+                ...(issueId ? { issueId } : {}),
+                now: Date.now(),
+              })
+            }
           },
         })
       },
@@ -575,6 +594,15 @@ if (import.meta.main) {
   )
   const coordinator = createCoordinator({
     control,
+    pullRequests: {
+      store: watchedPullRequests,
+      github: () => {
+        const config = githubConfig.current()
+        return config
+          ? { octokit: config.octokit, repository: config.repository }
+          : undefined
+      },
+    },
     ...(smolvmProvider ? { vmControl: smolvmProvider } : {}),
     store,
     messages,
