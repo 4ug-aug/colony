@@ -796,3 +796,18 @@ test('succeeded integrate writes parent Deliverable and does not retry while par
   expect(store.getIssue('parent')?.status).toBe('in_progress')
   expect(control.starts).toHaveLength(1)
 })
+
+test('startRun appends pull request feedback to the Issue task', () => {
+  const store = fakeStore(
+    baseIssue({ owner: { kind: 'agent', id: 'antboy' } }),
+  )
+  const control = fakeControl()
+  const runner = createIssueRunner({ store, control })
+  runner.startRun('issue-1')
+  store.runs.clear()
+  runner.startRun('issue-1', { feedback: 'Fix the typo' })
+  const plain = control.starts[0]!.task
+  expect(control.starts[1]!.task).toBe(
+    `${plain}\n\nPull request feedback:\nFix the typo`,
+  )
+})
