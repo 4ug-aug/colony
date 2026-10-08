@@ -16,8 +16,13 @@ read.
    | ------------- | -------------- | ------------------------------------ |
    | Contents      | Read and write | Checkout, commits, branches, tarball |
    | Pull requests | Read and write | Open and update the run pull request |
-   | Checks        | Read-only      | `github.get_pull_request_feedback`   |
+   | Checks        | Read-only      | CI failures reach agents             |
    | Metadata      | Read-only      | Included automatically               |
+
+   Without Checks, reviews and comments still reach agents but CI failures
+   do not. After changing an App's permissions, an org owner must accept the
+   updated permissions on the installation (**org Settings → GitHub Apps →**
+   the app **→ Review request**) before they apply.
 
 4. Choose **Only on this account** and create the App. Note the **App ID**.
 5. Under **Private keys**, generate a key. GitHub downloads a `.pem` file.

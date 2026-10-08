@@ -1,5 +1,6 @@
 import { createAppAuth } from "@octokit/auth-app";
-import { Octokit, RequestError } from "octokit";
+import { Octokit } from "octokit";
+import { httpStatus, readActivity, readAnnotations, readChecks } from "./github-feedback";
 import { boundStepText } from "../runtime/step";
 import { extractGitHubCommit, replaceWorktree } from "../inputs/github";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -431,9 +432,11 @@ async function getPullRequest(options: {
 }
 
 const feedbackLimit = 20_000;
-const failedConclusions = ["failure", "timed_out", "cancelled", "action_required"];
 
 const clip = (text: string, limit: number) => (text.length > limit ? `${text.slice(0, limit)}...` : text);
+
+const feedbackAuthor = (user: { login: string; type: string } | null) =>
+  user ? `${user.login}${user.type === "Bot" && !user.login.endsWith("[bot]") ? " [bot]" : ""}` : "unknown";
 
 async function getPullRequestFeedback(options: {
   octokit: Octokit;
@@ -444,51 +447,40 @@ async function getPullRequestFeedback(options: {
   const sinceText = options.args.since;
   if (sinceText !== undefined && (typeof sinceText !== "string" || Number.isNaN(Date.parse(sinceText))))
     throw new Error("GitHub feedback since must be an ISO timestamp");
-  const since = typeof sinceText === "string" ? Date.parse(sinceText) : undefined;
-  const after = (time: string | null | undefined) => since === undefined || Date.parse(time ?? "") > since;
-  const { rest } = options.octokit;
-  const repo = options.repository;
-  // ponytail: one page (100) per list; paginate if a pull request outgrows it.
-  const [pullRequest, reviews, reviewComments, comments] = await Promise.all([
-    rest.pulls.get({ ...repo, pull_number: number }),
-    rest.pulls.listReviews({ ...repo, pull_number: number, per_page: 100 }),
-    rest.pulls.listReviewComments({ ...repo, pull_number: number, per_page: 100 }),
-    rest.issues.listComments({ ...repo, issue_number: number, per_page: 100 }),
-  ]);
+  const { octokit, repository: repo } = options;
+  const pullRequest = await octokit.rest.pulls.get({ ...repo, pull_number: number });
   const sha = pullRequest.data.head.sha;
-  const runs = (await rest.checks.listForRef({ ...repo, ref: sha, per_page: 100 })).data.check_runs
-    .filter((run) => failedConclusions.includes(run.conclusion ?? ""));
-  const author = (user: { login: string; type: string } | null) =>
-    user ? `${user.login}${user.type === "Bot" && !user.login.endsWith("[bot]") ? " [bot]" : ""}` : "unknown";
+  const [activity, checks] = await Promise.all([
+    readActivity(octokit, repo, number, sinceText),
+    readChecks(octokit, repo, sha),
+  ]);
 
   const lines = [`Pull request #${number}: ${pullRequest.data.title}`];
-  const newComments = reviewComments.data.filter((comment) => after(comment.created_at));
-  for (const review of reviews.data) {
-    if (review.state === "PENDING" || !after(review.submitted_at)) continue;
-    lines.push("", `Review by ${author(review.user)} (${review.state}, ${review.submitted_at}):`);
+  for (const review of activity.reviews) {
+    lines.push("", `Review by ${feedbackAuthor(review.author)} (${review.state}, ${review.submittedAt}):`);
     if (review.body) lines.push(clip(review.body, 4000));
-    for (const comment of newComments.filter((item) => item.pull_request_review_id === review.id)) {
-      lines.push(`- ${comment.path}:${comment.line ?? comment.original_line ?? "?"} ${clip(comment.body, 2000)}`);
-      lines.push(...comment.diff_hunk.split("\n").slice(-6).map((line) => `    ${line}`));
+    for (const comment of review.inlineComments) {
+      lines.push(`- ${comment.path}:${comment.line ?? "?"} ${clip(comment.body, 2000)}`);
+      lines.push(...comment.diffHunk.split("\n").slice(-6).map((line) => `    ${line}`));
     }
   }
-  const newIssueComments = comments.data.filter((comment) => after(comment.created_at));
-  if (newIssueComments.length) {
+  if (activity.comments.length) {
     lines.push("", "Comments:");
-    for (const comment of newIssueComments)
-      lines.push(`- ${author(comment.user)} (${comment.created_at}): ${clip(comment.body ?? "", 4000)}`);
+    for (const comment of activity.comments)
+      lines.push(`- ${feedbackAuthor(comment.author)} (${comment.createdAt}): ${clip(comment.body, 4000)}`);
   }
-  if (runs.length) {
+  if (checks.kind !== "unavailable" && checks.failed.length) {
     lines.push("", `Failed checks on ${sha.slice(0, 7)}:`);
-    for (const run of runs) {
-      const annotations = (await rest.checks.listAnnotations({ ...repo, check_run_id: run.id, per_page: 10 })).data;
-      lines.push(`- ${run.name} (${run.conclusion}): ${run.output.title ?? ""}`);
-      if (run.output.summary) lines.push(clip(run.output.summary, 1500));
-      for (const annotation of annotations.slice(0, 10))
+    for (const run of checks.failed) {
+      const annotations = await readAnnotations(octokit, repo, run.id);
+      lines.push(`- ${run.name} (${run.conclusion}): ${run.title ?? ""}`);
+      if (run.summary) lines.push(clip(run.summary, 1500));
+      for (const annotation of annotations)
         lines.push(`  ${annotation.path}:${annotation.start_line} ${annotation.message ?? ""}`);
-      if (run.details_url) lines.push(run.details_url);
+      if (run.detailsUrl) lines.push(run.detailsUrl);
     }
   }
+  if (checks.kind === "unavailable") lines.push("", "Checks unavailable: the GitHub App needs the Checks: read permission.");
   if (lines.length === 1)
     lines.push("", `No reviews, comments, or failed checks${typeof sinceText === "string" ? ` since ${sinceText}` : ""}.`);
   const text = lines.join("\n");
@@ -503,9 +495,6 @@ export function createGitHubAppInstallationClient(options: {
 }): Octokit {
   return new Octokit({ authStrategy: createAppAuth, auth: options });
 }
-
-const httpStatus = (error: unknown): number | undefined =>
-  error instanceof RequestError ? error.status : undefined;
 
 type GitHubAppCredentials = {
   appId: string;

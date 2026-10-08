@@ -264,7 +264,7 @@ test("GitHub sends mode and type when syncing a deleted file", async () => {
   }
 }, 10_000);
 
-function feedbackGateway(overrides: { commentCount?: number } = {}) {
+function feedbackGateway(overrides: { commentCount?: number; forbidden?: string[] } = {}) {
   const user = (login: string, type = "User") => ({ login, type });
   const routes: Record<string, unknown> = {
     "pulls/12/reviews": [
@@ -301,6 +301,7 @@ function feedbackGateway(overrides: { commentCount?: number } = {}) {
         fetch: async (url: string) => {
           if (url.endsWith("pulls/12")) return Response.json({ number: 12, title: "Add widget", head: { sha: "abcdef1234567" } });
           const key = Object.keys(routes).find((route) => new URL(url).pathname.endsWith(route));
+          if (key && overrides.forbidden?.includes(key)) return Response.json({ message: "Resource not accessible by integration" }, { status: 403 });
           if (key) return Response.json(routes[key]);
           throw new Error(`Unexpected GitHub request: ${url}`);
         },
@@ -338,6 +339,22 @@ test("GitHub reads pull request feedback as compact text", async () => {
   expect(text).toContain("  src/b.test.ts:30 boom");
   expect(text).toContain("https://ci.test/unit");
   expect(text).not.toContain("lint");
+});
+
+test("GitHub pull request feedback survives a missing Checks permission", async () => {
+  const gateway = feedbackGateway({ forbidden: ["commits/abcdef1234567/check-runs"] });
+  const text = feedbackText(await gateway.callTool(feedbackSession(gateway).token, "github.get_pull_request_feedback", { number: 12 }));
+  expect(text).toContain("Review by alice");
+  expect(text).toContain("- dave (2026-07-03T10:00:00Z): Looks promising.");
+  expect(text.endsWith("Checks unavailable: the GitHub App needs the Checks: read permission.")).toBe(true);
+});
+
+test("GitHub pull request feedback lists a failed check when its annotations are forbidden", async () => {
+  const gateway = feedbackGateway({ forbidden: ["check-runs/91/annotations"] });
+  const text = feedbackText(await gateway.callTool(feedbackSession(gateway).token, "github.get_pull_request_feedback", { number: 12 }));
+  expect(text).toContain("- unit (failure): 2 tests failed");
+  expect(text).not.toContain("src/a.test.ts");
+  expect(text).not.toContain("Checks unavailable");
 });
 
 test("GitHub pull request feedback drops items before since", async () => {
